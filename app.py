@@ -265,9 +265,9 @@ class App(tk.Tk):
         notice = tk.Frame(self.sidebar, bg=PANEL, highlightthickness=1,
                           highlightbackground=BORDER)
         notice.pack(fill='x', padx=15, pady=(0, 18))
-        tk.Label(notice, text='SEUS DISCOS ESTÃO PROTEGIDOS', bg=PANEL,
-                 fg=GREEN, font=('Segoe UI', 8, 'bold'), anchor='w').pack(fill='x', padx=13, pady=(12, 5))
-        tk.Label(notice, text='Confira EFI, discos físicos e destino de backup. Nenhuma unidade será formatada.',
+        tk.Label(notice, text='BACKUP NÃO VERIFICADO NESTA TELA', bg=PANEL,
+                 fg=AMBER, font=('Segoe UI', 8, 'bold'), anchor='w').pack(fill='x', padx=13, pady=(12, 5))
+        tk.Label(notice, text='Detecção não protege dados. Antes da reinstalação, valide seu backup e o destino.',
                  bg=PANEL, fg=MUTED, justify='left', wraplength=182,
                  font=('Segoe UI', 9)).pack(fill='x', padx=13, pady=(0, 12))
         tk.Label(self.sidebar, text=f'v{APP_VERSION}  •  PLANO SEGURO / PRÉVIA', bg=SIDEBAR,
