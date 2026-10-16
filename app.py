@@ -1712,6 +1712,21 @@ class App(tk.Tk):
             text.append('  ALERTA: BOOTMGR registrado em disco diferente do Windows.')
         text.append('  UEFI BootCurrent: NÃO VERIFICADO; EFI ativa: NÃO COMPROVADA.')
         text.append('  Este diagnóstico NÃO autoriza formatação, desconexão nem reinstalação.')
+        spaces = d.get('spaces_membership') or {}
+        text.extend(['', 'ESPAÇOS DE ARMAZENAMENTO — MEMBROS FÍSICOS (SOMENTE LEITURA):'])
+        text.append('  Estado: '+str(spaces.get('status', 'não consultado')))
+        for vd in spaces.get('virtual_disks', []):
+            name = str(vd.get('virtual_name', 'disco virtual'))
+            nums = vd.get('logical_disk_numbers') or []
+            label = ', '.join('Disco lógico '+str(n) for n in nums) if nums else 'Disco lógico não identificado'
+            text.append('  '+name+' | '+label+' | '+str(vd.get('status')))
+            text.append('    Resiliência informada: '+str(vd.get('resiliency_reported', 'desconhecida')))
+            text.append('    Membros físicos informados: '+str(vd.get('member_count', 0)))
+            for m in vd.get('members', []):
+                text.append('      '+str(m.get('model', 'Modelo desconhecido'))+
+                            ' | DeviceId '+str(m.get('device_id', '?'))+
+                            ' | Saúde '+str(m.get('health', 'desconhecida')))
+        text.append('  Membros do pool NÃO garantem backup em hardware independente.')
         text.extend(['','ALERTAS E RECOMENDAÇÕES:'])
         text.extend('  • '+a for a in report.get('recommendations',[]))
         text.extend(['','Sem teste SMART aprofundado, sem temperatura e sem prova de que o backup está em unidade física independente.',
