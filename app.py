@@ -1670,6 +1670,17 @@ class App(tk.Tk):
         for path in boot.get('nt_volume_devices', []):
             text.append('  Dispositivo NT informado: '+str(path))
         text.append('  EFI ativa: NÃO VERIFICADA. Este relatório NÃO autoriza alterações.')
+        nt = d.get('nt_volume_mapping') or {}
+        text.extend(['', 'CORRELAÇÃO DE NOMES NT (QUERYDOSDEVICE — SOMENTE LEITURA):'])
+        for item in nt.get('volumes', []):
+            letters = ', '.join(x+':' for x in item.get('letters', [])) or 'Sem letra'
+            disks = ', '.join('Disco '+str(n) for n in item.get('disk_numbers', [])) or 'Disco desconhecido'
+            device = str(item.get('nt_device') or 'NÃO IDENTIFICADO')
+            text.append('  '+device+' | '+letters+' | '+disks+
+                        ' | '+str(item.get('status')))
+            if item.get('bootmgr_device_match'):
+                text.append('    Corresponde ao dispositivo reportado por BCDEdit; EFI ativa não comprovada.')
+        text.append('  Identificador HarddiskVolume NÃO equivale a número de disco físico.')
         text.extend(['','ALERTAS E RECOMENDAÇÕES:'])
         text.extend('  • '+a for a in report.get('recommendations',[]))
         text.extend(['','Sem teste SMART aprofundado, sem temperatura e sem prova de que o backup está em unidade física independente.',
