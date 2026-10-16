@@ -234,7 +234,9 @@ def show_deep_discovery(parent, container=None):
                 f"{stat['directories']:,} pastas · {stat['files']:,} arquivos examinados · "
                 f"{count} grupos · {sum(c['choice']=='keep' for c in all_cards.get(letter, []))} itens marcados Manter · "
                 f"{stat['errors']} erros · {stat['skipped']} itens não examinados. "
-                'Dados não identificados: use Explorar pastas.'
+                + ('Cobertura completa somente nesta análise. ' if stat['complete']
+                   else 'ATENÇÃO: inventário incompleto — não presumir proteção de todos os arquivos. ')
+                + 'Dados não identificados: use Explorar pastas.'
             ))
 
     def fill_card(iid, card):
