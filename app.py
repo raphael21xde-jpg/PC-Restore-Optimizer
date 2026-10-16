@@ -1681,6 +1681,17 @@ class App(tk.Tk):
             if item.get('bootmgr_device_match'):
                 text.append('    Corresponde ao dispositivo reportado por BCDEdit; EFI ativa não comprovada.')
         text.append('  Identificador HarddiskVolume NÃO equivale a número de disco físico.')
+        dependency = d.get('boot_dependency') or {}
+        text.extend(['', 'DEPENDÊNCIA DO BOOT MANAGER (METADADOS — SOMENTE LEITURA):'])
+        windows = dependency.get('windows_disk_numbers') or []
+        manager = dependency.get('bootmgr_disk_numbers') or []
+        text.append('  Windows em uso: '+(', '.join('Disco '+str(n) for n in windows) if windows else 'NÃO VERIFICADO'))
+        text.append('  BOOTMGR registrado: '+(', '.join('Disco '+str(n) for n in manager) if manager else 'NÃO VERIFICADO'))
+        text.append('  Situação: '+str(dependency.get('status', 'unverified')))
+        text.append('  Entrada UEFI realmente utilizada: NÃO VERIFICADA.')
+        if dependency.get('status') == 'separate_disks_reported':
+            text.append('  ALERTA: BOOTMGR e Windows em discos diferentes. NÃO alterar, desconectar ou formatar partições.')
+        text.append('  Backup e prontidão de reinstalação: NÃO VERIFICADOS.')
         text.extend(['','ALERTAS E RECOMENDAÇÕES:'])
         text.extend('  • '+a for a in report.get('recommendations',[]))
         text.extend(['','Sem teste SMART aprofundado, sem temperatura e sem prova de que o backup está em unidade física independente.',
