@@ -1,0 +1,17 @@
+name: Quality checks
+on:
+  push:
+  pull_request:
+
+jobs:
+  python-checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Python
+        run: python -m compileall -q .
+      - name: Safe unit tests
+        run: python -m unittest discover -s tests -p 'test_runtime_volumes_v070.py' -v
