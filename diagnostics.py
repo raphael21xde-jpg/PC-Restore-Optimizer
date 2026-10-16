@@ -13,6 +13,7 @@ from storage_safety import assess_boot_layout
 from storage_consistency import assess_storage_mapping
 from storage_extents_diagnostic import collect_extent_mapping
 from storage_cross_source import assess_cross_source_storage
+from boot_physical_evidence import collect_bcd_evidence, reconcile_diskdrive_evidence
 
 
 def _powershell_json(code: str, timeout=30):
@@ -73,12 +74,27 @@ def disk_inventory():
     alerts.extend(mapping['issues'])
     extents_mapping = collect_extent_mapping(disks)
     alerts.extend(extents_mapping['issues'])
+    try:
+        win32_drives = _list(_powershell_json(
+            'Get-CimInstance -ClassName Win32_DiskDrive | '
+            'Select-Object Index,Model,Size,Status | ConvertTo-Json -Depth 3',
+            timeout=20))
+        win32_error = None
+    except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        win32_drives, win32_error = [], type(exc).__name__
+    physical_evidence = reconcile_diskdrive_evidence(
+        disks, win32_drives, extents_mapping, wmi_error=win32_error)
+    alerts.extend(physical_evidence['issues'])
+    boot_evidence = collect_bcd_evidence()
+    alerts.extend(boot_evidence['issues'])
     cross_source = assess_cross_source_storage(disks, extents_mapping, mapping, layout)
     alerts.extend(cross_source['issues'])
     alerts.append('Discos dinâmicos, partições EFI ocultas e pools podem exigir conferência no Gerenciamento de Disco e DiskPart (somente leitura).')
     return dict(timestamp=datetime.now().isoformat(), disks=disks, physical_disks=physical, volumes=volumes,
                 partitions=partitions, boot_layout=layout, storage_mapping=mapping,
-                extent_mapping=extents_mapping, cross_source=cross_source, alerts=sorted(set(alerts)))
+                extent_mapping=extents_mapping, cross_source=cross_source,
+                physical_evidence=physical_evidence, boot_evidence=boot_evidence,
+                alerts=sorted(set(alerts)))
 
 
 def system_inventory():
