@@ -17,6 +17,8 @@ jobs:
         run: python -m compileall -q .
       - name: Test GUID volume inventory (no disk writes)
         run: python -m unittest discover -s tests -p "test_volume_inventory_v071.py" -v
+      - name: Test WMI partition and BCD failure clarity (mocked)
+        run: python -m unittest discover -s tests -p "test_wmi_bcd_clarity_v077.py" -v
       - name: Test safe BCD and WMI evidence (mocked)
         run: python -m unittest discover -s tests -p "test_boot_physical_evidence_v076.py" -v
       - name: Test storage evidence reconciliation (mocked)
