@@ -9,6 +9,7 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from storage_safety import assess_boot_layout
 
 
 def _powershell_json(code: str, timeout=30):
@@ -63,9 +64,11 @@ def disk_inventory():
             alerts.append(f'Disco {p.get("DiskNumber")}, partição {p.get("PartitionNumber")}: contém ou pode conter componentes de inicialização.')
     if part_error:
         alerts.append('Não foi possível enumerar todas as partições: '+part_error)
+    layout = assess_boot_layout(disks, partitions)
+    alerts.extend(layout['alerts'])
     alerts.append('Discos dinâmicos, partições EFI ocultas e pools podem exigir conferência no Gerenciamento de Disco e DiskPart (somente leitura).')
     return dict(timestamp=datetime.now().isoformat(), disks=disks, physical_disks=physical, volumes=volumes,
-                partitions=partitions, alerts=sorted(set(alerts)))
+                partitions=partitions, boot_layout=layout, alerts=sorted(set(alerts)))
 
 
 def system_inventory():
