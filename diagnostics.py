@@ -17,6 +17,7 @@ from boot_physical_evidence import collect_bcd_evidence, reconcile_diskdrive_evi
 from wmi_partition_evidence import summarize_wmi_partitions
 from nt_volume_mapping import summarize_nt_aliases
 from boot_dependency import assess_bootmgr_disk_dependency
+from firmware_order_evidence import collect_firmware_order
 
 
 def _powershell_json(code: str, timeout=30):
@@ -107,6 +108,8 @@ def disk_inventory():
     alerts.extend(nt_volume_mapping['issues'])
     boot_dependency = assess_bootmgr_disk_dependency(nt_volume_mapping, layout)
     alerts.extend(boot_dependency['issues'])
+    firmware_order = collect_firmware_order(nt_volume_mapping, layout)
+    alerts.extend(firmware_order['issues'])
     cross_source = assess_cross_source_storage(disks, extents_mapping, mapping, layout)
     alerts.extend(cross_source['issues'])
     alerts.append('Discos dinâmicos, partições EFI ocultas e pools podem exigir conferência no Gerenciamento de Disco e DiskPart (somente leitura).')
@@ -115,7 +118,8 @@ def disk_inventory():
                 extent_mapping=extents_mapping, cross_source=cross_source,
                 physical_evidence=physical_evidence, partition_evidence=partition_evidence,
                 boot_evidence=boot_evidence, nt_volume_mapping=nt_volume_mapping,
-                boot_dependency=boot_dependency, alerts=sorted(set(alerts)))
+                boot_dependency=boot_dependency, firmware_order=firmware_order,
+                alerts=sorted(set(alerts)))
 
 
 def system_inventory():

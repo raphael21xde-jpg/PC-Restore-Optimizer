@@ -1692,6 +1692,26 @@ class App(tk.Tk):
         if dependency.get('status') == 'separate_disks_reported':
             text.append('  ALERTA: BOOTMGR e Windows em discos diferentes. NÃO alterar, desconectar ou formatar partições.')
         text.append('  Backup e prontidão de reinstalação: NÃO VERIFICADOS.')
+        firmware = d.get('firmware_order') or {}
+        text.extend(['', 'ORDEM DE BOOT REGISTRADA NO UEFI (BCDEDIT — SOMENTE LEITURA):'])
+        text.append('  Estado da consulta: '+str(firmware.get('status', 'unavailable')))
+        if firmware.get('reason') not in ('none', None):
+            text.append('  Motivo: '+str(firmware.get('reason')))
+        count = firmware.get('order_entry_count')
+        if count is not None:
+            text.append('  Entradas registradas na ordem: '+str(count))
+        if firmware.get('bootmgr_in_order') is True:
+            text.append('  Windows Boot Manager: PRESENTE na ordem de firmware.')
+            device = firmware.get('bootmgr_nt_device')
+            if device:
+                text.append('  Dispositivo registrado: '+str(device))
+        registered = firmware.get('bootmgr_disks') or []
+        if registered:
+            text.append('  Disco(s) informado(s): '+', '.join('Disco '+str(x) for x in registered))
+        if firmware.get('status') == 'registered_bootmgr_cross_disk':
+            text.append('  ALERTA: BOOTMGR registrado em disco diferente do Windows.')
+        text.append('  UEFI BootCurrent: NÃO VERIFICADO; EFI ativa: NÃO COMPROVADA.')
+        text.append('  Este diagnóstico NÃO autoriza formatação, desconexão nem reinstalação.')
         text.extend(['','ALERTAS E RECOMENDAÇÕES:'])
         text.extend('  • '+a for a in report.get('recommendations',[]))
         text.extend(['','Sem teste SMART aprofundado, sem temperatura e sem prova de que o backup está em unidade física independente.',
