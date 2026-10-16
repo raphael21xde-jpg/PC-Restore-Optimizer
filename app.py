@@ -1645,9 +1645,28 @@ class App(tk.Tk):
                         ('PRESENTE' if item.get('present_in_wmi') else 'NÃO LOCALIZADO'))
             if item.get('present_in_wmi'):
                 text.append('     Modelo informado: '+str(item.get('wmi_model', '')))
+        part_evidence = d.get('partition_evidence') or {}
+        text.extend(['', 'PARTIÇÕES COMPLEMENTARES (WIN32_DISKPARTITION — SOMENTE LEITURA):'])
+        for group in part_evidence.get('disks_of_interest', []):
+            text.append('  Disco '+str(group.get('disk_index'))+' | '+str(group.get('status')))
+            for item in group.get('partitions', []):
+                size = str(item.get('bytes')) if item.get('bytes') is not None else '?'
+                text.append('    Partição '+str(item.get('partition_index'))+
+                            ' | '+str(item.get('type'))+' | '+size+' bytes')
+                if item.get('efi_type_candidate'):
+                    text.append('      POSSÍVEL TIPO EFI (não comprova EFI ativa)')
         boot = d.get('boot_evidence') or {}
         text.extend(['', 'GERENCIADOR DE BOOT (BCDEDIT /ENUM — SOMENTE LEITURA):'])
         text.append('  Estado da consulta: '+str(boot.get('status', 'indisponível')))
+        if boot.get('status') == 'unavailable':
+            reason = {
+                'permission_denied': 'Acesso negado. Pode exigir executar diagnóstico como administrador.',
+                'timeout': 'Tempo limite excedido.',
+                'tool_missing': 'BCDEdit não encontrado.',
+                'query_failed': 'Consulta falhou por motivo ainda não determinado.',
+                'unsupported_os': 'Sistema não suportado.'
+            }.get(boot.get('reason'), 'Motivo desconhecido.')
+            text.append('  Motivo: '+reason)
         for path in boot.get('nt_volume_devices', []):
             text.append('  Dispositivo NT informado: '+str(path))
         text.append('  EFI ativa: NÃO VERIFICADA. Este relatório NÃO autoriza alterações.')
