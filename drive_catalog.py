@@ -63,12 +63,15 @@ def coverage(report, drive):
     stats = report.get('volume_stats', {}).get(drive, {})
     errors = sum(volume_of(e.get('path')) == drive for e in report.get('errors', []))
     skipped = sum(volume_of(e.get('path')) == drive for e in report.get('skipped', []))
+    # A finished scan with errors or skipped paths is NOT fully complete.
+    complete = (report.get('status') == 'concluida' and
+                not errors and not skipped and drive in report.get('volume_stats', {}))
     return {
         'directories': stats.get('directories', 0),
         'files': stats.get('files', 0),
         'errors': errors,
         'skipped': skipped,
-        'complete': report.get('status') not in ('cancelada_parcial', None),
+        'complete': complete,
     }
 
 
