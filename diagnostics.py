@@ -10,6 +10,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from storage_safety import assess_boot_layout
+from storage_consistency import assess_storage_mapping
 
 
 def _powershell_json(code: str, timeout=30):
@@ -19,7 +20,7 @@ def _powershell_json(code: str, timeout=30):
     if not program:
         raise RuntimeError('PowerShell não foi encontrado.')
     result = subprocess.run([program, '-NoProfile', '-NonInteractive', '-Command',
-                             "$ErrorActionPreference='Stop'; " + code],
+                             "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); $ErrorActionPreference='Stop'; " + code],
                             capture_output=True, text=True, encoding='utf-8-sig',
                             errors='replace', timeout=timeout, check=False,
                             creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -66,9 +67,12 @@ def disk_inventory():
         alerts.append('Não foi possível enumerar todas as partições: '+part_error)
     layout = assess_boot_layout(disks, partitions)
     alerts.extend(layout['alerts'])
+    mapping = assess_storage_mapping(disks, partitions, volumes, partition_error=part_error)
+    alerts.extend(mapping['issues'])
     alerts.append('Discos dinâmicos, partições EFI ocultas e pools podem exigir conferência no Gerenciamento de Disco e DiskPart (somente leitura).')
     return dict(timestamp=datetime.now().isoformat(), disks=disks, physical_disks=physical, volumes=volumes,
-                partitions=partitions, boot_layout=layout, alerts=sorted(set(alerts)))
+                partitions=partitions, boot_layout=layout, storage_mapping=mapping,
+                alerts=sorted(set(alerts)))
 
 
 def system_inventory():
