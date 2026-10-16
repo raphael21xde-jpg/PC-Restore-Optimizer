@@ -11,6 +11,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
 from deep_discovery import scan, local_drives
+from volume_inventory import collect_volume_inventory
 from discovery_groups import record_indices, family, selected_records, other_osu_editions_under_selection
 from drive_catalog import (groups_by_volume, coverage, list_folder_page,
                            safe_to_mark, CATEGORIES)
@@ -92,6 +93,46 @@ def show_deep_discovery(parent, container=None):
             extras.append(path)
             status.set('Pasta adicionada à varredura: ' + path)
     ttk.Button(scope, text='Adicionar pasta específica', command=add_root).pack(side='left', padx=8)
+
+    def open_volume_inventory():
+        """Read-only metadata view, including volumes without drive letters."""
+        if state['busy']:
+            messagebox.showinfo('Inventário', 'Aguarde a varredura em andamento.', parent=win)
+            return
+        snapshot = collect_volume_inventory()
+        popup = tk.Toplevel(win)
+        popup.title('Inventário de volumes Windows — somente leitura')
+        popup.geometry('850x460')
+        pane = ttk.Frame(popup, padding=12)
+        pane.pack(fill='both', expand=True)
+        status_text = ('Consulta de metadados finalizada' if snapshot['status'] == 'ok'
+                       else 'ATENÇÃO: inventário de volumes parcial ou indisponível')
+        ttk.Label(pane, text=status_text, font=('Segoe UI', 12, 'bold')).pack(anchor='w')
+        ttk.Label(pane, text=snapshot.get('notice', ''), wraplength=800).pack(anchor='w', pady=6)
+        body = ttk.Frame(pane)
+        body.pack(fill='both', expand=True)
+        viewer = tk.Text(body, wrap='word', background='#192438', foreground='#EFF4FF',
+                         insertbackground='#EFF4FF', relief='flat')
+        scrollbar = ttk.Scrollbar(body, orient='vertical', command=viewer.yview)
+        viewer.configure(yscrollcommand=scrollbar.set)
+        viewer.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        for index, volume in enumerate(snapshot['volumes'], 1):
+            locations = ', '.join(volume['mount_points']) or '(sem letra ou pasta montada)'
+            viewer.insert('end', f'Volume {index}: {volume["drive_type"]}\n'
+                                 f'ID: {volume["volume_id"]}\n'
+                                 f'Montagens: {locations}\n')
+            if volume['needs_manual_review']:
+                viewer.insert('end', 'ATENÇÃO: volume não incluído na varredura automática.\n')
+            elif not volume['has_letter']:
+                viewer.insert('end', 'Pasta montada: examinar separadamente; não há aba própria.\n')
+            viewer.insert('end', '\n')
+        for issue in snapshot.get('issues', ()):
+            viewer.insert('end', 'LACUNA: ' + issue + '\n')
+        viewer.configure(state='disabled')
+        ttk.Button(pane, text='Fechar', command=popup.destroy).pack(anchor='e', pady=5)
+
+    ttk.Button(scope, text='Ver todos os volumes', command=open_volume_inventory).pack(side='left', padx=8)
 
     controls = ttk.Frame(frame)
     controls.pack(fill='x', pady=5)

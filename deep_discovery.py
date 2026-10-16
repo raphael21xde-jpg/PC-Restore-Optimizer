@@ -25,9 +25,13 @@ def regular(path, directory=False):
 
 
 def local_drives():
-    if os.name != 'nt':return []
-    import ctypes
-    return [f'{chr(c)}:\\' for c in range(65,91) if ctypes.windll.kernel32.GetDriveTypeW(f'{chr(c)}:\\') in (2,3)]
+    """Local letter roots from volume-GUID inventory; no hardcoded disks.
+
+    Folder-only mounts and GUID-only volumes remain in the metadata inventory,
+    but are not silently added to legacy per-letter selection tabs.
+    """
+    from volume_inventory import collect_volume_inventory, letter_scan_roots
+    return letter_scan_roots(collect_volume_inventory())
 
 
 def classic_data(root, names, allowed_roots=None):
