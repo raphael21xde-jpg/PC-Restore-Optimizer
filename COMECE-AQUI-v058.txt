@@ -1,0 +1,60 @@
+PC RESTORE & OPTIMIZER v0.5.8 — TELEMETRIA REAL EXPERIMENTAL
+=============================================================
+
+O que mudou:
+  - Agora é possível medir temperaturas e utilização em tempo real na aba
+    Otimização > Temperaturas e sessões, salvar relatório JSON + CSV e
+    comparar as médias de sessões realizadas ANTES e DEPOIS de um ajuste.
+  - GPUs NVIDIA: consulta automática via nvidia-smi, quando disponível no driver.
+  - CPU/GPU/FPS adicionais: acompanha arquivo de histórico .hml do MSI Afterburner.
+  - A captura periódica NÃO é uma medição de frametime por quadro. O 1% low / 0,2%
+    low ainda exige benchmark por quadro na aba Benchmarks (CapFrameX ou OCAT).
+
+PASSO A PASSO, SEM ALTERAR CONFIGURAÇÕES DE DESEMPENHO
+1. Extraia o ZIP em nova pasta; não apague a v0.5.7 ou seus backups.
+2. Para conservar seleções, copie preferencias-v05.json da versão anterior.
+3. Execute INICIAR.bat e abra Otimização > 2 Temperaturas e sessões.
+4. Se possuir NVIDIA, você já pode clicar em Iniciar medição e obter GPU
+   temperatura/uso/potência, caso o driver disponibilize esses sensores.
+5. Para MEDIR A TEMPERATURA DA CPU com o MSI Afterburner que você já tem:
+   a) Abra MSI Afterburner > Configurações > Monitoramento.
+   b) Na lista de gráficos/sensores, confira CPU temperature / CPU package
+      temperature e GPU temperature, GPU usage, power, framerate se existentes.
+   c) Habilite "Log history to file" / "Registrar histórico em arquivo".
+   d) Escolha por exemplo Documentos\\PCRO-Monitoramento.hml e clique Aplicar.
+      Deixe o Afterburner aberto. Evite gravar em Program Files se houver
+      bloqueio de permissões.
+   e) No PC Restore, clique "Localizar" ou "Escolher .hml" uma única vez.
+      O caminho será lembrado em %%LOCALAPPDATA%%\\PC-Restore-Optimizer.
+6. Defina o cenário (exemplo: CS2, mesmo mapa e 1440p), marque ANTES e clique
+   "Iniciar medição". Jogue por alguns minutos e clique "Parar e salvar sessão".
+7. Repita 3 sessões ANTES. Se decidir aplicar algum ajuste reversível, registre
+   o estado anterior. Depois repita o MESMO cenário 3 vezes marcando DEPOIS.
+8. Clique "Comparar sessões" para ver métricas de temperatura, GPU/consumo e
+   FPS amostrado. Para comparação formal de 1% lows, use a aba Benchmarks.
+
+SE UM DADO APARECER COMO "INDISPONÍVEL":
+Não significa 0 grau ou 0 watt. Significa que os sensores selecionados não
+forneceram a leitura. Para CPU, verifique o sensor e o histórico do Afterburner;
+para GPU NVIDIA, verifique se nvidia-smi é reconhecido pelo driver.
+O app não inventa valores nem tenta medir CPU via MSAcpi_ThermalZoneTemperature.
+
+ONDE FICAM AS MEDIÇÕES
+%%LOCALAPPDATA%%\\PC-Restore-Optimizer\\sessoes-monitoramento\\
+Arquivos de sessão: sessao-*.json e sessao-*.csv.
+O app não envia nada à internet.
+
+PROTEÇÕES
+- Nenhum monitor altera clocks, voltagem, ventoinha, BIOS, drivers ou arquivos.
+- Apenas o recurso Energia reversível pode mudar o plano de energia — com
+  confirmação, registro do plano anterior e possibilidade de desfazer.
+- F: contém a partição EFI do boot; G: contém dados importantes e não deve
+  ser formatado. A ferramenta não formata discos.
+- O trabalho HONEST relata ganhos em dois PCs específicos, mas não publica
+  todos os comandos/parâmetros. NÃO há garantia de ganhos no seu hardware.
+- Mantenha backups e faça segunda cópia física de dados insubstituíveis.
+
+FONTES TÉCNICAS
+Artigo enviado: HONEST (Revista Scientia 2026, DOI 10.5281/zenodo.20761339).
+NVIDIA: https://nvidia.custhelp.com/app/answers/detail/a_id/3751
+MSI: https://www.msi.com/support/technical_details/VGA_MSI_Utility_AfterBurner

@@ -1,0 +1,25 @@
+ALTERAÇÕES v0.5.18 — RESTAURAÇÃO AGRUPADA (16/10/2026)
+
+ESCOPO: apenas a interface de seleção da restauração e seu índice visual.
+
+- Substituída lista paginada de 400 arquivos por árvore de grupos, categorias,
+  pastas e arquivos com expansão sob demanda.
+- Os filhos de pastas muito grandes aparecem em lotes de até 160 itens.
+- A marcação do grupo inclui TODOS os arquivos verificados daquele grupo,
+  independentemente da busca ou de quais lotes estão visíveis.
+- Marcações totais, parciais e vazias identificadas por [x], [-] e [ ].
+- Busca por caminho/nome/grupo com 250 ms de debounce; seleção persistente.
+- Mostra contagem e tamanho total selecionados, mesmo filtrados.
+- Organiza por dono registrado no manifesto ou evidência de pasta.
+- Distingue osu! clássico e lazer onde há evidências suficientes.
+- Arquivos sem associação vão para grupo dedicado (sem inventar vínculo).
+- Continua restaurando exclusivamente para NOVA PASTA de conferência.
+- Reusa SHA-256, verificação, progresso, cancelamento e jobs da v0.5.17.
+- Mantém compatibilidade com manifestos v0.4 e v0.5.
+- Nenhuma operação de exclusão, formatação ou sobrescrita habilitada.
+
+TESTES AUTOMATIZADOS
+- 153 aprovados sob Linux/Xvfb (Tkinter), incluindo cenário sintético com
+  22.611 arquivos e validação de seleção e agrupamento.
+- É necessária conferência da GUI e dos nomes reais de agrupamento no Windows.
+- Não houve benchmark nem restauração real de um backup de 120 GB.

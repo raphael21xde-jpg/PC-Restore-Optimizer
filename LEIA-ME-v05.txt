@@ -1,0 +1,56 @@
+PC RESTORE & OPTIMIZER v0.5.5 — UX/UI + COFRE DE NAVEGADORES
+===========================================================
+
+O aplicativo prepara escolhas e backups antes da futura reinstalação do Windows.
+NÃO FORMATA, NÃO EXCLUI DADOS, NÃO DESINSTALA NADA, NÃO REINSTALA WINDOWS.
+Não foi validado no Windows deste computador: esta versão ainda é experimental.
+
+COMO INSTALAR SEM PERDER SUAS ESCOLHAS
+1. Extraia este ZIP numa NOVA pasta, separada da v0.5.4.1 e de seus backups.
+2. Se quiser preservar as escolhas, copie preferencias-v05.json da v0.5.4.1
+   para esta nova pasta ANTES de iniciar. NÃO copie a pasta inteira da versão antiga.
+3. Clique duas vezes em INICIAR.bat. Requer Python 3.10+ com Tkinter no Windows.
+4. Para criar cofres criptografados de navegadores, execute INSTALAR-CRIPTOGRAFIA.bat
+   caso ainda não tenha instalado a biblioteca cryptography.
+5. Mantenha um backup adicional em dispositivo físico independente.
+
+NOVA NAVEGAÇÃO
+- Visão geral: botão para descobrir jogos e apps; próximas etapas e progresso.
+- Jogos e aplicativos: pesquisar instalações/saves/configurações; filtro por nome;
+  escolher Manter, Não reinstalar ou Pendente; conferir caminhos candidatos.
+- Arquivos e pastas: incluir pastas ou arquivos extras com seleção explícita.
+- Revisar backup: escolher destino, calcular prévia e verificar avisos.
+  O botão de iniciar permanece DESABILITADO até uma prévia sem bloqueios.
+- Backups e testes: conferir status, SHA-256 e testar uma restauração isolada.
+- Navegadores e senhas: perfis Chrome, Edge, Firefox, Brave, Vivaldi, Opera,
+  Opera GX e Chromium; Sync oficial, CSV/HTML manuais, cofre AES-256 e testes.
+- Discos e diagnóstico: consulta SOMENTE LEITURA ao hardware e partições.
+- Após reinstalar Windows: exportar e carregar plano; salvar/restaurar saves
+  em pasta de conferência, sem sobrescrever arquivos originais.
+
+Atalhos: Ctrl+1 visão geral; Ctrl+2 jogos/apps; Ctrl+3 arquivos;
+Ctrl+4 revisão; Ctrl+5 histórico; Ctrl+6 navegador; Ctrl+7 discos;
+Ctrl+8 plano após Windows. Tab/Enter/Espaço também navegam pelo menu.
+
+REGRAS IMPORTANTES
+- Detecção de save/configuração NÃO significa que foi feito backup.
+- 'Possível / conferir' exige confirmação humana antes de incluir no plano.
+- 'Manter' significa preservar o que foi identificado e registrar a intenção
+  de reinstalar; executáveis e drivers NÃO são copiados automaticamente.
+- O aplicativo não garante dados em nuvem, licenças, senhas ou sessões.
+- Não copie dados de uma unidade para o MESMO disco físico como única proteção.
+- NUNCA FORMATE O G:. O G: usa Storage Spaces sem redundância e tem seus dados.
+- O SSD associado ao F: contém a partição EFI de inicialização do Windows e
+  arquivos pessoais. Não apague/reparticione o disco F:.
+- O Windows atual inicia pelo SSD do F: apesar de o sistema estar no C:.
+- O planejamento de formatação para F: e G: está bloqueado na interface.
+- Não reinstale o Windows até conferir o backup e ter uma segunda cópia física.
+
+ARQUIVOS E LIMITAÇÕES
+- preferencias-v05.json: seleções. Pode copiar entre pastas v0.5.x.
+- Arquivos de backup ficam no destino escolhido e contêm manifesto SHA-256.
+- O cofre de navegador requer frase-senha; guarde-a fora deste computador.
+- Para instruções e limitações detalhadas, leia COMECE-AQUI-v055.txt.
+- Não envie exports de senha ou logs privados para outras pessoas.
+- O aplicativo não garante a recuperação de todos os aplicativos e saves.
+- Consulte DESIGN-UX-v054.md para os requisitos de experiência e estados.

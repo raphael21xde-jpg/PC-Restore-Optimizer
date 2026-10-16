@@ -1,0 +1,13 @@
+MUDANÇAS EM RELAÇÃO À 0.4
+- 7 abas: adicionados Catálogo de jogos/aplicativos, Diagnóstico e Recuperação.
+- Backup com nome amigável opcional; rótulo alterável sem renomear backups antigos.
+- Confirmação Sim/Não para operação de cópia não destrutiva.
+- Restauração seletiva de vários arquivos para pasta isolada + verificação SHA-256.
+- Varredura local (Steam / Epic / GOG / Registro / atalhos / pastas conhecidas de saves).
+- Marcar jogo para manter associa os saves RECONHECIDOS ao plano de backup.
+- Listagem de softwares de periféricos com seleção manter/não reinstalar.
+- Consulta somente leitura da saúde reportada do armazenamento, partições,
+  volumes, CPU, GPU e RAM, com recomendações sem execução automática.
+- Exportação/importação JSON do plano de recuperação e restauração de saves por jogo.
+- Compatibilidade com manifestos v0.4 e isolamento das preferências da v0.5.
+- Nenhuma alteração/desinstalação ou operação de formatação é executada.

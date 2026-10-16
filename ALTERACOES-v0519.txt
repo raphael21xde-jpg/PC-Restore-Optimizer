@@ -1,0 +1,39 @@
+PC Restore & Optimizer v0.5.19 — Alterações técnicas
+
+NOVO: transfer_engine.py
+- Estratégias com blocos de 1, 4 ou 8 MiB conforme evidência física de mídia.
+- Meter de tempo, bytes, arquivos/s, velocidade, ETA; limitação de callbacks.
+- Relatórios de operações, locais e sem telemetria externa.
+
+ALTERADO: diagnostics.py
+- Acrescenta PhysicalDisk/MediaType ao inventário de armazenamento existente.
+- Identificação explícita conserva 'desconhecido' quando associação incerta.
+
+ALTERADO: backup_core.py
+- Manifests v0.4 existentes seguem aceitos.
+- Novos backups recebem engine_version=0.5.19 e plan_fingerprint.
+- Grava estado inicial e checkpoints de operação para retomada.
+- Retomada manual valida estritamente o plano; arquivos concluídos passam
+  novamente por SHA-256; órfãos de crash passam por hash duplo origem/destino.
+- Mantida cópia de arquivos temporários, fsync, validação do hash de cópia,
+  metadados de origem (best effort) e substituição atômica no diretório do backup.
+
+ALTERADO: backup_features.py
+- Restauração isolada com journal vinculado ao manifesto original.
+- Retomada manual revalida SHA-256 de cada arquivo já restaurado.
+- Mantida comparação de SHA-256 lido ao copiar e no arquivo restaurado.
+
+ALTERADO: app.py e restore_ui.py
+- Cronômetro, taxas e ETA nas duas operações.
+- Botão Retomar backup interrompido e Retomar restauração interrompida.
+- Resumo de tempo e taxas nos diálogos de conclusão.
+
+NOVOS TESTES: tests/test_transfer_v0519.py
+- Categorização HDD / SSD SATA / NVMe e mídia ambígua.
+- Backup retomado com SHA-256 e mesmo plano; bloqueio se houver mudanças.
+- Recuperação de arquivo criado antes do checkpoint (simulação de crash).
+- Restauração interrompida, recuperação de arquivo alterado e bloqueio de
+  journal já concluído.
+
+A v0.5.19 privilegia segurança; não habilita concorrência cega em um mesmo
+volume, nem afirma ganhos de velocidade antes de medir em hardware real.

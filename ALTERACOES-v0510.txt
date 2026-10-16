@@ -1,0 +1,22 @@
+ATUALIZAÇÃO EXPERIMENTAL v0.5.10
+==============================
+
+1) Novo motor reinstall_audit.py: auditoria read-only de TODOS os arquivos de
+   um backup concluído, revalidação por SHA-256 e tamanho, verificação de
+   caminhos do manifesto, detecção de arquivos alterados, ausentes e duplicados.
+   Resultado nunca equivale a autorização de formatação.
+2) Botão de auditoria e cancelamento na página Após reinstalar Windows;
+   progresso de verificação e exportação de relatório JSON.
+3) Novo motor stutter_deep.py: comparação CSV completo x CSV sem os primeiros
+   5 segundos, contagem de frames >=8/12/16.67/25/33.33/50ms, análise por
+   janelas de 5 segundos, os piores quadros, limiar adaptativo por sessão.
+4) Botão Análise aprofundada na aba Otimização / Stutters.
+5) Preservados backups, cofre de navegadores, restauração de teste,
+   telemetria, PresentMon e planejamento anterior.
+6) 90 testes automatizados executados na simulação, incluindo novos testes
+   de corrupção, traversal, duplicatas e stutters.
+
+NÃO IMPLEMENTADO: formatação, manipulação automática de EFI/boot, recuperação
+universal de senhas de navegador, reinstalação automática de aplicativos,
+otimização 'perfeita' ou garantia de FPS. Necessário validação presencial no
+Windows e backup físico redundante antes de qualquer reinstalação.

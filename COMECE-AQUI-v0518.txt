@@ -1,0 +1,40 @@
+PC Restore & Optimizer v0.5.18 — Restauração organizada em grupos
+
+MUDANÇA DESTA VERSÃO
+Apenas a janela de RESTAURAÇÃO (Histórico > Escolher arquivo para testar e
+Testar restauração de arquivo pequeno) foi alterada. O algoritmo de backup,
+a restauração verificada SHA-256 e as áreas de jogos, otimização e navegação
+continuam como na v0.5.17.
+
+COMO USAR
+1. Feche o aplicativo anterior. Extraia este ZIP em uma PASTA NOVA.
+2. Se você tem preferencias-v05.json e deteccao-detalhada-v0514.json,
+   copie-os para esta nova pasta. Mantenha os backups antigos no local.
+3. Execute INICIAR.bat; entre em Histórico e selecione seu backup existente.
+4. Clique em "Escolher arquivo para testar". A janela de restauração abre
+   organizada por jogos/apps, categorias e pastas.
+5. Clique na seta ao lado do grupo para expandir; clique em [ ] na coluna
+   Restaurar para marcar/desmarcar jogo, pasta ou arquivo inteiro.
+6. A busca preserva os arquivos marcados mesmo fora do filtro. O texto sob
+   a árvore mostra a seleção TOTAL e seu tamanho, não só itens visíveis.
+7. Em uma pasta muito cheia, use o item "Mostrar mais ..." para exibir mais
+   arquivos em lotes de até 160. A marcação da pasta abrange todos eles.
+8. Clique em "Restaurar arquivos marcados para pasta nova". O app SEMPRE cria
+   uma nova pasta de teste e verifica SHA-256 dos arquivos restaurados.
+9. Para teste inicial, use "Testar restauração de arquivo pequeno".
+
+AGRUPAMENTOS
+- Usa preferencialmente os nomes e categorias identificados no manifesto.
+- Distingue osu! clássico e osu! lazer quando existe evidência no caminho.
+- Agrupa músicas/beatmaps, skins, saves, configurações e outros arquivos.
+- Pastas de Steam/Xbox são rotuladas como PASTAS, não como instalações
+  confirmadas. Sem evidência suficiente, fica "sem associação confirmada".
+- Um arquivo tem uma única entrada e mantém seu caminho de restauração.
+
+SEGURANÇA E LIMITES
+- NÃO movimenta/exclui o backup, NÃO formata e NÃO altera originais.
+- Backups antigos seguem compatíveis; a indexação visual não regrava manifestos.
+- A cópia e verificação (SHA-256), cancelamento e progresso usam v0.5.17.
+- A interface só carrega os itens visíveis, não os 22 mil arquivos de uma vez.
+- Um ZIP criado aqui não foi testado no Windows real nem sobre seus backups.
+  Foram executados testes automatizados em Linux/Xvfb.

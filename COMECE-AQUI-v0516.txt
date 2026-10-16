@@ -1,0 +1,23 @@
+PC Restore & Optimizer v0.5.16 — Restauração responsiva
+
+Correção: leitura do manifesto, cópia e SHA-256 fora da interface.
+Lista paginada (400 arquivos), filtro por nome/caminho e cancelamento.
+Seleção vale apenas para a página atual; mudar página/filtro limpa a seleção.
+Restauração cria pasta nova. Originais não são substituídos.
+Cancelamento/falha deixa pasta parcial identificada por ESTADO-RESTAURACAO.json.
+Não trate uma restauração parcial como concluída.
+
+ATUALIZAÇÃO
+1. Aguarde a operação antiga terminar e feche a versão anterior.
+2. Extraia este ZIP em uma pasta nova.
+3. Copie preferencias-v05.json e deteccao-detalhada-v0514.json da versão anterior, se existirem.
+4. Execute INICIAR.bat.
+5. Em Backups e testes selecione o backup já existente. Não precisa refazer a cópia.
+6. Escolha arquivo para testar, filtre Songs, selecione um arquivo e restaure para uma pasta de teste.
+7. Aguarde a confirmação SHA-256 e abra o arquivo restaurado para conferir.
+
+VALIDAÇÃO
+144 testes descobertos: 133 aprovados; 11 de interface ignorados por falta de tela gráfica no Linux.
+Inclui novos testes de worker, cancelamento, integridade e marcação de restauração parcial.
+Interface e integração no Windows ainda precisam de teste real.
+Esta atualização não altera a detecção de aplicativos nem resolve duplicações de nomes no plano.

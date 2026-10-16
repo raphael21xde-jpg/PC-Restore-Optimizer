@@ -1,0 +1,84 @@
+PC RESTORE & OPTIMIZER v0.5.14 — VARREDURA DETALHADA
+Build experimental. A nova varredura foi testada com estruturas simuladas;
+registro, COM, Store, VERSIONINFO e interface ainda precisam de validação Windows.
+
+INSTALAÇÃO DA ATUALIZAÇÃO
+1. Feche a versão anterior. Extraia em uma pasta NOVA.
+2. Copie preferencias-v05.json da versão com suas escolhas reais para a nova
+   pasta. Não apague a antiga, seus backups ou cofres.
+3. Abra INICIAR.bat. Aguarde a pesquisa inicial de jogos/apps terminar.
+4. O que preservar > Varredura detalhada.
+5. Marque as unidades locais desejadas e clique Iniciar varredura detalhada.
+   Pode acrescentar uma pasta específica para verificar um local conhecido.
+6. Aguarde. Há progresso de pastas/arquivos e Cancelar para guardar resultado
+   parcial. A consulta inicial de metadados pode levar até 3 minutos.
+
+O QUE A BUSCA USA
+- Registro de aplicativos instalados: fabricante, versão, pasta de instalação,
+  caminho de ícone/desinstalador. Não executa comandos de desinstalação.
+- Destinos de atalhos da Área de Trabalho e Menu Iniciar, incluindo pastas comuns.
+  Resolve .lnk sem executar seus programas.
+- Identidade de pacotes Microsoft Store DO USUÁRIO ATUAL e caminhos de estado.
+- Varredura recursiva das unidades escolhidas, sem limite artificial de profundidade.
+- Nome normalizado de pastas, removendo sufixos de versão; não associa só fabricante.
+- ProductName, CompanyName e FileVersion dos executáveis via recurso VERSIONINFO.
+  Esses metadados são declarados pelo arquivo, não são validação de assinatura.
+- Caminhos conhecidos de AppData/ProgramData/Documentos e catálogo de saves/jogos.
+- Aplicativos portáteis com produto declarado podem aparecer como candidatos.
+- Metadados e caminhos conhecidos também são consultados fora das raízes escolhidas;
+  o escopo de travessia de diretórios continua sendo o das unidades/pastas marcadas.
+
+OSU! CLÁSSICO
+Procura estruturas como osu!.exe + osu!.db (ou Songs + configuração osu!).
+Identifica separadamente Songs, Skins, Replays, Data/r, coleção, índice, pontuações
+locais e arquivos de configuração. Lê SOMENTE a chave BeatmapDirectory para achar
+músicas em caminho personalizado; nenhum valor de senha é incluído no relatório.
+O arquivo de configuração completo pode conter dados privados; confira antes
+ de selecioná-lo para backup.
+A estrutura client.realm + files é tratada como lazer, sem atribuí-la ao clássico.
+Instalação WinGet de osu! clássico ou edição não confirmada é bloqueada para evitar
+substituição pelo lazer. Preserve a instalação/dados clássicos e use distribuição
+stable oficial quando precisar reinstalar. Site: https://osu.ppy.sh/home/download
+
+COMO USAR OS RESULTADOS
+1. Digite osu no filtro. Veja aplicativo, tipo de conteúdo, caminho e evidência.
+2. Confira onde estão Songs e os demais dados. "Estrutura identificada" não prova
+   que todos os mapas estejam íntegros, nem que um backup tenha sido realizado.
+3. Selecione apenas os caminhos que quer preservar e clique Incluir caminhos
+   selecionados no backup (após conferir). Isso marca Manter, sem iniciar cópia.
+4. Vá a Revisar backup, recalcule e confira tamanho, origens e destino antes de copiar.
+5. Restaure uma amostra depois da cópia e audite o manifesto. O cofre de navegador
+   continua sendo o fluxo adequado para favoritos/senhas; não copie perfil inteiro
+   como substituição de um cofre.
+Associações revisadas e edições são guardadas junto às preferências. O relatório
+completo fica em deteccao-detalhada-v0514.json, junto ao aplicativo. Ao atualizar
+novamente, copie também esse relatório se quiser manter candidatos não aprovados.
+
+COBERTURA E LACUNAS
+- Destino de backup e pasta desta versão são excluídos para não identificar cópias
+  como instalações. Não mova o programa para a raiz de um disco.
+- Links simbólicos/junções não são seguidos. Acessos negados e exclusões aparecem
+  no relatório, sem alterar permissões de pastas protegidas.
+- Não examina arquivos compactados/criptografados, contas remotas/nuvem nem todos
+  os registros de usuários que não estão carregados. Microsoft Store só usuário atual.
+- Executáveis sem produto reconhecido aparecem como não associados no relatório.
+- Não monitora em tempo real arquivos/registro acessados por cada processo. Aplicativos
+  podem usar dados com nomes sem relação, bancos compartilhados, nuvem, plugins,
+  DRM e licenças que esta busca não identifica ou transfere.
+- Correspondência de nome é CANDIDATO, não propriedade comprovada. Pastas de
+  instalação não equivalem a dados completos nem a reinstalação garantida.
+- Nem uma varredura sem erros comprova que encontrou TODOS os dados de TODOS os apps.
+- Varredura lê metadados e a chave de caminho do osu!, não copia/apaga/instala nada.
+
+VALIDAÇÃO
+127 testes encontrados: 116 passaram, 11 de interface pulados por falta de display.
+14 testes novos cobrem profundidade, identidade por registro, não associação só
+por fabricante, links, exclusões, cancelamento, permissões, estrutura osu! clássico,
+Songs personalizado, distinção lazer, bloqueio de troca de edição, preservação de
+edição no plano, produto de executável, executáveis desconhecidos e msiexec compartilhado.
+A validação do Windows e de seu conjunto real de aplicativos ainda está pendente.
+
+REFERÊNCIAS DO OSU!
+https://osu.ppy.sh/wiki/en/Client/Program_files
+https://github.com/ppy/osu/wiki/User-file-storage
+https://github.com/ppy/osu/wiki/Legacy-database-file-structure

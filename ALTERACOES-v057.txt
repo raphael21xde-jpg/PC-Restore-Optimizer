@@ -1,0 +1,11 @@
+PC RESTORE v0.5.7 — ESTUDO HONEST / OTIMIZACAO
+
+- Novidade: area principal "Otimizacao" integrada ao menu lateral e visao geral.
+- Quatro subareas: Diagnostico, Energia reversivel, Benchmarks, BIOS e drivers.
+- Diagnostico SOMENTE LEITURA Windows via CIM; CPU, GPU, RAM, BIOS, placa-mae, OS e energia.
+- Troca OPCIONAL e confirmada entre planos de energia JA existentes; rollback no LocalAppData.
+- Comparacao por medianas e percentis de CSV de amostras FPS / frametime.
+- Firmware, drivers, seguranca, registro, prioridades e debloat SEM AUTOMACAO.
+- Matriz artigo/implementacao e restricoes em documento tecnico .md.
+- Sem modificacao dos componentes de preservacao, backup, criptografia e restauracao.
+- 52 testes de regressao/seguranca no servidor grafico simulado (ver resultado final).

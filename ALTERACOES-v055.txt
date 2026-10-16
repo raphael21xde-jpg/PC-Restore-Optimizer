@@ -1,0 +1,30 @@
+PC Restore & Optimizer v0.5.5 — NAVEGADORES + COFRE DE RECUPERAÇÃO
+
+NOVIDADES
+- Novo painel UX 'Navegadores e senhas' com quatro etapas.
+- Detecção de perfis Google Chrome, Microsoft Edge, Brave, Firefox,
+  Opera, Opera GX, Vivaldi e Chromium no Windows; permite seleção manual.
+- Navegação direta de 'Visão geral' e de 'Jogos e aplicativos'.
+- Ajuda oficial e endereço da tela de sincronização para cada navegador.
+- Confirmação MANUAL de Sync; a aplicação não acessa contas.
+- Backup local AES-256-GCM .pcbrowser; frase-senha scrypt; verificação completa
+  antes de declarar sucesso; suporte a CSV manual e HTML manual de favoritos.
+- Exclusão de bancos locais de senhas/cookies e chaves atreladas ao dispositivo.
+- Verificar cofre e restaurar para pasta nova APÓS autenticar o conteúdo.
+- Compatibilidade com pacotes .opgx do Opera GX nas ações de conferir/restaurar.
+- Melhorias no contraste das opções e pagina com rolagem.
+
+LIMITAÇÕES
+- Nenhum recurso de sincronização por conta própria. Para isso, cada
+  navegador utiliza SEU serviço oficial, mediante autenticação do usuário.
+- É impossível garantir 100% dos logins, cookies, passkeys, extensões, abas
+  ou informações protegidas por credenciais vinculadas a dispositivos.
+- CSV exportado é plaintext até ser criptografado, e volta a ser plaintext
+  ao restaurar; usuário precisa cuidar da origem e da pasta de conferência.
+- Um .pcbrowser não significa que o usuário conseguiu recuperar as informações
+  no navegador novo; é necessário validar a importação/restauração.
+- A política de formatação dos discos F:/G: não foi modificada.
+
+TESTES
+- 32 testes automatizados e inicialização da interface gráfica em display virtual.
+- Windows 11 real ainda requer confirmação de usuário.

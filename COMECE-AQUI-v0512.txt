@@ -1,0 +1,41 @@
+PC RESTORE & OPTIMIZER v0.5.12 — BACKUPS IDENTIFICADOS
+
+Extraia em pasta nova. Com o aplicativo fechado, copie preferencias-v05.json
+DA VERSÃO COM SUAS ESCOLHAS REAIS para esta pasta e execute INICIAR.bat.
+
+O QUE MUDOU
+- "Arquivo de senhas exportadas (CSV)" e "Selecionar arquivo de senhas".
+- "Arquivo de favoritos exportados (HTML)" e botão correspondente.
+- "Criar backup protegido do navegador" e "Extrair backup do navegador para teste".
+- Cofres novos têm navegador, perfil e indicação de CSV/HTML incluídos no nome.
+  Exemplo: Backup-Navegador-Opera-GX-Default-Perfil-Senhas-CSV-data-ID.pcbrowser.
+  A identificação de perfil não garante recuperação de credenciais ou sessões.
+- Backups comuns novos têm nome automático baseado nos itens selecionados,
+  mantendo campo para um nome personalizado. Data e identificador evitam colisões.
+- Cada arquivo no manifesto fica associado ao nome e tipo conhecido de conteúdo:
+  save do jogo, configurações do jogo, dados do jogo, dados do aplicativo ou pasta.
+- Dados sem associação conhecida exibem nome/caminho, sem adivinhar o programa.
+- No histórico, selecione um backup e clique "Ver conteúdo: programas, jogos,
+  saves e arquivos". Na restauração seletiva, cada arquivo também mostra sua associação.
+- CONTEUDO-DO-BACKUP.txt dentro de cada backup novo lista somente o que foi
+  efetivamente copiado, com origens, caminhos no backup, quantidades e falhas.
+- Backups mistos mantêm uma única cópia: a lista distingue os vários itens.
+- Cofres de navegador permanecem separados dos backups comuns. O arquivo
+  criptografado tem nome legível; examine seu conteúdo no assistente com senha.
+
+BACKUPS ANTIGOS
+Não foram renomeados nem modificados. Continuam legíveis; a tela mostra caminhos
+originais e informa quando a associação a jogo/app não foi registrada.
+Você pode usar "Renomear rótulo" no histórico para dar um nome conhecido.
+
+VALIDAÇÃO
+105 testes encontrados: 94 passaram e 11 de interface pulados sem display.
+Inclui 6 testes novos de identificação, seleção, fronteiras de caminhos,
+associações compartilhadas, compatibilidade antiga e cópia/restauração real
+em pastas temporárias. Interface ainda requer validação no Windows.
+
+PARA CONFERIR
+Abra Navegadores para ver os campos novos. Em um backup pequeno novo, deixe
+vazio o nome para usar o automático; confira a revisão e depois o histórico.
+Não refaça backups grandes ou cofres já validados apenas para mudar seus nomes.
+Este ajuste não acrescenta formatação nem reinstalação automática de aplicativos.

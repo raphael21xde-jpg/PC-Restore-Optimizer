@@ -1,0 +1,59 @@
+PC RESTORE & OPTIMIZER v0.5.11 — ASSISTENTE DE NAVEGADOR
+Versão experimental, ainda sem validação desta interface no Windows real.
+
+COMO ATUALIZAR
+1. Feche a versão anterior e extraia este ZIP em uma pasta NOVA.
+2. Copie preferencias-v05.json da versão que tem suas escolhas reais para a
+   nova pasta antes de iniciar. Não substitua suas escolhas pelas do teste pequeno.
+3. Execute INICIAR.bat. Python 3.10+ e cryptography continuam necessários.
+4. O que preservar > Navegadores > Restaurar navegador — assistente.
+
+PRIMEIRO TESTE (SEM REIMPORTAR DADOS QUE JÁ ESTÃO NO NAVEGADOR)
+1. Selecione o perfil Opera GX instalado.
+2. Use "Usar pasta já recuperada" e selecione a pasta CONFERIR-NAVEGADOR
+   produzida no teste anterior: ela contém profile e, às vezes, manual-export.
+   Também é possível abrir diretamente um cofre .pcbrowser ou .opgx com senha.
+3. Confira a disponibilidade de favoritos e CSV. Nenhuma senha é exibida.
+4. Pare nessa tela e confira o resultado. Não importe novamente seus dados
+   atuais só para testar: isso pode criar favoritos duplicados.
+
+DEPOIS DA REINSTALAÇÃO DO WINDOWS
+1. Instale e abra o Opera GX uma vez. Entre na conta e confira a sincronização.
+2. Abra este assistente e selecione o perfil instalado e a origem do cofre.
+3. Se o perfil já contém dados novos importantes, proteja-os usando "Criar
+   cofre AES-256" na tela Navegadores, ou exportações oficiais do navegador.
+   A caixa de confirmação do assistente é declaração manual, não auditoria.
+4. Importe apenas o que ainda está faltando:
+   - Favoritos: o assistente prepara um HTML, preservando as pastas. Para
+     Bookmarks JSON, exporta URLs HTTP/HTTPS/FTP; outros esquemas são omitidos.
+     O caminho é copiado. No Opera GX: Ctrl+Shift+B > Importar favoritos > HTML.
+   - Senhas: precisa haver CSV exportado manualmente no cofre. O assistente
+     copia somente o caminho. No gerenciador de senhas do Opera, use Importar
+     senhas/Selecionar arquivo. Confira os resultados no navegador.
+5. Confira manualmente os dados importados. A caixa de confirmação não significa
+   que o aplicativo leu ou verificou suas senhas no navegador.
+6. O CSV extraído contém senhas legíveis: mantenha-o privado e remova a cópia
+   em texto claro quando não precisar mais dela; preserve o cofre criptografado.
+
+ESCOPO E LIMITES
+- Orientação de importação para Opera e Opera GX nesta versão.
+- Arquivos do perfil instalado nunca são substituídos pelo assistente.
+- A importação é confirmada pelo usuário no navegador, não é automática.
+- Histórico, extensões, abas, configurações e outros dados não são aplicados
+  automaticamente. A sincronização pode recuperar alguns deles.
+- Não restaura cookies, passkeys ou sessões autenticadas nem extrai senhas
+  dos bancos vinculados ao Windows. CSV ausente é informado explicitamente.
+- Esta versão não acrescenta formatação nem reinstalação automática de apps.
+- Backup e restauração existentes da v0.5.10 continuam disponíveis.
+
+VALIDAÇÃO NO AMBIENTE DE DESENVOLVIMENTO
+99 testes encontrados: 88 passaram; 11 de interface pulados sem display.
+9 testes novos: cofre -> extração -> HTML, conversão/escape, pastas,
+repetição sem sobrescrever, links simbólicos, JSON inválido, CSV antigo,
+CSV ausente, exportação HTML e bloqueio de URL javascript.
+Interface e importação no Opera real ainda precisam de teste no Windows.
+
+REFERÊNCIAS OFICIAIS
+https://www.opera.com/gx/features/bookmarks
+https://help.opera.com/en/latest/Web-preferences/
+https://help.opera.com/en/latest/features/

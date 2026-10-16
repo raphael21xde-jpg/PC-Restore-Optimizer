@@ -1,0 +1,961 @@
+"""Task-oriented Optimization page integrated into PC Restore & Optimizer.
+
+No system mutation happens during construction, scanning or CSV import.
+Only the Power tab can request a reversible power-plan change after confirmation.
+"""
+from __future__ import annotations
+import json
+import os
+from pathlib import Path
+import threading
+import queue
+import time
+import re
+import subprocess
+from datetime import datetime, timezone
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from optimization_engine import (inspect_pc, available_power_plans, active_power_guid,
+                                 safe_change_power_plan, revert_power_plan, export_snapshot,
+                                 OptimizationError)
+from optimization_bench import parse_csv_file, insert_run, summarize, read_history
+from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
+from stutter_deep import study_csv, study_text
+from optimization_monitor import (KEYS, LABELS, read_afterburner_log, find_afterburner_logs,
+                                  poll_nvidia, combine, summarized, new_session, append_sample,
+                                  finish_session, session_comparison)
+
+BG='#0C1220'; PANEL='#192438'; TEXT='#EFF4FF'; MUTED='#9CAAC0'; ACCENT='#9C85FF';
+GREEN='#5DDEB1'; AMBER='#F3BE67'; BORDER='#2B3952'
+
+
+def looks_like_presentmon_installer(path):
+    """Recognize known PresentMon installer naming, not arbitrary executables."""
+    filename=Path(path).name.lower()
+    if 'presentmon' not in filename:
+        return False
+    if any(token in filename for token in ('setup', 'installer', 'install-', '-install')):
+        return True
+    return bool(re.fullmatch(r'presentmon[-_ ]v?\d+(?:\.\d+){1,3}\.exe',filename))
+
+
+def presentmon_capture_explanation(exit_code, diagnostic, csv_found=False):
+    """Turn an actual CLI log into a bounded, user-facing failure hint."""
+    details=' '.join((diagnostic or '').split())
+    low=details.lower()
+    if 'access denied' in low or '0x80070005' in low or 'acesso negado' in low:
+        hint='A captura ETW parece ter sido negada por permissão. Verifique os privilégios exigidos pelo PresentMon; não altere políticas do Windows automaticamente.'
+    elif 'unknown option' in low or 'unrecognized' in low or 'invalid argument' in low or 'unknown argument' in low:
+        hint='O executável não reconheceu um dos argumentos; pode não ser a CLI correta ou ter outra versão.'
+    elif 'already running' in low or 'already exists' in low or 'session already' in low:
+        hint='Já pode existir outra sessão de captura PresentMon ativa; encerre-a antes de repetir o teste.'
+    elif 'no matching' in low or 'process not found' in low:
+        hint='Confira o nome do processo e deixe o CS2 aberto antes de iniciar a captura.'
+    elif exit_code == 6:
+        hint=('Código 6: não foi possível iniciar a sessão de eventos (ETW) do PresentMon. '
+              'As possibilidades incluem conflito com outra sessão e falta de permissão. '
+              'O PC Restore usa agora um nome exclusivo de sessão para evitar conflitos. '
+              'Se persistir, verifique as permissões de captura do PresentMon.')
+    elif exit_code is not None and exit_code != 0:
+        hint=f'O executável encerrou com código {exit_code}. Consulte a mensagem original abaixo.'
+    elif not csv_found:
+        hint='Nenhum CSV válido foi criado. Confirme que selecionou a CLI x64 oficial e que cs2.exe estava aberto.'
+    else:
+        hint='Arquivo de captura encontrado.'
+    return hint+(('\nÚltimas mensagens da CLI: '+details[-700:]) if details else '')
+
+
+
+def build_presentmon_args(executable, process, output_file, seconds, session_name):
+    """Use ETW session unique to this capture; do not terminate other sessions."""
+    if not re.fullmatch(r'PCRO_[a-f0-9]{12}', session_name):
+        raise ValueError('Nome de sessão de captura inválido.')
+    return [str(executable), '--process_name', process,
+            '--output_file', str(output_file), '--session_name', session_name,
+            '--timed', str(seconds), '--terminate_after_timed']
+
+
+class OptimizationPanel(tk.Frame):
+    def __init__(self, master, app_dir):
+        super().__init__(master, bg=BG)
+        self.app_dir=Path(app_dir)
+        self.state_dir = (Path(os.environ['LOCALAPPDATA']) / 'PC-Restore-Optimizer'
+                          if os.name == 'nt' and os.environ.get('LOCALAPPDATA')
+                          else self.app_dir)
+        self.power_journal=self.state_dir/'otimizacao-energia-reversao.json'
+        self.bench_journal=self.state_dir/'otimizacao-benchmarks.json'
+        self.monitor_dir=self.state_dir/'sessoes-monitoramento'
+        self.afterburner_config=self.state_dir/'afterburner-fonte.json'
+        self.afterburner_path=tk.StringVar(value='')
+        self.presentmon_exe=tk.StringVar(value='')
+        self.capture_process=tk.StringVar(value='cs2.exe')
+        self.capture_seconds=tk.StringVar(value='90')
+        self.capture_status=tk.StringVar(value='Pronto. Nenhuma captura automática em execução.')
+        self.capture_proc=None
+        self.capture_output=None
+        self.capture_anchor=None
+        self.capture_requested_stop=False
+        self.capture_log_path=None
+        self.capture_last_diagnostic=''
+        self.stutter_last=None
+        self.stutter_source=None
+        self.monitor_status=tk.StringVar(value='Pronto para iniciar; nenhuma medição ativa.')
+        self.mon_running=False
+        self.mon_session=None
+        self.mon_stop=threading.Event()
+        self.mon_thread=None
+        self.mon_updates=queue.Queue()
+        self.mon_last={}
+        self.mon_recent=[]
+        self.mon_error=''
+        self._load_monitor_source()
+        self.report=None
+        self.plans=[]
+        self.running=False
+        self.scenario=tk.StringVar(value='Counter-Strike 2 | mesmo mapa, resolução e ajustes')
+        self.phase=tk.StringVar(value='antes')
+        self.plan_choice=tk.StringVar(value='')
+        self.note=tk.StringVar(value='Nenhuma alteração aplicada. Faça primeiro o diagnóstico.')
+        self._build()
+
+    def _label(self, parent, content, size=10, fg=TEXT, bold=False, wrap=None):
+        kwargs={'wraplength':wrap} if wrap else {}
+        return tk.Label(parent,text=content,bg=BG,fg=fg,justify='left',anchor='w',
+                        font=('Segoe UI',size,'bold' if bold else 'normal'), **kwargs)
+
+    def _paragraph(self, parent, title, detail):
+        box=tk.Frame(parent,bg=PANEL,highlightbackground=BORDER,highlightthickness=1)
+        box.pack(fill='x',pady=(0,10))
+        tk.Label(box,text=title,bg=PANEL,fg=TEXT,font=('Segoe UI',11,'bold'),anchor='w').pack(fill='x',padx=16,pady=(13,5))
+        tk.Label(box,text=detail,bg=PANEL,fg=MUTED,font=('Segoe UI',10),justify='left',wraplength=830,
+                 anchor='w').pack(fill='x',padx=16,pady=(0,14))
+        return box
+
+    def _text_area(self, parent):
+        holder=tk.Frame(parent,bg=PANEL)
+        holder.pack(fill='both',expand=True,pady=(8,0))
+        txt=tk.Text(holder,bg=PANEL,fg=TEXT,insertbackground=TEXT,relief='flat',bd=0,
+                    wrap='word',font=('Consolas',10),padx=16,pady=13,height=14)
+        scroll=ttk.Scrollbar(holder,orient='vertical',command=txt.yview)
+        txt.configure(yscrollcommand=scroll.set)
+        scroll.pack(side='right',fill='y');txt.pack(side='left',fill='both',expand=True)
+        return txt
+
+    @staticmethod
+    def _write(widget, text):
+        widget.configure(state='normal')
+        widget.delete('1.0','end')
+        widget.insert('1.0',text)
+        widget.configure(state='disabled')
+
+    def _build(self):
+        outer=tk.Frame(self,bg=BG)
+        outer.pack(fill='both',expand=True,padx=(15,5),pady=(3,5))
+        header=tk.Frame(outer,bg=BG)
+        header.pack(fill='x',pady=(0,10))
+        tk.Label(header,text='OTIMIZAÇÃO CONSCIENTE',bg=BG,fg=ACCENT,
+                 font=('Segoe UI',12,'bold')).pack(anchor='w')
+        tk.Label(header,text='Diagnostique • compare • aplique somente ajustes compatíveis • reverta',
+                 bg=BG,fg=MUTED,font=('Segoe UI',10)).pack(anchor='w',pady=(4,0))
+        self.tabs=ttk.Notebook(outer)
+        self.tabs.pack(fill='both',expand=True)
+        diagnose=ttk.Frame(self.tabs)
+        monitor=ttk.Frame(self.tabs)
+        power=ttk.Frame(self.tabs)
+        compare=ttk.Frame(self.tabs)
+        firmware=ttk.Frame(self.tabs)
+        stutters=ttk.Frame(self.tabs)
+        for frame,name in ((diagnose,'1  Diagnóstico'),(monitor,'2  Temperaturas e sessões'),
+                           (stutters,'3  Stutters / quadros'),(power,'4  Energia reversível'),
+                           (compare,'5  Benchmarks'),(firmware,'6  BIOS e drivers')):
+            self.tabs.add(frame,text=name)
+        self._build_diagnostics(diagnose)
+        self._build_monitor(monitor)
+        self._build_stutters(stutters)
+        self._build_power(power)
+        self._build_benchmarks(compare)
+        self._build_firmware(firmware)
+        tk.Label(outer,textvariable=self.note,bg=BG,fg=GREEN,anchor='w',
+                 wraplength=900,justify='left',font=('Segoe UI',9)).pack(fill='x',pady=(10,1))
+
+    def _build_diagnostics(self, parent):
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        self._paragraph(area,'Etapa 1: conhecer o seu computador',
+                        'Consulta somente leitura: Windows, CPU, GPU e driver, RAM, placa-mãe, versão da BIOS e planos de energia. '
+                        'Temperaturas e utilização são medidas na próxima aba, usando sensores disponíveis; não confirma XMP/EXPO ativo.')
+        actions=tk.Frame(area,bg=BG);actions.pack(fill='x',pady=(3,5))
+        self.btn_scan=ttk.Button(actions,text='Analisar este PC',style='Primary.TButton',command=self.scan)
+        self.btn_scan.pack(side='left',padx=(0,9))
+        ttk.Button(actions,text='Exportar diagnóstico JSON',command=self.export_report).pack(side='left')
+        self.report_text=self._text_area(area)
+        self._write(self.report_text,'Nenhuma análise executada. Clique em “Analisar este PC”.\n\n'
+                    'Princípio do estudo Honest: avaliar Windows, GPU, firmware e resultados com benchmarks.\n'
+                    'Modo seguro: nenhuma mudança é feita pela análise.')
+
+    def _build_monitor(self,parent):
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=8)
+        self._paragraph(area,'Monitoramento real: leituras do MSI Afterburner + driver NVIDIA',
+                        'O app acompanha o histórico .hml gerado pelo Afterburner e consulta a GPU NVIDIA diretamente. '
+                        'Se algum sensor, como a temperatura da CPU, não estiver disponível, aparecerá — (não disponível). '
+                        'A captura é periódica: FPS/frametime amostrados NÃO geram 1% low por quadro.')
+        scenario_row=tk.Frame(area,bg=BG);scenario_row.pack(fill='x',pady=(0,5))
+        self._label(scenario_row,'Cenário:').pack(side='left',padx=(0,6))
+        ttk.Entry(scenario_row,textvariable=self.scenario).pack(side='left',fill='x',expand=True,padx=(0,8))
+        for phase in ('antes','depois'):
+            ttk.Radiobutton(scenario_row,text=phase.upper(),value=phase,variable=self.phase).pack(side='left',padx=(0,7))
+        row=tk.Frame(area,bg=BG);row.pack(fill='x',pady=(0,5))
+        self._label(row,'Log Afterburner:').pack(side='left',padx=(0,7))
+        ttk.Entry(row,textvariable=self.afterburner_path).pack(side='left',fill='x',expand=True)
+        ttk.Button(row,text='Localizar',command=self.find_monitor_source).pack(side='left',padx=(8,0))
+        ttk.Button(row,text='Escolher .hml',command=self.select_monitor_source).pack(side='left',padx=(7,0))
+        details=tk.Frame(area,bg=BG);details.pack(fill='x',pady=(1,4))
+        self._label(details,'Afterburner → Configurações → Monitoramento → “Registrar histórico em arquivo”. '
+                    'Habilite CPU/GPU temperatura, uso e FPS se disponíveis. Deixe o Afterburner aberto.',
+                    size=9,fg=MUTED,wrap=850).pack(anchor='w')
+        actions=tk.Frame(area,bg=BG);actions.pack(fill='x',pady=(5,7))
+        self.btn_mon_start=ttk.Button(actions,text='▶ Iniciar medição',style='Primary.TButton',command=self.start_monitor)
+        self.btn_mon_start.pack(side='left',padx=(0,8))
+        self.btn_mon_stop=ttk.Button(actions,text='■ Parar e salvar sessão',command=self.stop_monitor)
+        self.btn_mon_stop.pack(side='left',padx=(0,8))
+        self.btn_mon_stop.configure(state='disabled')
+        ttk.Button(actions,text='Comparar sessões',command=self.compare_monitor).pack(side='left',padx=(0,8))
+        ttk.Button(actions,text='Abrir relatórios',command=self.open_monitor_folder).pack(side='left')
+        tk.Label(area,textvariable=self.monitor_status,bg=BG,fg=AMBER,font=('Segoe UI',9),
+                 anchor='w',justify='left',wraplength=950).pack(fill='x',pady=(2,7))
+        # Periodic time-series diagram (not a synthetic benchmark).
+        self.monitor_graph=tk.Canvas(area,bg=PANEL,height=125,highlightthickness=1,
+                                     highlightbackground=BORDER)
+        self.monitor_graph.pack(fill='x',pady=(0,5))
+        self.monitor_graph.bind('<Configure>',lambda event:self._draw_monitor_graph())
+        self.monitor_text=self._text_area(area)
+        self._write(self.monitor_text,'Ainda não há medições. Inicie uma sessão para registrar temperatura e uso.\n'
+                    'O app NÃO altera clocks, voltagens, ventiladores, drivers nem arquivos de jogo.')
+
+    def _load_monitor_source(self):
+        try:
+            value=json.loads(self.afterburner_config.read_text(encoding='utf-8'))
+            if isinstance(value.get('hml'),str) and len(value['hml'])<1000:
+                self.afterburner_path.set(value['hml'])
+        except (OSError,ValueError,TypeError):
+            pass
+
+    def _save_monitor_source(self):
+        self.state_dir.mkdir(parents=True,exist_ok=True)
+        src=self.afterburner_path.get().strip()
+        if not src:
+            return
+        tmp=self.afterburner_config.with_suffix('.tmp')
+        tmp.write_text(json.dumps({'hml':src},ensure_ascii=False),encoding='utf-8')
+        tmp.replace(self.afterburner_config)
+
+    def find_monitor_source(self):
+        found=find_afterburner_logs()
+        if not found:
+            messagebox.showinfo('MSI Afterburner','Não encontrei histórico .hml nos locais padrão.\n'
+                'No Afterburner, vá a Configurações → Monitoramento → Registrar histórico em arquivo; '
+                'depois use Escolher .hml.')
+            return
+        self.afterburner_path.set(str(found[0]))
+        self._save_monitor_source()
+        self.monitor_status.set(f'Histórico encontrado: {found[0].name}. Verifique se é o arquivo que está sendo atualizado.')
+
+    def select_monitor_source(self):
+        selected=filedialog.askopenfilename(title='Escolha o log do MSI Afterburner',
+                    filetypes=[('Histórico Afterburner','*.hml'),('Outros arquivos de log','*.txt *.csv')])
+        if selected:
+            self.afterburner_path.set(selected)
+            self._save_monitor_source()
+            self.monitor_status.set('Fonte selecionada. Inicie medição e veja se aparecem amostras de CPU e GPU.')
+
+    def start_monitor(self):
+        if self.mon_running:
+            return
+        scenario=' '.join(self.scenario.get().split())
+        try:
+            session=new_session(scenario,self.phase.get())
+        except ValueError as exc:
+            messagebox.showwarning('Monitoramento',str(exc));return
+        path=self.afterburner_path.get().strip()
+        if path and not Path(path).is_file():
+            messagebox.showwarning('Afterburner','O caminho .hml selecionado não existe. Selecione um válido ou limpe o campo.')
+            return
+        self._save_monitor_source()
+        self.mon_session=session
+        self.mon_running=True
+        self.mon_recent=[];self.mon_last={}
+        self.mon_stop.clear()
+        self.mon_error=''
+        self.btn_mon_start.configure(state='disabled')
+        self.btn_mon_stop.configure(state='normal')
+        self.monitor_status.set('Monitorando... abra seu jogo. Os dados são registrados somente no seu PC.')
+        self.mon_thread=threading.Thread(target=self._monitor_worker,args=(path,),daemon=True)
+        self.mon_thread.start()
+        self.after(250,self._drain_monitor)
+
+    def _monitor_worker(self,path):
+        token=None
+        stale=0
+        while not self.mon_stop.is_set():
+            readings={};source=[];messages=[]
+            if path:
+                try:
+                    data,current=read_afterburner_log(path)
+                    if time.time()-Path(path).stat().st_mtime > 12:
+                        messages.append('Afterburner não atualiza o log há mais de 12 segundos. Ative o registro.')
+                        data={}
+                        token=current
+                    elif current != token:
+                        token=current
+                        readings.update(data)
+                        if data:source.append('Afterburner')
+                        stale=0
+                    else:
+                        stale+=1
+                        if stale>2:messages.append('Afterburner sem novos registros; ative Registrar histórico em arquivo.')
+                except (OSError,ValueError) as err:
+                    messages.append('Afterburner: '+str(err))
+            gpu,err=poll_nvidia()
+            if gpu:source.append('NVIDIA')
+            if err and not readings:
+                messages.append(err)
+            merged=combine(gpu,readings)
+            if merged and self.mon_session is not None:
+                append_sample(self.mon_session,merged,source)
+            self.mon_updates.put((merged,messages,source))
+            if self.mon_stop.wait(2.0):
+                break
+
+    def _drain_monitor(self):
+        got=False
+        while True:
+            try:
+                values,messages,sources=self.mon_updates.get_nowait()
+            except queue.Empty:
+                break
+            got=True
+            if values:
+                self.mon_last=values
+                self.mon_recent.append(values)
+                self.mon_recent=self.mon_recent[-120:]
+            if messages:
+                self.mon_error=' | '.join(messages)[:280]
+            elif values:
+                self.mon_error=''
+        if got:
+            self._render_monitor()
+        if self.mon_running:
+            self.after(450,self._drain_monitor)
+
+    def _render_monitor(self):
+        rows=self.mon_session['rows'] if self.mon_session else []
+        if not rows and not self.mon_error:
+            return
+        summary=summarized(rows)
+        lines=['MONITORAMENTO EM TEMPO REAL — SENSORES PERIÓDICOS',
+               f'Sessão: {self.phase.get()} | {self.scenario.get()}',
+               f'Amostras registradas: {len(rows)}', '']
+        for key in ('cpu_temp_c','gpu_temp_c','cpu_usage_pct','gpu_usage_pct','gpu_power_w','cpu_power_w','vram_used_mb','fps_sampled','frametime_sampled_ms'):
+            value=self.mon_last.get(key)
+            stats=summary.get(key)
+            live='— indisponível' if value is None else f'{value:.1f}'
+            extra='' if not stats else f' | média {stats["mean"]:.1f} | pico {stats["max"]:.1f}'
+            lines.append(f'{LABELS[key]:<24} {live:>14}{extra}')
+        cpu_now=self.mon_last.get('cpu_temp_c')
+        if cpu_now is not None and cpu_now>=85:
+            lines.extend(['', f'ATENÇÃO TÉRMICA: CPU {cpu_now:.1f} °C. Compare com Tjmax OFICIAL do seu modelo.',
+                          'Evite testes pesados contínuos se estiver próximo do limite. Investigue refrigeração.'])
+        lines.extend(['','O FPS do Afterburner é AMOSTRADO e não substitui benchmark por quadro.',
+                      'Não calcular 1% low, 0,2% low ou frametime real com estas amostras.'])
+        if self.mon_error:
+            lines.extend(['','FONTE: '+self.mon_error])
+        if not self.mon_last.get('cpu_temp_c'):
+            lines.append('Para temperatura de CPU, habilite CPU temperature no Afterburner + Log history to file.')
+        self._write(self.monitor_text,'\n'.join(lines))
+        metrics_text=' • '.join(f'{LABELS[key]} {self.mon_last[key]:.1f}'
+                              for key in ('cpu_temp_c','gpu_temp_c','gpu_usage_pct','gpu_power_w','fps_sampled')
+                              if key in self.mon_last)
+        self.monitor_status.set(f'{len(rows)} amostras • '+
+                                (metrics_text or 'Aguardando sensores')+
+                                (' | '+self.mon_error if self.mon_error else ''))
+        self._draw_monitor_graph()
+
+    def _draw_monitor_graph(self):
+        c=self.monitor_graph
+        if not c.winfo_exists():return
+        c.delete('all')
+        w=max(c.winfo_width(),360);h=max(c.winfo_height(),110)
+        pad=27
+        def yy(temp):return (h-17)-(temp-20)/90*(h-28)
+        for yval in (40,60,80,100):
+            y=yy(yval)
+            c.create_line(pad,y,w-10,y,fill='#314052')
+            c.create_text(19,y,text=str(yval),fill=MUTED,font=('Segoe UI',8))
+        c.create_text(65,12,text='CPU °C',fill=ACCENT,font=('Segoe UI',9))
+        c.create_text(147,12,text='GPU °C',fill=GREEN,font=('Segoe UI',9))
+        if not self.mon_recent:
+            c.create_text(w/2,h/2,text='Aguardando temperaturas reais dos sensores',fill=MUTED,
+                          font=('Segoe UI',11))
+            return
+        n=len(self.mon_recent)
+        for key,color in (('cpu_temp_c',ACCENT),('gpu_temp_c',GREEN)):
+            last=None
+            for i,row in enumerate(self.mon_recent):
+                v=row.get(key)
+                if v is None:
+                    last=None
+                    continue
+                x=pad+i/(max(1,n-1))*(w-pad-15)
+                y=yy(max(20,min(v,110)))
+                if last:c.create_line(last[0],last[1],x,y,fill=color,width=2)
+                else:c.create_oval(x-2,y-2,x+2,y+2,fill=color,outline='')
+                last=(x,y)
+
+    def stop_monitor(self):
+        if not self.mon_running:
+            return
+        self.mon_running=False
+        self.mon_stop.set()
+        self.btn_mon_stop.configure(state='disabled')
+        self.monitor_status.set('Finalizando e salvando sessão...')
+        self.after(150,self._finish_monitor)
+
+    def _finish_monitor(self):
+        if self.mon_thread and self.mon_thread.is_alive():
+            self.after(150,self._finish_monitor)
+            return
+        self._drain_monitor()
+        self.btn_mon_start.configure(state='normal')
+        session=self.mon_session
+        self.mon_session=None
+        if not session or not session['rows']:
+            self.monitor_status.set('Nenhuma amostra capturada. Verifique se NVIDIA/Afterburner estão fornecendo dados.')
+            return
+        try:
+            paths=finish_session(session,self.monitor_dir)
+            self.monitor_status.set(f'Sessão salva: {len(session["rows"])} amostras em {paths[0].name} e CSV correspondente.')
+            self.note.set('Sessão térmica registrada. Nenhuma otimização foi aplicada.')
+        except OSError as exc:
+            messagebox.showerror('Salvar monitoramento',f'Não foi possível guardar sessão: {exc}')
+
+    def shutdown_monitor(self):
+        """Called when application exits: save an active session before closing."""
+        if not self.mon_running:
+            return True
+        self.mon_running=False
+        self.mon_stop.set()
+        if self.mon_thread:
+            self.mon_thread.join(timeout=6)
+            if self.mon_thread.is_alive():
+                return False
+        session=self.mon_session
+        self.mon_session=None
+        if session and session['rows']:
+            try:
+                finish_session(session,self.monitor_dir)
+            except OSError:
+                return False
+        return True
+
+    def compare_monitor(self):
+        scenario=' '.join(self.scenario.get().split())
+        result=session_comparison(self.monitor_dir,scenario)
+        lines=['SESSÕES REGISTRADAS — '+scenario,'',
+               f"ANTES: {result['count']['antes']} sessões | DEPOIS: {result['count']['depois']} sessões",'']
+        for key in ('cpu_temp_c','gpu_temp_c','gpu_usage_pct','gpu_power_w','fps_sampled'):
+            pre=result['median']['antes'].get(key)
+            post=result['median']['depois'].get(key)
+            change=result['delta_pct'].get(key)
+            lines.append(f'{LABELS[key]}: '+
+                         ('—' if pre is None else f'{pre:.1f}')+' → '+
+                         ('—' if post is None else f'{post:.1f}')+
+                         (f' ({change:+.1f}%)' if change is not None else ''))
+        lines.extend(['','Recomendado: três sessões por fase, cenário idêntico.',
+                      'FPS aqui é amostrado; 1% lows exigem captura por quadro na aba Benchmarks.'])
+        self._write(self.monitor_text,'\n'.join(lines))
+        self.monitor_status.set('Comparação de sessões exibida.')
+
+    def open_monitor_folder(self):
+        self.monitor_dir.mkdir(parents=True,exist_ok=True)
+        if os.name=='nt':
+            os.startfile(str(self.monitor_dir))
+        else:
+            messagebox.showinfo('Relatórios',str(self.monitor_dir))
+
+    def _build_stutters(self,parent):
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=9)
+        self._paragraph(area,'Quadros reais, sem FPS inventado',
+            'O Intel PresentMon (console oficial, instalado separadamente) pode registrar os quadros do jogo. '
+            'Nosso aplicativo analisa o CSV e calcula 1% low, 0,2% low e travadas. '
+            'Não injeta código nem modifica CS2, clocks, BIOS, serviços ou drivers.')
+        source=tk.Frame(area,bg=BG);source.pack(fill='x',pady=(0,5))
+        self._label(source,'PresentMon CLI:').pack(side='left',padx=(0,8))
+        ttk.Entry(source,textvariable=self.presentmon_exe).pack(side='left',fill='x',expand=True)
+        ttk.Button(source,text='Selecionar .exe',command=self.select_presentmon).pack(side='left',padx=(8,0))
+        options=tk.Frame(area,bg=BG);options.pack(fill='x',pady=(2,6))
+        self._label(options,'Jogo (.exe):').pack(side='left',padx=(0,6))
+        ttk.Entry(options,textvariable=self.capture_process,width=16).pack(side='left',padx=(0,12))
+        self._label(options,'Duração (s):').pack(side='left',padx=(0,6))
+        ttk.Entry(options,textvariable=self.capture_seconds,width=6).pack(side='left',padx=(0,10))
+        self.btn_capture=ttk.Button(options,text='Capturar quadros',style='Primary.TButton',command=self.start_capture)
+        self.btn_capture.pack(side='left',padx=(0,8))
+        self.btn_capture_stop=ttk.Button(options,text='Parar captura',command=self.stop_capture,state='disabled')
+        self.btn_capture_stop.pack(side='left',padx=(0,8))
+        ttk.Button(options,text='Analisar CSV existente',command=self.import_stutter_csv).pack(side='left')
+        ttk.Button(area,text='Análise aprofundada: microstutters e recorte inicial',
+                   command=self.study_current_csv).pack(anchor='w',pady=(0,3))
+        tk.Label(area,textvariable=self.capture_status,bg=BG,fg=AMBER,justify='left',anchor='w',
+                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(3,4))
+        ttk.Button(area,text='Ver diagnóstico da captura',command=self.show_capture_diagnostic).pack(anchor='w',pady=(0,4))
+        ttk.Button(area,text='Analisar uma sessão anterior (.json) - quedas observadas',
+                   command=self.import_old_monitor_log).pack(anchor='w',pady=(0,4))
+        self._label(area,'Use junto com a medição térmica se quiser relacionar temperatura e quadros. '
+                    'Durante a captura, jogue normalmente sem Alt-Tab. O app não cria/baixa a ferramenta PresentMon.',
+                    size=9,fg=MUTED,wrap=850).pack(anchor='w',pady=(0,5))
+        controls=tk.Frame(area,bg=BG);controls.pack(fill='x',pady=(1,3))
+        self.btn_register_frames=ttk.Button(controls,text='Registrar no comparador ANTES/DEPOIS',
+                                            command=self.register_stutter_bench,state='disabled')
+        self.btn_register_frames.pack(side='left')
+        self.stutter_text=self._text_area(area)
+        self._write(self.stutter_text,
+            'O FPS de 188 para 55.9 no seu log mostrou uma queda real pontual.\n'
+            'Agora vamos registrar TODOS os quadros para entender duração, repetição e gravidade.\n\n'
+            '1) Selecione uma versão oficial do PresentMon CLI, quando disponível.\n'
+            '2) Abra o jogo e clique em Capturar quadros.\n'
+            '3) O CSV será analisado ao fim da captura.\n\n'
+            'Alternativa: importe CSV por quadro exportado por PresentMon / CapFrameX / OCAT.')
+
+    def select_presentmon(self):
+        path=filedialog.askopenfilename(title='PresentMon console CLI oficial (.exe)',
+            filetypes=[('Executáveis Windows','*.exe')])
+        if path:self.presentmon_exe.set(path)
+
+    def start_capture(self):
+        if self.capture_proc is not None:return
+        executable=Path(self.presentmon_exe.get().strip())
+        if os.name!='nt':
+            messagebox.showwarning('Captura','Execução automática de PresentMon disponível apenas no Windows. Importação de CSV funciona aqui.')
+            return
+        if executable.suffix.lower()!='.exe' or not executable.is_file():
+            messagebox.showwarning('PresentMon','Selecione o .exe do PresentMon CLI oficial. Ele não está embutido neste aplicativo.')
+            return
+        if looks_like_presentmon_installer(executable):
+            messagebox.showwarning('PresentMon - instalador selecionado',
+                'Este arquivo parece ser o instalador, não a versão CONSOLE.\n\n'
+                'Baixe PresentMon-2.6.0-x64.exe em:\n'
+                'https://github.com/GameTechDev/PresentMon/releases/tag/v2.6.0\n\n'
+                'Selecione esse executável no campo PresentMon CLI.')
+            return
+        process=self.capture_process.get().strip()
+        if not re.fullmatch(r'[a-zA-Z0-9_.-]+\.exe',process):
+            messagebox.showwarning('Jogo','Use somente o nome do processo do jogo, como cs2.exe.')
+            return
+        try:duration=int(self.capture_seconds.get())
+        except ValueError:duration=0
+        if not 20<=duration<=600:
+            messagebox.showwarning('Duração','Escolha entre 20 e 600 segundos.');return
+        self.monitor_dir.mkdir(parents=True,exist_ok=True)
+        import uuid
+        path=self.monitor_dir/f'quadros-{datetime.now().strftime("%Y%m%d-%H%M%S")}-{uuid.uuid4().hex[:5]}.csv'
+        args=build_presentmon_args(executable,process,path,duration,'PCRO_'+uuid.uuid4().hex[:12])
+        # Capture console errors instead of discarding stdout/stderr, so an
+        # invalid EXE or an ETW permission failure can be diagnosed by the user.
+        log_path=path.with_suffix('.presentmon.log')
+        self.capture_last_diagnostic=''
+        try:
+            with log_path.open('wb') as log_file:
+                self.capture_proc=subprocess.Popen(args,stdin=subprocess.DEVNULL,
+                    stdout=log_file,stderr=subprocess.STDOUT,
+                    creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        except (OSError,ValueError) as exc:
+            self.capture_last_diagnostic=f'Falha ao iniciar: {exc}'
+            messagebox.showerror('PresentMon',self.capture_last_diagnostic);return
+        self.capture_log_path=log_path
+        self.capture_output=path
+        self.capture_anchor=datetime.now(timezone.utc).isoformat()
+        self.capture_requested_stop=False
+        self.btn_capture.configure(state='disabled')
+        self.btn_capture_stop.configure(state='normal')
+        self.capture_status.set(f'Capturando quadros de {process}, até {duration}s. Jogue normalmente.')
+        self.after(850,self._check_capture)
+
+    def _check_capture(self):
+        proc=self.capture_proc
+        if proc is None:return
+        code=proc.poll()
+        if code is None:
+            self.after(850,self._check_capture);return
+        self.capture_proc=None
+        self.btn_capture.configure(state='normal')
+        self.btn_capture_stop.configure(state='disabled')
+        csv_path=self.capture_output
+        if csv_path and csv_path.is_file() and csv_path.stat().st_size>100:
+            self._analyze_stutter_async(csv_path,self.capture_process.get().strip(),self.capture_anchor)
+        else:
+            tail=''
+            if self.capture_log_path and self.capture_log_path.is_file():
+                try:
+                    # Read only the end of the log: bounded memory consumption.
+                    with self.capture_log_path.open('rb') as stream:
+                        stream.seek(0,os.SEEK_END)
+                        stream.seek(max(0,stream.tell()-8192))
+                        tail=stream.read().decode('utf-8',errors='replace')
+                except OSError as exc:
+                    tail=f'Não foi possível ler o registro: {exc}'
+            self.capture_last_diagnostic=presentmon_capture_explanation(code,tail)
+            self.capture_status.set('Captura sem CSV utilizável: '+self.capture_last_diagnostic[:400])
+
+    def show_capture_diagnostic(self):
+        detail=self.capture_last_diagnostic or ('Ainda não houve uma falha de captura registrada. '
+            'Se você selecionou um arquivo PresentMon-2.6.0.exe sem -x64, provavelmente é o instalador. '
+            'Use PresentMon-2.6.0-x64.exe, da página oficial.')
+        if self.capture_log_path and self.capture_log_path.is_file():
+            detail+='\n\nLog local: '+str(self.capture_log_path)
+        messagebox.showinfo('Diagnóstico do PresentMon',detail)
+
+    def stop_capture(self):
+        if self.capture_proc is None:return
+        self.capture_requested_stop=True
+        try:self.capture_proc.terminate()
+        except OSError:pass
+        self.capture_status.set('Parando captura... o CSV parcial será analisado se tiver quadros suficientes.')
+
+    def shutdown_capture(self):
+        """Terminate ONLY child process launched by this app; never touch game."""
+        proc=self.capture_proc
+        if proc and proc.poll() is None:
+            try:proc.terminate();proc.wait(timeout=3)
+            except (OSError,subprocess.TimeoutExpired):
+                try:proc.kill()
+                except OSError:pass
+        self.capture_proc=None
+
+    def import_stutter_csv(self):
+        path=filedialog.askopenfilename(title='CSV por quadro do PresentMon / CapFrameX / OCAT',
+                                        filetypes=[('CSV','*.csv'),('Texto','*.txt')])
+        if path:
+            self._analyze_stutter_async(Path(path),self.capture_process.get().strip(),None)
+
+    def import_old_monitor_log(self):
+        path=filedialog.askopenfilename(title='Uma sessão JSON anterior do PC Restore',
+                                        filetypes=[('Sessão JSON','*.json')])
+        if not path:return
+        try:
+            data=json.loads(Path(path).read_text(encoding='utf-8'))
+            result=analyze_sampled_fps_session(data)
+        except (OSError,ValueError,TypeError) as exc:
+            messagebox.showerror('Leitura de sessão',str(exc));return
+        lines=['FPS AMOSTRADO — sessão anterior','',
+               f"Amostras: {result['samples']} | Mínimo observado: {result['observed_min']} FPS",
+               f"Quedas >= 40% entre leituras: {len(result['drops'])}",'']
+        for ev in result['drops'][:24]:
+            lines.append(f"{ev['timestamp']} | {ev['from_fps']} → {ev['to_fps']} FPS ({ev['drop_pct']}% queda) | "
+                         f"CPU {ev['cpu_temp_c']} °C, {ev['cpu_usage_pct']}% | GPU {ev['gpu_temp_c']} °C, {ev['gpu_usage_pct']}%")
+        lines.extend(['',result['caution']])
+        self._write(self.stutter_text,'\n'.join(lines))
+        self.capture_status.set('Sessão anterior analisada; para capturar quadros de verdade, use PresentMon CLI.')
+
+    def _analyze_stutter_async(self,path,process,anchor):
+        self.capture_status.set('Analisando intervalos de quadros...')
+        def worker():
+            try:
+                report=analyze_file(path,process)
+                if anchor and self.mon_session is not None:
+                    report['sensor_matches']=correlate_with_session(report,self.mon_session,anchor)
+                else:report['sensor_matches']=[]
+                self.after(0,lambda r=report:self._render_stutters(r,path))
+            except Exception as exc:
+                self.after(0,lambda error=str(exc):self.capture_status.set('Não foi possível analisar: '+error))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _render_stutters(self,report,path):
+        self.stutter_last=report
+        self.stutter_source=Path(path)
+        self.btn_register_frames.configure(state='normal')
+        lines=[f'ARQUIVO: {Path(path).name}',f'CENÁRIO: {self.scenario.get()} | FASE: {self.phase.get()}', '',
+               summary_text(report)]
+        if report.get('sensor_matches'):
+            lines.extend(['','SENSORES PRÓXIMOS ÀS MAIORES TRAVADAS (CORRELAÇÃO APROXIMADA):'])
+            for row in report['sensor_matches'][:6]:
+                m=row['sensor_readings']
+                lines.append(f"{row['t_s']}s | {row['frametime_ms']}ms | CPU {m.get('cpu_temp_c','?')}°C / {m.get('cpu_usage_pct','?')}% | GPU {m.get('gpu_temp_c','?')}°C / {m.get('gpu_usage_pct','?')}%")
+        else:
+            lines.extend(['','Sem sincronização comprovada com sensores (CSV importado isoladamente ou medição não iniciada).'])
+        try:
+            report['scenario']=self.scenario.get().strip();report['phase']=self.phase.get()
+            report['captured_utc']=self.capture_anchor if path==self.capture_output else None
+            report_file=Path(path).with_suffix('.stutters.json')
+            report_file.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+            lines.extend(['',f'Relatório gerado: {report_file.name}'])
+        except OSError as exc:
+            lines.extend(['',f'Aviso: não foi possível salvar relatório: {exc}'])
+        self._write(self.stutter_text,'\n'.join(lines))
+        self.capture_status.set(f'Análise pronta: {report["count"]} quadros, {report["event_count"]} candidatos a travada.')
+        self.note.set('Stutters analisados; nenhuma configuração do Windows foi alterada.')
+
+    def study_current_csv(self):
+        source=self.stutter_source
+        if source is None or not source.is_file():
+            messagebox.showinfo('Análise aprofundada','Primeiro capture quadros ou importe um CSV válido.')
+            return
+        self.capture_status.set('Analisando recorte inicial, janelas e microstutters...')
+        def worker():
+            try:
+                study=study_csv(source,self.capture_process.get().strip(),5.0)
+                self.after(0,lambda r=study:self._study_ready(r))
+            except Exception as exc:
+                self.after(0,lambda error=str(exc):self.capture_status.set('Erro na análise: '+error))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _study_ready(self,r):
+        self._write(self.stutter_text,study_text(r))
+        self.capture_status.set('Comparação da captura inteira com o trecho após os primeiros cinco segundos concluída.')
+        self.note.set('O CSV permanece intacto; nenhuma configuração foi alterada.')
+
+    def register_stutter_bench(self):
+        result=self.stutter_last
+        if not result:return
+        scenario=' '.join(self.scenario.get().split())
+        phase=self.phase.get()
+        if not scenario:
+            messagebox.showwarning('Benchmark','Indique o cenário.');return
+        if not messagebox.askyesno('Comparar stutters',
+             f'Registrar este conjunto de {result["count"]} quadros como {phase.upper()}\n'
+             f'Cenário: {scenario}\nFPS médio: {result["avg_fps"]:.1f}, 1% low: {result["low_1"]:.1f}\n\n'
+             'Compare depois em Benchmarks; sem mudar configurações?'):
+            return
+        metrics={'samples':result['count'],'column':result['metadata'].get('column','frametime'),
+                 'source':'stutter_analysis_per_frame','avg_fps':result['avg_fps'],
+                 'low_1':result['low_1'],'low_02':result['low_02'],
+                 'min_fps':round(1000/result['worst_ms'],2),'max_fps':round(1000/result['median_frametime_ms'],2)}
+        try:insert_run(self.bench_journal,scenario,phase,metrics)
+        except (OSError,ValueError) as exc:
+            messagebox.showerror('Comparador','Falha ao registrar: '+str(exc));return
+        self.note.set('Benchmark de quadros incluído; confira o comparador de FPS e 1% low.')
+        self.capture_status.set('Registrado como '+phase.upper()+' no comparador de benchmarks.')
+
+    def _build_power(self,parent):
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        self._paragraph(area,'Etapa 2: escolher um plano de energia do Windows',
+                        'Este é o único ajuste de sistema executável desta versão. Escolha um plano já disponível no Windows, '
+                        'confirme a alteração e use Desfazer para recuperar o plano original. Alto desempenho pode aumentar calor, '
+                        'consumo e ruído; não garante mais FPS. Em notebooks, dê preferência às configurações do fabricante.')
+        control=tk.Frame(area,bg=BG);control.pack(fill='x',pady=(7,9))
+        self._label(control,'Planos reconhecidos pelo Windows',bold=True).pack(anchor='w',pady=(0,5))
+        self.plan_box=ttk.Combobox(control,state='readonly',textvariable=self.plan_choice,width=78)
+        self.plan_box.pack(side='left',fill='x',expand=True,padx=(0,8))
+        ttk.Button(control,text='Atualizar',command=self.load_plans).pack(side='left')
+        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(2,8))
+        self.btn_apply=ttk.Button(buttons,text='Aplicar plano selecionado',style='Primary.TButton',command=self.apply_plan)
+        self.btn_apply.pack(side='left',padx=(0,9))
+        self.btn_revert=ttk.Button(buttons,text='Desfazer minha última mudança',command=self.revert_plan)
+        self.btn_revert.pack(side='left')
+        self.power_text=self._text_area(area)
+        self._write(self.power_text,'Nenhum plano consultado. Clique em Atualizar.\n'
+                    'Ao aplicar: é gravado o plano anterior para possibilitar desfazer.\n'
+                    'Se um programa externo mudar o plano depois, a reversão automática será bloqueada.')
+
+    def _build_benchmarks(self,parent):
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        self._paragraph(area,'Etapa 3: medir ganhos reais, sem promessas de FPS',
+                        'Importe dados CSV com FPS por quadro ou frametime em ms (por exemplo, de OCAT/CapFrameX). '
+                        'Grave 3 execuções ANTES e 3 DEPOIS, mantendo jogo, mapa, resolução, cenário e drivers iguais. '
+                        'O app compara medianas. Valores de 1% e 0,2% low são estimados dos percentis por quadro.')
+        row=tk.Frame(area,bg=BG);row.pack(fill='x',pady=(0,5))
+        self._label(row,'Cenário:').pack(side='left',padx=(0,8))
+        ttk.Entry(row,textvariable=self.scenario).pack(side='left',fill='x',expand=True)
+        phase_row=tk.Frame(area,bg=BG);phase_row.pack(fill='x',pady=(8,9))
+        for name in ('antes','depois'):
+            ttk.Radiobutton(phase_row,text=name.upper(),value=name,variable=self.phase).pack(side='left',padx=(0,16))
+        ttk.Button(phase_row,text='Importar CSV e registrar execução',style='Primary.TButton',
+                   command=self.import_csv).pack(side='left',padx=(0,8))
+        ttk.Button(phase_row,text='Atualizar comparação',command=self.refresh_bench).pack(side='left')
+        self.bench_text=self._text_area(area)
+        self._write(self.bench_text,'Sem benchmarks importados.\n\n'
+                    'CSV esperado: coluna FPS / FrameRate ou FrameTime(ms) / MsBetweenPresents.\n'
+                    'Captura deve medir quadros individuais; relatórios apenas resumidos não são comparáveis aqui.')
+
+    def _build_firmware(self,parent):
+        wrapper=tk.Frame(parent,bg=BG);wrapper.pack(fill='both',expand=True,padx=12,pady=11)
+        canvas=tk.Canvas(wrapper,bg=BG,highlightthickness=0)
+        bar=ttk.Scrollbar(wrapper,orient='vertical',command=canvas.yview)
+        canvas.configure(yscrollcommand=bar.set)
+        bar.pack(side='right',fill='y');canvas.pack(side='left',fill='both',expand=True)
+        content=tk.Frame(canvas,bg=BG)
+        win=canvas.create_window((0,0),window=content,anchor='nw')
+        content.bind('<Configure>',lambda e:canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>',lambda e:canvas.itemconfigure(win,width=e.width))
+        entries=[
+          ('Memória: XMP / EXPO / DOCP', 'O artigo aborda XMP. A ferramenta mostra a velocidade relatada pelo Windows, '
+           'mas não lê com segurança o perfil efetivo da BIOS. Só habilitar um perfil compatível, depois de conferir manual '
+           'e memória suportadas; teste estabilidade. Não será ativado por software.'),
+          ('CPU: SMT, Hyper-Threading e Boost', 'O estudo trata de Hyper-Threading e Turbo Boost. '
+           'Desligar SMT pode piorar multitarefa; AMD e Intel têm opções diferentes. Não mudar automaticamente. '
+           'Temperatura e estabilidade precisam ser medidas.'),
+          ('Placa de vídeo: NVIDIA / AMD / Intel', 'O artigo relata NVAPI e ADL, mas não publica parâmetros completos de '
+           'alteração. O programa apenas mostra modelo/driver e orienta a atualizar por canais oficiais e comparar benchmarks.'),
+          ('Windows: serviços, Registro e prioridades', 'O estudo cita “lopagelocklimit”, Auto Debloat e FSE, sem receitas '
+           'exatas e suficientemente testadas. Não reproduzimos Registro obscuro, priorização agressiva, desativação em massa '
+           'de serviços, Windows Update, antivírus nem integridade de memória.'),
+          ('Limites da pesquisa', 'Resultados de dois PCs (Ryzen 5 5600X/RTX 2070 SUPER e i5-12500H/RTX 3050). '
+           '136% é aumento do FPS máximo do DWM em um cenário, não de FPS nos jogos. O CS2 chegou a +28,4% no FPS médio '
+           'do desktop testado. Não são previsões de ganho no seu hardware.'),
+          ('Proteção de dados e boot', 'Nesta instalação, G: deve ser preservado e F: contém a partição EFI do Windows. '
+           'Esta ferramenta não executa formatação, reparticionamento, alteração de firmware, flash de BIOS ou desativação '
+           'de segurança. Faça backups e teste restauração antes de manutenção maior.')]
+        for title,detail in entries:
+            self._paragraph(content,title,detail)
+
+    def scan(self):
+        if self.running:
+            return
+        self.running=True
+        self.btn_scan.configure(state='disabled')
+        self.note.set('Analisando componentes do Windows em modo somente leitura...')
+        def worker():
+            try:
+                report=inspect_pc()
+                self.after(0,lambda r=report:self._scan_finished(r))
+            except Exception as exc:
+                self.after(0,lambda e=str(exc):self._scan_failed(e))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _scan_failed(self,error):
+        self.running=False;self.btn_scan.configure(state='normal')
+        self.note.set('Falha na consulta. Nenhum ajuste executado.')
+        messagebox.showerror('Diagnóstico',error)
+
+    def _scan_finished(self,report):
+        self.running=False;self.btn_scan.configure(state='normal')
+        self.report=report
+        hw=report.get('hardware',{})
+        lines=['DIAGNÓSTICO WINDOWS — LEITURA','']
+        def first(key):
+            value=hw.get(key)
+            return (value[0] if value else {}) if isinstance(value,list) else (value or {})
+        def one(key,col):
+            return str(first(key).get(col) or 'não disponível')
+        lines.extend(['Windows: '+one('os','Caption')+' | '+one('os','Version'),
+                      'CPU: '+one('cpu','Name'),
+                      'Placa-mãe: '+one('board','Manufacturer')+' '+one('board','Product'),
+                      'Firmware: '+one('bios','SMBIOSBIOSVersion'),
+                      'GPU(s):'])
+        for gpu in (hw.get('gpu') if isinstance(hw.get('gpu'),list) else ([hw['gpu']] if hw.get('gpu') else [])):
+            lines.append('  '+str(gpu.get('Name','?'))+' | driver '+str(gpu.get('DriverVersion','?')))
+        lines.append('RAM:')
+        for ram in (hw.get('ram') if isinstance(hw.get('ram'),list) else ([hw['ram']] if hw.get('ram') else [])):
+            lines.append('  '+str(round((ram.get('Capacity') or 0)/1024**3,1))+' GiB | '+str(ram.get('ConfiguredClockSpeed','?'))+' MT/s (configurado)')
+        plans=report.get('power',{})
+        lines.extend(['','Plano de energia: '+str(plans.get('active_guid') or 'indisponível'),
+                      '','OBSERVAÇÕES:'])
+        lines.extend('  • '+str(p['message']) for p in report.get('checks',[]))
+        if report.get('errors'):
+            lines.extend(['','CONSULTAS INCOMPLETAS:']+['  • '+e for e in report['errors']])
+        lines.extend(['','NÃO MEDIDO: '+', '.join(report.get('unmeasured',[])),
+                      '','Nenhuma configuração modificada.'])
+        self._write(self.report_text,'\n'.join(lines))
+        self.note.set('Diagnóstico concluído. Não foi aplicado qualquer ajuste.')
+        self.load_plans()
+
+    def export_report(self):
+        if not self.report:
+            messagebox.showinfo('Diagnóstico','Clique primeiro em Analisar este PC.')
+            return
+        target=filedialog.asksaveasfilename(defaultextension='.json',filetypes=[('Relatório JSON','*.json')],
+                                          title='Exportar inventário (revise informações pessoais antes de compartilhar)')
+        if target:
+            try:
+                export_snapshot(self.report,Path(target))
+                self.note.set('Relatório de somente leitura exportado.')
+            except Exception as exc:
+                messagebox.showerror('Exportação',str(exc))
+
+    def load_plans(self):
+        try:
+            plans=available_power_plans()
+            active=active_power_guid()
+        except Exception as exc:
+            self._write(self.power_text,str(exc))
+            return
+        self.plans=plans
+        self.plan_box['values']=[p['name']+' | '+p['guid']+('  [ATUAL]' if p['guid']==active else '') for p in plans]
+        idx=next((i for i,p in enumerate(plans) if p['guid']==active),0)
+        self.plan_box.current(idx)
+        text=['PLANOS DO WINDOWS — LEITURA', '']
+        for p in plans:
+            text.append(('● ' if p['guid']==active else '  ')+p['name']+' | '+p['guid'])
+        text.extend(['','Antes de alterar:',' • Compare temperaturas e comportamento com sua rotina.',
+                     ' • Planos da fabricante podem ser necessários para notebooks.',
+                     ' • Não há promessa de aumento de FPS.',' • Alterações externas bloqueiam reversão automática.'])
+        self._write(self.power_text,'\n'.join(text))
+        self.note.set('Planos de energia consultados; nada foi alterado.')
+
+    def apply_plan(self):
+        if not self.plans or self.plan_box.current()<0:
+            messagebox.showinfo('Energia','Clique em Atualizar primeiro.');return
+        target=self.plans[self.plan_box.current()]
+        if not messagebox.askyesno('Confirmar alteração reversível',
+                'Deseja selecionar o plano “'+target['name']+'” no Windows?\n\n'
+                'Pode alterar temperatura, consumo e autonomia. Sem ganho de FPS garantido.\n'
+                'O app salvará o plano anterior em AppData e oferecerá Desfazer.\n\n'
+                'Esta é uma alteração real do sistema, não apenas um teste.'):
+            return
+        try:
+            result=safe_change_power_plan(target['guid'],self.power_journal)
+            self.load_plans()
+            self.note.set('Plano alterado e registrado para reversão.' if result['changed'] else 'Este plano já estava ativo.')
+        except Exception as exc:
+            messagebox.showerror('Plano de energia',str(exc))
+
+    def revert_plan(self):
+        if not messagebox.askyesno('Reverter plano','Restaurar o plano de energia que estava ativo antes da alteração feita por este app?'):
+            return
+        try:
+            revert_power_plan(self.power_journal)
+            self.load_plans()
+            self.note.set('Plano de energia anterior restaurado.')
+        except Exception as exc:
+            messagebox.showerror('Reverter energia',str(exc))
+
+    def import_csv(self):
+        scenario=' '.join(self.scenario.get().strip().split())
+        if not scenario:
+            messagebox.showwarning('Benchmark','Dê um nome ao cenário.');return
+        path=filedialog.askopenfilename(filetypes=[('Arquivos CSV','*.csv'),('Texto delimitado','*.txt')],
+                                        title='Selecione amostras de FPS/frametime por quadro')
+        if not path:
+            return
+        try:
+            metrics=parse_csv_file(path)
+            if not messagebox.askyesno('Confirmar importação',
+                f'Cenário: {scenario}\nFase: {self.phase.get()}\nAmostras: {metrics["samples"]}\n'
+                f'FPS médio: {metrics["avg_fps"]:.1f}\n1% low: {metrics["low_1"]:.1f}\n'
+                'Registrar apenas essas estatísticas (sem copiar o CSV)?'):
+                return
+            insert_run(self.bench_journal,scenario,self.phase.get(),metrics)
+            self.note.set('Benchmark incluído. Nenhum ajuste de Windows realizado.')
+            self.refresh_bench()
+        except Exception as exc:
+            messagebox.showerror('Importar benchmark',str(exc))
+
+    def refresh_bench(self):
+        scenario=' '.join(self.scenario.get().strip().split())
+        try:
+            data=read_history(self.bench_journal)
+            result=summarize(data,scenario)
+        except Exception as exc:
+            messagebox.showerror('Comparação',str(exc));return
+        lines=['BENCHMARKS  |  '+scenario,'',
+               f"Antes: {result['count']['antes']} execução(ões)   |   Depois: {result['count']['depois']} execução(ões)",'']
+        for label,key in [('ANTES','antes'),('DEPOIS','depois')]:
+            if key in result['median']:
+                m=result['median'][key]
+                lines.append(f"{label}: FPS médio {m['avg_fps']:.1f} | 1% low {m['low_1']:.1f} | 0,2% low {m['low_02']:.1f}")
+            else:
+                lines.append(label+': sem dados')
+        if result['delta_pct']:
+            delta=result['delta_pct']
+            lines.extend(['','DIFERENÇA DAS MEDIANAS:',
+                          f"FPS médio {delta['avg_fps']:+.1f}% | 1% low {delta['low_1']:+.1f}% | 0,2% low {delta['low_02']:+.1f}%"])
+        lines.extend(['','AMOSTRAGEM: '+('3+ por fase ✓' if result['sufficient_repeats'] else 'INCOMPLETA — recomenda-se 3 execuções por fase'),
+                     'Não significa prova causal; compare jogos, condições térmicas e variabilidade.'])
+        self._write(self.bench_text,'\n'.join(lines))

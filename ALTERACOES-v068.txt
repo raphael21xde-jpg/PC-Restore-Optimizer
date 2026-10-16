@@ -1,0 +1,9 @@
+PC Restore & Optimizer v0.6.8 — prévia não destrutiva
+
+- Revisão interativa de dados pessoais/saves/instalações no C:; navegação limitada por página.
+- Decisões Manter / Não preservar unificadas com o estado da Preservação.
+- Importação do inventário anterior por disco na auditoria, sem substituir snapshots existentes.
+- Rehash SHA-256 real a partir do manifest.json, sem certificar cobertura total da reinstalação.
+- Diagnóstico de discos expandido: CIM Win32_DiskDrive/Win32_Volume complementa Get-Disk/Get-Partition.
+- EFI não mapeada tratada como inconclusiva; EFI antiga permanece intacta.
+- Operações de formatação, exclusão e boot não implementadas.

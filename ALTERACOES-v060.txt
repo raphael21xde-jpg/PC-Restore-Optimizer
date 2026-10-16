@@ -1,0 +1,11 @@
+v0.6.0 PRÉVIA — VARREDURA POR UNIDADE
+- Abas independentes por letra de volume C:/D:/F:/G: e outras detectadas.
+- Contagem de pastas/arquivos, grupos, erros e exclusões por volume.
+- Aplicativos associados separados por unidade, mesmo se divididos entre discos.
+- Categorias Jogos, Navegadores, Aplicativos, Dados e saves e Outros.
+- Navegação somente leitura das pastas não identificadas com paginação de 120.
+- Marcar para manter/não preservar caminhos e pastas individualmente.
+- Resultados antigos podem ser carregados, mas apenas nova varredura inclui
+  estatísticas por volume; escolhas seguem nas preferências existentes.
+- Corrigida interface de modo que não renderize todas as pastas examinadas.
+- Sem alterações destrutivas; sem formatação/reinstalação automática nesta fase.

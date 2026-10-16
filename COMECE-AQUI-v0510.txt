@@ -1,0 +1,58 @@
+PC RESTORE & OPTIMIZER v0.5.10 — BUILD EXPERIMENTAL
+====================================================
+
+O QUE ESTA VERSÃO ENTREGA
+- Escolha de jogos, saves, programas reconhecidos, arquivos pessoais e perfis de navegador.
+- Backup por arquivos com manifesto e verificação SHA-256; restauração em pasta isolada.
+- Cofre cifrado de navegador com senha, dependente de cryptography (veja INSTALAR-CRIPTOGRAFIA.bat).
+- Auditoria integral posterior: todos os arquivos copiados são relidos e comparados ao manifesto.
+- Monitoramento via Afterburner e, quando disponíveis, dados NVIDIA.
+- Captura PresentMon CLI e análise aprofundada de quadros: análise completa x 5s iniciais,
+  microstutters a partir de 8ms, janelas de 5 segundos, tempos de frame e 1%/0,2% low.
+- Troca explícita de plano de energia, com possibilidade de desfazer.
+- Preparação e checklist para reinstalar Windows, SEM formatar e SEM apagar partições.
+
+COMO ABRIR
+1. Extraia o ZIP para uma pasta NOVA. Não execute dentro do ZIP.
+2. Se deseja preservar decisões da versão anterior, copie preferencias-v05.json
+   da pasta antiga para a nova ANTES do primeiro início (não é incluído no ZIP).
+3. Execute INICIAR.bat (Python 3.10+ instalado).
+4. Para cofre cifrado, instale o pacote cryptography seguindo o BAT dedicado.
+5. Para PresentMon, selecione a ferramenta oficial de console e, quando
+   necessário para ETW, eleve a execução apenas durante a captura.
+
+ANTES DE PENSAR EM REINSTALAÇÃO
+1. 'O que preservar': selecione individualmente jogos, saves, arquivos, apps e perfis.
+2. 'Revisar backup': confirme espaço e caminhos; inicie um backup completo.
+3. 'Backups e testes': escolha um manifesto concluído e faça restauração de teste.
+4. 'O que preservar > Navegadores': crie e TESTE seus cofres e confirme
+   sincronização/exportação oficial de senhas, favoritos e contas.
+5. 'Após reinstalar Windows': execute 'Conferir TODO o backup (SHA-256)'.
+   Leia todos os alertas e salve a auditoria em um disco preservado.
+6. Faça SEGUNDA cópia em dispositivo físico INDEPENDENTE, fora do Storage Space G:.
+7. CONFIRA A ESTRUTURA EFI/BOOT. É responsabilidade do instalador/usuário
+   identificar o disco físico correto; NUNCA deduza isso só pela letra C:.
+8. Prepare mídia de instalação oficial, confira a ativação do Windows e contas.
+
+ATENÇÃO ESPECIAL A ESTE PC
+- F: reúne dados insubstituíveis e no mesmo disco físico há uma partição EFI.
+- G: contém jogos e é Storage Space SIMPLES SEM REDUNDÂNCIA de falha de disco.
+- O Windows está no C:, e a EFI do boot não está necessariamente nele.
+- Esta versão NÃO executa formatação, nem oferece botão 'pronto para formatar'.
+- A reinstalação limpa e o mapeamento de discos devem ser validados no hardware real.
+
+INSTALAÇÃO OFICIAL MICROSOFT
+https://www.microsoft.com/software-download/windows11
+https://support.microsoft.com/pt-br/windows/deployment/install-upgrade/reinstall-windows-with-the-installation-media
+
+LIMITAÇÕES REAIS
+- Não reinstala automaticamente os executáveis dos programas. Preserva arquivos
+  selecionados e dados conhecidos; programas em geral precisam ser reinstalados.
+- Nem todos os jogos guardam saves localmente; clouds e DRM podem interferir.
+- Senhas e sessões autenticadas dos navegadores NÃO são garantidas após reinstalação.
+  Cofre de perfis não significa restauração automática de credenciais protegidas por DPAPI.
+- Não desabilita antivírus, serviços essenciais, segurança do Windows, ou altera BIOS.
+- As otimizações NÃO têm promessa de ganho de FPS; meça e compare.
+- Os testes são simulados no Linux, NÃO substituem teste completo em Windows real.
+- Nunca use um único backup, principalmente no mesmo dispositivo físico, como
+  motivo suficiente para excluir partições.

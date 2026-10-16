@@ -1,0 +1,16 @@
+PC Restore & Optimizer 0.6.3 — Seleção Inteligente Unificada (PRÉVIA)
+
+- Interface principal por unidade: jogos/apps + dados + explorador de pastas.
+- Um único escritor de decisões de entidades; telas legadas compartilham
+  o estado com Meu Computador e Preservação, sem varredura global silenciosa.
+- Ficha por jogo/app com dados confirmados e candidatos, inclusive links entre
+  unidades examinadas ou mantidas em inventários separados.
+- Procura restrita de saves de locais conhecidos quando C: participa do escopo.
+- Metadados de escolhas salvos para reabertura; importação de snapshots antigos.
+- Contagens corretas e controles visíveis acima da árvore; até 120 itens por lote.
+- Status de varredura com lacunas quando houver erros/exclusões de análise.
+- Nenhum componente de exclusão, particionamento, EFI ou reinstalação ativado.
+
+Critérios de teste (ambiente de desenvolvimento): 199 verificações automatizadas
+aprovadas, incluindo cenários de seleção, varreduras combinadas e interface.
+É obrigatório testar novamente no Windows real antes de chamar de versão final.

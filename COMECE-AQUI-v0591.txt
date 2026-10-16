@@ -1,0 +1,21 @@
+PC RESTORE & OPTIMIZER - VERSAO 0.5.9.1
+
+1. Feche a versao antiga.
+2. Extraia este ZIP em uma NOVA pasta.
+3. Se utilizava preferencias-v05.json, copie este arquivo de sua pasta
+   antiga para a nova antes de abrir o programa.
+4. Execute INICIAR.bat.
+5. Na aba Otimizacao -> Stutters / quadros, clique Selecionar .exe.
+6. IMPORTANTE: escolha PresentMon-2.6.0-x64.exe (Console), e NAO apenas
+   PresentMon-2.6.0.exe (que pode ser instalador).
+7. Link oficial CLI:
+   https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe
+8. Abra Counter-Strike 2 antes da captura. Processo cs2.exe; duracao 90.
+9. Clique Capturar quadros; jogue sem alternar a janela.
+10. Se falhar, clique Ver diagnostico da captura. O programa exibe codigo
+    de saida e ultimas mensagens do console. O log local e salvo na pasta
+    sessoes-monitoramento dentro de %LOCALAPPDATA%\PC-Restore-Optimizer.
+
+Nao habilite privilegios elevados sem analisar a mensagem de erro.
+Nao use otimizadores desconhecidos, nao desative o antivirus, e nao altere
+F:, G: ou a BIOS por causa da captura.

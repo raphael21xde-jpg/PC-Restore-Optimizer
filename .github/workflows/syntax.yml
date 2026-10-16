@@ -1,0 +1,14 @@
+name: Python source syntax
+on: [push, pull_request]
+jobs:
+  compile:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Python sources (non-destructive)
+        shell: pwsh
+        run: |
+          python -c "import pathlib,ast; files=list(pathlib.Path('.').rglob('*.py')); [ast.parse(p.read_text(encoding='utf-8-sig'), filename=str(p)) for p in files]; print(f'Parsed {len(files)} Python files')"

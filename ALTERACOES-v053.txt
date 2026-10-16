@@ -1,0 +1,45 @@
+PC RESTORE & OPTIMIZER v0.5.3 — DETECTOR DE DADOS DE JOGOS E APLICATIVOS
+PRÉVIA EXPERIMENTAL — NÃO FORMATA / NÃO APAGA ARQUIVOS
+
+O QUE MUDOU
+- Wallpaper Engine: procura config.json/config.json.bak/config_backup.json e
+  projetos próprios (projects/myprojects) na pasta de instalação Steam do jogo.
+  Procura também Steam userdata da AppID 431960 (POSSÍVEL, conferir).
+  Conteúdo baixado do Steam Workshop pode ser enorme e é apenas candidato.
+- Outros programas instalados: procura pastas de dados em AppData/Roaming,
+  AppData/Local, AppData/LocalLow, ProgramData e Documentos.
+- Perfis de aplicativos de hardware: novos caminhos candidatos para Logitech G HUB,
+  Corsair iCUE, Razer Synapse, SteelSeries GG, NZXT CAM, Stream Deck, MSI Center,
+  OBS Studio, alguns perfis Microsoft Store como HyperX NGENUITY e outros nomes
+  de pastas que coincidam de modo estrito com o aplicativo instalado.
+- Aba Jogos e aplicativos / Aplicativos: coluna 'Dados/configs' distingue
+  candidato para conferir de item não localizado.
+- Botão 'Ver locais / confirmar candidatos' nas duas listas: mostra caminhos,
+  permite abrir as pastas, aprovar candidatos ou adicionar caminho próprio
+  de arquivo/pasta, sempre com confirmação explícita.
+- Candidatos de apps NÃO são copiados ao apenas selecionar 'Manter'.
+  Apenas locais conhecidos de jogo são automaticamente vinculados à seleção.
+- Escolhas manuais de caminhos ficam registradas em preferencias-v05.json,
+  e no plano de recuperação para apps e jogos (o plano NÃO contém arquivos).
+- Corrigido cabeçalho 0.5.1 incorreto para 0.5.3.
+
+LIMITAÇÕES SÉRIAS
+- Não existe detector universal capaz de garantir TODOS os dados de qualquer
+  aplicativo. Licenças, credenciais, drivers, jogos em nuvem e configurações
+  internas podem exigir reinstalação, sincronização e revisão manual.
+- Perfis encontrados podem conter tokens/dados privados. Não envie-os a ninguém.
+  Copie somente o necessário; guarde backups em unidade protegida.
+- Pastas de cache e navegadores não são tratadas como configurações seguras.
+  Para Opera GX, continue usando o fluxo específico de backup criptografado.
+- A unidade G: é um Espaço de Armazenamento simples sem redundância; para itens
+  irrecuperáveis mantenha outra cópia em dispositivo físico independente.
+- Não formatar F: (há partição EFI de inicialização no seu disco físico), nem G:.
+  Tampouco reinstalar o Windows antes de validar cópias e restauração.
+- Backup só é criado após seleção, prévia, confirmação e cópia com SHA-256.
+  Sucesso de detecção NÃO significa sucesso de backup nem restauração.
+
+TESTES
+25 testes automatizados passaram com dados simulados, incluindo Wallpaper
+Engine, apps de periféricos, pacotes Store, associação por nome e restauração
+verificada. Interface com sete abas testada em tela virtual, ainda NÃO validada
+no Windows real do usuário.

@@ -1,0 +1,11 @@
+PC Restore & Optimizer v0.6.2 (PRÉVIA) — Correção de varredura e seleção
+
+- Corrigido relatório que desaparecia ao variar unidades selecionadas.
+- Inventário independente, por unidade, com estado atual/salvo/não examinado.
+- Lista de jogos e apps marcados para manter integrada à Preservação, mesmo sem dados confirmados.
+- Identificação explícita de saves do C: ligados a jogos de D:, quando conhecidos.
+- Botão para importar escolhas da versão anterior (sem opções de formatação).
+- Pesquisa global de jogos não é disparada automaticamente durante a inicialização.
+- Preservação com lista de escolhas prioritária e rolagem para outras seções.
+- Nenhuma exclusão, reinstalação ou formatação habilitada.
+- 190 testes automatizados aprovados, incluindo testes Tk com Xvfb; testes reais no Windows ainda necessários.

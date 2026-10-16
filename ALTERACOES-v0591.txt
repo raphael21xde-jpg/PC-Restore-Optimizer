@@ -1,0 +1,24 @@
+PC Restore & Optimizer v0.5.9.1 - DIAGNÓSTICO PRESENTMON
+
+Correção de erro reportado: "PresentMon encerrou sem CSV utilizável".
+
+- O programa agora detecta nomes típicos do instalador e explica por que
+  eles não servem para o campo PresentMon CLI. Exemplo:
+  PresentMon-2.6.0.exe = pode ser instalador.
+  PresentMon-2.6.0-x64.exe = executável console oficial da v2.6.0.
+- O stderr/stdout da ferramenta de console agora fica registrado localmente
+  em sessoes-monitoramento/quadros-*.presentmon.log; não é mais descartado.
+- Na ausência de CSV, o app informa o código de saída e mensagem recebida
+  do PresentMon e oferece botão "Ver diagnóstico da captura".
+- Mensagens específicas para acesso negado, opções desconhecidas, conflito de
+  sessões, processo inexistente e outros retornos; nada muda automaticamente
+  nas permissões ou no Windows.
+- As ferramentas de backup/preservação e os discos protegidos F:/G: não mudam.
+- Nenhuma alteração na BIOS, Registro, serviço, driver ou jogo.
+
+FONTE: https://github.com/GameTechDev/PresentMon/blob/main/README-ConsoleApplication.md
+Executável oficial CLI Windows x64 (v2.6.0):
+https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe
+
+Execução da CLI real em Windows ainda precisa ser validada. Testes de interface
+são feitos em Linux com servidor gráfico virtual; não representam um jogo real.

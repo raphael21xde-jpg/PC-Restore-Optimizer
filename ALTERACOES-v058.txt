@@ -1,0 +1,30 @@
+PC RESTORE & OPTIMIZER v0.5.8 — Correção de escopo da Otimização
+
+O que estava incompleto na v0.5.7:
+- O diagnóstico era majoritariamente estático.
+- Era necessário coletar temperaturas fora do programa.
+- Não havia registro de sessões de jogo e análise térmica antes/depois.
+
+O que foi realmente implementado nesta versão:
+- Monitoramento NVIDIA (temperatura, ocupação, potência, VRAM) via nvidia-smi.
+- Leitura estruturada .hml do MSI Afterburner em tempo quase real, sem converter.
+- Sensores disponíveis: temperaturas CPU/GPU, ocupação, potência, VRAM,
+  FPS e frametime AMOSTRADOS.
+- Gráfico de temperaturas e painel com valores instantâneos, médios e picos.
+- Sessões em JSON/CSV local, comparação ANTES e DEPOIS, 3 repetições recomendadas.
+- Detecção de logs parados/inexistentes, métricas indisponíveis explícitas,
+  armazenamento do caminho .hml entre atualizações.
+- Ao encerrar durante monitoramento, solicita parar e salvar a sessão.
+- Mantida a etapa de benchmarks por quadro para cálculos de 1% e 0,2% low.
+- Mantido o motor de backup, cofre do navegador, seleção única e reversão do
+  plano de energia. Nenhuma função de formatação adicionada.
+
+O que NÃO foi reproduzido do HONEST:
+- Chaves e valores exatos de Registro, NVAPI, ADL, Auto Debloat e firmware:
+  não publicados com detalhamento e validação suficiente para reprodução.
+- Não há controle universal seguro para XMP/SMT/boost ou curvas térmicas.
+- Não há API universal de temperatura de CPU padrão no Windows.
+- Monitoramento periódico não substitui instrumentação de frametime por quadro.
+
+Testes realizados em ambiente isolado com arquivos e sensores simulados;
+nenhum teste real em Windows, MSI Afterburner ou RTX 5070 foi executado aqui.

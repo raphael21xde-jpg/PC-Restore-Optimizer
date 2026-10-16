@@ -1,0 +1,15 @@
+PC Restore & Optimizer 0.6.6 — Backup seletivo e recuperação isolada (prévia)
+
+- Motor de planejamento limitado aos caminhos C: aprovados pelo usuário; sem backup indiscriminado de D:/F:/G:.
+- Conta arquivos e bytes reais antes de permitir a cópia; escolhas de exclusão de filhos respeitadas.
+- Proíbe origem com link/junção, caminhos ausentes, raiz sensível e fontes fora de C:.
+- Backup em uma nova subpasta de D:, F: ou G:, com a verificação original do motor v0.5.19 e nova leitura SHA-256 de todos os arquivos copiados.
+- Rejeita backups parciais ou corrompidos; bloqueia um manifesto com contagens/tamanhos inconsistentes.
+- Restauração isolada de todos os arquivos em uma pasta nova diferente da pasta de backup; não sobrescreve fontes originais.
+- Geração de VERIFICACAO-PCRO-066.json e RESULTADO-TESTE-PCRO-066.json sem autorizar formatação.
+- Interface assíncrona com barra de progresso e cancelamento, evitando bloquear a janela principal durante cópias longas.
+- Permite reabrir um manifesto já existente para conferência sem duplicar o backup.
+- Fluxo legado ocultado em Preservação para manter somente uma entrada clara de backup seletivo.
+- Nenhuma exclusão, instalação do Windows, manipulação de EFI ou formatação disponível.
+
+LIMITAÇÃO: ainda não comprova que TODOS os dados pessoais/saves foram descobertos; restauração em teste não coloca arquivos nos caminhos originais. G: usa Storage Spaces sem redundância.

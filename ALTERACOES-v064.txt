@@ -1,0 +1,8 @@
+PC Restore & Optimizer v0.6.4 — preservação auditável
+- Corrigido painel de vínculos de jogos/saves para mostrar caminhos manualmente aprovados.
+- Evidência de associação ≠ cópia executada; status claro na tabela.
+- Separados contadores de jogos/apps, caminhos, necessidades de cópia do C: e candidatos a remoção.
+- Relatório acessível de erros/exclusões por unidade com navegação e exportação.
+- Importação de inventário v0.6.3 sem perder escolhas nem sobrescrever inventários atuais.
+- 209 testes automatizados passaram no ambiente de desenvolvimento (Linux + Xvfb, com simulações Windows).
+- Sem formatação, limpeza, exclusão, mudança de EFI ou restauração automática do sistema.

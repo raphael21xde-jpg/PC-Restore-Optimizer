@@ -1,0 +1,63 @@
+PC RESTORE & OPTIMIZER v0.5.6 — PRESERVAÇÃO UNIFICADA (EXPERIMENTAL)
+=======================================================================
+
+Esta atualização CORRIGE a arquitetura da v0.5.5. Navegadores, jogos, aplicativos
+ e arquivos pessoais fazem parte de UM fluxo de seleção. Nenhuma formatação ou
+ desinstalação está implementada ou autorizada.
+
+COMO ABRIR
+1. Extraia o ZIP em uma NOVA PASTA (não substitua sua versão anterior).
+2. Se quiser suas seleções antigas, copie preferencias-v05.json da pasta anterior
+   para a pasta v0.5.6 ANTES de executar o aplicativo. Não copie os arquivos
+   usados para teste junto deste pacote; não há preferências predefinidas no ZIP.
+3. Execute INICIAR.bat. Para criar cofres .pcbrowser, instale a dependência
+   cryptography via INSTALAR-CRIPTOGRAFIA.bat, se necessário.
+
+AGORA EXISTE APENAS UMA ÁREA PRINCIPAL: "O QUE PRESERVAR"
+  Jogos: escolha Manter + saves e o programa inclui os saves CONHECIDOS.
+         Para locais POSSÍVEIS, clique Revisar locais e confirme manualmente.
+  Aplicativos: escolha Manter + dados; configurações candidatas exigem revisão.
+         Para reinstalar programas, procure o instalador oficial após o Windows.
+  Arquivos pessoais: adicione só pastas e arquivos fora dos jogos e aplicativos,
+         por exemplo fotos, documentos e projetos. "Não manter" NÃO exclui.
+  Navegadores: selecione o perfil que pretende guardar. Confira sincronização
+         diretamente no navegador e prepare um cofre criptografado opcional,
+         com CSV de senhas SOMENTE se você exportá-lo manualmente.
+
+A área "REVISAR BACKUP" é o centro da conferência. Ela mostra:
+- Escolhas de jogos e aplicativos, caminhos locais e candidatos pendentes;
+- Arquivos pessoais e saves que entrariam na cópia;
+- Navegadores escolhidos e se o cofre gerado por esta versão foi registrado.
+IMPORTANTE: COFRES .pcbrowser SÃO SEPARADOS DO BACKUP COMUM.
+Marcar um navegador NÃO copia perfil, senha, cookies ou sessões por si só.
+A sincronização de nuvem não é inspecionada pelo aplicativo. Um cofre de
+navegador NÃO garante sessão logada, passkeys, DRM, licenças, contas ou
+senhas vinculadas à instalação antiga do Windows.
+
+SEGURANÇA
+- O aplicativo NÃO formata, apaga, reinstala o Windows nem recupera senhas.
+- Nenhum disco é escolhido automaticamente para formatação; G: não deve ser
+  formatado e o disco do F: abriga a partição EFI do Windows. NÃO apague discos.
+- "Preservar" não significa "Backup concluído". Recalcule, revise, execute o
+  backup com confirmação e TESTE a restauração antes de qualquer reinstalação.
+- O G: é um Espaço de Armazenamento sem redundância: faça uma SEGUNDA CÓPIA
+  FÍSICA INDEPENDENTE dos itens essenciais, como F:\\fotos formatura.
+- Dados já presentes no G: e backups do G: para o mesmo G: são bloqueados pela
+  revisão; escolha outro dispositivo físico para a segunda cópia.
+- Reinstalar o Windows deve permanecer fora deste aplicativo, após backups e
+  diagnóstico de partições/boot; não prossiga só com base na interface.
+
+COMPATIBILIDADE
+- preferencias-v05.json, planos de recuperação e manifestos antigos mantidos.
+- Os pacotes .opgx antigos são aceitos para verificação/restauração segura,
+  sempre em uma pasta NOVA, após informar a senha correta.
+- Testado em ambiente de laboratório com 37 testes automatizados e simulação
+  gráfica. NÃO testado nos SSDs reais do usuário; esta versão é experimental.
+
+PRÓXIMO TESTE NO WINDOWS
+1. Selecione um jogo com save e confirme a associação.
+2. Adicione uma pasta pessoal pequena.
+3. Marque um perfil de navegador como desejado e confira que o plano alerta
+   sobre cofre pendente quando ele não tiver sido criado.
+4. Abra Revisar backup e clique Recalcular plano e espaço.
+5. Envie uma captura da revisão antes de clicar Iniciar backup.

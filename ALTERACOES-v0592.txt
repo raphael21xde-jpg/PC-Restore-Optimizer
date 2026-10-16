@@ -1,0 +1,8 @@
+PC RESTORE & OPTIMIZER v0.5.9.2 - ISOLAMENTO DE CAPTURA PRESENTMON
+
+- Corrige falha por conflito de nome de sessao ETW do PresentMon: usa um nome PCRO_<identificador> novo para cada captura.
+- Codigo de saida 6 agora aparece como falha em iniciar sessao ETW (conflito ou permissao), mesmo se console nao escrever mensagem.
+- Nao para sessoes ETW de terceiros; nao pede elevacao automaticamente; nao muda seguranca do Windows.
+- Mantem todas as funcoes anteriores da versao 0.5.9.1.
+
+A atualizacao nao garante que um Windows com ETW bloqueado por permissao possa capturar. Nesse caso, o app indica o erro sem modificar o sistema.

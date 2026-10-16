@@ -1,0 +1,11 @@
+PC RESTORE & OPTIMIZER v0.5.9.2 - CORRECAO DE ERRO 6
+
+1. Feche a versao anterior, extraia este ZIP em uma NOVA pasta.
+2. Se quiser preservar selecoes anteriores, copie preferencias-v05.json da pasta antiga ANTES de abrir.
+3. Abra INICIAR.bat.
+4. Em Otimizacao -> Stutters / quadros, selecione a CLI oficial PresentMon-2.6.0-x64.exe.
+5. Com CS2 aberto, processo cs2.exe, inicie a captura. A nova versao usa nome ETW exclusivo e evita conflito com a sessao PresentMon comum.
+6. Se codigo 6 persistir, clique Ver diagnostico da captura. Pode ser falta de permissao ETW. Nao desative antivirus ou seguranca; informe a mensagem para analisarmos o proximo passo.
+
+O codigo 6 significa que a sessao ETW nao foi criada. Sem detalhes do console, ele NAO comprova falta de permissao nem processo errado.
+Nao formata discos, nao altera BIOS, nao altera Registro nem configura drivers.

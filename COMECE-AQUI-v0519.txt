@@ -1,0 +1,61 @@
+PC RESTORE & OPTIMIZER v0.5.19 — OTIMIZACAO DE TRANSFERENCIA E RETOMADA
+=======================================================================
+
+INSTALACAO
+1. Feche a versão anterior. EXTRAIA este ZIP em uma NOVA pasta (não sobre a v0.5.18).
+2. Os backups existentes NÃO precisam ser movidos nem refeitos.
+3. Se usa preferencias-v05.json ou outros arquivos locais de configuração,
+   copie para a nova pasta, quando aplicável.
+4. Execute INICIAR.bat (Python 3.10+). Se faltarem dependências, siga o
+   procedimento já usado na versão anterior (requirements.txt).
+5. Na tela de revisão, recalcule o plano e confirme o backup normalmente.
+6. Na aba Histórico, selecione um backup e abra a restauração agrupada.
+
+NOVIDADES
+- Diagnóstico automático de unidades: usa Get-Disk, Get-Partition e, quando
+  disponível, Get-PhysicalDisk. Diferencia HDD / SSD SATA / SSD NVMe somente
+  quando existem evidências suficientes. Caso contrário, adota modo seguro.
+- Blocos de leitura/gravação adaptados à mídia identificada; cópia sequencial
+  conservadora (não presume que discos diferentes são fisicamente separados).
+- Atualizações de progresso limitadas para evitar excesso de trabalho na UI.
+- Backup: cronômetro, MB/s, arquivos/s e tempo estimado no painel de revisão.
+- Restauração: cronômetro, MB/s, arquivos/s e estimativa na janela agrupada.
+- Resumos locais de desempenho em DESEMPENHO-BACKUP.txt e
+  DESEMPENHO-RESTAURACAO.txt, além do manifesto/jornal JSON.
+- Pontos de recuperação de backup gravados ao iniciar, periodicamente e ao
+  encerrar: manifest.json pode ser utilizado na retomada segura.
+- Restauração usa um journal de progresso e pode retomar a pasta de teste
+  anterior com SHA-256 revalidado de cada arquivo existente.
+- Continua compatível com a leitura/restauração de backups v0.4/v0.5 antigos.
+- O agrupamento visual da v0.5.18 segue igual.
+
+COMO RETOMAR BACKUP INTERROMPIDO
+1. Reabra a v0.5.19, use as MESMAS escolhas/arquivos de origem, recalcule a prévia.
+2. Em Revisão, selecione 'Retomar backup interrompido'.
+3. Escolha o arquivo manifest.json da pasta backup-... criada pela v0.5.19.
+4. Confira a confirmação. O app exige o MESMO plano de arquivos, tamanhos e
+   datas de modificação; revalida SHA-256 dos arquivos já copiados.
+5. Nunca use o botão para unir backups distintos nem para modificar um backup
+   concluído. Alterou as origens? Inicie um backup novo.
+
+COMO RETOMAR RESTAURACAO INTERROMPIDA
+1. Em Histórico, selecione o mesmo backup usado na restauração anterior.
+2. Abra a janela 'Escolher arquivo para testar' / restauração agrupada.
+3. Clique em 'Retomar restauração interrompida'.
+4. Selecione a pasta TESTE-RESTAURACAO-v05-... anteriormente criada.
+5. O app recupera a seleção original do journal e valida SHA-256 de cada
+   arquivo existente antes de continuar; se estiver alterado, copia novamente.
+
+LIMITACOES IMPORTANTES
+- Retomada SOMENTE das operações iniciadas pela v0.5.19. Backups anteriores
+  ainda são totalmente utilizáveis para NOVAS restaurações de teste.
+- A retomada ocorre apenas por solicitação do usuário. Não é automática.
+- A detecção de mídia pode permanecer 'desconhecido' em unidades virtuais,
+  USB, Storage Spaces e quando o Windows não fornecer informação inequívoca.
+- O tempo restante e a velocidade são estimativas, não garantias. Desempenho
+  depende também de antivírus, carga, cache e quantidade de arquivos.
+- Não há exclusão, formatação, reinstalação automática nem substituição
+  de arquivos ativos do Windows. A restauração é sempre para pasta de teste.
+- Confirmar no Windows real antes de confiar em trabalhos grandes.
+- Nem hardware Windows real nem arquivos reais do usuário foram acessados
+  no ambiente de desenvolvimento. Testes automatizados executados no Linux/Xvfb.

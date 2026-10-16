@@ -1,0 +1,88 @@
+"""Prepare explicit browser imports without writing to an installed profile."""
+import html
+import json
+from pathlib import Path
+from urllib.parse import urlsplit
+from browser_vault import _special
+
+
+def safe_file(root, relative):
+    root = Path(root).absolute()
+    p = root / relative
+    for part in (root, *root.parents, p, *p.parents):
+        if part.exists() and _special(part):
+            raise ValueError('Links ou junções não são aceitos na recuperação.')
+    if not p.is_file():
+        return None
+    if p.stat().st_size > 128 * 1024**2:
+        raise ValueError('Arquivo excede 128 MiB.')
+    return p
+
+
+def inspect_recovery(root):
+    root = Path(root)
+    if not root.is_dir():
+        raise ValueError('Selecione a pasta extraída do cofre.')
+    meta = safe_file(root, 'metadata/info.json')
+    info = json.loads(meta.read_text(encoding='utf-8')) if meta else {}
+    return {
+        'browser': info.get('browser', 'Não identificado — confirme a origem'),
+        'bookmarks_html': safe_file(root, 'manual-export/favoritos.html'),
+        'bookmarks_json': safe_file(root, 'profile/Bookmarks'),
+        'password_csv': safe_file(root, 'manual-export/senhas-exportadas.csv') or
+                        safe_file(root, 'senhas_exportadas_MANUALMENTE.csv'),
+    }
+
+
+def bookmarks_html(source):
+    data = json.loads(Path(source).read_text(encoding='utf-8-sig'))
+    roots = data.get('roots')
+    if not isinstance(roots, dict):
+        raise ValueError('Arquivo Bookmarks inválido: roots ausente.')
+    lines = ['<!DOCTYPE NETSCAPE-Bookmark-file-1>', '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">',
+             '<TITLE>Favoritos recuperados</TITLE>', '<H1>Favoritos recuperados</H1>', '<DL><p>']
+    count = 0
+    def visit(node, depth=0):
+        nonlocal count
+        if depth > 64 or not isinstance(node, dict):
+            raise ValueError('Estrutura de favoritos inválida ou profunda demais.')
+        name = html.escape(str(node.get('name', 'Sem nome')), quote=True)
+        if node.get('type') == 'url':
+            url = str(node.get('url', ''))
+            if urlsplit(url).scheme.lower() not in ('http', 'https', 'ftp'):
+                return
+            lines.append('<DT><A HREF="' + html.escape(url, quote=True) + '">' + name + '</A>')
+            count += 1
+        elif node.get('type') == 'folder':
+            lines.extend(['<DT><H3>' + name + '</H3>', '<DL><p>'])
+            for child in node.get('children', []):
+                visit(child, depth + 1)
+            lines.append('</DL><p>')
+    for node in roots.values():
+        if isinstance(node, dict) and node.get('type') in ('folder', 'url'):
+            visit(node)
+    lines.append('</DL><p>')
+    if not count:
+        raise ValueError('Nenhum favorito HTTP, HTTPS ou FTP encontrado.')
+    return '\n'.join(lines), count
+
+
+def prepare_bookmarks(root, destination):
+    """Unique output; no existing file or profile is overwritten."""
+    import uuid
+    found = inspect_recovery(root)
+    target = Path(destination)
+    if not target.is_dir() or any(_special(p) for p in (target, *target.parents)):
+        raise ValueError('Escolha uma pasta normal existente.')
+    if found['bookmarks_html']:
+        payload = found['bookmarks_html'].read_bytes()
+        count = None
+    elif found['bookmarks_json']:
+        payload, count = bookmarks_html(found['bookmarks_json'])
+        payload = payload.encode('utf-8')
+    else:
+        raise ValueError('O cofre não contém favoritos importáveis.')
+    out = target / ('favoritos-recuperados-' + uuid.uuid4().hex[:10] + '.html')
+    with out.open('xb') as stream:
+        stream.write(payload)
+    return out, count

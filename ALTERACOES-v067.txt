@@ -1,0 +1,12 @@
+PC Restore & Optimizer v0.6.7 — AUDITORIA DE PRESERVAÇÃO DO C: / EFI
+
+- Adicionada consulta read-only de locais potenciais do perfil atual e suas seleções.
+- Locais presentes e não selecionados aparecem como pendentes de revisão, nunca como autorizados para apagar.
+- Análise rápida não recursiva, com indicação explícita de links, acesso negado e ausência.
+- Consulta somente leitura ao Windows para identificar disco C:, discos físicos e partições EFI.
+- Boot independente nunca é dado como comprovado automaticamente.
+- Incorporação de falhas/exclusões do inventário do C:.
+- Mapa de recuperação informativo dos caminhos do C: já selecionados.
+- Nova janela de 5 abas em Preservação e Instalar Windows, exportando relatório JSON.
+- v0.6.6: fluxo de cópia SHA-256 e teste de restauração preservado, sem mudanças destrutivas.
+- Todos os flags de autorização de formatação/exclusão permanecem FALSE.

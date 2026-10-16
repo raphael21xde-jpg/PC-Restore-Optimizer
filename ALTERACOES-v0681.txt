@@ -1,0 +1,7 @@
+PC Restore & Optimizer v0.6.8.1 — correção pontual da navegação de pastas
+
+- Corrigido o agendamento da fila Tkinter: respostas posteriores à primeira auditoria agora são processadas continuamente.
+- Consultas de pastas são identificadas por número; respostas atrasadas de uma pasta anterior não substituem resultados da atual.
+- Novo botão Cancelar consulta: abandona a visualização pendente, sem modificar arquivos. Chamadas já em andamento no Windows não são interrompidas à força.
+- Após 15 segundos sem resposta, aviso de lentidão na interface.
+- Mantidas as funções e limitações da v0.6.8; operações destrutivas não implementadas.

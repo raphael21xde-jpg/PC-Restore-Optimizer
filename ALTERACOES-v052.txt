@@ -1,0 +1,24 @@
+PC RESTORE & OPTIMIZER v0.5.2 — MELHORIAS EXPERIMENTAIS
+
+- Mantém v0.5.1 sem substituí-la; nenhuma formatação ou exclusão automática.
+- Locais conhecidos de salvamento adicionados/ajustados para:
+  God of War Ragnarök, Red Dead Redemption 2, Stray e R.E.P.O.
+- Fortnite e Overwatch: diferencia dados de configuração local do progresso online;
+  um arquivo de configuração NÃO confirma backup do progresso da conta.
+- Counter-Strike 2: procura dados de configuração do perfil Steam 730, além de
+  autoexec.cfg e MRS.cfg no diretório cfg da instalação Steam identificada,
+  inclusive quando a biblioteca Steam está na unidade F:.
+  Não pesquisa indiscriminadamente toda a unidade F: e não garante encontrar
+  arquivos personalizados localizados fora das pastas conhecidas do jogo.
+- Mantém localizações heurísticas separadas como possíveis, NÃO selecionadas
+  automaticamente no backup. Não presume que Steam Cloud esteja protegido.
+- 18 testes automatizados passam com arquivos simulados; abertura da interface
+  em tela virtual conferida com 7 abas. Windows real ainda precisa de teste.
+- O histórico dos backups existentes permanece inalterado. Não copie para
+  este pacote qualquer arquivo de preferências usado apenas em testes.
+
+USO: extraia em pasta NOVA, execute INICIAR.bat e clique Procurar jogos e aplicativos.
+Se MRS.cfg não aparecer, veja a pasta exata onde está salvo, sem mover o arquivo.
+Antes de formatar, exija cópia verificada em outra unidade física independente,
+e teste de restauração; a unidade F: contém componentes de inicialização no
+layout de discos examinado anteriormente. Não formate F: nem seu disco físico.

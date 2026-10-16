@@ -1,0 +1,36 @@
+PC RESTORE & OPTIMIZER v0.5.4 — REDESIGN DE INTERFACE UX/UI
+===========================================================
+
+O QUE MUDOU
+- Nova estrutura desktop com menu lateral fixo, em vez de oito abas na horizontal.
+- Tela inicial com ação principal, três passos e indicadores dinâmicos.
+- Linguagem clara: descobrir → escolher → revisar → copiar → testar → recuperar.
+- Pesquisa rápida por nome e origem na lista de jogos e aplicativos.
+- Lista de aplicativos e jogos agora tem rolagem vertical e horizontal.
+- Novo sistema de estilos: contraste, tipografia Segoe UI, áreas de respiro, botões prioritários.
+- Navegação por teclado: Ctrl+1 a Ctrl+8 e Tab/Enter/espaco nos itens do menu.
+- Botão de iniciar backup começa DESABILITADO e só habilita após prévia sem bloqueios.
+- Alterações de seleção invalidam a prévia e bloqueiam novo backup até revisão.
+- Indicações de modo seguro, status e cuidados com os discos de maneira permanente.
+- Caixas de seleção de possível formatação F: (EFI) e G: (dados) bloqueadas na interface.
+- Número da versão unificado no título, cabeçalho, informações e exportação.
+
+O QUE NÃO MUDOU
+- Mesmas APIs internas de descobrimento, seleção, cópia SHA-256, criptografia do Opera,
+  histórico, diagnóstico de SOMENTE LEITURA e recuperação em pasta isolada.
+- Não foram adicionadas rotinas destrutivas, de formatação ou instalação do Windows.
+- Dados candidatos sem comprovação permanecem pendentes de avaliação humana.
+- O aplicativo não garante todos os saves, licenças, configurações ou logins.
+
+TESTES EXECUTADOS NO AMBIENTE DE DESENVOLVIMENTO
+- 25 testes automatizados da versão 0.5.3: aprovados.
+- Compilação sintática dos módulos: aprovada.
+- Interface criada em tela gráfica virtual e navegada pelas oito seções.
+- Filtro visual testado com casos simulados e verificada a restauração ao limpar.
+- Campos F: e G: verificados sem seleção de formatação.
+- NÃO É UM TESTE NO WINDOWS DO USUÁRIO. Requer inspeção e validação local.
+
+MIGRAÇÃO
+Extraia numa pasta NOVA. Caso queira manter decisões da versão anterior,
+copie preferencias-v05.json da pasta antiga para a nova antes de iniciar.
+NÃO substitua a versão anterior, nem renomeie ou mova os backups.

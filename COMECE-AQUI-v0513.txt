@@ -1,0 +1,66 @@
+PC RESTORE & OPTIMIZER v0.5.13 — REINSTALAÇÃO ASSISTIDA
+Experimental: implementação e testes no ambiente de desenvolvimento. A instalação
+pelo WinGet e a nova interface ainda não foram validadas no Windows deste usuário.
+
+ATUALIZAÇÃO
+Extraia em pasta nova. Copie preferencias-v05.json da versão com suas escolhas
+reais antes de abrir INICIAR.bat. Mantenha backups, cofres e versões anteriores.
+
+ONDE ESTÁ
+Após reinstalar Windows > Recuperar aplicativos, jogos e saves — assistente.
+O nome da aba não impede consultar o plano antes da formatação.
+
+PRIMEIRO TESTE NO WINDOWS ATUAL (SEM INSTALAR NADA)
+1. Em O que preservar, pesquise jogos e apps e mantenha suas escolhas reais.
+2. Abra o novo assistente e clique Usar escolhas atuais.
+3. Selecione um aplicativo e clique Buscar programa no WinGet.
+4. Se necessário, ajuste o campo de busca retirando números de versão.
+5. Confira nome/fabricante. Copie o ID completo da coluna Id no campo do pacote.
+6. Clique Conferir pacote escolhido. Pare aqui: não é necessário reinstalar um
+   programa que já funciona apenas para testar a busca.
+Se não houver itens, o catálogo ainda não foi pesquisado ou não há escolhas Manter.
+
+APÓS REINSTALAR O WINDOWS
+Antes da formatação, use Exportar plano para usar depois na aba de recuperação e
+salve o JSON no disco preservado. Guarde também este aplicativo.
+Depois, abra o assistente e use Abrir plano salvo antes da formatação.
+- Aplicativos: busque, confira o pacote e confirme Instalar pacote confirmado.
+  O WinGet abre uma janela para instalação interativa. Pode solicitar licença,
+  UAC ou ações do instalador. O aplicativo não aceita termos automaticamente.
+  Use Verificar instalação e depois abra o programa para validar.
+- O pacote escolhido é da fonte winget, com ID exato. Não há associação automática
+  por nome: você confirma qual pacote corresponde ao item do plano.
+- Não atualiza aplicativos já instalados (--no-upgrade). Se o programa não estiver
+  disponível no WinGet, obtenha o instalador no site oficial; drivers, licenças e
+  aplicativos da Microsoft Store não são automatizados nesta versão.
+- Se WinGet estiver ausente, use Ajuda para instalar WinGet. Se a consulta exigir
+  aceitação dos termos da fonte, abra o Terminal do Windows e execute uma busca
+  interativa (por exemplo: winget search --query Steam --source winget), leia os
+  termos, decida se aceita e volte ao assistente. Isso não instala o Steam.
+
+JOGOS E DADOS
+- Orientação do launcher fornece instruções e ajuda oficial para Steam/Epic.
+  Outros launchers exibem orientação geral, sem promessa de reconhecimento.
+- Recuperar dados / saves deste item pede o manifest.json de um backup real.
+  Mostra apenas arquivos cujas origens correspondem aos caminhos desse item.
+  Recupera em pasta nova, verificando SHA-256; não substitui arquivos instalados.
+- A aplicação dos dados no perfil novo ainda é manual e deve considerar nome do
+  usuário, versão do programa e conflitos da nuvem. Feche o programa e proteja
+  os dados novos antes de aplicar qualquer arquivo recuperado.
+- Saves/configurações não comprovam que os arquivos completos dos jogos estejam
+  no backup. Confira CONTEUDO-DO-BACKUP.txt. Se faltarem arquivos da instalação,
+  será necessário baixá-los novamente pelo launcher.
+- Plano de recuperação é uma lista; não é backup, instalador nem licença.
+- Esta versão não executa formatação nem instala o Windows.
+
+TESTES
+113 testes: 102 passaram, 11 de interface pulados sem display.
+Novos testes cobrem IDs/comandos, seleção Manter, seleção de arquivos por item,
+recuperação isolada e recusa de backup adulterado. Nenhum software foi instalado
+no PC do usuário por estes testes. Falta validação do WinGet e interface no Windows.
+
+FONTES CONSULTADAS
+https://learn.microsoft.com/en-us/windows/package-manager/winget/install
+https://learn.microsoft.com/en-us/windows/package-manager/winget/
+https://help.steampowered.com/en/faqs/view/4578-18A7-C819-8620
+https://www.epicgames.com/help/c-32735058/c-36403860/a18575341

@@ -1,0 +1,10 @@
+0.6.1 — Prévia Fluxo Unificado
+- Menu e interface inicial redesenhados.
+- Correção real de varredura somente nas unidades explicitamente selecionadas.
+- Filtros aplicados aos metadados externos e registros antigos.
+- Visualização e exportação do plano por disco.
+- Associações de saves em painel de revisão, sem suposições de migração automática.
+- Candidatos à remoção apenas como metadados (não apaga).
+- Preparação da instalação limpa em checklist somente leitura.
+- Backup legado limitado ao C: neste fluxo, protegendo dados em outras unidades.
+- Nenhum comando destrutivo ativado.

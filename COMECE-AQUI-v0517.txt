@@ -1,0 +1,17 @@
+PC Restore & Optimizer v0.5.17 — Cópia e restauração
+
+Restauração calcula SHA-256 do backup enquanto copia. Depois relê o destino e confere contra o manifesto. Elimina uma leitura completa da origem sem dispensar verificação.
+Backup: worker não chama Tk; a interface consulta o progresso a cada 100 ms, sem acumular uma atualização por bloco.
+Memória da cópia limitada a blocos de 2 MiB; manifesto e plano continuam proporcionais ao número de arquivos.
+Mantém lista paginada, cancelamento de restauração e pasta nova da v0.5.16.
+Não inclui retomada após reiniciar, backup incremental nem exclusão/formatação.
+Não há promessa de ganho percentual: disco, quantidade de arquivos e origem/destino no mesmo dispositivo influenciam.
+
+Extraia em pasta nova após fechar a versão anterior.
+Copie preferencias-v05.json e deteccao-detalhada-v0514.json, se existirem.
+Execute INICIAR.bat. Use o backup já existente para testar restauração.
+Primeiro teste uma amostra; confirme o resultado e abra os arquivos recuperados.
+
+Validação Linux: 133 testes aprovados, 11 de interface ignorados; compilação Python aprovada.
+Teste de integridade confirma a eliminação da leitura separada da origem; corrupção e cancelamento continuam sendo detectados.
+Não foi realizado benchmark de 120 GB nem teste da interface no Windows.

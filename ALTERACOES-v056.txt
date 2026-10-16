@@ -1,0 +1,26 @@
+MUDANÇAS v0.5.6 — REESTRUTURAÇÃO DE UX + PLANEJAMENTO UNIFICADO
+
+Corrigida a falha conceitual da v0.5.5: o cofre de navegadores foi desenvolvido
+separadamente, sem aplicar a arquitetura unificada discutida para o aplicativo.
+
+1. O item do menu "O que preservar" reúne quatro categorias internas:
+   Jogos, Aplicativos, Arquivos pessoais, Navegadores.
+2. Não há mais itens independentes no menu para Arquivos e pastas ou Navegadores.
+3. A antiga árvore dos discos foi substituída por uma lista de arquivos/pastas
+   explícitos: adicionar arquivo, adicionar pasta, manter, não copiar, pendente,
+   remover da lista. Nenhuma ação remove arquivos originais.
+4. Seleção de jogos mantém associação dos saves conhecidos. Dados candidatos não
+   verificados permanecem sujeitos à revisão humana.
+5. Seleção de perfil de navegador é registrada no estado, sem copiar credenciais
+   automaticamente. A revisão exibe se existe cofre criado nesta instalação.
+6. Revisão mostra juntos jogos/apps, caminhos selecionados e navegadores; o cofre
+   permanece criptografado como pacote SEPARADO, não é incluído no manifesto da
+   cópia comum. Avisos explícitos impedem falsa confiança na cobertura de dados.
+7. Compatibilidade de preferencias-v05.json e plano pós-Windows, com lista de
+   perfis do navegador marcados para preservar (metadados, sem senhas).
+8. Consertado fluxo de verificação de arquivo Opera GX .opgx legado.
+9. Ajustada a interface para janelas menores e nomes curtos dos botões.
+10. 37 testes automatizados passaram no Xvfb em Linux. A validação no Windows
+    ainda é necessária antes de qualquer operação importante.
+
+IMPORTANTE: NENHUMA OPERAÇÃO DE FORMATAÇÃO FOI ADICIONADA.

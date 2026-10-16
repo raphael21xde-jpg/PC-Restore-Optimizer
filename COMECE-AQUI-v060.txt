@@ -1,0 +1,43 @@
+PC RESTORE & OPTIMIZER v0.6.0 — PRÉVIA DA PRESERVAÇÃO INTELIGENTE
+==================================================================
+
+IMPORTANTE: Esta versão implementa SOMENTE a primeira fase: varredura e
+seleção por unidade. NÃO formata discos, NÃO reinstala Windows, NÃO garante
+que os arquivos marcados Manter sobrevivam à exclusão de uma partição.
+
+COMO USAR
+1) Extraia o ZIP em uma pasta NOVA; mantenha a v0.5.19 e seus backups.
+2) Execute INICIAR.bat (requer Python 3 e as dependências existentes).
+3) Na tela Meu Computador, escolha as unidades a examinar e inicie a varredura.
+4) Após a varredura, clique nas abas C:, D:, F:, G: (conforme seu PC).
+5) Expanda Jogos, Navegadores, Aplicativos, Dados e saves ou Outros.
+6) Para caminhos não reconhecidos, expanda "Explorar todas as pastas".
+   Somente 120 entradas por página são carregadas, sob demanda.
+7) Selecione um grupo, caminho ou pasta e clique em "Marcar selecionados
+   para MANTER". O botão NÃO copia nem protege fisicamente os arquivos.
+8) Utilize "Não preservar" para registrar escolhas, SEM excluir arquivos.
+9) Consulte o relatório de erros e exclusões por unidade e exporte o JSON.
+
+O QUE SIGNIFICA UMA SELEÇÃO
+- Item no D: que continuará intacto pode permanecer no lugar, desde que o
+  Windows reinstalado consiga abrir a unidade e o jogo seja reconfigurado.
+- Item no C: que será formatado precisa ter CÓPIA VERIFICADA fora do C:.
+- Item no D:, F: ou G: que também será formatado igualmente precisa ter
+  CÓPIA VERIFICADA fora de TODOS os discos que serão apagados.
+- O G: de seu computador é Storage Spaces "Simple" sem redundância.
+- O SSD F: possui a partição EFI de inicialização: não o formate.
+
+PRÓXIMA FASE (AINDA NÃO IMPLEMENTADA)
+Planejador de preservação e simulação de formatação, capaz de vincular cada
+escolha ao disco, verificar destinos independentes, bloquear operações sem
+cópia comprovada, preservar discos não formatados, e preparar a reinstalação.
+
+SEGURANÇA
+A varredura é somente leitura. Links/junções não são percorridos.
+Caminhos do sistema e raízes dos discos não podem ser marcados diretamente.
+Erros/permissões negadas indicam LACUNAS; ausência de registro não prova
+que um arquivo inexista ou que um save esteja protegido.
+
+TESTES
+170 testes automatizados foram aprovados em Linux com Xvfb. Teste real
+no Windows, com unidades locais e 248 mil pastas, continua necessário.

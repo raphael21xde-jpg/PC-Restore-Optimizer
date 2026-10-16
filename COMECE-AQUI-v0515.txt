@@ -1,0 +1,53 @@
+PC RESTORE & OPTIMIZER v0.5.15 — MEU COMPUTADOR
+Tela inicial de varredura e resultados agrupados. Build experimental.
+
+ATUALIZAR SEM REPETIR A VARREDURA ANTERIOR
+1. Feche o aplicativo antigo e extraia este ZIP em uma pasta NOVA.
+2. Copie preferencias-v05.json da versão anterior para a nova pasta.
+3. Copie também deteccao-detalhada-v0514.json, se existir: ele contém o resultado
+   da varredura extensa já realizada. O formato/nome do relatório foi mantido.
+4. Abra INICIAR.bat. A tela Meu computador carregará e agrupará o relatório.
+5. Se não houver relatório ou o PC mudou, escolha as unidades e inicie nova busca.
+
+ORGANIZAÇÃO
+- Meu computador é a entrada principal: varredura, resultados e escolhas.
+- Visão geral foi substituída. O que preservar saiu do menu principal.
+- Navegadores/senhas, arquivos pessoais e seleção avançada continuam acessíveis
+  por botões na tela inicial. Revisar backup, histórico e recuperação permanecem.
+- Um item lógico reúne locais relacionados ao aplicativo. Expandir mostra partes
+  e evidências. Nomes iguais sem identidade suficiente ainda podem ficar separados.
+- Caminhos duplicados são reunidos; todas as evidências continuam no relatório.
+- osu! clássico/stable e osu! lazer são itens separados quando a estrutura permite
+  distinguir a edição. Edição não comprovada aparece como "a conferir".
+- Opera GX e Opera regular ficam separados. Várias pastas/perfis da mesma família
+  aparecem no grupo do navegador; o botão Preservar direciona ao cofre, permitindo
+  selecionar o perfil correto em vez de copiar dados de login em texto claro.
+- Componentes como runtimes, SDKs e redistribuíveis ficam em um ramo técnico
+  recolhido, sem ocultar seus detalhes de quem deseja conferi-los.
+- Agrupamento é apenas visual. Não move, compacta nem apaga pastas reais.
+
+ESCOLHAS
+- Selecione o item principal para Preservar todos os caminhos agrupados após
+  conferir. Candidatos de associação também precisam de confirmação explícita.
+- Expanda o item para selecionar somente algumas partes, por exemplo Songs e Skins.
+- Não copiar exclui da seleção de backup; NÃO apaga nem desinstala.
+- Selecionar um caminho pai aplica a escolha aos descendentes já selecionados.
+  Caminhos compartilhados podem afetar outros itens: confira o plano final.
+- Estrutura lazer aninhada sob uma instalação stable, quando detectada e ainda
+  não selecionada separadamente, recebe exclusão para não entrar por herança.
+- O agrupamento não comprova que todos os dados estejam localizados ou protegidos.
+
+PROGRESSO HONESTO
+O anel gira enquanto arquivos/pastas são descobertos, mostrando contadores.
+Não há porcentagem inventada quando o total ainda não é conhecido. Ao terminar
+ o percurso, mostra 100%; erros/exclusões permanecem explícitos. Cancelamento
+mostra Parcial. 100% do percurso NÃO significa 100% dos dados de todo aplicativo.
+
+VALIDAÇÃO
+138 testes: 127 passaram, 11 testes gráficos pulados por ausência de display.
+Novos testes: 30 caminhos agrupados; separação stable/lazer; herança de edição;
+edição desconhecida; Opera GX separado de Opera; deduplicação de caminhos;
+fabricantes distintos; seleção grupo+filho; identidade persistente por edição;
+relatório original preservado; exclusão de lazer aninhado.
+A nova interface precisa de validação no Windows. A configuração de perfis,
+restauração efetiva no aplicativo e permissões do sistema continuam sendo limites.

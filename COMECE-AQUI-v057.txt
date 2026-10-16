@@ -1,0 +1,41 @@
+PC RESTORE & OPTIMIZER v0.5.7 — OTIMIZAÇÃO (ESTUDO HONEST)
+============================================================
+
+INSTALAR
+1. Extraia o ZIP em PASTA NOVA. Nao substitua a versao v0.5.6.
+2. Para preservar as escolhas anteriores, COPIE o arquivo preferencias-v05.json
+   da versao antiga para a nova (antes de abrir). Nao precisa fazer isso se preferir
+   comecar sem selecoes.
+3. Abra INICIAR.bat. Python 3.10 ou superior no Windows.
+4. No menu lateral, escolha Otimizacao.
+
+PRIMEIRO TESTE: SOMENTE LEITURA
+- Guia 1 Diagnostico > Analisar este PC
+- Veja CPU, GPU/driver, memoria, placa-mae, BIOS e planos de energia.
+- Nao aplica nenhum ajuste. Nao altera firmware ou discos.
+
+MEDIR MELHORIAS
+- Guia 3 Benchmarks. Informe jogo/cenario e selecione ANTES.
+- Importe um CSV por rodada com coluna FPS ou FrameTime (ms), 30+ amostras.
+- Preferencial: 3 rodadas antes e 3 depois, mesmo mapa, presets,
+  resolucao e sem programas extras rodando.
+- A comparacao usa mediana e indicadores de 1% / 0,2% lows estimados.
+
+UM AJUSTE REVERSIVEL, OPCIONAL
+- Guia 2 Energia reversivel: Atualizar -> escolher plano existente -> Aplicar.
+- Confirmacao obrigatoria; um registro de reversao e salvo no LocalAppData.
+- Para retornar: botao Desfazer minha ultima mudanca.
+- Outros programas podem alterar o plano e impedir a reversao automatica.
+- Alto desempenho pode causar maior gasto de energia e calor sem elevar FPS.
+
+BIOS, DRIVERS, REGISTRO E SERVICOS
+- Guia 4 BIOS e drivers fornece somente orientacoes de compatibilidade.
+- NAO altera memoria XMP/EXPO, SMT/Hyper-Threading, tensoes, clocks, drivers,
+  Registro, memoria virtual, seguranca, inicializacao ou servicos.
+- Estudo não fornece parâmetros completos e testados para todas as maquinas.
+
+REGRA DE PROTECAO
+- Nunca formate G: e nao remova a EFI no disco de F:.
+- Confirme a integridade dos backups antes de mexer no Windows.
+- Mesmo a pasta G: nao e um backup fisico independente de arquivos unicos.
+- Releia ESTUDO-HONEST-ANALISE-E-LIMITES-v057.md para analise integral do trabalho.

@@ -1,0 +1,97 @@
+PC RESTORE & OPTIMIZER v0.5.5 — NAVEGADORES E SENHAS
+=====================================================
+
+VERSÃO EXPERIMENTAL — NÃO FORMATAR NENHUM DISCO.
+
+Esta atualização preserva o módulo de jogos/saves da v0.5.4.1 e acrescenta um
+COFRE LOCAL CRIPTOGRAFADO para vários navegadores. NÃO realiza sincronização
+por conta própria, NÃO lê suas senhas e NÃO consegue recriar logins/cookies de
+sessões vinculadas ao dispositivo após a reinstalação do Windows.
+
+INSTALAÇÃO
+1. Feche a versão anterior. Extraia ESTE ZIP em uma pasta NOVA.
+2. Se quiser manter suas escolhas de jogos/programas, COPIE apenas
+   preferencias-v05.json da versão anterior para a nova pasta antes de abrir.
+3. Execute INSTALAR-CRIPTOGRAFIA.bat para instalar a dependência do cofre
+   (biblioteca Python cryptography). É preciso acesso à internet para instalar.
+4. Execute INICIAR.bat. Não há formatação nem exclusão automática de dados.
+
+NAVEGADORES SUPORTADOS — DETECÇÃO DE PERFIS NO WINDOWS
+- Opera GX e Opera
+- Google Chrome e Chromium
+- Microsoft Edge
+- Mozilla Firefox
+- Brave
+- Vivaldi
+
+O detector busca pastas conhecidas em AppData/LocalAppData, identifica diversos
+perfis e permite escolher uma pasta manualmente. Ele NÃO acessa a conta online,
+não analisa o conteúdo das senhas nem verifica a sincronização automaticamente.
+Se o navegador não aparecer, use Escolher manualmente na página Navegadores.
+
+PASSO A PASSO ANTES DE REINSTALAR
+A) Sincronize pelo navegador original:
+   - Abra 'Navegadores e senhas' e selecione perfil.
+   - Clique em Ajuda oficial ou copie o endereço da tela de sincronização.
+   - No PRÓPRIO navegador, entre na conta e escolha os dados sincronizáveis.
+   - Confirme que favoritos e senhas realmente aparecem na conta sincronizada.
+   - Guarde em outro lugar os meios de login, códigos de recuperação e, quando
+     necessário, frase-senha de sincronização (Vivaldi, Firefox, Opera, etc.).
+   - Brave Sync funciona por cadeia de dispositivos, não basta apenas entrar
+     com uma conta comum. Guarde um método seguro de reingresso na cadeia.
+B) Faça backup criptografado local como camada independente:
+   - O Firefox oferece um sistema nativo de backup, em algumas versões capaz
+     de incluir senhas e dados sensíveis sob criptografia. Consulte a ajuda
+     oficial e considere esse recurso como outra proteção.
+   - Feche o navegador por completo.
+   - Se desejar, use as funções do próprio navegador para exportar um CSV de
+     senhas e/ou um HTML de favoritos; o programa NUNCA exporta senhas sozinho.
+   - CUIDADO: CSV de senhas é texto legível. Não o envie em email ou chat.
+   - Escolha o CSV e o HTML manualmente, caso tenha exportado.
+   - Clique em Criar cofre AES-256. Defina uma frase-senha FORTE que você NÃO
+     usará como senha dos seus serviços. Guarde-a FORA do computador.
+   - O app produz um novo arquivo .pcbrowser autenticado AES-256-GCM.
+   - Após sucesso, confira Verificar integridade e faça Recuperar para conferência
+     em uma pasta NOVA e PRIVADA, sem sobrescrever perfil instalado.
+C) Confirme o conteúdo e tenha uma SEGUNDA CÓPIA em mídia física independente.
+   - G: é Storage Spaces simples, sem redundância. Não é backup independente.
+   - NUNCA formate G:. O SSD do F: contém partição EFI e fotos importantes;
+     NÃO apague o SSD F: nem faça operações de reparticionamento nele.
+
+DEPOIS DE REINSTALAR O WINDOWS
+1. Instale cada navegador na fonte oficial, autentique-se e confirme Sync.
+2. Aguarde dados sincronizados. Não presuma que todas as sessões voltam.
+3. Caso necessário, use Recuperar para conferência em pasta NOVA.
+4. Importe o CSV de senhas e o HTML de favoritos PELO PRÓPRIO NAVEGADOR.
+5. Outros arquivos de perfil devem ser restaurados manualmente caso a caso;
+   não substitua o perfil novo inteiro pelo antigo sem avaliação.
+6. CSV restaurado volta a ser TEXTO LEGÍVEL. Cuide das cópias temporárias.
+   Excluir o arquivo em SSD não garante eliminação irrecuperável dos dados.
+
+IMPORTANTE SOBRE O COFRE E SENHAS
+- O cofre contém favoritos, preferências, alguns dados de histórico/sessões,
+  extensões e, caso autorizado, dados extras de sites. Não garante que todos
+  sejam automaticamente aceitos por uma instalação nova do navegador.
+- Bancos de senhas/cookies/chaves protegidos pelo sistema operacional NÃO são
+  coletados automaticamente. É por isso que Sync e CSV exportado são essenciais.
+- O programa não pede nem armazena a senha do Google/Microsoft/Firefox/Opera.
+- Seus dados locais são lidos SOMENTE quando você manda criar o cofre.
+- O conteúdo nunca é enviado para nuvens ou terceiros pelo aplicativo.
+- Guarde a frase-senha do cofre: sem ela não há recuperação.
+- Cofre antigo Opera GX .opgx pode ser verificado e extraído na v0.5.5.
+
+LINKS OFICIAIS DE AJUDA
+Opera: https://help.opera.com/en/latest/features/
+Chrome: https://support.google.com/chrome/answer/13068232
+Edge: https://support.microsoft.com/pt-br/edge/sign-in-to-sync-microsoft-edge-across-devices
+Firefox (Sync): https://support.mozilla.org/pt-BR/kb/sincronizacao
+Firefox (backup nativo, conforme versão): https://support.mozilla.org/pt-BR/kb/firefox-backup
+Firefox (exportar senhas): https://support.mozilla.org/pt-BR/kb/como-exportar-dados-contas-firefox
+Brave: https://support.brave.com/hc/pt/articles/360021218111-Como-configuro-a-Sincroniza%C3%A7%C3%A3o
+Vivaldi: https://help.vivaldi.com/pt-br/desktop-pt-br/ferramentas/sync/
+
+VALIDAÇÃO ATÉ AGORA
+- 32 testes automatizados passaram em ambiente Linux com interface gráfica
+  simulada, inclusive criptografia e restauração de arquivos de teste.
+- Não foi testado no seu Windows nem contra todos os perfis reais.
+- Nenhum SSD foi apagado, formatado, reparticionado ou modificado neste trabalho.

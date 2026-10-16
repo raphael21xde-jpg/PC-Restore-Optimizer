@@ -1,0 +1,14 @@
+PC Restore & Optimizer 0.5.1 — Alterações experimentais
+
+- Associação de nomes alternativos/edições: The Witcher 3 Remastered
+  pode encontrar o local conhecido Documentos\The Witcher 3\gamesaves.
+- Integração do detector ao catálogo, sem exigir seleção individual dos saves.
+- Busca controlada por pastas em Documentos, Saved Games e AppData, com limite
+  de diretórios pesquisados e sem modificar arquivos.
+- Identifica possíveis dados em Steam userdata/ACCOUNT/APPID/remote.
+- Distingue locais conhecidos e candidatos para conferência. Candidatos NÃO
+  são adicionados ao backup automaticamente.
+- Preserva motor de backup SHA-256 e as restrições contra formatação.
+- Compatível com escolhas v0.5, se copiar preferencias-v05.json manualmente.
+- Dez testes unitários passam; interface abriu com sete abas em X virtual.
+- Windows real ainda NÃO testado; cobertura de saves NÃO é garantida.

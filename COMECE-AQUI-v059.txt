@@ -1,0 +1,72 @@
+PC RESTORE & OPTIMIZER v0.5.9 — STUTTERS / FRAMETIME (EXPERIMENTAL)
+===================================================================
+
+A evolução: telemetria v0.5.8 + análise de FPS pontual do Afterburner +
+importação/captura de QUADROS INDIVIDUAIS por meio do PresentMon CLI (externo).
+Também há análise de travadas, 1% low e 0,2% low e registro na comparação
+ANTES/DEPOIS do mesmo jogo/cenário. Nenhuma otimização de sistema é aplicada.
+
+INSTALAÇÃO SEGURA
+1. Extraia o ZIP numa PASTA NOVA. Não apague a versão anterior.
+2. Para manter escolhas da preservação, copie seu preferencias-v05.json
+   anterior para a nova pasta ANTES de iniciar o programa.
+3. Inicie INICIAR.bat. Abra Otimização > 3 Stutters / quadros.
+4. Seus históricos de energia e sessões v0.5.8 ficam em %LOCALAPPDATA%\PC-Restore-Optimizer,
+   e não devem ser apagados.
+
+TESTE IMEDIATO SEM INSTALAR MAIS NADA
+- Clique "Analisar uma sessão anterior (.json) - quedas observadas".
+- Abra sua sessão-20261015-204102-2b0143.json (arquivo fornecido na conversa).
+- A queda de 188,4 para 55,9 FPS deve aparecer com 82,375 °C e
+  utilização de CPU 98,517%; em seguida 1,8 FPS com CPU 100%.
+- São apenas OITO amostras de FPS do Afterburner. NÃO geram 1% low, duração
+  de congelamentos ou prova de limitação térmica. É histórico exploratório.
+
+CAPTURA AUTOMÁTICA OPCIONAL DE QUADROS REAIS NO WINDOWS
+- Para Capturar quadros automaticamente, o usuário deve obter e selecionar o
+  EXE oficial do PresentMon **CONSOLE** para Windows; não está incluído.
+  Repositório/documentação oficial:
+  https://github.com/GameTechDev/PresentMon
+  https://github.com/GameTechDev/PresentMon/releases
+  CLI documentada: https://github.com/GameTechDev/PresentMon/blob/main/README-ConsoleApplication.md
+- Atenção: a versão gráfica comum NÃO é a CLI. Selecione o executável
+  da CLI da versão oficial. Não execute cracks/programas de terceiros.
+- Abra CS2, selecione o .exe da CLI, mantenha jogo "cs2.exe", duração 90s,
+  clique Capturar quadros e jogue normalmente (não alterne janela/mapeamento).
+- Os argumentos são oficiais: --process_name, --output_file, --timed,
+  --terminate_after_timed. Compatibilidade ainda NÃO foi testada no seu Windows.
+- Se não conseguir iniciar a CLI, a importação de CSV já existente continua
+  funcionando (PresentMon, CapFrameX, OCAT).
+- Alguns sistemas exigem permissão de Performance Log Users/administrador
+  para uso da captura ETW. O app não solicita elevação automaticamente.
+- QUANDO a captura terminar, o app importa o arquivo, detecta eventos de
+  frametime >= max(33,33 ms, 3x mediana), calcula os piores intervalos,
+  FPS médio e lows e salva relatório local *.stutters.json.
+- Clique "Registrar no comparador ANTES/DEPOIS" com confirmação para
+  comparações na aba Benchmarks. Faça pelo menos 3 sessões por fase,
+  sempre com o mesmo cenário, temperatura e configurações.
+- Se fizer a gravação de temperaturas AO MESMO TEMPO, o app tenta aproximar
+  horários entre os piores intervalos e leituras de CPU/GPU; não é correlação
+  com relógio de hardware e NÃO prova causalidade.
+
+FUNDAMENTAÇÃO E LIMITES
+- Inspirado no artigo HONEST que você enviou: diagnóstico de Windows + firmware,
+  benchmarking antes/depois e registro de resultados em jogos.
+- NICHFPS+: estudamos registros públicos, mas não obtivemos documentação
+  técnica verificável da suposta versão 4.0 nem dos ajustes internos.
+  NÃO copiamos software fechado, scripts desconhecidos ou técnicas sem validação.
+- Não implementamos desativação em massa de serviços, pagefile/registro
+  indiscriminado, drivers não assinados, alterações de firmware ou clocks.
+- Captura usa ferramenta de terceiros oficial fornecida separadamente.
+- Limitações do 1% low: aqui é o FPS equivalente da média dos 1% intervalos
+  mais lentos (método explícito); diferenças de metodologia de outras
+  ferramentas podem causar números ligeiramente diferentes.
+- Capturas de menu/carregamento/alt-tab geram FPS artificialmente baixo;
+  exclua esses momentos repetindo uma sessão controlada.
+- GPUs com frame generation ou jogos com múltiplas swapchains exigem
+  atenção à interpretação da métrica temporal selecionada.
+- Testes feitos em Linux com interface virtual e CSV sintético;
+  o executável do PresentMon ainda precisa ser testado no seu Windows.
+
+DISCOS: NÃO FORMATAR F: / G:. F: possui a partição EFI do Windows.
+A preservação de jogos e backups da versão anterior continua intacta.

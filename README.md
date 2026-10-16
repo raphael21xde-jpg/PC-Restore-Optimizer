@@ -1,25 +1,20 @@
 # PC Restore & Optimizer
 
-Software Windows em desenvolvimento para inventariar discos, arquivos, programas, jogos e saves; permitir seleção individual; preservar dados; apoiar reinstalação segura do Windows; recuperar informações e otimizar o sistema.
+Base histórica v0.6.9, preservada a partir do arquivo disponibilizado pelo autor. **Não é a versão v0.8.1.** Não executar em produção operações de disco, instalação ou restauração sem testes.
 
 ## Objetivo
-Produto para diferentes computadores Windows — **não limitado à máquina de testes**. Nenhum disco, letra de unidade, layout EFI ou destino de backup deve ser presumido.
+Ferramenta para computadores Windows de diferentes configurações, com inventário de volumes, seleção explícita de preservação, backup verificável, recuperação, orientação de reinstalação do Windows e otimizações seguras.
+
+## Princípios inegociáveis
+- Examinar volumes presentes e permitir seleção de arquivos/pastas/programas/jogos/saves sem apagamentos implícitos.
+- Não confundir 'não copiar' com 'apagar'. Nenhuma exclusão a partir de inventário/seleção.
+- Detectar dependências entre unidades e preservar a seleção do usuário.
+- Verificação de integridade SHA-256 e recuperação testável; registrar erros e progresso.
+- Operações destrutivas exigem etapa independente de confirmação e auditoria; desabilitadas por padrão.
+- Sem garantia de reinstalação automática de softwares licenciados, passkeys, credenciais ou programas sem instaladores.
 
 ## Estado
-**Prévia de desenvolvimento (v0.7.0-dev). Não utilizar para formatação ou reinstalação em computador com dados importantes.** As rotinas de backup e restauração precisam de testes adicionais de integridade, interrupção e recuperação.
+Código Python e testes históricos importados da v0.6.9; não certificados em hardware real. As funcionalidades descritas em `docs/ESPECIFICACAO.md` são requisitos de produto, **não** alegações de implementação.
 
-## Regras
-- Nenhuma exclusão ou formatação automática.
-- Operações destrutivas requerem validação e confirmação específicas.
-- Nunca incluir backups, dados pessoais, segredos ou exports de navegador no Git.
-- Distinguir implementado, testado automaticamente e validado em equipamentos Windows.
-- Interface gamer moderna, mas acessível; Figma para design, GitHub para código e testes.
-
-## Próximas atividades
-1. Incorporar o código-fonte v0.7.0-dev auditado.
-2. Validar arquitetura, dependências e testes automatizados.
-3. Generalizar descoberta de volumes, aplicativos, jogos e saves.
-4. Fortalecer seleção, integridade SHA-256, retomada e restauração.
-5. Integrar interface, preparar instalador e homologação Windows.
-
-> O histórico de testes em uma máquina não comprova compatibilidade universal.
+## Executar e testar no Windows
+Inspecione `requirements.txt` antes de instalar dependências. Crie um ambiente virtual e execute `python -m unittest discover -s tests` no ambiente apropriado. Confira também `INICIAR.bat` antes de executar o aplicativo. Nunca aponte os primeiros testes para dados únicos ou para o disco do Windows.

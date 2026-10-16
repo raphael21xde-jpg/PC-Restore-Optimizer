@@ -1,0 +1,11 @@
+PC Restore & Optimizer v0.6.5 — Prévia de revisão
+
+- Corrigida a tabela de relações: caminhos manualmente associados a itens
+  catalogados como app também aparecem, com indicação de classificação pendente.
+- Sem promover candidatos a dados/saves confirmados automaticamente.
+- Diagnóstico de importação diferencia preferências, plano e inventário de detecção.
+- Conferência de fontes do C: somente de metadados, sem backup, com exportação JSON.
+- Nome do relatório de inventário atualizado para deteccao-detalhada-v065.json.
+- App atualizado para indicar v0.6.5.
+- 218 testes automatizados aprovados no ambiente de desenvolvimento.
+- Exclusões, formatação e alteração de EFI continuam desabilitadas.

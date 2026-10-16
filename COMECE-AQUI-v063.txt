@@ -1,0 +1,45 @@
+PC RESTORE & OPTIMIZER v0.6.3 — SELEÇÃO INTELIGENTE UNIFICADA
+============================================================
+
+PRÉVIA NÃO DESTRUTIVA — NÃO FORMATA, NÃO EXCLUI E NÃO REINSTALA WINDOWS.
+
+O que mudou:
+  * Meu Computador reúne jogos, aplicativos, arquivos e saves por unidade.
+  * As decisões principais de jogos/apps agora usam o mesmo registro na
+    tela de Meu Computador, na Seleção Avançada (legada) e na Preservação.
+  * A ficha do item mostra instalação, dados confirmados e candidatos
+    em unidades diferentes. Caminho apenas sugerido não é save confirmado.
+  * Varreduras seletivas mantêm snapshots independentes: C: não some
+    quando D: é reexaminado; não examina outras unidades automaticamente.
+  * Saves conhecidos são procurados somente nos locais dentro dos volumes
+    selecionados, quando C: está incluído na varredura.
+  * Escolhas importantes de jogos/apps têm metadados salvos localmente.
+
+INICIAR: extraia tudo em uma NOVA pasta. No Windows, dê dois cliques em
+INICIAR.bat. Não substitua a pasta da versão anterior.
+
+TESTE RECOMENDADO:
+  1. Meu Computador: marque APENAS C: e faça a varredura.
+  2. Marque APENAS D: e varra novamente. C: deve seguir como 'salvo'.
+  3. Na aba D:, selecione um jogo e clique 'Manter selecionados'.
+  4. Vá para Preservação: o mesmo jogo deve aparecer ali.
+  5. Volte ao jogo, abra 'Abrir ficha do jogo/app'. Examine os candidatos.
+     Só confirme um caminho de save/configuração após conferir seu conteúdo.
+  6. Revise a diferença entre 'instalado em D:' e 'save conhecido em C:'.
+  7. Feche, abra novamente e confira se sua escolha continua registrada.
+  8. Se necessário, Preservação > Importar escolhas da versão anterior:
+     selecione preferencias-v05.json da v0.6.2; confira o resultado.
+
+SEGURANÇA:
+  • Manter NÃO faz backup e NÃO protege o C: de uma instalação limpa.
+  • Não preservar NÃO apaga arquivos. Candidatos de remoção são só prévia.
+  • Não execute formatação nem limpezas reais com esta prévia.
+  • Antes de reinstalar, será necessário verificar backup e recuperação
+    de todos os dados escolhidos no C:, além da EFI no SSD F: e do
+    Storage Spaces de G: (sem redundância).
+  • Apps podem exigir reinstalação e login; manter a pasta não basta.
+  • Uma varredura com erros não garante que todos os arquivos foram achados.
+
+A seleção de saves é conservadora: se um arquivo aparece como 'a conferir',
+abra o local e confirme manualmente. Nenhuma heurística prova a integridade de
+jogos ou que 100% dos dados de um aplicativo foram identificados.

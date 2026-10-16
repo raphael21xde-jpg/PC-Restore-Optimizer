@@ -1,0 +1,19 @@
+PC RESTORE & OPTIMIZER 0.5.4.1 — CORREÇÃO DE LISTAS VAZIAS
+=======================================================
+
+Corrigido o contêiner das tabelas em Jogos + Saves/Configs e Aplicativos / Periféricos.
+A versão anterior criava os Treeviews como filhos do painel de abas, mas os
+posicionava por pack(in_) em um frame interno. Em certas versões do Windows/Tk,
+o frame cobria os Treeviews, exibindo uma lista vazia apesar do catálogo carregado.
+Agora os dois Treeviews são criados diretamente no frame correto.
+
+Este ajuste não muda o motor de detecção, seleção, backup, recuperação ou
+a política de proteção dos discos. Nenhum comando de formatação foi incluído.
+
+INSTRUÇÕES
+1. Feche o aplicativo anterior.
+2. Extraia v0.5.4.1 em uma pasta NOVA, sem substituir v0.5.4.
+3. Opcional: copie preferencias-v05.json da v0.5.4 para esta pasta para manter escolhas.
+4. Execute INICIAR.bat e abra Jogos e aplicativos.
+5. A lista deve exibir cabeçalhos e as linhas, e o filtro deve funcionar.
+6. Não execute backups reais antes de conferir o plano e os destinos.

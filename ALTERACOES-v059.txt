@@ -1,0 +1,32 @@
+PC RESTORE & OPTIMIZER v0.5.9 — Desenvolvimento experimental de stuttering
+
+Funcionalidades introduzidas:
+- Otimização > 3 Stutters / quadros em novo painel com 6 abas internas.
+- Leitura do JSON salvo na v0.5.8: detecta quedas expressivas em FPS
+  amostrado e mostra sensores observados no mesmo horário sem falso 1% low.
+- Captura temporizada de quadros no Windows por PresentMon CLI externo,
+  selecionado explicitamente pelo usuário; sem injeção de código nem drivers.
+- CSV real v1/v2 PresentMon (MsBetweenAppStart/MsBetweenPresents) + frametime
+  e FPS por quadro de exportações similares; identifica processo principal
+  e swapchain mais frequente quando essas informações existem.
+- FPS médio calculado por tempo/quadros; 1% low e 0,2% low pelo intervalo
+  médio dos 1% e 0,2% quadros mais lentos; P99/P99.8 frametime.
+- Eventos de stutter pela combinação de limiar >= 33,33ms OU 3x mediana,
+  implementada como max(33,33,3x), sem confundir stutters com FPS pontual.
+- CSV exportado e relatório *.stutters.json no computador; quando possível,
+  cruzamento aproximado com amostras de sensores durante captura iniciada
+  nesta mesma interface.
+- Botão para registrar no comparador de benchmarks existente, com confirmação.
+- Mantida leitura do Afterburner, NVIDIA, planos reversíveis e backups.
+- 73 testes aprovados; incluindo 8 novos testes do analisador (ambiente simulado).
+
+Informação pública do NICHFPS+:
+- Encontrados registros de Nich FPS+ versão 2.0.1 e divulgação comercial.
+- Não localizada descrição confiável da versão 4.0 ou código-fonte aberto.
+- Sem replicar propaganda de "mais FPS garantido" ou alterações não documentadas.
+
+Ainda NÃO incorporado:
+- Leitura nativa de frametimes sem instalação/configuração de ferramenta
+  de captura apropriada; esta versão integra o CLI oficial quando presente.
+- Algoritmo capaz de provar que temperatura foi causa de um stutter.
+- Automatização segura universal de BIOS e parâmetros não publicados do HONEST.

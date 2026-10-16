@@ -1,9 +1,9 @@
-"""Descoberta de letras de unidade Windows sem configuração fixa. Somente leitura."""
-import ctypes
+"""Descoberta de unidades Windows sem letras fixas. Somente leitura."""
 import os
+import ctypes
 
 def discover_drive_letters():
-    """Retorna letras atualmente informadas pelo Windows."""
+    """Enumera volumes com letra acessíveis neste momento, sem assumir C/D/F/G."""
     if os.name != "nt":
         return ()
     try:
@@ -15,5 +15,5 @@ def discover_drive_letters():
         return ()
 
 def choose_backup_destination(letters):
-    """Destino jamais definido somente pela letra de unidade."""
+    """Nunca presume que um disco específico é seguro como destino."""
     return ""
