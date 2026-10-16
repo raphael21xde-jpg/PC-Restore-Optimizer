@@ -1613,6 +1613,14 @@ class App(tk.Tk):
         text.append('');text.append('VOLUMES:')
         for v in d.get('volumes',[]):
             text.append('  '+str(v.get('DriveLetter') or '?')+': | '+str(v.get('FileSystemLabel') or '')+' | '+str(v.get('SizeRemaining'))+' livres de '+str(v.get('Size'))+' bytes')
+        text.append('')
+        text.append('ASSOCIAÇÕES INFORMADAS POR GET-PARTITION (NÃO CONFIRMAM DISCO FÍSICO):')
+        mappings = d.get('storage_mapping') or {}
+        for item in mappings.get('letter_mapping', []):
+            disk_numbers = item.get('disk_numbers') or []
+            disks_label = ', '.join('Disco '+str(n) for n in disk_numbers) if disk_numbers else 'NÃO IDENTIFICADO'
+            text.append('  '+str(item.get('letter'))+': -> '+disks_label+' | '+str(item.get('status')))
+        text.append('  Conferir separadamente EFI, discos dinâmicos, pools e volumes sem letra.')
         text.extend(['','ALERTAS E RECOMENDAÇÕES:'])
         text.extend('  • '+a for a in report.get('recommendations',[]))
         text.extend(['','Sem teste SMART aprofundado, sem temperatura e sem prova de que o backup está em unidade física independente.',
