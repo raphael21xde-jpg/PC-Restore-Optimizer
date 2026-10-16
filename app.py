@@ -1621,6 +1621,15 @@ class App(tk.Tk):
             disks_label = ', '.join('Disco '+str(n) for n in disk_numbers) if disk_numbers else 'NÃO IDENTIFICADO'
             text.append('  '+str(item.get('letter'))+': -> '+disks_label+' | '+str(item.get('status')))
         text.append('  Conferir separadamente EFI, discos dinâmicos, pools e volumes sem letra.')
+        extents = d.get('extent_mapping') or {}
+        text.extend(['', 'EXTENSÕES DE VOLUME (IOCTL — SOMENTE LEITURA):'])
+        for row in extents.get('volumes', []):
+            label = ', '.join(x+':' for x in row.get('letters', [])) or 'Sem letra'
+            numbers = row.get('disk_numbers') or []
+            number_text = ', '.join('Disco '+str(n) for n in numbers) if numbers else 'NÃO IDENTIFICADO'
+            text.append('  '+label+' -> '+number_text+' | '+str(row.get('status')))
+            text.append('     '+str(row.get('reason', '')))
+        text.append('  IMPORTANTE: disco lógico != disco físico; Spaces e discos dinâmicos exigem conferência adicional.')
         text.extend(['','ALERTAS E RECOMENDAÇÕES:'])
         text.extend('  • '+a for a in report.get('recommendations',[]))
         text.extend(['','Sem teste SMART aprofundado, sem temperatura e sem prova de que o backup está em unidade física independente.',
