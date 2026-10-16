@@ -17,6 +17,8 @@ jobs:
         run: python -m compileall -q .
       - name: Test GUID volume inventory (no disk writes)
         run: python -m unittest discover -s tests -p "test_volume_inventory_v071.py" -v
+      - name: Test storage metadata consistency (mocked)
+        run: python -m unittest discover -s tests -p "test_storage_consistency_v073.py" -v
       - name: Test Windows boot layout safety rules
         run: python -m unittest discover -s tests -p "test_storage_safety_v072.py" -v
       - name: Test safe interface language
