@@ -17,6 +17,8 @@ jobs:
         run: python -m compileall -q .
       - name: Test GUID volume inventory (no disk writes)
         run: python -m unittest discover -s tests -p "test_volume_inventory_v071.py" -v
+      - name: Test BOOTMGR cross-disk safety (mocked)
+        run: python -m unittest discover -s tests -p "test_boot_dependency_v079.py" -v
       - name: Test Win32 NT volume to disk correlation (mocked)
         run: python -m unittest discover -s tests -p "test_nt_volume_mapping_v078.py" -v
       - name: Test WMI partition and BCD failure clarity (mocked)
