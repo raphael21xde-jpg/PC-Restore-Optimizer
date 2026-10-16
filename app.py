@@ -1630,6 +1630,13 @@ class App(tk.Tk):
             text.append('  '+label+' -> '+number_text+' | '+str(row.get('status')))
             text.append('     '+str(row.get('reason', '')))
         text.append('  IMPORTANTE: disco lógico != disco físico; Spaces e discos dinâmicos exigem conferência adicional.')
+        cross = d.get('cross_source') or {}
+        text.extend(['', 'CONFERÊNCIA ENTRE FONTES (SEM ALTERAÇÕES NO ARMAZENAMENTO):'])
+        for number in cross.get('unlisted_extent_disks', []):
+            text.append('  Disco '+str(number)+': presente em extents; ausente de Get-Disk. REVISÃO OBRIGATÓRIA.')
+        for number, count in cross.get('unmounted_volumes_on_unlisted_disks', {}).items():
+            text.append('  Disco '+str(number)+': '+str(count)+' volume(s) sem letra.')
+        text.append('  EFI ativa: NÃO COMPROVADA; destino de backup: NÃO VERIFICADO.')
         text.extend(['','ALERTAS E RECOMENDAÇÕES:'])
         text.extend('  • '+a for a in report.get('recommendations',[]))
         text.extend(['','Sem teste SMART aprofundado, sem temperatura e sem prova de que o backup está em unidade física independente.',

@@ -17,6 +17,8 @@ jobs:
         run: python -m compileall -q .
       - name: Test GUID volume inventory (no disk writes)
         run: python -m unittest discover -s tests -p "test_volume_inventory_v071.py" -v
+      - name: Test storage evidence reconciliation (mocked)
+        run: python -m unittest discover -s tests -p "test_cross_source_storage_v075.py" -v
       - name: Test safe volume extent mapping (mocked)
         run: python -m unittest discover -s tests -p "test_storage_extents_v074.py" -v
       - name: Test storage metadata consistency (mocked)

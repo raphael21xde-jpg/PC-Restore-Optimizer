@@ -12,6 +12,7 @@ from pathlib import Path
 from storage_safety import assess_boot_layout
 from storage_consistency import assess_storage_mapping
 from storage_extents_diagnostic import collect_extent_mapping
+from storage_cross_source import assess_cross_source_storage
 
 
 def _powershell_json(code: str, timeout=30):
@@ -72,10 +73,12 @@ def disk_inventory():
     alerts.extend(mapping['issues'])
     extents_mapping = collect_extent_mapping(disks)
     alerts.extend(extents_mapping['issues'])
+    cross_source = assess_cross_source_storage(disks, extents_mapping, mapping, layout)
+    alerts.extend(cross_source['issues'])
     alerts.append('Discos dinâmicos, partições EFI ocultas e pools podem exigir conferência no Gerenciamento de Disco e DiskPart (somente leitura).')
     return dict(timestamp=datetime.now().isoformat(), disks=disks, physical_disks=physical, volumes=volumes,
                 partitions=partitions, boot_layout=layout, storage_mapping=mapping,
-                extent_mapping=extents_mapping, alerts=sorted(set(alerts)))
+                extent_mapping=extents_mapping, cross_source=cross_source, alerts=sorted(set(alerts)))
 
 
 def system_inventory():
