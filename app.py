@@ -1637,6 +1637,20 @@ class App(tk.Tk):
         for number, count in cross.get('unmounted_volumes_on_unlisted_disks', {}).items():
             text.append('  Disco '+str(number)+': '+str(count)+' volume(s) sem letra.')
         text.append('  EFI ativa: NÃO COMPROVADA; destino de backup: NÃO VERIFICADO.')
+        physical = d.get('physical_evidence') or {}
+        text.extend(['', 'EVIDÊNCIA COMPLEMENTAR DE DISCOS (WIN32_DISKDRIVE):'])
+        text.append('  Quantidade retornada pela WMI: '+str(physical.get('wmi_device_count', 'desconhecida')))
+        for item in physical.get('disagreements', []):
+            text.append('  Disco '+str(item.get('disk_number'))+': WMI='+
+                        ('PRESENTE' if item.get('present_in_wmi') else 'NÃO LOCALIZADO'))
+            if item.get('present_in_wmi'):
+                text.append('     Modelo informado: '+str(item.get('wmi_model', '')))
+        boot = d.get('boot_evidence') or {}
+        text.extend(['', 'GERENCIADOR DE BOOT (BCDEDIT /ENUM — SOMENTE LEITURA):'])
+        text.append('  Estado da consulta: '+str(boot.get('status', 'indisponível')))
+        for path in boot.get('nt_volume_devices', []):
+            text.append('  Dispositivo NT informado: '+str(path))
+        text.append('  EFI ativa: NÃO VERIFICADA. Este relatório NÃO autoriza alterações.')
         text.extend(['','ALERTAS E RECOMENDAÇÕES:'])
         text.extend('  • '+a for a in report.get('recommendations',[]))
         text.extend(['','Sem teste SMART aprofundado, sem temperatura e sem prova de que o backup está em unidade física independente.',
