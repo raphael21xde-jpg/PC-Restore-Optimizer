@@ -74,7 +74,7 @@ def collect_bcd_evidence(*, runner=subprocess.run):
                         timeout=12, check=False,
                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         return classify_bcd_output(result.stdout, returncode=result.returncode,
-                                   stderr=(result.stderr or '')[:400])
+                                   stderr=str(getattr(result, 'stderr', '') or '')[:400])
     except subprocess.TimeoutExpired:
         return classify_bcd_output(error='timeout')
     except PermissionError:
