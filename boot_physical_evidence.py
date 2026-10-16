@@ -20,19 +20,37 @@ def _integer_number(value):
     return value if type(value) is int and 0 <= value < 65536 else None
 
 
-def classify_bcd_output(stdout='', *, returncode=0, error=None):
+def classify_bcd_output(stdout='', *, returncode=0, error=None, stderr=''):
     """Retain only anonymous NT volume device targets, never raw BCD identifiers."""
     if error is not None or returncode:
+        raw = (str(error or '') + ' ' + str(stderr or '')).casefold()
+        if 'permission' in raw or 'access is denied' in raw or 'acesso negado' in raw or 'acesso é negado' in raw:
+            reason = 'permission_denied'
+            explanation = 'Acesso negado ao repositório BCD. O aplicativo não tentará elevar privilégios.'
+        elif 'timeout' in raw or 'tempo limite' in raw:
+            reason = 'timeout'
+            explanation = 'A consulta excedeu o tempo limite. Nenhuma alteração foi executada.'
+        elif error == 'tool_missing':
+            reason = 'tool_missing'
+            explanation = 'BCDEdit não foi encontrado no ambiente atual.'
+        elif error == 'unsupported_os':
+            reason = 'unsupported_os'
+            explanation = 'Consulta disponível apenas no Windows.'
+        else:
+            reason = 'query_failed'
+            explanation = 'A consulta BCDEdit não pôde ser concluída; não é possível inferir o motivo.'
         return {
             'status': 'unavailable',
+            'reason': reason,
             'nt_volume_devices': [],
-            'issues': ['Não foi possível consultar BCDEdit /enum BOOTMGR; permissões ou acesso podem ser insuficientes.'],
+            'issues': [explanation + ' EFI ativa permanece não verificada.'],
             'efi_active_verified': False, 'approved_for_format': False,
         }
     targets = sorted(set(s.lower() for s in NT_DEVICE.findall(str(stdout)[:MAX_BCD_BYTES])))
     return {
         'status': 'bootmgr_store_observed' if targets else 'bootmgr_device_unresolved',
         'nt_volume_devices': targets,
+        'reason': 'none' if targets else 'unresolved_device',
         'issues': [
             ('BCDEdit apontou para identificador(es) NT de volume. '
              'Ainda é necessário correlacioná-los com GUID/EFI e firmware de boot.'
@@ -46,18 +64,23 @@ def classify_bcd_output(stdout='', *, returncode=0, error=None):
 def collect_bcd_evidence(*, runner=subprocess.run):
     """No elevation, no BCD changes; timeout and failure remain UNKNOWN."""
     if os.name != 'nt':
-        return classify_bcd_output(error='non-Windows')
+        return classify_bcd_output(error='unsupported_os')
     bcd = shutil.which('bcdedit.exe')
     if not bcd:
-        return classify_bcd_output(error='BCDEdit indisponível')
+        return classify_bcd_output(error='tool_missing')
     try:
         result = runner([bcd, '/enum', 'BOOTMGR', '/v'], text=True,
                         encoding='utf-8', errors='replace', capture_output=True,
                         timeout=12, check=False,
                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        return classify_bcd_output(result.stdout, returncode=result.returncode)
-    except (OSError, subprocess.TimeoutExpired, ValueError):
-        return classify_bcd_output(error='Consulta interrompida')
+        return classify_bcd_output(result.stdout, returncode=result.returncode,
+                                   stderr=(result.stderr or '')[:400])
+    except subprocess.TimeoutExpired:
+        return classify_bcd_output(error='timeout')
+    except PermissionError:
+        return classify_bcd_output(error='permission_denied')
+    except (OSError, ValueError):
+        return classify_bcd_output(error='query_failed')
 
 
 def reconcile_diskdrive_evidence(disks, wmi_disks, extent_mapping, *, wmi_error=None):
