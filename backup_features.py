@@ -109,7 +109,7 @@ def resume_information(folder, manifest_path):
 
 def restore_selected(manifest_path, choices, destination_parent, max_total_bytes=None, *,
                      cancelled=None, progress=None, resume_from=None,
-                     strategy_inventory=None):
+                     strategy_inventory=None, test_fault_hook=None):
     """Restore verified files in an isolated folder; v0.5.19 resumes only its own journal.
 
     Verified destinations are rehashed when resuming; corrupt/uncertain files
@@ -195,9 +195,13 @@ def restore_selected(manifest_path, choices, destination_parent, max_total_bytes
                 with original.open('rb') as src, partial.open('xb') as dst:
                     while True:
                         if cancelled and cancelled.is_set(): raise InterruptedError('Restauração cancelada')
+                        if test_fault_hook is not None:
+                            test_fault_hook('restore_before_read')
                         chunk = src.read(strategy.chunk)
                         if not chunk: break
                         dst.write(chunk)
+                        if test_fault_hook is not None:
+                            test_fault_hook('restore_after_write')
                         digest.update(chunk)
                         copied += len(chunk)
                         limiter.send('Copiando',index,len(choices),choice,copied,total,force=copied==len(chunk))
