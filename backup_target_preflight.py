@@ -33,7 +33,8 @@ def _bytes(value):
 
 def _extent_by_letter(extents):
     result = {}
-    for entry in extents.get('volumes', []) if isinstance(extents, dict) else []:
+    raw_volumes = extents.get('volumes', []) if isinstance(extents, dict) else []
+    for entry in raw_volumes if isinstance(raw_volumes, list) else []:
         if not isinstance(entry, dict):
             continue
         numbers = entry.get('disk_numbers', [])
@@ -44,7 +45,7 @@ def _extent_by_letter(extents):
         # A partial or malformed extent list is NOT an observed mapping.
         valid_numbers = (isinstance(numbers, (list, tuple)) and bool(numbers)
                          and all(_number(x) is not None for x in numbers))
-        valid_status = status in OBSERVED_EXTENT_STATUSES
+        valid_status = isinstance(status, str) and status in OBSERVED_EXTENT_STATUSES
         indices = (sorted(set(numbers)) if valid_numbers and valid_status else [])
         for raw in letters:
             letter = _letter(raw)
