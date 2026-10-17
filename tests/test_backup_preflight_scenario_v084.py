@@ -61,6 +61,22 @@ class ScenarioTests(unittest.TestCase):
         self.assertFalse(result['approved_for_format'])
         self.assertIn('SIMULAÇÃO DE DESTINO', scenario_text(result))
 
+    def test_simple_pool_alert_displayed_once_with_full_context(self):
+        result = self.simulate(source=('C',), target='G', size='20')
+        report = scenario_text(result)
+        self.assertIn('ATENÇÃO: Storage Spaces Simple; 1 membro(s)', report)
+        self.assertNotIn('OBSERVAÇÃO: Disco 4: pool Simple sem redundância informada.', report)
+        self.assertIn('pool Simple sem redundância informada.', result['issues'])
+        self.assertIn('DeviceId de membro físico não equivale', report)
+        self.assertEqual(result['status'], 'requires_review')
+        self.assertFalse(result['approved_for_format'])
+
+    def test_pool_simple_observation_retained_without_correlated_risk(self):
+        result = self.simulate(source=('C',), target='G', size='20')
+        result['risk_tags'] = []
+        report = scenario_text(result)
+        self.assertIn('OBSERVAÇÃO: Disco 4: pool Simple sem redundância informada.', report)
+
     def test_report_C_to_D_20GiB_has_reserve_without_contradictory_message(self):
         result = self.simulate(source=('C',), target='D', size='20')
         self.assertEqual(result['status'], 'requires_review')
