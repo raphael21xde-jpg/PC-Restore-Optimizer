@@ -36,7 +36,7 @@ def show_selective_backup(app, plan):
     sources = list(plan.get('requires_verified_backup', []))
     current_choices = dict(getattr(app, 'choices', {}))
     window = tk.Toplevel(app)
-    window.title('PC Restore & Optimizer • Backup e testes de recuperação')
+    window.title('v0.6.6 • PC Restore & Optimizer • Backup e testes de recuperação')
     # A transient dialog on Windows may lose its maximize control. Keep a normal,
     # independently resizable window instead of binding its size to the parent.
     window.resizable(True, True)
