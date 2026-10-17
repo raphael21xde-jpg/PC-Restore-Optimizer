@@ -1727,6 +1727,26 @@ class App(tk.Tk):
                             ' | DeviceId '+str(m.get('device_id', '?'))+
                             ' | Saúde '+str(m.get('health', 'desconhecida')))
         text.append('  Membros do pool NÃO garantem backup em hardware independente.')
+        candidates = d.get('backup_candidates') or []
+        text.extend(['', 'PRÉ-CHECAGEM DE DESTINOS DE BACKUP (SOMENTE LEITURA):'])
+        text.append('  Unidades listadas são candidatas para análise, NÃO destinos aprovados.')
+        for item in candidates:
+            letter = str(item.get('target_letter', '?'))
+            numbers = item.get('destination_logical_disks') or []
+            disks_label = ', '.join('Disco '+str(n) for n in numbers) if numbers else 'DISCO NÃO CONFIRMADO'
+            free_bytes = item.get('free_bytes_reported')
+            free_label = str(free_bytes)+' bytes' if free_bytes is not None else 'desconhecido'
+            text.append('  '+letter+': | '+disks_label+' | livres informados: '+free_label+
+                        ' | '+str(item.get('status', 'requires_review')))
+            for pool in item.get('storage_spaces_membership', []):
+                text.append('    Pool: '+str(pool.get('virtual_name','desconhecido'))+
+                            ' | membros relatados: '+str(pool.get('member_count_reported','?'))+
+                            ' | resiliência: '+str(pool.get('resiliency_reported','?')))
+            for blocker in item.get('blockers', []):
+                text.append('    BLOQUEIO: '+str(blocker))
+        text.append('  Origem e tamanho do backup não selecionados neste diagnóstico.')
+        text.append('  Independência física, espaço para plano real e SHA-256: NÃO VERIFICADOS.')
+        text.append('  Nenhuma unidade foi aprovada automaticamente para backup/reinstalação.')
         text.extend(['','ALERTAS E RECOMENDAÇÕES:'])
         text.extend('  • '+a for a in report.get('recommendations',[]))
         text.extend(['','Sem teste SMART aprofundado, sem temperatura e sem prova de que o backup está em unidade física independente.',
