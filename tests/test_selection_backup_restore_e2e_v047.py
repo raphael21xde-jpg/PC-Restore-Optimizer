@@ -107,6 +107,14 @@ class TestSelectionBackupRestoreEndToEnd(unittest.TestCase):
             translation = {"preservar": "keep", "nao_copiar": "skip"}
             choices = {norm(path): translation[decision]
                        for path, decision in exported["choices"].items()}
+        # Windows CI temporary directories may use 8.3 aliases (RUNNER~1),
+        # while test_root is resolved by the safeguard to the long name.
+        # Normalize both fixture selections and fixture exclusion rules
+        # BEFORE checking containment; never relax the guard itself.
+        choices = {
+            norm(Path(path).resolve(strict=True)): decision
+            for path, decision in choices.items()
+        }
         selected = [path for path, choice in choices.items() if choice == "keep"]
         plan = prepare_selected_c(selected, choices=choices, test_root=str(self.base))
         self.assertFalse(plan.warnings)
