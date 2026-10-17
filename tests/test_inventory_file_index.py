@@ -40,14 +40,15 @@ class TestInventoryIndex(unittest.TestCase):
                 self.assertEqual(db.search("SAVE_FILE")[0]["path"], str(sample2))
                 db.set_decision(sample1, "preservar")
                 db.set_decision(sample2, "nao_copiar")
-                with self.assertRaises(ValueError):
-                    db.set_decision(source / "SteamApps", "preservar")
+                db.set_decision(source / "SteamApps", "preservar")
                 with self.assertRaises(ValueError):
                     db.set_decision(sample2, "apagar")
                 choices_file = base / "choices.json"
                 choices = db.export_choices(choices_file)
                 self.assertEqual(choices["choices"][str(sample1)], "preservar")
                 self.assertEqual(choices["choices"][str(sample2)], "nao_copiar")
+                self.assertEqual(choices["choices"][str(source / "SteamApps")], "preservar")
+                self.assertEqual(choices["selected_directories"], [str(source / "SteamApps")])
                 self.assertFalse(choices["verified_backup"])
                 self.assertFalse(choices["ready_for_format"])
                 self.assertEqual(choices, json.loads(choices_file.read_text(encoding="utf-8")))
@@ -59,7 +60,7 @@ class TestInventoryIndex(unittest.TestCase):
                 db.close()
             reopened = FileMetadataIndex(dbfile)
             try:
-                self.assertEqual(reopened.decision_counts()["preservar"], 1)
+                self.assertEqual(reopened.decision_counts()["preservar"], 2)
                 self.assertEqual(reopened.decision_counts()["nao_copiar"], 1)
             finally:
                 reopened.close()

@@ -68,3 +68,18 @@ Por enquanto a franquia gratuita do GitHub Actions do repositório privado
 está esgotada; **falhas automáticas de execução sem etapa iniciada não
 equivalem a reprovação do código**. Rodar os testes localmente não modifica
 essa limitação do CI.
+
+
+## Seleção por pasta (nova funcionalidade)
+
+Agora arquivos **e pastas** inventariados podem ser marcados como
+**Preservar**, **Não copiar** ou **Revisar depois**. A escolha de uma pasta
+funciona como regra de preferência para seus descendentes: uma escolha mais
+específica de um arquivo pode sobrepor a da pasta durante o recálculo do
+plano. A lista exportada contém as duas decisões explicitamente escolhidas
+e identifica `selected_directories` para transparência.
+
+**Atenção:** o índice registra apenas metadados e pode ter lacunas.
+Selecionar uma pasta não significa que seu conteúdo foi verificado, nem
+que o usuário deseja apagar arquivos marcados como não copiar. A avaliação
+real do plano e os hashes da cópia continuam etapas separadas.

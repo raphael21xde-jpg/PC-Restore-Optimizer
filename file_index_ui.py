@@ -98,7 +98,7 @@ def show_file_index(parent, app=None):
         status.set(f'Índice: {meta.get("state", "parcial")}. '
                    f'Preservar: {counts.get("preservar", 0)}; '
                    f'Não copiar: {counts.get("nao_copiar", 0)}. '
-                   'São intenções, não backup verificado.')
+                   'Arquivos e pastas: escolhas de intenção, sem backup verificado.')
 
     def load_index(path):
         if state["db"] is not None:
@@ -237,7 +237,7 @@ def show_file_index(parent, app=None):
     stop_button = add_action("Parar varredura", stop_scan, second_row=True)
     stop_button.configure(state="disabled")
     ttk.Button(lookup, text="Pesquisar", command=lambda: refresh(reset=True)).pack(side="left")
-    ttk.Button(choice_row, text="Marcar PRESERVAR", command=lambda: choose("preservar")).pack(side="left", padx=4)
+    ttk.Button(choice_row, text="Marcar PRESERVAR (arquivo/pasta)", command=lambda: choose("preservar")).pack(side="left", padx=4)
     ttk.Button(choice_row, text="NÃO COPIAR (não apaga)", command=lambda: choose("nao_copiar")).pack(side="left", padx=4)
     ttk.Button(choice_row, text="Revisar depois", command=lambda: choose("revisar")).pack(side="left", padx=4)
     ttk.Button(paging_row, text="Anterior 100", command=lambda: (
