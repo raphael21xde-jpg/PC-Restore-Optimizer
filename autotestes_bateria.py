@@ -126,7 +126,10 @@ def _fixed_or_removable_drive(letter):
         return False
     import ctypes
     path = letter + ':\\'
-    kind = ctypes.windll.kernel32.GetDriveTypeW(path)
+    api = ctypes.windll.kernel32.GetDriveTypeW
+    api.argtypes = [ctypes.c_wchar_p]
+    api.restype = ctypes.c_uint
+    kind = api(path)
     return kind in (2, 3)  # DRIVE_REMOVABLE, DRIVE_FIXED
 
 
@@ -190,7 +193,7 @@ def run_readonly_inventory_autotest(*, cancelled=None, roots=None):
         if os.name != 'nt':
             raise RuntimeError('Auditoria automática #39 disponível apenas no Windows.')
         roots = [letter + ':\\' for letter in discover_drive_letters()
-                 if _fixed_or_removable_drive(letter)]
+                 if _fixed_or_removable_drive(letter) and Path(letter + ':\\').is_dir()]
     results = scan_readonly_metadata(roots, cancelled=cancelled)
     count = sum(item['examined'] for item in results)
     _require(count > 0, 'Nenhum item foi examinado na auditoria.')
