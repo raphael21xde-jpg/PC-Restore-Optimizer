@@ -31,6 +31,8 @@ jobs:
         run: python -m unittest discover -s tests -p "test_autotestes_falhas_v031_v034.py" -v
       - name: 'Test #38-40: many small files, metadata-only survey and isolated restoration'
         run: python -m unittest discover -s tests -p "test_autotestes_bateria_v038_v040.py" -v
+      - name: 'Test #41-43: volume metadata, links and restart after write failure'
+        run: python -m unittest discover -s tests -p "test_autotestes_41_43.py" -v
       - name: Make space on disposable Linux runner for three synthetic copies
         if: runner.os == 'Linux'
         run: |

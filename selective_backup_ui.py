@@ -30,6 +30,9 @@ from autotestes_escala import (run_gigabyte_autotest, run_abrupt_exit_autotest,
 from autotestes_bateria import (run_tiny_files_stress_autotest,
                                run_readonly_inventory_autotest,
                                run_isolated_full_restore_autotest)
+from autotestes_41_43 import (run_inventory_permissions_autotest,
+                              run_cross_volume_links_autotest,
+                              run_restore_write_recovery_autotest)
 
 
 def show_selective_backup(app, plan):
@@ -108,21 +111,24 @@ def show_selective_backup(app, plan):
     integrity_tab = ttk.Frame(tabs, padding=8)
     performance_tab = ttk.Frame(tabs, padding=8)
     recent_tab = ttk.Frame(tabs, padding=8)
+    next_tab = ttk.Frame(tabs, padding=8)
     tabs.add(operations_tab, text='Backup e recuperação')
     tabs.add(integrity_tab, text='Testes #25–30')
     tabs.add(performance_tab, text='Testes #31–37')
     tabs.add(recent_tab, text='Novos #38–40')
+    tabs.add(next_tab, text='Novos #41–43')
     rows = []
-    for number in range(1, 19):
+    for number in range(1, 22):
         parent = (operations_tab if number <= 2 else
                   integrity_tab if number <= 8 else
-                  performance_tab if number <= 15 else recent_tab)
+                  performance_tab if number <= 15 else
+                  recent_tab if number <= 18 else next_tab)
         row = ttk.Frame(parent)
         row.pack(fill='x', pady=3)
         rows.append(row)
-    (row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11, row12, row13, row14, row15, row16, row17, row18) = rows
+    (row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11, row12, row13, row14, row15, row16, row17, row18, row19, row20, row21) = rows
     # Open directly to the newest battery when requested by keyboard.
-    window.bind('<Alt-n>', lambda _: tabs.select(recent_tab), add='+')
+    window.bind('<Alt-n>', lambda _: tabs.select(next_tab), add='+')
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
     manifest_label = tk.StringVar(value='Manifesto: ainda não existe')
     ttk.Label(container, textvariable=destination, wraplength=980).pack(anchor='w')
@@ -329,6 +335,19 @@ def show_selective_backup(app, plan):
                         write_log(f'[AUTOTESTE #{number}] ' +
                                   json.dumps(outcome, ensure_ascii=False))
                         write_log(f'[AUTOTESTE #{number}] Não autoriza formatação.')
+                    elif job in ('autotest41', 'autotest42', 'autotest43'):
+                        number = int(job[-2:])
+                        state['report'] = outcome
+                        summaries = {
+                            41: 'Metadados locais ampliados; cobertura parcial e erros classificados.',
+                            42: 'Relações sintéticas entre discos; associações não são backups.',
+                            43: 'Falha de gravação detectada; recuperação fictícia com SHA-256.',
+                        }
+                        summary.set(f"AUTOTESTE #{number}: {outcome['status'].upper()}. "
+                                    + summaries[number] + ' Exporte o relatório.')
+                        write_log(f'[AUTOTESTE #{number}] ' +
+                                  json.dumps(outcome, ensure_ascii=False))
+                        write_log(f'[AUTOTESTE #{number}] Nenhuma formatação autorizada.')
                     elif job == 'restore':
                         state['report'] = outcome
                         summary.set(f'RECUPERAÇÃO DE TESTE APROVADA: {outcome["files_verified"]} arquivos, '
@@ -499,7 +518,7 @@ def show_selective_backup(app, plan):
             return messagebox.showinfo('Sem relatório', 'Execute uma etapa para gerar resultado.', parent=window)
         location = filedialog.asksaveasfilename(parent=window, defaultextension='.json',
                           initialfile=(f"resultado-autoteste{state['report']['schema'].rsplit('v', 1)[-1]}.json"
-                                       if state['report'].get('schema') in {f'pcro-autoteste-bateria-v{n}' for n in (38,39,40)}
+                                       if state['report'].get('schema') in {f'pcro-autoteste-bateria-v{n}' for n in range(38,44)}
                                        else f"resultado-autoteste{state['report']['schema'].rsplit('v', 1)[-1]}.json"
                                         if state['report'].get('schema') in {f'pcro-autoteste-escala-v{n}' for n in (35, 36, 37)}
                                         else 'resultado-autoteste31.json'
@@ -593,6 +612,18 @@ def show_selective_backup(app, plan):
     add_button(row18, '20. Autoteste #40: recuperação integral isolada',
                lambda: run_fault_autotest(40, run_isolated_full_restore_autotest))
     ttk.Label(row18, text='Seleção sintética, exclusões e restauração em pasta nova.',
+              wraplength=410).pack(anchor='w', padx=(8, 0))
+    add_button(row19, '21. Autoteste #41: inventário ampliado (metadados)',
+               lambda: run_fault_autotest(41, run_inventory_permissions_autotest))
+    ttk.Label(row19, text='Até 12.000 entradas/unidade; somente leitura e erros classificados.',
+              wraplength=410).pack(anchor='w', padx=(8, 0))
+    add_button(row20, '22. Autoteste #42: vínculos entre unidades (sintético)',
+               lambda: run_fault_autotest(42, run_cross_volume_links_autotest))
+    ttk.Label(row20, text='Distingue suspeitas e aprovações sem afirmar backup feito.',
+              wraplength=410).pack(anchor='w', padx=(8, 0))
+    add_button(row21, '23. Autoteste #43: falha e retomada de restauração',
+               lambda: run_fault_autotest(43, run_restore_write_recovery_autotest))
+    ttk.Label(row21, text='Dados fictícios; falha controlada e conferência SHA-256.',
               wraplength=410).pack(anchor='w', padx=(8, 0))
     export_button = ttk.Button(toolbar, text='Exportar relatório', command=export_report)
     export_button.pack(side='left', padx=(0, 8))
