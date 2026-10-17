@@ -84,6 +84,83 @@ class TestFileIndexUI(unittest.TestCase):
                     win.tk.call(close_command)
                 app.destroy()
 
+    def test_selected_volume_does_not_inventory_other_source(self):
+        try:
+            app = tk.Tk()
+        except tk.TclError as err:
+            if os.environ.get("PCRO_REQUIRE_TK") == "1":
+                self.fail(f"Tk required: {err}")
+            self.skipTest(str(err))
+        app.withdraw()
+        win = None
+        with tempfile.TemporaryDirectory(prefix="PCRO-VOL-UI-") as tmp:
+            try:
+                root = Path(tmp)
+                source_a, source_b = root / "volumeA", root / "volumeB"
+                source_a.mkdir()
+                source_b.mkdir()
+                file_a, file_b = source_a / "a.txt", source_b / "b.txt"
+                file_a.write_bytes(b"A nao modificar")
+                file_b.write_bytes(b"B nao modificar")
+                target = root / "apenas-volumeA.sqlite3"
+                with (patch("file_index_ui.discover_local_roots",
+                            return_value=[source_a, source_b]),
+                      patch("file_index_ui.filedialog.asksaveasfilename",
+                            return_value=str(target)),
+                      patch("file_index_ui.messagebox.showerror") as errors):
+                    win = show_file_index(app)
+                    app.update()
+                    def button(container, prefix):
+                        return next(child for child in walk(container)
+                            if isinstance(child, ttk.Button)
+                            and str(child.cget("text")).startswith(prefix))
+                    button(win, "ESCOLHER unidades").invoke()
+                    app.update()
+                    pickers = [w for w in win.winfo_children()
+                               if isinstance(w, tk.Toplevel)]
+                    self.assertEqual(len(pickers), 1)
+                    picker = pickers[0]
+                    boxes = [w for w in walk(picker)
+                             if isinstance(w, ttk.Checkbutton)]
+                    self.assertEqual(len(boxes), 2)
+                    boxes[1].invoke()  # Only volumeA stays selected.
+                    button(picker, "Confirmar unidades").invoke()
+                    app.update()
+                    button(win, "CRIAR índice").invoke()
+                    deadline = time.monotonic() + 20
+                    from inventory_index import FileMetadataIndex
+                    finished = False
+                    while time.monotonic() < deadline:
+                        app.update()
+                        if target.exists():
+                            try:
+                                db = FileMetadataIndex(target)
+                                try:
+                                    finished = (db.metadata().get("state")
+                                                == "terminado_com_lacunas")
+                                finally:
+                                    db.close()
+                                if finished:
+                                    break
+                            except Exception:
+                                pass
+                        time.sleep(.02)
+                    self.assertTrue(finished, "Index did not finish")
+                    app.update()
+                    db = FileMetadataIndex(target)
+                    try:
+                        paths = {item["path"] for item in db.search()}
+                        self.assertEqual(paths, {str(file_a)})
+                    finally:
+                        db.close()
+                    self.assertEqual(file_a.read_bytes(), b"A nao modificar")
+                    self.assertEqual(file_b.read_bytes(), b"B nao modificar")
+                    errors.assert_not_called()
+            finally:
+                if win is not None and win.winfo_exists():
+                    win.tk.call(win.protocol("WM_DELETE_WINDOW"))
+                app.destroy()
+
     def test_directories_display_unmeasured_not_zero(self):
         row = format_index_row({
             "path": r"C:\\Games\\MeuJogo", "kind": "directory",

@@ -36,7 +36,10 @@ def show_file_index(parent, app=None):
     search = tk.StringVar()
     q = Queue()
     cancel = threading.Event()
-    state = {"busy": False, "db": None, "rows": [], "offset": 0, "path": None}
+    state = {"busy": False, "db": None, "rows": [], "offset": 0,
+             "path": None, "chosen_roots": None}
+    selected_roots_text = tk.StringVar(
+        value="Unidades do próximo índice: todas as unidades locais detectadas.")
 
     header = ttk.Frame(win, padding=10)
     header.pack(fill="x")
@@ -47,6 +50,8 @@ def show_file_index(parent, app=None):
         "Crie ou abra um índice antes de pesquisar. "
         "Tamanho de pastas ainda não é calculado. "
         "Não abre arquivos, não copia dados e NÃO apaga nada."), wraplength=790).pack(anchor="w", pady=(3, 7))
+    ttk.Label(header, textvariable=selected_roots_text,
+              wraplength=790).pack(anchor="w", pady=(0, 4))
     actions = ttk.Frame(header)
     actions.pack(fill="x")
     top_actions = ttk.Frame(actions)
@@ -131,6 +136,53 @@ def show_file_index(parent, app=None):
             except Exception as err:
                 messagebox.showerror("Índice não aberto", str(err), parent=win)
 
+    def choose_volume_roots():
+        """Explicit selection affects NEXT new index, not existing indexes."""
+        if state["busy"]:
+            return
+        try:
+            available = list(dict.fromkeys(discover_local_roots()))
+            if not available:
+                raise ValueError("Nenhuma unidade local acessível.")
+        except (OSError, ValueError, RuntimeError) as err:
+            messagebox.showerror("Não foi possível listar unidades", str(err),
+                                 parent=win)
+            return
+        popup = tk.Toplevel(win)
+        popup.title("Escolher unidades para o próximo índice")
+        popup.geometry("510x340")
+        popup.minsize(410, 260)
+        ttk.Label(popup, text=(
+            "Escolha uma ou mais unidades locais. "
+            "Não copia, não apaga e não formata arquivos."),
+            wraplength=465).pack(anchor="w", padx=14, pady=(12, 9))
+        selections = []
+        for root in available:
+            selected = tk.BooleanVar(value=(
+                state["chosen_roots"] is None or root in state["chosen_roots"]))
+            ttk.Checkbutton(popup, text=str(root),
+                            variable=selected).pack(anchor="w", padx=18, pady=2)
+            selections.append((root, selected))
+        def confirm():
+            chosen = [root for root, flag in selections if flag.get()]
+            if not chosen:
+                messagebox.showwarning("Nenhuma unidade selecionada",
+                                       "Marque ao menos uma unidade local.",
+                                       parent=popup)
+                return
+            state["chosen_roots"] = chosen
+            selected_roots_text.set(
+                "Unidades para o próximo índice: " +
+                ", ".join(str(root) for root in chosen))
+            popup.destroy()
+        actions_popup = ttk.Frame(popup)
+        actions_popup.pack(side="bottom", fill="x", padx=14, pady=10)
+        ttk.Button(actions_popup, text="Confirmar unidades",
+                   command=confirm).pack(side="left", padx=(0, 8))
+        ttk.Button(actions_popup, text="Cancelar",
+                   command=popup.destroy).pack(side="left")
+        popup.lift()  # No modal grab: keeps Tk responsive on all Windows hosts.
+
     def start_scan():
         if state["busy"]:
             return
@@ -147,14 +199,19 @@ def show_file_index(parent, app=None):
             return
         try:
             roots = discover_local_roots()
+            selected = state["chosen_roots"]
+            if selected is not None:
+                roots = [root for root in roots if root in selected]
             if not roots:
-                raise ValueError("Nenhuma unidade local acessível.")
+                raise ValueError(
+                    "Nenhuma unidade selecionada está acessível. "
+                    "Confira as unidades antes de criar o índice.")
         except (OSError, ValueError, RuntimeError) as err:
             messagebox.showerror("Não iniciou", str(err), parent=win)
             return
         state["busy"] = True
         cancel.clear()
-        for button in (start_button, open_button, export_button):
+        for button in (start_button, open_button, export_button, volumes_button):
             button.configure(state="disabled")
         stop_button.configure(state="normal")
         status.set(f"Examinando metadados de {len(roots)} unidade(s); "
@@ -241,6 +298,8 @@ def show_file_index(parent, app=None):
     open_button = add_action("ABRIR índice anterior", open_existing)
     export_button = add_action("Exportar escolhas JSON", export_choices,
                                second_row=True)
+    volumes_button = add_action("ESCOLHER unidades", choose_volume_roots,
+                                second_row=True)
     if app is not None:
         add_action("IMPORTAR JSON para prévia do aplicativo", import_to_preview,
                    second_row=True)
@@ -270,7 +329,8 @@ def show_file_index(parent, app=None):
                 else:
                     state["busy"] = False
                     stop_button.configure(state="disabled")
-                    for button in (start_button, open_button, export_button):
+                    for button in (start_button, open_button, export_button,
+                                   volumes_button):
                         button.configure(state="normal")
                     path, details = payload
                     if kind == "complete":
