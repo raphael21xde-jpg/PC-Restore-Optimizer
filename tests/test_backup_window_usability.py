@@ -62,7 +62,7 @@ class TestBackupWindowUsability(unittest.TestCase):
                                         f'Autoteste #{number} inacessível na aba recente')
                         self.assertLessEqual(button.winfo_rootx() + button.winfo_width(),
                                              window.winfo_rootx() + window.winfo_width()+2)
-                    export = next(w for w in buttons if w.cget('text') == 'Exportar relatório JSON')
+                    export = next(w for w in buttons if w.cget('text') == 'Exportar relatório')
                     cancel = next(w for w in buttons if w.cget('text') == 'Cancelar operação')
                     self.assertTrue(export.winfo_ismapped())
                     self.assertTrue(cancel.winfo_ismapped())
