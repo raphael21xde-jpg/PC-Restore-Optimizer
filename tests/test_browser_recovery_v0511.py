@@ -2,7 +2,8 @@ import json
 import tempfile
 from pathlib import Path
 import unittest
-from browser_recovery import inspect_recovery, prepare_bookmarks
+from unittest.mock import patch
+from browser_recovery import inspect_recovery, prepare_bookmarks, _special
 from browser_vault import BrowserProfile, create_vault, restore_to_staging
 
 
@@ -34,8 +35,39 @@ class RecoveryTests(unittest.TestCase):
         p = self.source/'senhas_exportadas_MANUALMENTE.csv'; p.write_text('name,url,username,password\n')
         self.assertEqual(inspect_recovery(self.source)['password_csv'], p)
     def test_symlink_is_rejected(self):
-        p = self.root/'outside'; p.write_text('{}'); (self.source/'profile/Bookmarks').symlink_to(p)
-        with self.assertRaises(ValueError): inspect_recovery(self.source)
+        """Integration coverage using a real filesystem link, if permitted."""
+        outside = self.root/'outside'
+        outside.write_text('{}', encoding='utf-8')
+        link = self.source/'profile/Bookmarks'
+        try:
+            link.symlink_to(outside)
+        except NotImplementedError:
+            self.skipTest('O sistema não oferece criação de links simbólicos.')
+        except OSError as exc:
+            # Typical non-elevated Windows 10/11 without Developer Mode.
+            # Do NOT turn all filesystem errors into a skipped test.
+            if getattr(exc, 'winerror', None) == 1314:
+                self.skipTest('Windows sem privilégio para criar links (WinError 1314).')
+            raise
+        with self.assertRaisesRegex(ValueError, 'Links ou junções'):
+            inspect_recovery(self.source)
+
+    def test_simulated_symlink_is_rejected_without_special_privileges(self):
+        """Always enforce the link guard, even where creating a link is forbidden."""
+        bookmarks = self.source/'profile/Bookmarks'
+        bookmarks.write_text('{}', encoding='utf-8')
+
+        def simulated_special(path):
+            if Path(path) == bookmarks:
+                return True
+            return _special(path)
+
+        with patch('browser_recovery._special', side_effect=simulated_special):
+            with self.assertRaisesRegex(ValueError, 'Links ou junções'):
+                inspect_recovery(self.source)
+            with self.assertRaisesRegex(ValueError, 'Links ou junções'):
+                prepare_bookmarks(self.source, self.out)
+        self.assertEqual(list(self.out.iterdir()), [])
     def test_malformed_bookmarks(self):
         (self.source/'profile/Bookmarks').write_text('{}')
         with self.assertRaises(ValueError): prepare_bookmarks(self.source, self.out)
