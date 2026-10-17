@@ -117,11 +117,11 @@ def show_selective_backup(app, plan):
     recent_tab = ttk.Frame(tabs, padding=8)
     next_tab = ttk.Frame(tabs, padding=8)
     paged_tab = ttk.Frame(tabs, padding=8)
-    tabs.add(operations_tab, text='Backup e recuperação')
-    tabs.add(integrity_tab, text='Testes #25–30')
-    tabs.add(performance_tab, text='Testes #31–37')
+    tabs.add(operations_tab, text='Backup')
+    tabs.add(integrity_tab, text='#25–30')
+    tabs.add(performance_tab, text='#31–37')
     tabs.add(recent_tab, text='Novos #38–40')
-    tabs.add(next_tab, text='Novos #41–43')
+    tabs.add(next_tab, text='#41–43')
     tabs.add(paged_tab, text='Novos #44–46')
     rows = []
     for number in range(1, 27):
