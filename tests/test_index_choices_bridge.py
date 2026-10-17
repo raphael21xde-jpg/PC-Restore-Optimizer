@@ -101,6 +101,24 @@ class TestIndexChoicesBridge(unittest.TestCase):
                 r"c:\users\cliente\doc.txt": "nao_copiar",
             }))
 
+    def test_folder_rule_and_specific_file_exception_reach_preview(self):
+        folder = r"C:\Users\cliente\Saved Games"
+        nested = folder + r"\Demo\settings.ini"
+        parsed = self.parse(example({
+            folder: "preservar",
+            nested: "nao_copiar",
+        }))
+        app = DummyApp()
+        preview = preview_import(app, parsed)
+        self.assertEqual((preview["keep"], preview["skip"]), (1, 1))
+        with patch("index_choices_bridge.norm", side_effect=lambda s: ntpath.normcase(ntpath.normpath(s))):
+            result = apply_imported_choices(app, parsed)
+        self.assertEqual(result["applied"], 2)
+        self.assertEqual(app.choices[ntpath.normcase(folder)], "keep")
+        self.assertEqual(app.choices[ntpath.normcase(nested)], "skip")
+        self.assertEqual(app.notifications, 1)
+        self.assertFalse(result["backup_started"])
+
     def test_busy_does_not_mutate_app(self):
         app = DummyApp()
         app.busy = True

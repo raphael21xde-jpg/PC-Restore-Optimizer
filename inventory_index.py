@@ -151,14 +151,14 @@ class FileMetadataIndex:
             row = self.conn.execute(
                 "SELECT kind FROM records WHERE path=?", (str(path),)
             ).fetchone()
-            if not row or row[0] != "file":
-                raise ValueError("Selecione um arquivo realmente inventariado.")
+            if not row or row[0] not in ("file", "directory"):
+                raise ValueError("Selecione um arquivo ou pasta realmente inventariado.")
             self.conn.execute("UPDATE records SET decision=? WHERE path=?",
                               (decision, str(path)))
 
     def decision_counts(self):
         return dict(self.conn.execute(
-            "SELECT decision,COUNT(*) FROM records WHERE kind='file' GROUP BY decision"))
+            "SELECT decision,COUNT(*) FROM records GROUP BY decision"))
 
     def export_choices(self, path):
         """Export a plan preview; NO automatic backup, deletion or formatting."""
@@ -166,14 +166,20 @@ class FileMetadataIndex:
         if target.resolve(strict=False) == self.path.resolve(strict=False):
             raise ValueError("Exportação não pode sobrescrever o índice.")
         choices = dict(self.conn.execute(
-            "SELECT path,decision FROM records WHERE kind='file' "
-            "AND decision != 'revisar'"))
+            "SELECT path,decision FROM records WHERE decision != 'revisar' "
+            "ORDER BY path"))
+        if len(choices) > 4000:
+            raise ValueError("Há mais de 4.000 escolhas. Exporte em grupos menores.")
+        folders = [row[0] for row in self.conn.execute(
+            "SELECT path FROM records WHERE kind='directory' "
+            "AND decision != 'revisar' ORDER BY path")]
         payload = {
             "schema": "pcro-index-choices-v1",
             "created_at_utc": _utc(),
             "index_file": str(self.path),
             "index_state": self.metadata().get("state", "parcial"),
             "choices": choices,
+            "selected_directories": folders,
             "decision_descriptions": {
                 "preservar": "Candidato escolhido para futura cópia após nova validação",
                 "nao_copiar": "Não incluir na cópia, NÃO significa excluir do computador",
@@ -182,9 +188,11 @@ class FileMetadataIndex:
             "contains_file_contents": False,
             "ready_for_format": False,
             "installation_authorized": False,
-            "note": ("Esta exportação não realiza backup nem valida se o arquivo "
-                     "continua no disco. Revise e confirme as escolhas no fluxo "
-                     "de preservação antes de iniciar uma cópia."),
+            "note": ("Regras de pastas podem abranger arquivos não observados "
+                     "ou alterados desde a varredura. Arquivos com escolha "
+                     "individual prevalecem sobre a escolha da pasta. "
+                     "Esta exportação não inicia backup nem valida a integridade "
+                     "dos conteúdos. Revise e recalcule o plano antes da cópia."),
         }
         # Exclusive creation, never replace a user's file even on repeat export.
         with open(target, "x", encoding="utf-8") as stream:
