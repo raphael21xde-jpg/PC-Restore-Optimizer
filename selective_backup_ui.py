@@ -716,7 +716,7 @@ def show_selective_backup(app, plan):
                            'certifica todos os saves ou arquivos protegidos.'),
               wraplength=475).pack(anchor='w', padx=(8, 0))
     add_button(row28, 'Inventário DETALHADO: pesquisar arquivos e marcar escolhas',
-               lambda: show_file_index(window))
+               lambda: show_file_index(window, app=app))
     ttk.Label(row28, text=('Cria um índice SQLite somente de metadados. '
                            'As escolhas não apagam nem copiam arquivos automaticamente.'),
               wraplength=475).pack(anchor='w', padx=(8, 0))
