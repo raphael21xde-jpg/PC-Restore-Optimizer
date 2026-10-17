@@ -61,6 +61,35 @@ class ScenarioTests(unittest.TestCase):
         self.assertFalse(result['approved_for_format'])
         self.assertIn('SIMULAÇÃO DE DESTINO', scenario_text(result))
 
+    def test_report_C_to_D_20GiB_has_reserve_without_contradictory_message(self):
+        result = self.simulate(source=('C',), target='D', size='20')
+        self.assertEqual(result['status'], 'requires_review')
+        self.assertEqual(result['reserve_bytes'], 10 * GIB)
+        self.assertEqual(result['free_bytes_reported'], 90384388096)
+        self.assertEqual(
+            result['usable_after_reserve_bytes'], 90384388096 - 10 * GIB)
+        self.assertGreater(result['usable_after_reserve_bytes'], 20 * GIB)
+        text = scenario_text(result)
+        self.assertIn('Espaço considerado após reserva:', text)
+        self.assertIn('reserva simulada NÃO bloqueia espaço real', text)
+        self.assertNotIn('sem reserva de segurança', text)
+        self.assertFalse(result['backup_destination_verified'])
+
+    def test_insufficient_C_to_D_80GiB_retains_reserve_calculation(self):
+        result = self.simulate(source=('C',), target='D', size='80')
+        self.assertEqual(result['status'], 'blocked')
+        self.assertEqual(result['usable_after_reserve_bytes'], 90384388096 - 10 * GIB)
+        self.assertIn('BLOQUEIO:', scenario_text(result))
+        self.assertNotIn('sem reserva de segurança', scenario_text(result))
+
+    def test_unavailable_capacity_never_claims_computed_headroom(self):
+        data = snapshot()
+        data['volumes'][1]['SizeRemaining'] = None
+        result = self.simulate(target='D', data=data)
+        self.assertIsNone(result['usable_after_reserve_bytes'])
+        self.assertEqual(result['capacity_status'], 'unknown')
+        self.assertIn('NÃO IDENTIFICADO', scenario_text(result))
+
     def test_same_source_and_destination_blocked(self):
         result = self.simulate(source=('G',), target='G')
         self.assertEqual(result['status'], 'blocked')
