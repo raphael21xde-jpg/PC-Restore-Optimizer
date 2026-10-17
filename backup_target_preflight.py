@@ -12,7 +12,8 @@ import re
 LETTER = re.compile(r'^[A-Za-z]$')
 MAX_ESTIMATED_BYTES = 1 << 63
 OBSERVED_EXTENT_STATUSES = frozenset({
-    'logical_disk_reported', 'disk_not_listed', 'virtual_spaces', 'multi_disk'
+    'logical_disk_reported', 'disk_not_listed', 'virtual_spaces', 'multi_disk',
+    'reported'  # Legacy metadata/test alias used by existing backup coordinator.
 })
 
 
