@@ -19,6 +19,8 @@ from multi_backup_destinations_ui import open_destination_picker
 from autoteste_integridade import run_integrity_autotest
 from autoteste_completude import run_completeness_autotest
 from autoteste_interrupcao import run_interruption_autotest
+from autotestes_resiliencia import (run_midfile_autotest, run_repair_autotest,
+                                    run_resume_guard_autotest)
 
 
 def show_selective_backup(app, plan):
@@ -58,6 +60,9 @@ def show_selective_backup(app, plan):
     row3 = ttk.Frame(controls); row3.pack(fill='x', pady=3)
     row4 = ttk.Frame(controls); row4.pack(fill='x', pady=3)
     row5 = ttk.Frame(controls); row5.pack(fill='x', pady=3)
+    row6 = ttk.Frame(controls); row6.pack(fill='x', pady=3)
+    row7 = ttk.Frame(controls); row7.pack(fill='x', pady=3)
+    row8 = ttk.Frame(controls); row8.pack(fill='x', pady=3)
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
     manifest_label = tk.StringVar(value='Manifesto: ainda não existe')
     ttk.Label(container, textvariable=destination, wraplength=980).pack(anchor='w')
@@ -195,6 +200,18 @@ def show_selective_backup(app, plan):
                         write_log('[AUTOTESTE #27] Restauração retomada; arquivos verificados por SHA-256.')
                         write_log('[AUTOTESTE #27] Originais preservados; arquivos temporários removidos.')
                         write_log('[AUTOTESTE #27] Não examina backups reais nem autoriza formatação.')
+                    elif job in ('autotest28', 'autotest29', 'autotest30'):
+                        number = job[-2:]
+                        state['report'] = outcome
+                        summary.set(f'AUTOTESTE #{number} APROVADO: ' +
+                                    ('cancelamento dentro do arquivo e retomada com SHA-256.'
+                                     if number == '28' else
+                                     'cópias adulteradas corrigidas com SHA-256.'
+                                     if number == '29' else
+                                     'retomadas incompatíveis foram bloqueadas.'))
+                        write_log(f'[AUTOTESTE #{number}] Testes sintéticos concluídos e validados.')
+                        write_log(f'[AUTOTESTE #{number}] Arquivos temporários removidos.')
+                        write_log(f'[AUTOTESTE #{number}] Backups reais não acessados; formatação bloqueada.')
                     elif job == 'restore':
                         state['report'] = outcome
                         summary.set(f'RECUPERAÇÃO DE TESTE APROVADA: {outcome["files_verified"]} arquivos, '
@@ -323,11 +340,22 @@ def show_selective_backup(app, plan):
         state['report'] = None
         start_job('autotest27', lambda: run_interruption_autotest(cancelled=cancelled))
 
+    def run_resilience_autotest(number, runner):
+        # Three separate buttons; never use current plan or any real backup path.
+        state['report'] = None
+        start_job('autotest' + str(number), lambda: runner(cancelled=cancelled))
+
     def export_report():
         if state['report'] is None:
             return messagebox.showinfo('Sem relatório', 'Execute uma etapa para gerar resultado.', parent=window)
         location = filedialog.asksaveasfilename(parent=window, defaultextension='.json',
-                          initialfile=('resultado-autoteste27.json'
+                          initialfile=('resultado-autoteste28.json'
+                                        if state['report'].get('schema') == 'pcro-autoteste-resiliencia-v28'
+                                        else 'resultado-autoteste29.json'
+                                        if state['report'].get('schema') == 'pcro-autoteste-resiliencia-v29'
+                                        else 'resultado-autoteste30.json'
+                                        if state['report'].get('schema') == 'pcro-autoteste-resiliencia-v30'
+                                        else 'resultado-autoteste27.json'
                                         if state['report'].get('schema') == 'pcro-autoteste-interrupcao-v1'
                                         else 'resultado-autoteste26.json'
                                         if state['report'].get('schema') == 'pcro-autoteste-completude-v1'
@@ -363,6 +391,18 @@ def show_selective_backup(app, plan):
               wraplength=470).pack(side='left', padx=(8, 0))
     add_button(row5, '7. Autoteste #27: cancelar e retomar (isolado)', run_autotest27)
     ttk.Label(row5, text='Backup/restauração fictícios; SHA-256 na retomada.',
+              wraplength=430).pack(side='left', padx=(8, 0))
+    add_button(row6, '8. Autoteste #28: interromper arquivo grande',
+               lambda: run_resilience_autotest(28, run_midfile_autotest))
+    ttk.Label(row6, text='Cancela durante a cópia; retoma com SHA-256.',
+              wraplength=430).pack(side='left', padx=(8, 0))
+    add_button(row7, '9. Autoteste #29: reparar arquivo adulterado',
+               lambda: run_resilience_autotest(29, run_repair_autotest))
+    ttk.Label(row7, text='Corrupção sintética; recópia segura ao retomar.',
+              wraplength=430).pack(side='left', padx=(8, 0))
+    add_button(row8, '10. Autoteste #30: impedir retomada insegura',
+               lambda: run_resilience_autotest(30, run_resume_guard_autotest))
+    ttk.Label(row8, text='Bloqueia fontes, destinos e manifestos incompatíveis.',
               wraplength=430).pack(side='left', padx=(8, 0))
     stop = ttk.Button(row2, text='Cancelar operação', command=cancelled.set, state='disabled')
     stop.pack(side='right')
