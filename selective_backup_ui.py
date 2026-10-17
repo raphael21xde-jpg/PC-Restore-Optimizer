@@ -33,6 +33,10 @@ from autotestes_bateria import (run_tiny_files_stress_autotest,
 from autotestes_41_43 import (run_inventory_permissions_autotest,
                               run_cross_volume_links_autotest,
                               run_restore_write_recovery_autotest)
+from inventory_paged import PagedMetadataScanner, discover_local_roots
+from autotestes_44_46 import (run_paged_inventory_autotest,
+                              run_pause_resume_inventory_autotest,
+                              run_gaps_inventory_autotest)
 
 
 def show_selective_backup(app, plan):
@@ -112,23 +116,26 @@ def show_selective_backup(app, plan):
     performance_tab = ttk.Frame(tabs, padding=8)
     recent_tab = ttk.Frame(tabs, padding=8)
     next_tab = ttk.Frame(tabs, padding=8)
-    tabs.add(operations_tab, text='Backup e recuperação')
-    tabs.add(integrity_tab, text='Testes #25–30')
-    tabs.add(performance_tab, text='Testes #31–37')
+    paged_tab = ttk.Frame(tabs, padding=8)
+    tabs.add(operations_tab, text='Backup')
+    tabs.add(integrity_tab, text='#25–30')
+    tabs.add(performance_tab, text='#31–37')
     tabs.add(recent_tab, text='Novos #38–40')
-    tabs.add(next_tab, text='Novos #41–43')
+    tabs.add(next_tab, text='#41–43')
+    tabs.add(paged_tab, text='Novos #44–46')
     rows = []
-    for number in range(1, 22):
+    for number in range(1, 28):
         parent = (operations_tab if number <= 2 else
                   integrity_tab if number <= 8 else
                   performance_tab if number <= 15 else
-                  recent_tab if number <= 18 else next_tab)
+                  recent_tab if number <= 18 else
+                  next_tab if number <= 21 else paged_tab)
         row = ttk.Frame(parent)
         row.pack(fill='x', pady=3)
         rows.append(row)
-    (row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11, row12, row13, row14, row15, row16, row17, row18, row19, row20, row21) = rows
+    (row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11, row12, row13, row14, row15, row16, row17, row18, row19, row20, row21, row22, row23, row24, row25, row26, row27) = rows
     # Open directly to the newest battery when requested by keyboard.
-    window.bind('<Alt-n>', lambda _: tabs.select(next_tab), add='+')
+    window.bind('<Alt-n>', lambda _: tabs.select(paged_tab), add='+')
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
     manifest_label = tk.StringVar(value='Manifesto: ainda não existe')
     ttk.Label(container, textvariable=destination, wraplength=980).pack(anchor='w')
@@ -150,7 +157,8 @@ def show_selective_backup(app, plan):
     event_queue = Queue()
     cancelled = threading.Event()
     state = {'busy': False, 'plan': None, 'manifest': None, 'backup_dir': None,
-             'report': None, 'dest': None, 'multi_targets': [], 'worker': None, 'job': None, 'probe': None}
+             'report': None, 'dest': None, 'multi_targets': [], 'worker': None, 'job': None,
+             'probe': None, 'metadata_scanner': None}
 
     def write_log(line):
         log.configure(state='normal')
@@ -348,6 +356,30 @@ def show_selective_backup(app, plan):
                         write_log(f'[AUTOTESTE #{number}] ' +
                                   json.dumps(outcome, ensure_ascii=False))
                         write_log(f'[AUTOTESTE #{number}] Nenhuma formatação autorizada.')
+                    elif job in ('autotest44', 'autotest45', 'autotest46'):
+                        number = int(job[-2:])
+                        state['report'] = outcome
+                        summaries = {
+                            44: 'Páginas sintéticas sem duplicar arquivos.',
+                            45: 'Pausa e retomada de cursor em memória.',
+                            46: 'Acesso negado e links registrados como lacunas.',
+                        }
+                        summary.set(f"AUTOTESTE #{number}: {outcome['status'].upper()}. " +
+                                    summaries[number] + ' Exporte o relatório.')
+                        write_log(f'[AUTOTESTE #{number}] ' +
+                                  json.dumps(outcome, ensure_ascii=False))
+                    elif job == 'paged_scan':
+                        state['report'] = outcome
+                        count = outcome['entries_examined']
+                        remaining = outcome['directories_pending']
+                        summary.set(f'Inventário paginado: {count} entradas; ' +
+                                    f'{remaining} diretórios pendentes. ' +
+                                    ('Sessão terminou com escopo limitado. ' if outcome['finished_current_session']
+                                     else 'Clique em continuar para mais uma página. ') +
+                                    'Não autoriza formatação.')
+                        write_log('[INVENTÁRIO POR PÁGINAS] ' +
+                                  f'{count} entradas, {remaining} diretórios pendentes; ' +
+                                  f"estado={outcome['status']}.")
                     elif job == 'restore':
                         state['report'] = outcome
                         summary.set(f'RECUPERAÇÃO DE TESTE APROVADA: {outcome["files_verified"]} arquivos, '
@@ -518,7 +550,7 @@ def show_selective_backup(app, plan):
             return messagebox.showinfo('Sem relatório', 'Execute uma etapa para gerar resultado.', parent=window)
         location = filedialog.asksaveasfilename(parent=window, defaultextension='.json',
                           initialfile=(f"resultado-autoteste{state['report']['schema'].rsplit('v', 1)[-1]}.json"
-                                       if state['report'].get('schema') in {f'pcro-autoteste-bateria-v{n}' for n in range(38,44)}
+                                       if state['report'].get('schema') in {f'pcro-autoteste-bateria-v{n}' for n in range(38,47)}
                                        else f"resultado-autoteste{state['report']['schema'].rsplit('v', 1)[-1]}.json"
                                         if state['report'].get('schema') in {f'pcro-autoteste-escala-v{n}' for n in (35, 36, 37)}
                                         else 'resultado-autoteste31.json'
@@ -541,6 +573,8 @@ def show_selective_backup(app, plan):
                                         if state['report'].get('schema') == 'pcro-autoteste-completude-v1'
                                         else 'resultado-autoteste25.json'
                                         if state['report'].get('schema') == 'pcro-autoteste-integridade-v1'
+                                        else 'resultado-inventario-paginado.json'
+                                        if state['report'].get('schema') == 'pcro-inventario-paginado-v1'
                                         else 'resultado-backup-restauracao-v066.json'),
                           filetypes=[('JSON','*.json')])
         if location:
@@ -625,6 +659,61 @@ def show_selective_backup(app, plan):
                lambda: run_fault_autotest(43, run_restore_write_recovery_autotest))
     ttk.Label(row21, text='Dados fictícios; falha controlada e conferência SHA-256.',
               wraplength=410).pack(anchor='w', padx=(8, 0))
+    add_button(row22, '24. Autoteste #44: páginas sem limite total',
+               lambda: run_fault_autotest(44, run_paged_inventory_autotest))
+    ttk.Label(row22, text='Somente dados sintéticos; não repete nem perde arquivos.',
+              wraplength=440).pack(anchor='w', padx=(8, 0))
+    add_button(row23, '25. Autoteste #45: pausar e continuar leitura',
+               lambda: run_fault_autotest(45, run_pause_resume_inventory_autotest))
+    ttk.Label(row23, text='Cursor em memória; retomada apenas na mesma sessão.',
+              wraplength=440).pack(anchor='w', padx=(8, 0))
+    add_button(row24, '26. Autoteste #46: acesso negado e junções',
+               lambda: run_fault_autotest(46, run_gaps_inventory_autotest))
+    ttk.Label(row24, text='Lacunas nunca equivalem a inventário completo.',
+              wraplength=440).pack(anchor='w', padx=(8, 0))
+
+    def run_paged_scan(new_session=False, until_finished=False):
+        if state['busy']:
+            return
+        scanner = state.get('metadata_scanner')
+        if new_session or scanner is None:
+            try:
+                roots = discover_local_roots()
+                scanner = PagedMetadataScanner(roots)
+            except (OSError, ValueError, RuntimeError) as exc:
+                messagebox.showerror('Inventário não iniciado', str(exc), parent=window)
+                return
+            previous = state.get('metadata_scanner')
+            if previous is not None:
+                previous.close()
+            state['metadata_scanner'] = scanner
+            write_log(f'[INVENTÁRIO] {len(roots)} unidades locais acessíveis; leitura somente de metadados.')
+        if scanner.snapshot()['finished_current_session']:
+            messagebox.showinfo('Análise concluída',
+                                'Para iniciar outra análise escolha Nova sessão.', parent=window)
+            return
+        state['report'] = None
+        def execute_page_or_complete():
+            def progress(count):
+                event_queue.put(('autotest_note',
+                                 f'Inventário: {count} entradas examinadas; somente leitura.'))
+            while True:
+                outcome = scanner.step(page_size=2000, cancelled=cancelled,
+                                       progress=progress)
+                if not until_finished or outcome['finished_current_session']:
+                    return outcome
+        start_job('paged_scan', execute_page_or_complete)
+
+    add_button(row25, 'Inventário real: NOVA sessão de leitura',
+               lambda: run_paged_scan(new_session=True))
+    add_button(row26, 'Inventário real: CONTINUAR próxima página',
+               lambda: run_paged_scan(new_session=False))
+    add_button(row27, 'Inventário real: CONTINUAR até terminar (cancelável)',
+               lambda: run_paged_scan(new_session=False, until_finished=True))
+    ttk.Label(row27, text=('Cada página examina 2.000 entradas. A análise longa roda fora '
+                           'da interface e pode ser interrompida. Não lê conteúdo nem '
+                           'certifica todos os saves ou arquivos protegidos.'),
+              wraplength=475).pack(anchor='w', padx=(8, 0))
     export_button = ttk.Button(toolbar, text='Exportar relatório', command=export_report)
     export_button.pack(side='left', padx=(0, 8))
     commands.append(export_button)
@@ -636,6 +725,9 @@ def show_selective_backup(app, plan):
             messagebox.showinfo('Cancelamento solicitado',
                 'Aguarde a operação parar antes de fechar. Dados parciais não são considerados verificados.', parent=window)
             return
+        scanner = state.get('metadata_scanner')
+        if scanner is not None:
+            scanner.close()
         window.destroy()
     window.protocol('WM_DELETE_WINDOW', close)
     write_log('Nenhuma exclusão ou formatação será realizada.')

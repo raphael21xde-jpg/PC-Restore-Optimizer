@@ -33,6 +33,8 @@ jobs:
         run: python -m unittest discover -s tests -p "test_autotestes_bateria_v038_v040.py" -v
       - name: 'Test #41-43: volume metadata, links and restart after write failure'
         run: python -m unittest discover -s tests -p "test_autotestes_41_43.py" -v
+      - name: 'Test #44-46: paginated metadata, cursor resume, and access gaps'
+        run: python -m unittest discover -s tests -p "test_inventory_paged_v044_v046.py" -v
       - name: Make space on disposable Linux runner for three synthetic copies
         if: runner.os == 'Linux'
         run: |
@@ -66,6 +68,16 @@ jobs:
         env:
           PCRO_REQUIRE_TK: '1'
         run: python -m unittest discover -s tests -p "test_backup_window_usability.py" -v
+      - name: Test paginated Tk window on Linux
+        if: runner.os == 'Linux'
+        env:
+          PCRO_REQUIRE_TK: '1'
+        run: xvfb-run -a python -m unittest discover -s tests -p "test_gui_inventory_paged_v044.py" -v
+      - name: Test paginated Tk window on Windows
+        if: runner.os == 'Windows'
+        env:
+          PCRO_REQUIRE_TK: '1'
+        run: python -m unittest discover -s tests -p "test_gui_inventory_paged_v044.py" -v
       - name: Full regression with virtual display on Linux
         timeout-minutes: 3
         if: runner.os == 'Linux'
@@ -74,10 +86,10 @@ jobs:
         run: xvfb-run -a python tests/run_full_suite.py --timeout 120
       - name: Full regression on Windows
         if: runner.os == 'Windows'
-        timeout-minutes: 5
+        timeout-minutes: 9
         env:
           PCRO_REQUIRE_TK: '1'
-        run: python tests/run_full_suite.py --timeout 240
+        run: python tests/run_full_suite.py --timeout 420
       - name: Test multiple destinations and SHA-256 with temporary files
         run: python -m unittest discover -s tests -p "test_multi_destinations_v083.py" -v
       - name: Test read-only interactive backup preflight scenarios (mocked)
