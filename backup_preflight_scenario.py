@@ -157,8 +157,15 @@ def scenario_text(result):
     for risk in result.get('risk_details') or []:
         lines.append('  ATENÇÃO: '+str(risk))
     for issue in result.get('issues') or []:
-        if isinstance(issue, str):
-            lines.append('  OBSERVAÇÃO: '+issue)
+        if not isinstance(issue, str):
+            continue
+        # O aviso de Simple sem redundância já aparece com mais contexto em
+        # ATENÇÃO (quantidade de membros). Preservar o alerta original nos
+        # dados estruturados e ocultar somente sua repetição textual.
+        if ('spaces_simple' in result.get('risk_tags', []) and
+                re.fullmatch(r'Disco [0-9]+: pool Simple sem redundância informada\.', issue)):
+            continue
+        lines.append('  OBSERVAÇÃO: '+issue)
     lines.extend([
         '  Independência física: NÃO VERIFICADA; BootCurrent: NÃO VERIFICADO.',
         '  SHA-256/restauração: NÃO REALIZADOS.',
