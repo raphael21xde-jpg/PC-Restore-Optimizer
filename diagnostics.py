@@ -19,7 +19,7 @@ from nt_volume_mapping import summarize_nt_aliases
 from boot_dependency import assess_bootmgr_disk_dependency
 from firmware_order_evidence import collect_firmware_order
 from spaces_membership import SPACES_QUERY, assess_spaces_membership
-from backup_target_preflight import list_backup_target_candidates
+from backup_target_preflight import list_backup_target_candidates, mark_candidate_boot_risks
 
 
 def _powershell_json(code: str, timeout=30):
@@ -127,6 +127,9 @@ def disk_inventory():
     alerts.extend(boot_dependency['issues'])
     firmware_order = collect_firmware_order(nt_volume_mapping, layout)
     alerts.extend(firmware_order['issues'])
+    backup_candidates = mark_candidate_boot_risks(
+        backup_candidates, boot_layout=layout, boot_dependency=boot_dependency,
+        firmware_order=firmware_order)
     cross_source = assess_cross_source_storage(disks, extents_mapping, mapping, layout)
     alerts.extend(cross_source['issues'])
     alerts.append('Discos dinâmicos, partições EFI ocultas e pools podem exigir conferência no Gerenciamento de Disco e DiskPart (somente leitura).')
