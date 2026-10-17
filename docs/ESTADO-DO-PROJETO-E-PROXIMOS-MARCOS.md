@@ -66,7 +66,7 @@ Os números de PR, os commits e os arquivos relevantes estão no histórico GitH
 
 ### Marco A — Fechar preservação com evidência real, SEM novo motor
 
-**Próximo desenvolvimento.** Criar um **painel de prontidão e lacunas de preservação** que reutilize escolhas atuais, índice existente, manifesto(s) de backup verificado(s) e registros de restauração. Para cada fonte escolhida, mostrar separadamente:
+**Próximo desenvolvimento.** **Completar e conectar a auditoria já implementada em `audit_v069.py`, `audit_v068.py` e `completeness_audit_ui_v068.py`** às escolhas atuais, ao índice SQLite existente, aos manifestos verificados e às evidências de restauração. O resultado pode aparecer em um painel de prontidão, **mas não desenvolver outra auditoria nem outro motor do zero**. Para cada fonte escolhida, mostrar separadamente:
 
 - **escolhido / precisa cópia / não precisa cópia (preservar no volume intacto);**
 - **encontrado hoje / inventariado com lacunas / origem não conferida;**
