@@ -119,11 +119,12 @@ class TestSelectionBackupRestoreEndToEnd(unittest.TestCase):
         plan = prepare_selected_c(selected, choices=choices, test_root=str(self.base))
         self.assertFalse(plan.warnings)
         self.assertEqual(plan.count, 3)
-        included = {norm(task.source) for task in plan.files}
-        self.assertIn(norm(self.save), included)
-        self.assertIn(norm(self.song), included)
-        self.assertIn(norm(self.config), included)
-        self.assertNotIn(norm(self.skip), included)
+        included = {norm(Path(task.source).resolve(strict=True))
+                    for task in plan.files}
+        self.assertIn(norm(self.save.resolve(strict=True)), included)
+        self.assertIn(norm(self.song.resolve(strict=True)), included)
+        self.assertIn(norm(self.config.resolve(strict=True)), included)
+        self.assertNotIn(norm(self.skip.resolve(strict=True)), included)
         return plan
 
     def test_full_real_copy_verify_and_isolated_restore_of_fixtures(self):
