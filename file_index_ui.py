@@ -181,7 +181,7 @@ def show_file_index(parent, app=None):
                    command=confirm).pack(side="left", padx=(0, 8))
         ttk.Button(actions_popup, text="Cancelar",
                    command=popup.destroy).pack(side="left")
-        popup.grab_set()
+        popup.lift()  # No modal grab: keeps Tk responsive on all Windows hosts.
 
     def start_scan():
         if state["busy"]:
