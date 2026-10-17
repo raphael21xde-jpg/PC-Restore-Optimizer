@@ -594,7 +594,7 @@ def show_selective_backup(app, plan):
                lambda: run_fault_autotest(40, run_isolated_full_restore_autotest))
     ttk.Label(row18, text='Seleção sintética, exclusões e restauração em pasta nova.',
               wraplength=410).pack(anchor='w', padx=(8, 0))
-    export_button = ttk.Button(toolbar, text='Exportar relatório JSON', command=export_report)
+    export_button = ttk.Button(toolbar, text='Exportar relatório', command=export_report)
     export_button.pack(side='left', padx=(0, 8))
     commands.append(export_button)
     stop = ttk.Button(toolbar, text='Cancelar operação', command=cancelled.set, state='disabled')
