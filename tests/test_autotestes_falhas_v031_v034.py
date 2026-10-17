@@ -101,7 +101,7 @@ class TestBateria31a34(unittest.TestCase):
             return original(manifest, cancelled=cancelled)
 
         with patch("autotestes_falhas.verify_complete_manifest", side_effect=broken):
-            with self.assertRaisesRegex(AssertionError, "indevidamente"):
+            with self.assertRaisesRegex(AssertionError, "aceito como íntegro"):
                 run_restart_recovery_autotest()
 
 
