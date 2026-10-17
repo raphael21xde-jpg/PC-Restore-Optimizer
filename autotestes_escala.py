@@ -96,7 +96,7 @@ def plan_for(root):
 
 
 def verify(root, manifest, target=None):
-    fixture = json.loads((root / 'fixture.json').read_text())
+    fixture = json.loads((root / 'fixture.json').read_text(encoding='utf-8'))
     result = verify_complete_manifest(manifest)
     require(result['files_verified'] == 1 and result['bytes_verified'] == fixture['bytes'],
             'Backup sintético incompleto.')
@@ -206,7 +206,7 @@ def launch(root, token, mode, cancelled=None, progress=None, timeout=1800):
                 if time.monotonic() - started > timeout:
                     raise TimeoutError('Subprocesso de teste excedeu o prazo.')
                 if progress and (root / 'phase.json').is_file():
-                    current = json.loads((root / 'phase.json').read_text())['phase']
+                    current = json.loads((root / 'phase.json').read_text(encoding='utf-8'))['phase']
                     if current != last_phase:
                         progress(current)
                         last_phase = current
@@ -224,7 +224,7 @@ def private_root(number):
 
 def authorize(root):
     token = secrets.token_hex(24)
-    (root / 'owner.token').write_text(token)
+    (root / 'owner.token').write_text(token, encoding='utf-8')
     setup(root)
     return token
 
@@ -237,7 +237,7 @@ def run_gigabyte_autotest(*, cancelled=None, progress=None):
         token = authorize(root)
         require(launch(root, token, 'large', cancelled, progress) == 0,
                 'Teste de 2 GiB falhou no subprocesso; não aprovado.')
-        report = json.loads((root / 'result.json').read_text())
+        report = json.loads((root / 'result.json').read_text(encoding='utf-8'))
         report.update(free_bytes_before=free, required_free_bytes=needed)
     require(not root.exists(), 'Área temporária não foi removida.')
     report['temporary_data_cleaned'] = True
@@ -257,7 +257,7 @@ def run_abrupt_exit_autotest(*, cancelled=None, progress=None):
                 'Saída abrupta do backup não observada.')
         require((root / 'crash-backup.json').is_file(), 'Marcador da saída abrupta ausente.')
         manifest = next((root / 'backups').glob('backup-*/manifest.json'))
-        require(json.loads(manifest.read_text())['status'] == 'em_andamento',
+        require(json.loads(manifest.read_text(encoding='utf-8'))['status'] == 'em_andamento',
                 'Manifesto inesperado após encerramento abrupto.')
         try:
             verify_complete_manifest(manifest)
@@ -274,14 +274,14 @@ def run_abrupt_exit_autotest(*, cancelled=None, progress=None):
                 'Saída abrupta da restauração não observada.')
         require((root / 'crash-restore.json').is_file(), 'Marcador da restauração ausente.')
         restore_folder = next((root / 'restores').glob('TESTE-RESTAURACAO-*'))
-        require(json.loads((restore_folder / 'ESTADO-RESTAURACAO.json').read_text())['status'] == 'em_andamento',
+        require(json.loads((restore_folder / 'ESTADO-RESTAURACAO.json').read_text(encoding='utf-8'))['status'] == 'em_andamento',
                 'Diário inesperado após saída abrupta.')
         restore_fragments = list(restore_folder.rglob('*.partial-*'))
         require(restore_fragments and all(p.stat().st_size > 0 for p in restore_fragments),
                 'Fragmento de restauração não observado.')
         require(launch(root, token, 'resume-restore', cancelled) == 0, 'Restauração em novo processo falhou.')
         verify(root, manifest, restore_folder)
-        journal = json.loads((restore_folder / 'ESTADO-RESTAURACAO.json').read_text())
+        journal = json.loads((restore_folder / 'ESTADO-RESTAURACAO.json').read_text(encoding='utf-8'))
         require(journal['status'] == 'concluida', 'Diário final não concluído.')
         report = common(36, fixture_bytes=8 * MIB, child_exit_code=CRASH_EXIT,
                         backup_process_abruptly_exited=True, restore_process_abruptly_exited=True,
@@ -345,6 +345,6 @@ if __name__ == '__main__':
     token = sys.argv[3]
     if (root.parent != Path(tempfile.gettempdir()).resolve() or
             not root.name.startswith(('PCRO-ESCALA35-', 'PCRO-ESCALA36-')) or
-            not secrets.compare_digest((root / 'owner.token').read_text(), token)):
+            not secrets.compare_digest((root / 'owner.token').read_text(encoding='utf-8'), token)):
         raise SystemExit('Área de teste não autorizada.')
     child(root, sys.argv[4])
