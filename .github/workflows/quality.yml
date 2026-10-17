@@ -54,6 +54,16 @@ jobs:
         env:
           PCRO_REQUIRE_TK: '1'
         run: python -m unittest discover -s tests -p "test_autotestes_escala_v035_v037.py" -v
+      - name: Test backup window tabs, resize and fixed export (Linux Tk)
+        if: runner.os == 'Linux'
+        env:
+          PCRO_REQUIRE_TK: '1'
+        run: xvfb-run -a python -m unittest discover -s tests -p "test_backup_window_usability.py" -v
+      - name: Test backup window tabs, resize and fixed export (Windows Tk)
+        if: runner.os == 'Windows'
+        env:
+          PCRO_REQUIRE_TK: '1'
+        run: python -m unittest discover -s tests -p "test_backup_window_usability.py" -v
       - name: Full regression with virtual display on Linux
         timeout-minutes: 3
         if: runner.os == 'Linux'
