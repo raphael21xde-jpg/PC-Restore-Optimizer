@@ -145,8 +145,7 @@ def build_preservation(app):
     # the top of a long scrollable page where they are invisible.
     choice_actions = ttk.Frame(frame)
     choice_actions.pack(fill='x', pady=(6, 11))
-    ttk.Label(choice_actions, text='Selecione um caminho acima para retirar somente sua marcação.')
-        .pack(side='left', padx=(0, 9))
+    ttk.Label(choice_actions, text='Selecione um caminho acima para retirar somente sua marcação.').pack(side='left', padx=(0, 9))
     ttk.Button(choice_actions, text='Retirar escolha selecionada (não apaga)',
                command=lambda: remove_selected_path_choice()).pack(side='left')
 
