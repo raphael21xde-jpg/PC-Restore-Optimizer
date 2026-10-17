@@ -110,6 +110,22 @@ class TestInventoryIndex(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_index_database_is_never_in_its_own_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "fixture.txt").write_text("keep", encoding="utf-8")
+            database = root / "user-index.sqlite3"
+            report = index_roots([root], database, page_size=1)
+            db = FileMetadataIndex(database)
+            try:
+                paths = {row["path"] for row in db.search()}
+                self.assertIn(str(root / "fixture.txt"), paths)
+                self.assertNotIn(str(database), paths)
+                self.assertEqual(report["indexed_files"], 1)
+                self.assertFalse(report["ready_for_format"])
+            finally:
+                db.close()
+
     def test_metadata_only_not_file_contents(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
