@@ -204,6 +204,16 @@ def index_roots(roots, output_path, *, cancelled=None, progress=None, page_size=
         raise InterruptedError("Varredura cancelada antes de criar o índice.")
     db = FileMetadataIndex(output_path, create=True)
     scanner = None
+    # The user may store the index on one of the scanned drives. Do not
+    # index our own changing database or SQLite temporary sidecars.
+    own_files = {
+        os.path.normcase(os.path.abspath(str(db.path) + suffix))
+        for suffix in ("", "-journal", "-wal", "-shm")
+    }
+    def collect(record, batch):
+        name = os.path.normcase(os.path.abspath(record[0]))
+        if name not in own_files:
+            batch.append(record)
     try:
         scanner = PagedMetadataScanner(roots)
         while True:
@@ -212,7 +222,7 @@ def index_roots(roots, output_path, *, cancelled=None, progress=None, page_size=
             batch = []
             try:
                 result = scanner.step(page_size=page_size, cancelled=cancelled,
-                                      on_entry=batch.append)
+                                      on_entry=lambda record: collect(record, batch))
             except InterruptedError:
                 db.set_status("interrompido")
                 raise
@@ -225,8 +235,10 @@ def index_roots(roots, output_path, *, cancelled=None, progress=None, page_size=
                     "status": "concluido_com_lacunas",
                     "index_file": str(db.path),
                     "entries_examined": result["entries_examined"],
-                    "indexed_files": sum(v["files"] for v in result["volumes"]),
-                    "indexed_directories": sum(v["folders"] for v in result["volumes"]),
+                    "indexed_files": db.conn.execute(
+                        "SELECT COUNT(*) FROM records WHERE kind='file'").fetchone()[0],
+                    "indexed_directories": db.conn.execute(
+                        "SELECT COUNT(*) FROM records WHERE kind='directory'").fetchone()[0],
                     "access_denied_count": result["access_denied_count"],
                     "reparse_points_skipped": result["reparse_points_skipped"],
                     "partial_coverage": True,
