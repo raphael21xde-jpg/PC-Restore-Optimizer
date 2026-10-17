@@ -115,7 +115,7 @@ def show_selective_backup(app, plan):
     tabs.add(operations_tab, text='Backup e recuperação')
     tabs.add(integrity_tab, text='Testes #25–30')
     tabs.add(performance_tab, text='Testes #31–37')
-    tabs.add(recent_tab, text='Testes #38–40')
+    tabs.add(recent_tab, text='Novos #38–40')
     tabs.add(next_tab, text='Novos #41–43')
     rows = []
     for number in range(1, 22):
