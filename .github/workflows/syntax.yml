@@ -1,14 +1,24 @@
 name: Python source syntax
-on: [push, pull_request]
+# One lightweight job per PR (not per push); no pip, Windows runner or setup-python.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   compile:
-    runs-on: windows-latest
+    name: Parse Python sources (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Compile Python sources (non-destructive)
-        shell: pwsh
+      - name: Parse Python sources (non-destructive)
+        shell: bash
         run: |
-          python -c "import pathlib,ast; files=list(pathlib.Path('.').rglob('*.py')); [ast.parse(p.read_text(encoding='utf-8-sig'), filename=str(p)) for p in files]; print(f'Parsed {len(files)} Python files')"
+          python3 -c "import pathlib,ast; files=list(pathlib.Path('.').rglob('*.py')); [ast.parse(p.read_text(encoding='utf-8-sig'), filename=str(p)) for p in files]; print(f'Parsed {len(files)} Python files')"
