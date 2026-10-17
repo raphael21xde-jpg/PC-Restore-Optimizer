@@ -19,6 +19,7 @@ from nt_volume_mapping import summarize_nt_aliases
 from boot_dependency import assess_bootmgr_disk_dependency
 from firmware_order_evidence import collect_firmware_order
 from spaces_membership import SPACES_QUERY, assess_spaces_membership
+from backup_target_preflight import list_backup_target_candidates
 
 
 def _powershell_json(code: str, timeout=30):
@@ -92,6 +93,8 @@ def disk_inventory():
     alerts.extend(spaces_membership['issues'])
     extents_mapping = collect_extent_mapping(disks)
     alerts.extend(extents_mapping['issues'])
+    backup_candidates = list_backup_target_candidates(disks, volumes, extents_mapping,
+                                                      spaces_membership)
     try:
         win32_drives = _list(_powershell_json(
             'Get-CimInstance -ClassName Win32_DiskDrive | '
@@ -133,7 +136,8 @@ def disk_inventory():
                 physical_evidence=physical_evidence, partition_evidence=partition_evidence,
                 boot_evidence=boot_evidence, nt_volume_mapping=nt_volume_mapping,
                 boot_dependency=boot_dependency, firmware_order=firmware_order,
-                spaces_membership=spaces_membership, alerts=sorted(set(alerts)))
+                spaces_membership=spaces_membership, backup_candidates=backup_candidates,
+                alerts=sorted(set(alerts)))
 
 
 def system_inventory():
