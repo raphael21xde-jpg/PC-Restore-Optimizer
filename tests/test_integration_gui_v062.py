@@ -38,6 +38,8 @@ class SequentialScanGUI(unittest.TestCase):
         root.choices = {'C:/Save/previous': 'keep', 'D:/Save/new': 'keep'}
         root.cleanup_candidates = set()
         root.deep_scan_running = False
+        root.deep_scan_report = dict(schema='pcro-discovery-v1', records=[], roots=[],
+                                        errors=[], skipped=[], apps=[], volume_stats={})
         root._on_change = lambda: None
         root.navigate = lambda target: None
         calls = []
