@@ -200,6 +200,8 @@ def index_roots(roots, output_path, *, cancelled=None, progress=None, page_size=
     """
     if not isinstance(page_size, int) or not 1 <= page_size <= 10000:
         raise ValueError("Tamanho de página fora do limite.")
+    if cancelled is not None and cancelled.is_set():
+        raise InterruptedError("Varredura cancelada antes de criar o índice.")
     db = FileMetadataIndex(output_path, create=True)
     scanner = None
     try:
