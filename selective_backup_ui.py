@@ -124,7 +124,7 @@ def show_selective_backup(app, plan):
     tabs.add(next_tab, text='#41–43')
     tabs.add(paged_tab, text='Novos #44–46')
     rows = []
-    for number in range(1, 27):
+    for number in range(1, 28):
         parent = (operations_tab if number <= 2 else
                   integrity_tab if number <= 8 else
                   performance_tab if number <= 15 else
@@ -133,7 +133,7 @@ def show_selective_backup(app, plan):
         row = ttk.Frame(parent)
         row.pack(fill='x', pady=3)
         rows.append(row)
-    (row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11, row12, row13, row14, row15, row16, row17, row18, row19, row20, row21, row22, row23, row24, row25, row26) = rows
+    (row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11, row12, row13, row14, row15, row16, row17, row18, row19, row20, row21, row22, row23, row24, row25, row26, row27) = rows
     # Open directly to the newest battery when requested by keyboard.
     window.bind('<Alt-n>', lambda _: tabs.select(paged_tab), add='+')
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
@@ -672,7 +672,7 @@ def show_selective_backup(app, plan):
     ttk.Label(row24, text='Lacunas nunca equivalem a inventário completo.',
               wraplength=440).pack(anchor='w', padx=(8, 0))
 
-    def run_paged_scan(new_session=False):
+    def run_paged_scan(new_session=False, until_finished=False):
         if state['busy']:
             return
         scanner = state.get('metadata_scanner')
@@ -693,17 +693,26 @@ def show_selective_backup(app, plan):
                                 'Para iniciar outra análise escolha Nova sessão.', parent=window)
             return
         state['report'] = None
-        start_job('paged_scan', lambda: scanner.step(
-            page_size=2000, cancelled=cancelled,
-            progress=lambda count: event_queue.put(
-                ('autotest_note', f'Inventário: {count} entradas examinadas; sem escrita.'))))
+        def execute_page_or_complete():
+            def progress(count):
+                event_queue.put(('autotest_note',
+                                 f'Inventário: {count} entradas examinadas; somente leitura.'))
+            while True:
+                outcome = scanner.step(page_size=2000, cancelled=cancelled,
+                                       progress=progress)
+                if not until_finished or outcome['finished_current_session']:
+                    return outcome
+        start_job('paged_scan', execute_page_or_complete)
 
     add_button(row25, 'Inventário real: NOVA sessão de leitura',
                lambda: run_paged_scan(new_session=True))
     add_button(row26, 'Inventário real: CONTINUAR próxima página',
                lambda: run_paged_scan(new_session=False))
-    ttk.Label(row26, text=('Examina 2.000 entradas por clique; mantém posição nesta janela. '
-                           'Não lê conteúdo nem garante cobertura total.'),
+    add_button(row27, 'Inventário real: CONTINUAR até terminar (cancelável)',
+               lambda: run_paged_scan(new_session=False, until_finished=True))
+    ttk.Label(row27, text=('Cada página examina 2.000 entradas. A análise longa roda fora '
+                           'da interface e pode ser interrompida. Não lê conteúdo nem '
+                           'certifica todos os saves ou arquivos protegidos.'),
               wraplength=475).pack(anchor='w', padx=(8, 0))
     export_button = ttk.Button(toolbar, text='Exportar relatório', command=export_report)
     export_button.pack(side='left', padx=(0, 8))
