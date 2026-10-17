@@ -1,9 +1,5 @@
 name: Quality checks
 on: [push, pull_request]
-# Avoid running a push and pull_request matrix simultaneously for one branch.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
 jobs:
   safe-unit-tests:
     strategy:
