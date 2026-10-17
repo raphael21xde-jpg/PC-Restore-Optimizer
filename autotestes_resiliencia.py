@@ -452,7 +452,7 @@ def run_resume_guard_autotest(*, cancelled=None):
                 another_dir / "manifest.json", keys, restores, resume_from=target,
                 strategy_inventory={},
             ),
-            "Registro de restauração não encontrado ou inseguro.",
+            "Restauração concluída, antiga ou ligada a outro backup.",
             "Retomada com manifesto não correspondente",
         )
         _require(journal_path.read_bytes() == journal_before,
