@@ -39,6 +39,7 @@ jobs:
           python -m unittest discover -s tests -p "test_storage_safety_v072.py" -v
           python -m unittest discover -s tests -p "test_backup_target_preflight_v082.py" -v
           python -m unittest discover -s tests -p "test_safe_features.py" -v
+          python -m unittest discover -s tests -p "test_selection_backup_restore_e2e_v047.py" -v
 
   safe-unit-tests:
     name: Full regression (${{ matrix.os }})
