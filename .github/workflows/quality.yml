@@ -36,6 +36,7 @@ jobs:
           python -m unittest discover -s tests -p "test_inventory_file_index.py" -v
           python -m unittest discover -s tests -p "test_inventory_paged_v044_v046.py" -v
           python -m unittest discover -s tests -p "test_index_choices_bridge.py" -v
+          python -m unittest discover -s tests -p "test_browser_recovery_v0511.py" -v
           python -m unittest discover -s tests -p "test_storage_safety_v072.py" -v
           python -m unittest discover -s tests -p "test_backup_target_preflight_v082.py" -v
           python -m unittest discover -s tests -p "test_safe_features.py" -v
