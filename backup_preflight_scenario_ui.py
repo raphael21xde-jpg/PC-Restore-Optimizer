@@ -12,6 +12,7 @@ def show_backup_preflight_scenario(app):
     report = getattr(app, 'diagnostic_data', None) or {}
     snapshot = report.get('disks') if isinstance(report, dict) else None
     volumes = snapshot.get('volumes', []) if isinstance(snapshot, dict) else []
+    volumes = volumes if isinstance(volumes, list) else []
     letters = sorted({str(row.get('DriveLetter') or '').strip().upper().rstrip(':')
                       for row in volumes if isinstance(row, dict)
                       and isinstance(row.get('DriveLetter'), str)
@@ -79,7 +80,22 @@ def show_backup_preflight_scenario(app):
     final.pack(fill='x', pady=(10, 0))
     state = {'last_text': ''}
 
+    def invalidate_result(*_):
+        # A displayed preview is tied to exactly the input that produced it.
+        # After edits, do not allow copying the previous plan as the new one.
+        state['last_text'] = ''
+        output.configure(state='normal')
+        output.delete('1.0', 'end')
+        output.insert('1.0', 'Dados alterados. Clique em Simular para gerar '
+                            'um relatório atualizado (somente leitura).')
+        output.configure(state='disabled')
+
+    for variable in (*selected.values(), target, size):
+        variable.trace_add('write', invalidate_result)
+
     def calculate():
+        # Erase previous copy eligibility even if validation raises.
+        state['last_text'] = ''
         origins = [letter for letter, var in selected.items() if var.get()]
         try:
             result = simulate_backup_preflight(
@@ -92,6 +108,10 @@ def show_backup_preflight_scenario(app):
             output.insert('1.0', content)
             output.configure(state='disabled')
         except ValueError as exc:
+            output.configure(state='normal')
+            output.delete('1.0', 'end')
+            output.insert('1.0', 'Simulação não realizada: '+str(exc))
+            output.configure(state='disabled')
             messagebox.showwarning('Preencha a simulação', str(exc), parent=window)
 
     def copy_text():
