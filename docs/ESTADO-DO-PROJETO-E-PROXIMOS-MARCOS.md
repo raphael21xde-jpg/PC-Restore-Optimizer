@@ -2,6 +2,8 @@
 
 **Consolidação:** 17/10/2026. **Referência:** `main`, após PR #49 (`a91af153101c571793dd3b1a54f741aa30bfd889`).
 
+**Auditoria retrospectiva completa dos 40 ZIPs (15–16/out), evidências e marcos até o GitHub:** [AUDITORIA-HISTORICA-ZIPS-TESTES-E-ESCOPO.md](AUDITORIA-HISTORICA-ZIPS-TESTES-E-ESCOPO.md). Releia antes de propor repetição de testes de backup, integração ou reinstalação.
+
 > **Documento de continuidade.** Substitui planos improvisados em conversas e evita refazer funcionalidades testadas. Não é certificado de segurança, não é autorização de exclusão, formatação, alteração de EFI ou reinstalação real. O PC do desenvolvedor é **somente o ambiente inicial de testes**; o produto deve atender diferentes computadores Windows.
 
 ## 1. Missão do produto (acordada com o autor)
