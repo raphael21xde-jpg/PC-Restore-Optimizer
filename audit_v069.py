@@ -47,7 +47,38 @@ def enhance_report_069(report, *, proof=None):
         t.replace('Manter cópia adicional independente e confiável; G: Storage Spaces simples não tem redundância.',
                   'Manter cópia adicional independente; conferir a redundância do destino escolhido.')
         for t in report.get('manual_tasks', [])]
+    report['preservation_readiness'] = summarize_preservation_readiness_069(report)
     return report
+
+
+def summarize_preservation_readiness_069(report):
+    """Summarize existing evidence only. Never infer full coverage from a hash.
+
+    A verified manifest may contain just some files from a selected folder;
+    a successful restore of another selection is not evidence for this one.
+    Does no filesystem I/O, and never authorizes a Windows installation.
+    """
+    selected = report.get('recovery_map', ())
+    confirmed = sum(1 for row in selected if row.get('verified_manifest_files', 0) > 0)
+    unknown = len(selected) - confirmed
+    overlaps = report.get('scan_summary', {}).get('selected_path_overlaps', ())
+    evidence = report.get('backup_evidence', {})
+    return {
+        'state': 'PENDENTE — REVISÃO OBRIGATÓRIA',
+        'selected_paths': len(selected),
+        'paths_with_verified_manifest_files': confirmed,
+        'paths_without_manifest_proof': unknown,
+        'selected_paths_with_full_coverage_proven': 0,
+        'selected_paths_with_restore_proven': 0,
+        'scan_gaps_overlapping_choices': len(overlaps),
+        'manifest_verified_in_this_session': evidence.get('manifest_verified') is True,
+        'boot_status': report.get('boot', {}).get('status', 'NÃO CONFERIDO'),
+        'ready_for_format': False,
+        'installation_authorized': False,
+        'note': ('Arquivos do manifesto podem ter SHA-256 confirmado, mas a auditoria '
+                 'não prova cobertura integral de pastas nem recuperação pós-Windows. '
+                 'Dependências EFI e mídias de recuperação exigem revisão independente.'),
+    }
 
 
 def apply_volume_mappings(data, mappings):
