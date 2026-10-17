@@ -40,11 +40,11 @@ def open_destination_picker(parent, initial, on_save):
         'NÃO pode atestar que a sincronização para o servidor terminou. '
         'Se essa pasta estiver no C:, esta etapa não permitirá o backup nela.'),
         wraplength=745, foreground='#C79229').pack(anchor='w', pady=(0, 8))
-    kind = tk.StringVar(value='local')
-    ttk.Combobox(body, textvariable=kind, state='readonly', width=38,
-                 values=tuple(KINDS.keys())).pack(anchor='w', pady=(0, 5))
-    ttk.Label(body, text='local = disco interno; external = dispositivo removível; '
-              'synced_folder = pasta de nuvem sincronizada',
+    kind_label = tk.StringVar(value=KINDS['local'])
+    ttk.Combobox(body, textvariable=kind_label, state='readonly', width=65,
+                 values=tuple(KINDS.values())).pack(anchor='w', pady=(0, 5))
+    label_to_kind = {label: key for key, label in KINDS.items()}
+    ttk.Label(body, text='O dispositivo ainda será avaliado pelas verificações de segurança.',
               wraplength=730).pack(anchor='w')
     listbox = tk.Listbox(body, height=11, exportselection=False)
     listbox.pack(fill='both', expand=True, pady=(10, 8))
@@ -61,7 +61,8 @@ def open_destination_picker(parent, initial, on_save):
             return messagebox.showwarning('Limite', 'Máximo de 8 destinos.', parent=w)
         selected = filedialog.askdirectory(parent=w, title='Escolha uma pasta existente para backup')
         if selected:
-            entries.append({'path': str(Path(selected)), 'kind': kind.get()})
+            entries.append({'path': str(Path(selected)),
+                            'kind': label_to_kind[kind_label.get()]})
             refresh()
 
     def remove():
