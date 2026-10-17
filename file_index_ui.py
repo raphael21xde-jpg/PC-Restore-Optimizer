@@ -16,6 +16,13 @@ from inventory_paged import discover_local_roots
 from index_choices_bridge import read_index_choices, preview_import, apply_imported_choices
 
 
+def format_index_row(entry):
+    """Directories are indexed with 0 placeholder bytes, NOT a measured size."""
+    is_folder = entry["kind"] == "directory"
+    return (entry["path"], "Pasta" if is_folder else "Arquivo",
+            "Não calculado" if is_folder else entry["bytes"], entry["decision"])
+
+
 def show_file_index(parent, app=None):
     win = tk.Toplevel(parent)
     win.title("PCRO | Índice detalhado e escolhas — nenhuma exclusão")
@@ -37,6 +44,8 @@ def show_file_index(parent, app=None):
               font=("Segoe UI", 13, "bold")).pack(anchor="w")
     ttk.Label(header, text=(
         "Os nomes de arquivos podem ser privados: salve o índice apenas em uma pasta sua. "
+        "Crie ou abra um índice antes de pesquisar. "
+        "Tamanho de pastas ainda não é calculado. "
         "Não abre arquivos, não copia dados e NÃO apaga nada."), wraplength=790).pack(anchor="w", pady=(3, 7))
     actions = ttk.Frame(header)
     actions.pack(fill="x")
@@ -55,14 +64,15 @@ def show_file_index(parent, app=None):
     lookup = ttk.Frame(main)
     lookup.pack(fill="x", pady=(6, 3))
     ttk.Label(lookup, text="Filtrar caminho:").pack(side="left")
-    ttk.Entry(lookup, textvariable=search, width=55).pack(side="left", fill="x", expand=True, padx=6)
+    search_entry = ttk.Entry(lookup, textvariable=search, width=55, state="disabled")
+    search_entry.pack(side="left", fill="x", expand=True, padx=6)
     columns = ("path", "kind", "size", "decision")
     table = ttk.Frame(main)
     table.pack(fill="both", expand=True)
     tree = ttk.Treeview(table, columns=columns, show="headings", selectmode="browse")
     for name, label, width in (
         ("path", "Caminho observado", 550), ("kind", "Tipo", 80),
-        ("size", "Bytes", 90), ("decision", "Escolha", 100)):
+        ("size", "Tamanho", 130), ("decision", "Escolha", 100)):
         tree.heading(name, text=label)
         tree.column(name, width=width, stretch=(name == "path"))
     tree_scroll = ttk.Scrollbar(table, orient="vertical", command=tree.yview)
@@ -90,9 +100,7 @@ def show_file_index(parent, app=None):
         for item in tree.get_children():
             tree.delete(item)
         for index, entry in enumerate(selected):
-            tree.insert("", "end", iid=str(index),
-                        values=(entry["path"], entry["kind"], entry["bytes"],
-                                entry["decision"]))
+            tree.insert("", "end", iid=str(index), values=format_index_row(entry))
         meta = db.metadata()
         counts = db.decision_counts()
         status.set(f'Índice: {meta.get("state", "parcial")}. '
@@ -105,6 +113,8 @@ def show_file_index(parent, app=None):
             state["db"].close()
             state["db"] = None
         state["db"] = FileMetadataIndex(path)
+        search_entry.configure(state="normal")
+        search_button.configure(state="normal")
         state["path"] = path
         search.set("")
         refresh(reset=True)
@@ -236,7 +246,10 @@ def show_file_index(parent, app=None):
                    second_row=True)
     stop_button = add_action("Parar varredura", stop_scan, second_row=True)
     stop_button.configure(state="disabled")
-    ttk.Button(lookup, text="Pesquisar", command=lambda: refresh(reset=True)).pack(side="left")
+    search_button = ttk.Button(lookup, text="Pesquisar",
+                               command=lambda: refresh(reset=True),
+                               state="disabled")
+    search_button.pack(side="left")
     ttk.Button(choice_row, text="Marcar PRESERVAR (arquivo/pasta)", command=lambda: choose("preservar")).pack(side="left", padx=4)
     ttk.Button(choice_row, text="NÃO COPIAR (não apaga)", command=lambda: choose("nao_copiar")).pack(side="left", padx=4)
     ttk.Button(choice_row, text="Revisar depois", command=lambda: choose("revisar")).pack(side="left", padx=4)
