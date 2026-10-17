@@ -41,6 +41,10 @@ jobs:
           python -m unittest discover -s tests -p "test_safe_features.py" -v
           python -m unittest discover -s tests -p "test_selection_backup_restore_e2e_v047.py" -v
           python -m unittest discover -s tests -p "test_file_index_ui.py" -v
+      - name: Smoke-test local PowerShell runner (one test, no heavy suite)
+        shell: pwsh
+        run: |
+          ./TESTAR-APP-SEGURO.ps1 -Apenas "test_index_choices_bridge.py"
 
   safe-unit-tests:
     name: Full regression (${{ matrix.os }})
