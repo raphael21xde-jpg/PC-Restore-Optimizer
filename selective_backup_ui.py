@@ -21,6 +21,8 @@ from autoteste_completude import run_completeness_autotest
 from autoteste_interrupcao import run_interruption_autotest
 from autotestes_resiliencia import (run_midfile_autotest, run_repair_autotest,
                                     run_resume_guard_autotest)
+from autotestes_falhas import (run_large_transfer_autotest, run_many_files_autotest,
+                              run_storage_fault_autotest, run_restart_recovery_autotest)
 
 
 def show_selective_backup(app, plan):
@@ -28,8 +30,8 @@ def show_selective_backup(app, plan):
     current_choices = dict(getattr(app, 'choices', {}))
     window = tk.Toplevel(app)
     window.title('v0.6.6 • Backup seletivo e teste de recuperação do C:')
-    window.geometry('1050x735')
-    window.minsize(840, 580)
+    window.geometry('1050x820')
+    window.minsize(840, 620)
     window.transient(app)
     container = ttk.Frame(window, padding=18)
     container.pack(fill='both', expand=True)
@@ -63,6 +65,10 @@ def show_selective_backup(app, plan):
     row6 = ttk.Frame(controls); row6.pack(fill='x', pady=3)
     row7 = ttk.Frame(controls); row7.pack(fill='x', pady=3)
     row8 = ttk.Frame(controls); row8.pack(fill='x', pady=3)
+    row9 = ttk.Frame(controls); row9.pack(fill='x', pady=3)
+    row10 = ttk.Frame(controls); row10.pack(fill='x', pady=3)
+    row11 = ttk.Frame(controls); row11.pack(fill='x', pady=3)
+    row12 = ttk.Frame(controls); row12.pack(fill='x', pady=3)
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
     manifest_label = tk.StringVar(value='Manifesto: ainda não existe')
     ttk.Label(container, textvariable=destination, wraplength=980).pack(anchor='w')
@@ -212,6 +218,19 @@ def show_selective_backup(app, plan):
                         write_log(f'[AUTOTESTE #{number}] Testes sintéticos concluídos e validados.')
                         write_log(f'[AUTOTESTE #{number}] Arquivos temporários removidos.')
                         write_log(f'[AUTOTESTE #{number}] Backups reais não acessados; formatação bloqueada.')
+                    elif job in ('autotest31', 'autotest32', 'autotest33', 'autotest34'):
+                        number = job[-2:]
+                        state['report'] = outcome
+                        summaries = {
+                            '31': '32 MiB sintéticos copiados/restaurados com SHA-256.',
+                            '32': '1.024 arquivos sintéticos verificados e restaurados.',
+                            '33': 'Falhas sintéticas de espaço e I/O recusadas com segurança.',
+                            '34': 'Checkpoints incompletos identificados; retomada conferida.',
+                        }
+                        summary.set(f'AUTOTESTE #{number} APROVADO: ' + summaries[number])
+                        write_log(f'[AUTOTESTE #{number}] ' + summaries[number])
+                        write_log(f'[AUTOTESTE #{number}] Área temporária eliminada.')
+                        write_log(f'[AUTOTESTE #{number}] Sem acesso a backups reais; formatação bloqueada.')
                     elif job == 'restore':
                         state['report'] = outcome
                         summary.set(f'RECUPERAÇÃO DE TESTE APROVADA: {outcome["files_verified"]} arquivos, '
@@ -345,11 +364,24 @@ def show_selective_backup(app, plan):
         state['report'] = None
         start_job('autotest' + str(number), lambda: runner(cancelled=cancelled))
 
+    def run_fault_autotest(number, runner):
+        # Uses private temporary synthetic files only, not the user's current plan.
+        state['report'] = None
+        start_job('autotest' + str(number), lambda: runner(cancelled=cancelled))
+
     def export_report():
         if state['report'] is None:
             return messagebox.showinfo('Sem relatório', 'Execute uma etapa para gerar resultado.', parent=window)
         location = filedialog.asksaveasfilename(parent=window, defaultextension='.json',
-                          initialfile=('resultado-autoteste28.json'
+                          initialfile=('resultado-autoteste31.json'
+                                        if state['report'].get('schema') == 'pcro-autoteste-falhas-v31'
+                                        else 'resultado-autoteste32.json'
+                                        if state['report'].get('schema') == 'pcro-autoteste-falhas-v32'
+                                        else 'resultado-autoteste33.json'
+                                        if state['report'].get('schema') == 'pcro-autoteste-falhas-v33'
+                                        else 'resultado-autoteste34.json'
+                                        if state['report'].get('schema') == 'pcro-autoteste-falhas-v34'
+                                        else 'resultado-autoteste28.json'
                                         if state['report'].get('schema') == 'pcro-autoteste-resiliencia-v28'
                                         else 'resultado-autoteste29.json'
                                         if state['report'].get('schema') == 'pcro-autoteste-resiliencia-v29'
@@ -404,6 +436,14 @@ def show_selective_backup(app, plan):
                lambda: run_resilience_autotest(30, run_resume_guard_autotest))
     ttk.Label(row8, text='Bloqueia fontes, destinos e manifestos incompatíveis.',
               wraplength=430).pack(side='left', padx=(8, 0))
+    add_button(row9, '11. Autoteste #31: transferência 32 MiB (isolado)',
+               lambda: run_fault_autotest(31, run_large_transfer_autotest))
+    add_button(row10, '12. Autoteste #32: 1.024 arquivos pequenos (isolado)',
+               lambda: run_fault_autotest(32, run_many_files_autotest))
+    add_button(row11, '13. Autoteste #33: falhas de espaço e I/O (simuladas)',
+               lambda: run_fault_autotest(33, run_storage_fault_autotest))
+    add_button(row12, '14. Autoteste #34: checkpoint e retomada (simulado)',
+               lambda: run_fault_autotest(34, run_restart_recovery_autotest))
     stop = ttk.Button(row2, text='Cancelar operação', command=cancelled.set, state='disabled')
     stop.pack(side='right')
     def close():
