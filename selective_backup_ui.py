@@ -14,6 +14,8 @@ from tkinter import ttk, filedialog, messagebox
 from backup_core import human_size, atomic_json
 from selective_recovery import (prepare_selected_c, run_selected_backup,
                                 run_isolated_restore_test, verify_complete_manifest)
+from multi_backup_destinations import make_multi_backup_plan, run_multiple_backups
+from multi_backup_destinations_ui import open_destination_picker
 
 
 def show_selective_backup(app, plan):
@@ -29,13 +31,13 @@ def show_selective_backup(app, plan):
     ttk.Label(container, text='Preservação real — fontes selecionadas do C:',
               font=('Segoe UI', 16, 'bold')).pack(anchor='w')
     ttk.Label(container, text=(
-        'Analise os arquivos, escolha uma pasta no D:/F:/G:, copie e confira o SHA-256. '
+        'Analise os arquivos, escolha uma ou várias pastas fora do C: e confira SHA-256. '
         'Depois teste a recuperação em OUTRA pasta. Nenhuma operação escreve nos saves originais.'),
         wraplength=990).pack(anchor='w', pady=(5, 6))
     ttk.Label(container, text=(
-        'ATENÇÃO: O G: é Storage Spaces sem redundância. Mesmo após os testes, '
-        'uma única cópia não garante recuperação caso o SSD de destino falhe. '
-        'Esta tela NUNCA libera a formatação do Windows.'),
+        'ATENÇÃO: unidades internas, externas e pastas sincronizadas podem compartilhar '
+        'hardware. Uma pasta sincronizada NÃO prova envio à nuvem. '
+        'Esta tela NUNCA libera formatação do Windows.'),
         foreground='#F3BE67', wraplength=980).pack(anchor='w', pady=(0, 10))
     ttk.Label(container, text=f'{len(sources)} caminho(s) selecionado(s) no C:').pack(anchor='w')
     source_box = tk.Text(container, height=3, wrap='none', font=('Consolas', 9),
@@ -71,7 +73,7 @@ def show_selective_backup(app, plan):
     event_queue = Queue()
     cancelled = threading.Event()
     state = {'busy': False, 'plan': None, 'manifest': None, 'backup_dir': None,
-             'report': None, 'dest': None, 'worker': None}
+             'report': None, 'dest': None, 'multi_targets': [], 'worker': None}
 
     def write_log(line):
         log.configure(state='normal')
@@ -131,6 +133,27 @@ def show_selective_backup(app, plan):
                         summary.set(f'Backup realizado e verificado: {outcome["files_verified"]} arquivos, '
                                     f'{human_size(outcome["bytes_verified"])}. Recuperação NÃO testada.')
                         write_log('[BACKUP] SHA-256 aprovado. ' + outcome['manifest'])
+                    elif job == 'backup_multi':
+                        state['report'] = outcome
+                        passed = outcome.get('copies_verified_locally', 0)
+                        total = outcome.get('copies_requested', 0)
+                        valid = [x for x in outcome.get('destinations', [])
+                                 if x.get('status') == 'local_copy_verified']
+                        if valid:
+                            state['manifest'] = valid[0]['manifest']
+                            state['backup_dir'] = valid[0]['backup_folder']
+                            manifest_label.set('Manifesto da 1ª cópia: ' + valid[0]['manifest'])
+                        summary.set(f'Cópias locais verificadas: {passed}/{total}. '
+                                    'Sincronização na nuvem e independência física NÃO verificadas. '
+                                    'Restauração pendente; formatação bloqueada.')
+                        for item in outcome.get('destinations', []):
+                            write_log('['+str(item.get('status'))+'] ' +
+                                      str(item.get('path'))+
+                                      (' | '+str(item.get('error')) if item.get('error') else ''))
+                        if passed != total:
+                            messagebox.showwarning('Cópias incompletas',
+                                'Nem todos os destinos foram verificados. Consulte o relatório.',
+                                parent=window)
                     elif job == 'verify':
                         state['report'] = outcome
                         state['manifest'] = outcome['manifest']
@@ -174,19 +197,46 @@ def show_selective_backup(app, plan):
                                                      cancelled=cancelled))
 
     def choose_dest():
-        selected = filedialog.askdirectory(parent=window, title='Escolha uma pasta no D:, F: ou G: para BACKUP')
+        selected = filedialog.askdirectory(parent=window,
+                  title='Escolha uma pasta existente fora do C: para backup local')
         if selected:
             state['dest'] = selected
-            destination.set('Destino para o backup: ' + selected)
+            state['multi_targets'] = []
+            destination.set('Destino único para o backup: ' + selected)
+
+    def choose_multiple():
+        def selected(items):
+            state['multi_targets'] = items
+            state['dest'] = None
+            destination.set('Destinos múltiplos: ' +
+                            ' | '.join(item['kind']+': '+item['path'] for item in items))
+        open_destination_picker(window, state['multi_targets'], selected)
 
     def do_backup():
         if state['plan'] is None:
-            return messagebox.showwarning('Análise pendente', 'Primeiro clique em Analisar arquivos do C:.', parent=window)
-        if not state['dest']:
-            return messagebox.showwarning('Destino pendente', 'Selecione uma pasta de destino.', parent=window)
-        if not messagebox.askyesno('Confirmar criação de cópia',
-                 f'Copiar {state["plan"].count} arquivo(s) ({human_size(state["plan"].total)}) para '
-                 f'{state["dest"]}?\n\nNão apaga originais. Não autoriza formatar.', parent=window):
+            return messagebox.showwarning('Análise pendente',
+                                          'Primeiro clique em Analisar arquivos do C:.', parent=window)
+        if not state['dest'] and not state['multi_targets']:
+            return messagebox.showwarning('Destino pendente',
+                                          'Selecione um ou mais destinos.', parent=window)
+        multi = [dict(x) for x in state['multi_targets']]
+        diagnostic = (getattr(app, 'diagnostic_data', None) or {}).get('disks')
+        if multi:
+            try:
+                staged = make_multi_backup_plan(state['plan'], multi,
+                                                disk_diagnostic=diagnostic)
+            except (OSError, ValueError) as exc:
+                return messagebox.showerror('Destinos não aprovados', str(exc), parent=window)
+            question = (f'Copiar {state["plan"].count} arquivos ({human_size(state["plan"].total)}) '
+                        f'em {len(multi)} destino(s)?\n\n'
+                        'Cada destino terá verificação SHA-256 própria.\n'
+                        'Discos físicos e sincronização em nuvem NÃO comprovados.\n'
+                        'Não apaga fontes nem autoriza formatar.')
+        else:
+            question = (f'Copiar {state["plan"].count} arquivo(s) '
+                        f'({human_size(state["plan"].total)}) para {state["dest"]}?\n\n'
+                        'Não apaga originais. Não autoriza formatar.')
+        if not messagebox.askyesno('Confirmar criação de cópias', question, parent=window):
             return
         def copy():
             # Changes to the source tree since the preview require a fresh scan.
@@ -195,9 +245,16 @@ def show_selective_backup(app, plan):
             new = [(p.source, p.size, p.mtime_ns) for p in new_plan.files]
             if old != new:
                 raise ValueError('Fontes mudaram desde a análise. Analise novamente antes de copiar.')
+            if multi:
+                # Recheck capacity/path conflicts immediately before each group of copies.
+                new_staged = make_multi_backup_plan(new_plan, multi,
+                                                    disk_diagnostic=diagnostic)
+                return run_multiple_backups(new_plan, new_staged, cancelled=cancelled,
+                    progress=lambda index, total, *args:
+                        event_queue.put(('progress', args)))
             return run_selected_backup(new_plan, state['dest'], cancelled=cancelled,
                                        progress=lambda *args: event_queue.put(('progress', args)))
-        start_job('backup', copy)
+        start_job('backup_multi' if multi else 'backup', copy)
 
     def choose_manifest():
         location = filedialog.askopenfilename(parent=window, title='Escolha manifest.json de backup anterior',
@@ -209,7 +266,7 @@ def show_selective_backup(app, plan):
         if not state['manifest']:
             return messagebox.showwarning('Falta backup', 'Conclua um backup ou confira manifesto anterior.', parent=window)
         location = filedialog.askdirectory(parent=window,
-                           title='Escolha OUTRA pasta no D:, F: ou G: para restauração de teste')
+                           title='Escolha OUTRA pasta fora do C: para restauração de teste')
         if not location:
             return
         if not messagebox.askyesno('Recuperação de teste isolada',
@@ -239,8 +296,9 @@ def show_selective_backup(app, plan):
         return b
 
     add_button(row1, '1. Analisar arquivos do C:', analyze)
-    add_button(row1, '2. Escolher pasta para backup', choose_dest)
-    add_button(row1, '3. Copiar e verificar SHA-256', do_backup)
+    add_button(row1, '2. Escolher pasta única', choose_dest)
+    add_button(row1, '2b. Vários destinos', choose_multiple)
+    add_button(row2, '3. Copiar e verificar SHA-256', do_backup)
     add_button(row2, 'Conferir backup anterior', choose_manifest)
     add_button(row2, '4. Recuperação de TESTE (pasta nova)', do_restore)
     add_button(row2, 'Exportar relatório', export_report)
