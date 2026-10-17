@@ -141,6 +141,14 @@ def build_preservation(app):
     tree.configure(yscrollcommand=scroll.set)
     scroll.pack(side='right', fill='y')
     tree.pack(side='left', fill='x', expand=True)
+    # Controls are deliberately next to the rows they edit, rather than at
+    # the top of a long scrollable page where they are invisible.
+    choice_actions = ttk.Frame(frame)
+    choice_actions.pack(fill='x', pady=(6, 11))
+    ttk.Label(choice_actions, text='Selecione um caminho acima para retirar somente sua marcação.')
+        .pack(side='left', padx=(0, 9))
+    ttk.Button(choice_actions, text='Retirar escolha selecionada (não apaga)',
+               command=lambda: remove_selected_path_choice()).pack(side='left')
 
     ttk.Label(frame, text='Vínculos de jogos e dados associados  •  não representam backup concluído',
               font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(10, 5))
@@ -298,8 +306,6 @@ def build_preservation(app):
         make_preview()
 
     ttk.Button(bar, text='Atualizar plano', style='Primary.TButton', command=make_preview).pack(side='left', padx=(0, 8))
-    ttk.Button(bar, text='Retirar escolha selecionada (não apaga)',
-               command=remove_selected_path_choice).pack(side='left', padx=(0, 8))
     ttk.Button(bar, text='Importar escolhas da versão anterior', command=app.import_previous_choices).pack(side='left', padx=5)
     ttk.Button(bar, text='Explorar discos', command=lambda: app.navigate(app.home)).pack(side='left', padx=5)
     ttk.Button(bar, text='Exportar JSON', command=export).pack(side='left', padx=5)
@@ -318,11 +324,18 @@ def build_preservation(app):
         from selective_backup_ui import show_selective_backup
         plan, _ = make_preview()  # Always use the current choices and approved C: paths.
         show_selective_backup(app, plan)
-    ttk.Button(backupbar, text='Backup seletivo e TESTE de recuperação do C: • v0.6.6',
-               style='Primary.TButton', command=open_selective_backup).pack(side='left', padx=(0, 10))
-    ttk.Label(backupbar, text='Analisar → copiar/validar SHA-256 → restaurar em pasta separada. '
-              'Não libera instalação nem limpeza.', wraplength=560,
+    ttk.Button(backupbar, text='Próximo: revisar backup dos arquivos escolhidos →',
+               style='Primary.TButton',
+               command=lambda: app.navigate(app.review)).pack(side='left', padx=(0, 10))
+    ttk.Label(backupbar, text='Fluxo atual: revisão → cópia verificada SHA-256 → recuperação pelo histórico. '
+              'A revisão de reinstalação do Windows protege o C:; outras unidades permanecem no local. '
+              'Nenhuma formatação é autorizada.', wraplength=620,
               foreground=AMBER).pack(side='left')
+    backup_extra = ttk.Frame(frame)
+    backup_extra.pack(fill='x', pady=(0, 9))
+    ttk.Button(backup_extra, text='Backup seletivo avançado do C: • v0.6.6',
+               command=open_selective_backup).pack(side='left', padx=(0, 10))
+
     auditbar = ttk.Frame(frame)
     auditbar.pack(fill='x', pady=(0, 10))
     def audit_completeness():
