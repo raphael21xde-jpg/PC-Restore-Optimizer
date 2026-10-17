@@ -1,4 +1,5 @@
 """Real Tk smoke test for the searchable metadata index; synthetic roots only."""
+import gc
 import json
 from pathlib import Path
 import tempfile
@@ -127,26 +128,22 @@ class TestFileIndexUI(unittest.TestCase):
                     button(picker, "Confirmar unidades").invoke()
                     app.update()
                     button(win, "CRIAR índice").invoke()
-                    deadline = time.monotonic() + 20
-                    from inventory_index import FileMetadataIndex
+                    # Database metadata may say "finished" BEFORE the GUI
+                    # processes the worker's completion message. On Windows
+                    # this can leave the GUI SQLite connection open when the
+                    # TemporaryDirectory is removed (WinError 32).
+                    deadline = time.monotonic() + 25
                     finished = False
                     while time.monotonic() < deadline:
                         app.update()
-                        if target.exists():
-                            try:
-                                db = FileMetadataIndex(target)
-                                try:
-                                    finished = (db.metadata().get("state")
-                                                == "terminado_com_lacunas")
-                                finally:
-                                    db.close()
-                                if finished:
-                                    break
-                            except Exception:
-                                pass
+                        finished = (target.exists()
+                                    and not button(win, "Pesquisar").instate(["disabled"])
+                                    and button(win, "Parar varredura").instate(["disabled"]))
+                        if finished:
+                            break
                         time.sleep(.02)
-                    self.assertTrue(finished, "Index did not finish")
-                    app.update()
+                    self.assertTrue(finished, "GUI did not complete index loading")
+                    from inventory_index import FileMetadataIndex
                     db = FileMetadataIndex(target)
                     try:
                         paths = {item["path"] for item in db.search()}
@@ -158,8 +155,27 @@ class TestFileIndexUI(unittest.TestCase):
                     errors.assert_not_called()
             finally:
                 if win is not None and win.winfo_exists():
-                    win.tk.call(win.protocol("WM_DELETE_WINDOW"))
+                    # In a failing/slow test, request worker cancellation and
+                    # drain Tk's event queue before closing its SQLite handle.
+                    stop_buttons = [
+                        w for w in walk(win)
+                        if isinstance(w, ttk.Button)
+                        and str(w.cget("text")).startswith("Parar varredura")
+                    ]
+                    if stop_buttons and not stop_buttons[0].instate(["disabled"]):
+                        stop_buttons[0].invoke()
+                        deadline = time.monotonic() + 15
+                        while (time.monotonic() < deadline
+                               and not stop_buttons[0].instate(["disabled"])):
+                            app.update()
+                            time.sleep(.02)
+                    if not stop_buttons or stop_buttons[0].instate(["disabled"]):
+                        win.tk.call(win.protocol("WM_DELETE_WINDOW"))
+                        app.update()
                 app.destroy()
+                # Tk variables must be collected from the Tk owner thread
+                # (Python 3.13 is especially strict about Tcl finalizers).
+                gc.collect()
 
     def test_directories_display_unmeasured_not_zero(self):
         row = format_index_row({
