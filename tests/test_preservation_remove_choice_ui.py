@@ -39,6 +39,7 @@ class PreservationRemoveChoiceUITests(unittest.TestCase):
         self.app._on_change = Mock()
         self.app.import_previous_choices = Mock()
         self.app.home = ttk.Frame(self.app)
+        self.app.review = ttk.Frame(self.app)
         self.app.navigate = Mock()
         build_preservation(self.app)
         self.table = next(
@@ -48,6 +49,10 @@ class PreservationRemoveChoiceUITests(unittest.TestCase):
             t for t in descend(self.app.preservation)
             if isinstance(t, ttk.Button)
             and str(t.cget("text")).startswith("Retirar escolha selecionada"))
+        self.next_button = next(
+            t for t in descend(self.app.preservation)
+            if isinstance(t, ttk.Button)
+            and str(t.cget("text")).startswith("Próximo: revisar backup"))
         self.app.update()
 
     def select_path(self, path):
@@ -88,6 +93,11 @@ class PreservationRemoveChoiceUITests(unittest.TestCase):
         warning.assert_called_once()
         self.assertEqual(len(self.app.choices), 3)
         self.app._on_change.assert_not_called()
+
+    def test_preservation_advances_directly_to_review(self):
+        self.next_button.invoke()
+        self.app.navigate.assert_called_once_with(self.app.review)
+        self.assertEqual(len(self.app.choices), 3)
 
     def test_automatically_associated_save_is_not_removed_silently(self):
         self.app.auto_save_paths.add(self.old)
