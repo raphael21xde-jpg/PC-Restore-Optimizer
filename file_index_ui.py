@@ -32,14 +32,14 @@ def show_file_index(parent, app=None):
     win.resizable(True, True)
     # A transient child may lose the maximize control on Windows.
     # Keep this window independently resizable, like backup seletivo.
-    status = tk.StringVar(value="Crie um índice novo ou abra um existente. Nenhum backup será realizado.")
-    search = tk.StringVar()
+    status = tk.StringVar(master=win, value="Crie um índice novo ou abra um existente. Nenhum backup será realizado.")
+    search = tk.StringVar(master=win)
     q = Queue()
     cancel = threading.Event()
     state = {"busy": False, "db": None, "rows": [], "offset": 0,
              "path": None, "chosen_roots": None}
     selected_roots_text = tk.StringVar(
-        value="Unidades do próximo índice: todas as unidades locais detectadas.")
+        master=win, value="Unidades do próximo índice: todas as unidades locais detectadas.")
 
     header = ttk.Frame(win, padding=10)
     header.pack(fill="x")
@@ -158,7 +158,7 @@ def show_file_index(parent, app=None):
             wraplength=465).pack(anchor="w", padx=14, pady=(12, 9))
         selections = []
         for root in available:
-            selected = tk.BooleanVar(value=(
+            selected = tk.BooleanVar(master=popup, value=(
                 state["chosen_roots"] is None or root in state["chosen_roots"]))
             ttk.Checkbutton(popup, text=str(root),
                             variable=selected).pack(anchor="w", padx=18, pady=2)
