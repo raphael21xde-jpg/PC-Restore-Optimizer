@@ -72,7 +72,10 @@ class TestSelectionBackupRestoreEndToEnd(unittest.TestCase):
 
     def _index_export_and_plan(self):
         output = self.base / "indice.sqlite3"
-        index_report = index_roots([self.source], output, page_size=2)
+        # The scanner observes children of its starting root, not that
+        # starting directory itself. Scan the parent so the selected game
+        # directory is represented as a selectable indexed folder.
+        index_report = index_roots([self.source.parent], output, page_size=2)
         self.assertEqual(index_report["indexed_files"], 4)
         self.assertFalse(index_report["ready_for_format"])
         db = FileMetadataIndex(output)
