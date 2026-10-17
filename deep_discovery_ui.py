@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import threading
+import time
+from queue import Queue, Empty
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
@@ -42,6 +44,20 @@ def show_deep_discovery(parent, container=None):
     frame = ttk.Frame(container if embedded else win, padding=12)
     frame.pack(fill='both', expand=True)
     cancel = threading.Event()
+    ui_callbacks = Queue()
+    last_progress = [0.0]
+
+    def poll_ui():
+        if not win.winfo_exists():
+            return
+        for _ in range(100):
+            try:
+                callback = ui_callbacks.get_nowait()
+            except Empty:
+                break
+            callback()
+        parent.after(100, poll_ui)
+
     state = {'busy': False, 'report': None, 'records': [], 'nodes': {},
              'folders': {}, 'dynamic': {}, 'angle': 0, 'group_count': 0, 'sequence': 0, 'grouped': {}, 'active_roots': [], 'animation_job': None,
              'cache': {}, 'latest': set(), 'card_nodes': {}, 'child_owner': {}}
@@ -343,11 +359,8 @@ def show_deep_discovery(parent, container=None):
                     state['dynamic'][more] = {'type': 'more', 'path': path,
                                                'offset': page['next_offset'], 'owner': iid}
                     dummy(more)
-            # Tk may already be destroyed (standalone window closed).
-            try:
-                parent.after(0, finish)
-            except (RuntimeError, tk.TclError):
-                pass
+            # Only the GUI thread may call Tk, including after().
+            ui_callbacks.put(finish)
         threading.Thread(target=worker, daemon=True).start()
 
     def on_open(_event=None):
@@ -370,8 +383,11 @@ def show_deep_discovery(parent, container=None):
     filter_var.trace_add('write', render)
 
     def progress(dirs, files, path):
-        parent.after(0, lambda: status.set(
-            f'{dirs:,} pastas · {files:,} arquivos examinados · {path}'))
+        now = time.monotonic()
+        if now - last_progress[0] >= .15:
+            last_progress[0] = now
+            ui_callbacks.put(lambda: status.set(
+                f'{dirs:,} pastas · {files:,} arquivos examinados · {path}'))
 
     def start():
         if state['busy']:
@@ -484,9 +500,9 @@ def show_deep_discovery(parent, container=None):
                                                           confidence='caminho identificado', edition=None))
                 if report['errors'] and report['status'] == 'concluida':
                     report['status'] = 'concluida_com_lacunas'
-                parent.after(0, lambda: finish(report=report))
+                ui_callbacks.put(lambda: finish(report=report))
             except Exception as exc:
-                parent.after(0, lambda e=str(exc): finish(error=e))
+                ui_callbacks.put(lambda e=str(exc): finish(error=e))
         threading.Thread(target=worker, daemon=True).start()
 
     ttk.Button(controls, text='Examinar unidades marcadas', command=start).pack(side='left', padx=4)
@@ -772,4 +788,6 @@ def show_deep_discovery(parent, container=None):
     else:
         render()
     parent.refresh_scan_groups = render
+    parent.after(100, poll_ui)
     return frame
+

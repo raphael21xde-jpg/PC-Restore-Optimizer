@@ -39,6 +39,8 @@ class SelectedRootGuiTests(unittest.TestCase):
              patch('deep_discovery_ui.collect', return_value={'shortcuts': [], 'packages': [], 'errors': []}), \
              patch('deep_discovery_ui.find_app_data', return_value=[]), \
              patch('deep_discovery_ui.scan', return_value=sample) as fake_scan, \
+             patch('deep_discovery_ui.known_save_roots', return_value={}), \
+             patch('deep_discovery_ui.find_game_saves', return_value=[]), \
              patch('deep_discovery_ui.atomic_json'):
             show_deep_discovery(parent)
             win = next(x for x in parent.winfo_children() if isinstance(x, tk.Toplevel))
@@ -69,3 +71,4 @@ class SelectedRootGuiTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

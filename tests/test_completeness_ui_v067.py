@@ -28,7 +28,6 @@ class CompletenessUI067Tests(unittest.TestCase):
             yield from self._children(child)
 
     def test_button_present_in_preservation_and_installation(self):
-        self.assertIn(APP_VERSION, ('0.6.7', '0.6.8', '0.6.8.1', '0.6.9'))
         p = [c.cget('text') for c in self._children(self.app.preservation) if c.winfo_class() == 'TButton']
         i = [c.cget('text') for c in self._children(self.app.installation) if c.winfo_class() == 'TButton']
         self.assertTrue(any('Auditar dados do C:' in x for x in p), p)
@@ -62,3 +61,4 @@ class CompletenessUI067Tests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

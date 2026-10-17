@@ -15,7 +15,7 @@ class UnifiedSelectionTests(TestCase):
         from app import App
         self.temp=tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        with mock.patch.object(App, 'refresh_catalog', lambda self: None):
+        with mock.patch.object(App, 'refresh_catalog', lambda self: None), mock.patch('app.DISKS', ['C']):
             with mock.patch.object(App, '_restore_choices', lambda self: None):
                 self.app=App()
         self.app.local_state=Path(self.temp.name)/'preferences.json'

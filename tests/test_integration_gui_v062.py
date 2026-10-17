@@ -49,6 +49,8 @@ class SequentialScanGUI(unittest.TestCase):
              patch('deep_discovery_ui.discover_apps',return_value=[]), \
              patch('deep_discovery_ui.collect',return_value={'shortcuts':[], 'packages':[], 'errors':[]}), \
              patch('deep_discovery_ui.find_app_data',return_value=[]), \
+             patch('deep_discovery_ui.known_save_roots', return_value={}), \
+             patch('deep_discovery_ui.find_game_saves', return_value=[]), \
              patch('deep_discovery_ui.atomic_json'):
             show_deep_discovery(root)
             win = next(w for w in root.winfo_children() if isinstance(w, tk.Toplevel))
@@ -116,3 +118,4 @@ class CatalogPreservationGUI(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+

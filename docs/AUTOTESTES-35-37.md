@@ -45,3 +45,7 @@ Para incluir os 2 GiB, defina PCRO_RUN_2GIB=1. A etapa dedicada do GitHub execut
 esse tamanho integral no Windows e Linux. Para exigir Tk em vez de pular por
 falta de display, defina PCRO_REQUIRE_TK=1. No Linux, use xvfb-run -a. O teste Tk
 abre a janela real, invoca os controles, exporta o JSON e confere as métricas.
+
+A varredura e a expansão de pastas também entregam atualizações ao Tk pela
+fila da interface. Workers não chamam mais after() diretamente nessa tela.
+A regressão completa roda com display nos dois sistemas, com prazo máximo.
