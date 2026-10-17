@@ -87,6 +87,7 @@ def run_interruption_autotest(*, cancelled=None):
         backup_folder, partial = copy_backup(
             plan, backup_base, cancelled=backup_cancel,
             progress=backup_progress, display_name="Autoteste #27 fictício",
+            strategy_inventory={},
         )
         backup_manifest = backup_folder / "manifest.json"
         _check_cancel(cancelled)
@@ -104,7 +105,7 @@ def run_interruption_autotest(*, cancelled=None):
         # A new, non-cancelled call resumes ONLY the private interrupted backup.
         resumed_folder, completed = copy_backup(
             plan, backup_base, resume_manifest=backup_manifest,
-            display_name="Autoteste #27 fictício",
+            display_name="Autoteste #27 fictício", strategy_inventory={},
         )
         _check_cancel(cancelled)
         _require(resumed_folder == backup_folder and completed["status"] == "concluido",
@@ -141,6 +142,7 @@ def run_interruption_autotest(*, cancelled=None):
             restore_selected(
                 backup_manifest, choice_keys, restore_base,
                 cancelled=restore_cancel, progress=restore_progress,
+                strategy_inventory={},
             )
         except InterruptedError as exc:
             interrupted_exception = str(exc)
@@ -165,6 +167,7 @@ def run_interruption_autotest(*, cancelled=None):
         # Resume the existing isolated folder, re-hashing previously copied files.
         restored_folder, restored_count = restore_selected(
             backup_manifest, choice_keys, restore_base, resume_from=partial_restore,
+            strategy_inventory={},
         )
         _check_cancel(cancelled)
         _require(restored_folder == partial_restore and restored_count == 2,
@@ -214,7 +217,8 @@ def run_interruption_autotest(*, cancelled=None):
                 "Autoteste determinístico de cancelamento entre arquivos e retomada, "
                 "somente em dados fictícios temporários. Verifica os motores de backup, "
                 "restauração e SHA-256, mas não testa interrupção elétrica, "
-                "dados reais, discos físicos nem libera formatação."
+                "dados reais, discos físicos nem libera formatação. "
+                "A estratégia sintética evita consultar o inventário físico."
             ),
         }
     result["temporary_data_cleaned"] = not root.exists()
