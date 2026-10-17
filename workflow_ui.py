@@ -146,7 +146,7 @@ def build_preservation(app):
     choice_actions = ttk.Frame(frame)
     choice_actions.pack(fill='x', pady=(6, 11))
     ttk.Label(choice_actions, text='Selecione um caminho acima para retirar somente sua marcação.').pack(side='left', padx=(0, 9))
-    ttk.Button(choice_actions, text='Retirar escolha selecionada (não apaga)',
+    ttk.Button(choice_actions, text='Retirar do backup (não apaga)',
                command=lambda: remove_selected_path_choice()).pack(side='left')
 
     ttk.Label(frame, text='Vínculos de jogos e dados associados  •  não representam backup concluído',
@@ -285,23 +285,28 @@ def build_preservation(app):
                 'Esta linha não corresponde a uma escolha explícita atual. Atualize o plano.',
                 parent=app)
             return
-        if path in getattr(app, 'auto_save_paths', set()):
-            messagebox.showwarning(
-                'Save associado a jogo',
-                'Este caminho foi associado automaticamente a um jogo. Revise a ficha do jogo primeiro.',
-                parent=app)
-            return
+        linked = path in getattr(app, 'auto_save_paths', set())
+        notice = ('\n\nPor ser um dado associado a jogo, a escolha será '
+                  'marcada como NÃO PRESERVAR para que não volte automaticamente. '
+                  'A associação continuará disponível para revisão.'
+                  if linked else '')
         if not messagebox.askyesno(
-                'Retirar somente a marcação?',
-                'Retirar a escolha deste caminho do plano?\n\n'
+                'Retirar somente do backup?',
+                'Retirar este caminho do conjunto de arquivos a copiar?\n\n'
                 + path
+                + notice
                 + '\n\nO arquivo original NÃO será apagado. '
                   'Nenhuma cópia, limpeza ou formatação será realizada.',
                 parent=app):
             return
-        app.choices.pop(path)
-        app.personal_paths.discard(path)
-        app._on_change()  # Invalida plano de backup antigo e persiste escolhas.
+        if linked:
+            # Explicit skip takes precedence over game-data auto detection.
+            # The association is preserved, never deleted automatically.
+            app.choices[path] = 'skip'
+        else:
+            app.choices.pop(path)
+            app.personal_paths.discard(path)
+        app._on_change()  # Invalidates backup preview and saves choices.
         make_preview()
 
     ttk.Button(bar, text='Atualizar plano', style='Primary.TButton', command=make_preview).pack(side='left', padx=(0, 8))
