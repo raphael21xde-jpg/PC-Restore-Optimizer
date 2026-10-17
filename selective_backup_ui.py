@@ -36,11 +36,19 @@ def show_selective_backup(app, plan):
     sources = list(plan.get('requires_verified_backup', []))
     current_choices = dict(getattr(app, 'choices', {}))
     window = tk.Toplevel(app)
-    window.title('v0.6.6 • Backup seletivo e teste de recuperação do C:')
-    window.geometry('1050x820')
-    window.minsize(840, 620)
-    window.transient(app)
-    # A scrollable viewport keeps all test controls reachable at normal screen sizes.
+    window.title('PC Restore & Optimizer • Backup e testes de recuperação')
+    # A transient dialog on Windows may lose its maximize control. Keep a normal,
+    # independently resizable window instead of binding its size to the parent.
+    window.resizable(True, True)
+    screen_width, screen_height = window.winfo_screenwidth(), window.winfo_screenheight()
+    window.minsize(min(640, max(360, screen_width-80)),
+                   min(420, max(280, screen_height-100)))
+    window.geometry(f'{min(1060, max(360, screen_width-80))}x'
+                    f'{min(780, max(280, screen_height-100))}')
+    # A persistent footer makes Cancel and Export reachable on every tab.
+    toolbar = ttk.Frame(window, padding=(12, 5))
+    toolbar.pack(side='bottom', fill='x')
+    # The main content may scroll independently when the screen is small.
     viewport = tk.Canvas(window, highlightthickness=0)
     page_scroll = ttk.Scrollbar(window, orient='vertical', command=viewport.yview)
     viewport.configure(yscrollcommand=page_scroll.set)
@@ -50,6 +58,27 @@ def show_selective_backup(app, plan):
     page_item = viewport.create_window((0, 0), window=container, anchor='nw')
     container.bind('<Configure>', lambda e: viewport.configure(scrollregion=viewport.bbox('all')))
     viewport.bind('<Configure>', lambda e: viewport.itemconfigure(page_item, width=e.width))
+
+    def wheel_scroll(event):
+        # Do not steal wheel events from the log or other native scrolling widgets.
+        if event.widget.winfo_class() in ('Text', 'Treeview', 'Listbox'):
+            return
+        if getattr(event, 'num', None) == 4:
+            amount = -1
+        elif getattr(event, 'num', None) == 5:
+            amount = 1
+        else:
+            delta = getattr(event, 'delta', 0)
+            amount = -int(delta / 120) if abs(delta) >= 120 else (-1 if delta > 0 else 1 if delta < 0 else 0)
+        if amount:
+            viewport.yview_scroll(amount, 'units')
+
+    # Bind at the window level (not bind_all) so other program windows are unaffected.
+    window.bind('<MouseWheel>', wheel_scroll, add='+')
+    window.bind('<Button-4>', wheel_scroll, add='+')
+    window.bind('<Button-5>', wheel_scroll, add='+')
+    window.bind('<Prior>', lambda _: viewport.yview_scroll(-4, 'units'), add='+')
+    window.bind('<Next>', lambda _: viewport.yview_scroll(4, 'units'), add='+')
     ttk.Label(container, text='Preservação real — fontes selecionadas do C:',
               font=('Segoe UI', 16, 'bold')).pack(anchor='w')
     ttk.Label(container, text=(
@@ -72,24 +101,28 @@ def show_selective_backup(app, plan):
     ttk.Label(container, textvariable=summary, wraplength=960, foreground='#9C85FF').pack(anchor='w', pady=(0, 8))
     controls = ttk.Frame(container)
     controls.pack(fill='x', pady=(1, 10))
-    row1 = ttk.Frame(controls); row1.pack(fill='x', pady=3)
-    row2 = ttk.Frame(controls); row2.pack(fill='x', pady=3)
-    row3 = ttk.Frame(controls); row3.pack(fill='x', pady=3)
-    row4 = ttk.Frame(controls); row4.pack(fill='x', pady=3)
-    row5 = ttk.Frame(controls); row5.pack(fill='x', pady=3)
-    row6 = ttk.Frame(controls); row6.pack(fill='x', pady=3)
-    row7 = ttk.Frame(controls); row7.pack(fill='x', pady=3)
-    row8 = ttk.Frame(controls); row8.pack(fill='x', pady=3)
-    row9 = ttk.Frame(controls); row9.pack(fill='x', pady=3)
-    row10 = ttk.Frame(controls); row10.pack(fill='x', pady=3)
-    row11 = ttk.Frame(controls); row11.pack(fill='x', pady=3)
-    row12 = ttk.Frame(controls); row12.pack(fill='x', pady=3)
-    row13 = ttk.Frame(controls); row13.pack(fill='x', pady=3)
-    row14 = ttk.Frame(controls); row14.pack(fill='x', pady=3)
-    row15 = ttk.Frame(controls); row15.pack(fill='x', pady=3)
-    row16 = ttk.Frame(controls); row16.pack(fill='x', pady=3)
-    row17 = ttk.Frame(controls); row17.pack(fill='x', pady=3)
-    row18 = ttk.Frame(controls); row18.pack(fill='x', pady=3)
+    ttk.Label(controls, text='Escolha uma aba: operações, segurança, desempenho ou novos testes.').pack(anchor='w')
+    tabs = ttk.Notebook(controls)
+    tabs.pack(fill='x', expand=True, pady=(5, 2))
+    operations_tab = ttk.Frame(tabs, padding=8)
+    integrity_tab = ttk.Frame(tabs, padding=8)
+    performance_tab = ttk.Frame(tabs, padding=8)
+    recent_tab = ttk.Frame(tabs, padding=8)
+    tabs.add(operations_tab, text='Backup e recuperação')
+    tabs.add(integrity_tab, text='Testes #25–30')
+    tabs.add(performance_tab, text='Testes #31–37')
+    tabs.add(recent_tab, text='Novos #38–40')
+    rows = []
+    for number in range(1, 19):
+        parent = (operations_tab if number <= 2 else
+                  integrity_tab if number <= 8 else
+                  performance_tab if number <= 15 else recent_tab)
+        row = ttk.Frame(parent)
+        row.pack(fill='x', pady=3)
+        rows.append(row)
+    (row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11, row12, row13, row14, row15, row16, row17, row18) = rows
+    # Open directly to the newest battery when requested by keyboard.
+    window.bind('<Alt-n>', lambda _: tabs.select(recent_tab), add='+')
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
     manifest_label = tk.StringVar(value='Manifesto: ainda não existe')
     ttk.Label(container, textvariable=destination, wraplength=980).pack(anchor='w')
@@ -500,7 +533,9 @@ def show_selective_backup(app, plan):
 
     def add_button(row, label, cmd):
         b = ttk.Button(row, text=label, command=cmd)
-        b.pack(side='left', padx=(0, 8), pady=2)
+        # Stack buttons vertically; horizontal stacking clipped the far-right
+        # actions on common laptop resolutions and high-DPI Windows settings.
+        b.pack(anchor='w', pady=2)
         commands.append(b)
         return b
 
@@ -510,28 +545,27 @@ def show_selective_backup(app, plan):
     add_button(row2, '3. Copiar e verificar SHA-256', do_backup)
     add_button(row2, 'Conferir backup anterior', choose_manifest)
     add_button(row2, '4. Recuperação de TESTE (pasta nova)', do_restore)
-    add_button(row2, 'Exportar relatório', export_report)
     add_button(row3, '5. Autoteste #25: corrupção SHA-256 (isolado)', run_autotest25)
     ttk.Label(row3, text='Dados fictícios temporários; nenhum backup real será alterado.',
-              wraplength=470).pack(side='left', padx=(8, 0))
+              wraplength=470).pack(anchor='w', padx=(8, 0))
     add_button(row4, '6. Autoteste #26: arquivos ausentes e incompletos', run_autotest26)
     ttk.Label(row4, text='Somente dados fictícios; não escreve nos backups reais.',
-              wraplength=470).pack(side='left', padx=(8, 0))
+              wraplength=470).pack(anchor='w', padx=(8, 0))
     add_button(row5, '7. Autoteste #27: cancelar e retomar (isolado)', run_autotest27)
     ttk.Label(row5, text='Backup/restauração fictícios; SHA-256 na retomada.',
-              wraplength=430).pack(side='left', padx=(8, 0))
+              wraplength=430).pack(anchor='w', padx=(8, 0))
     add_button(row6, '8. Autoteste #28: interromper arquivo grande',
                lambda: run_resilience_autotest(28, run_midfile_autotest))
     ttk.Label(row6, text='Cancela durante a cópia; retoma com SHA-256.',
-              wraplength=430).pack(side='left', padx=(8, 0))
+              wraplength=430).pack(anchor='w', padx=(8, 0))
     add_button(row7, '9. Autoteste #29: reparar arquivo adulterado',
                lambda: run_resilience_autotest(29, run_repair_autotest))
     ttk.Label(row7, text='Corrupção sintética; recópia segura ao retomar.',
-              wraplength=430).pack(side='left', padx=(8, 0))
+              wraplength=430).pack(anchor='w', padx=(8, 0))
     add_button(row8, '10. Autoteste #30: impedir retomada insegura',
                lambda: run_resilience_autotest(30, run_resume_guard_autotest))
     ttk.Label(row8, text='Bloqueia fontes, destinos e manifestos incompatíveis.',
-              wraplength=430).pack(side='left', padx=(8, 0))
+              wraplength=430).pack(anchor='w', padx=(8, 0))
     add_button(row9, '11. Autoteste #31: transferência 32 MiB (isolado)',
                lambda: run_fault_autotest(31, run_large_transfer_autotest))
     add_button(row10, '12. Autoteste #32: 1.024 arquivos pequenos (isolado)',
@@ -551,16 +585,19 @@ def show_selective_backup(app, plan):
     add_button(row16, '18. Autoteste #38: 2.048 arquivos pequenos',
                lambda: run_fault_autotest(38, run_tiny_files_stress_autotest))
     ttk.Label(row16, text='Somente arquivos temporários; SHA-256.',
-              wraplength=390).pack(side='left', padx=(8, 0))
+              wraplength=390).pack(anchor='w', padx=(8, 0))
     add_button(row17, '19. Autoteste #39: auditoria limitada somente leitura',
                lambda: run_fault_autotest(39, run_readonly_inventory_autotest))
     ttk.Label(row17, text='Lê metadados de volumes locais; não é varredura completa.',
-              wraplength=410).pack(side='left', padx=(8, 0))
+              wraplength=410).pack(anchor='w', padx=(8, 0))
     add_button(row18, '20. Autoteste #40: recuperação integral isolada',
                lambda: run_fault_autotest(40, run_isolated_full_restore_autotest))
     ttk.Label(row18, text='Seleção sintética, exclusões e restauração em pasta nova.',
-              wraplength=410).pack(side='left', padx=(8, 0))
-    stop = ttk.Button(row2, text='Cancelar operação', command=cancelled.set, state='disabled')
+              wraplength=410).pack(anchor='w', padx=(8, 0))
+    export_button = ttk.Button(toolbar, text='Exportar relatório JSON', command=export_report)
+    export_button.pack(side='left', padx=(0, 8))
+    commands.append(export_button)
+    stop = ttk.Button(toolbar, text='Cancelar operação', command=cancelled.set, state='disabled')
     stop.pack(side='right')
     def close():
         if state['busy']:
