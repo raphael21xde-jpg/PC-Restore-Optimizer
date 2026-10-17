@@ -23,6 +23,8 @@ jobs:
         run: python -m unittest discover -s tests -p "test_autoteste_completude_v026.py" -v
       - name: 'Test #27 synthetic cancellation and SHA-256 verified resume'
         run: python -m unittest discover -s tests -p "test_autoteste_interrupcao_v027.py" -v
+      - name: 'Test #28-30 synthetic multi-block, corruption repair and resume guards'
+        run: python -m unittest discover -s tests -p "test_autotestes_resiliencia_v028_v030.py" -v
       - name: Test multiple destinations and SHA-256 with temporary files
         run: python -m unittest discover -s tests -p "test_multi_destinations_v083.py" -v
       - name: Test read-only interactive backup preflight scenarios (mocked)
