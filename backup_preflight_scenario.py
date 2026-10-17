@@ -94,6 +94,18 @@ def simulate_backup_preflight(snapshot, *, source_letters, target_letter, estima
                        'a reserva de segurança de 10 GiB ou 10% do espaço livre.')
     else:
         capacity = 'reported_sufficient_with_reserve'
+    usable = max(0, free - reserve) if reserve is not None and type(free) is int else None
+    # The basic candidate assessment intentionally does not use a safety reserve.
+    # Only its contextual message is stale here: this simulator *does* account
+    # for a reserve, without actually reserving space on disk.
+    basic_message = 'Espaço reportado é apenas uma estimativa pontual, sem reserva de segurança.'
+    result['issues'] = [
+        issue for issue in result.get('issues', []) if issue != basic_message
+    ]
+    if free is not None:
+        result['issues'].append(
+            'Espaço livre observado em um instante; a reserva simulada '
+            'NÃO bloqueia espaço real na unidade.')
     result.update({
         'schema': 'pcro-backup-scenario-readonly-v1',
         'source_letters': selected,
@@ -101,6 +113,7 @@ def simulate_backup_preflight(snapshot, *, source_letters, target_letter, estima
         'expected_gib_input': estimate_gib.strip(),
         'capacity_status': capacity,
         'reserve_bytes': reserve,
+        'usable_after_reserve_bytes': usable,
         'blockers': list(dict.fromkeys(blocked)),
         'status': 'blocked' if blocked else 'requires_review',
         'preview_only': True,
@@ -134,6 +147,8 @@ def scenario_text(result):
             format_size(result.get('expected_backup_bytes')),
         '  Espaço livre no diagnóstico: '+format_size(result.get('free_bytes_reported')),
         '  Reserva mínima simulada: '+format_size(result.get('reserve_bytes')),
+        '  Espaço considerado após reserva: '+format_size(
+            result.get('usable_after_reserve_bytes')),
         '  Avaliação da capacidade: '+str(result.get('capacity_status', 'unknown')),
         '  Resultado: '+str(result.get('status', 'requires_review')),
     ]
