@@ -5,15 +5,17 @@
   Nao inicia o app, nao formata, nao exclui arquivos do usuario e nao executa
   testes de 2 GiB automaticamente. Salva logs em pasta NOVA no perfil.
 #>
-param([switch]$Completo)
+param([switch]$Completo, [string]$Apenas = '')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location -LiteralPath $root
 
-if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
+$pythonCommand = Get-Command py -CommandType Application -ErrorAction SilentlyContinue
+if (-not $pythonCommand) {
     throw "Python Launcher 'py' nao encontrado. Instale o Python 3 para Windows."
 }
+$pythonExecutable = $pythonCommand.Source
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-ffff'
 $folder = Join-Path $HOME ("PCRO-Relatorios\validacao-" + $stamp)
@@ -23,28 +25,46 @@ $results = [System.Collections.ArrayList]::new()
 function Invoke-PcroCheck {
     param([string]$Id, [string[]]$CmdArgs)
     $log = Join-Path $folder ($Id + ".log")
+    $stdout = Join-Path $folder ($Id + ".stdout.log")
+    $stderr = Join-Path $folder ($Id + ".stderr.log")
     $started = Get-Date
     Write-Host ("[PCRO] Executando: " + $Id) -ForegroundColor Cyan
-    $code = 1
+    $code = -1
+    $errorMessage = $null
     try {
-        & py @CmdArgs 2>&1 | Tee-Object -FilePath $log
-        $code = $LASTEXITCODE
+        # Windows PowerShell 5.1 promotes Python's unittest stderr output
+        # to NativeCommandError if piped with 2>&1 under Stop. This caused
+        # every successful test to be reported incorrectly as a failure.
+        # Redirect streams at the OS process level and rely on ExitCode.
+        $process = Start-Process -FilePath $pythonExecutable -ArgumentList $CmdArgs `
+            -NoNewWindow -Wait -PassThru -ErrorAction Stop `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        $code = [int]$process.ExitCode
+        foreach ($part in @($stdout, $stderr)) {
+            if (Test-Path -LiteralPath $part -PathType Leaf) {
+                Get-Content -LiteralPath $part -Encoding UTF8 |
+                    Tee-Object -FilePath $log -Append
+            }
+        }
     }
     catch {
-        ("Excecao durante teste: " + $_.Exception.Message) |
+        $errorMessage = $_.Exception.Message
+        ("Erro ao iniciar ou registrar teste: " + $errorMessage) |
             Out-File -FilePath $log -Encoding UTF8 -Append
-        Write-Host ("[PCRO] Falha ao executar " + $Id) -ForegroundColor Red
+        Write-Host ("[PCRO] Falha no executor: " + $errorMessage) -ForegroundColor Red
     }
     $result = [pscustomobject]@{
         teste = $Id
         aprovado = ($code -eq 0)
         codigo_saida = $code
+        erro_executor = $errorMessage
         duracao_segundos = [math]::Round(((Get-Date)-$started).TotalSeconds, 2)
         log = $log
     }
     [void]$results.Add($result)
     Write-Host ("[PCRO] " + $Id + ": " +
-        $(if ($result.aprovado) { "APROVADO" } else { "FALHOU" }))
+        $(if ($result.aprovado) { "APROVADO" } else { "FALHOU" }) +
+        " (codigo " + $code + ")")
 }
 
 $patterns = @(
@@ -56,6 +76,15 @@ $patterns = @(
     "test_backup_target_preflight_v082.py",
     "test_safe_features.py"
 )
+if ($Apenas) {
+    if ($Completo) {
+        throw "Nao combine -Apenas com -Completo."
+    }
+    if ($Apenas -notin $patterns) {
+        throw "Nome de teste fora da lista de verificacoes seguras."
+    }
+    $patterns = @($Apenas)
+}
 foreach ($pattern in $patterns) {
     $label = $pattern -replace '[^A-Za-z0-9_-]', '_'
     Invoke-PcroCheck -Id $label -CmdArgs @(
