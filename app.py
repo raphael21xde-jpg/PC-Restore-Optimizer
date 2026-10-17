@@ -31,6 +31,7 @@ from app_data import find_app_data, associate_app_data
 from backup_features import (friendly_backup_name, backup_labels, set_backup_label,
                              verified_entries, restore_selected)
 from diagnostics import disk_inventory, system_inventory, make_recommendations, save_report
+from backup_preflight_scenario_ui import show_backup_preflight_scenario
 from recovery_kit import create_plan, load_plan, summarize_plan
 from optimization_ui import OptimizationPanel
 from reinstall_audit import audit_backup, audit_text
@@ -1575,6 +1576,8 @@ class App(tk.Tk):
         self.label(self.diagnostic, 'Coleta SOMENTE leitura. A letra do volume não identifica o SSD físico; discos dinâmicos/EFI/pools exigem checagem independente.\nNenhum ajuste de BIOS, serviço, registro, Windows ou disco será executado.',fg=MUTED).pack(fill='x',padx=18,pady=6)
         actions=ttk.Frame(self.diagnostic);actions.pack(fill='x',padx=18,pady=8)
         ttk.Button(actions,text='Analisar computador e discos',command=self.run_diagnostics).pack(side='left',padx=(0,8))
+        ttk.Button(actions,text='Simular destino de backup (somente leitura)',
+                   command=lambda: show_backup_preflight_scenario(self)).pack(side='left',padx=(0,8))
         ttk.Button(actions,text='Exportar relatório JSON',command=self.export_diagnostics).pack(side='left',padx=(0,8))
         self.diagnostic_data=None
         self.diagnostic_text=tk.Text(self.diagnostic,bg=PANEL,fg=TEXT,wrap='word',font=('Consolas',10),relief='flat')
