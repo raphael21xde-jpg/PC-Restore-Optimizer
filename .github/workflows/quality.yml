@@ -27,6 +27,12 @@ jobs:
         run: python -m unittest discover -s tests -p "test_autotestes_resiliencia_v028_v030.py" -v
       - name: 'Test #31-34 synthetic transfer, small files, errors and interrupted checkpoints'
         run: python -m unittest discover -s tests -p "test_autotestes_falhas_v031_v034.py" -v
+      - name: Make space on disposable Linux runner for three synthetic copies
+        if: runner.os == 'Linux'
+        run: |
+          # Only preinstalled Android tooling on the ephemeral hosted runner.
+          sudo rm -rf /usr/local/lib/android/sdk
+          df -h /tmp
       - name: 'Test #35-37: 2 GiB, abrupt child exit and cancellation guards'
         env:
           PCRO_RUN_2GIB: '1'
@@ -44,6 +50,11 @@ jobs:
         env:
           PCRO_REQUIRE_TK: '1'
         run: python -m unittest discover -s tests -p "test_autotestes_escala_v035_v037.py" -v
+      - name: Full regression with virtual display on Linux
+        if: runner.os == 'Linux'
+        env:
+          PCRO_REQUIRE_TK: '1'
+        run: xvfb-run -a python -m unittest discover -s tests
       - name: Test multiple destinations and SHA-256 with temporary files
         run: python -m unittest discover -s tests -p "test_multi_destinations_v083.py" -v
       - name: Test read-only interactive backup preflight scenarios (mocked)
