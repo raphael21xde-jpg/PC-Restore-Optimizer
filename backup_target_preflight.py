@@ -11,6 +11,9 @@ import re
 
 LETTER = re.compile(r'^[A-Za-z]$')
 MAX_ESTIMATED_BYTES = 1 << 63
+OBSERVED_EXTENT_STATUSES = frozenset({
+    'logical_disk_reported', 'disk_not_listed', 'virtual_spaces', 'multi_disk'
+})
 
 
 def _letter(value):
@@ -34,13 +37,21 @@ def _extent_by_letter(extents):
         if not isinstance(entry, dict):
             continue
         numbers = entry.get('disk_numbers', [])
-        numbers = (numbers if isinstance(numbers, list) else [])
-        indices = sorted({n for x in numbers if (n := _number(x)) is not None})
-        for raw in entry.get('letters', []):
+        letters = entry.get('letters', [])
+        status = entry.get('status')
+        if not isinstance(letters, (list, tuple)):
+            continue
+        # A partial or malformed extent list is NOT an observed mapping.
+        valid_numbers = (isinstance(numbers, (list, tuple)) and bool(numbers)
+                         and all(_number(x) is not None for x in numbers))
+        valid_status = status in OBSERVED_EXTENT_STATUSES
+        indices = (sorted(set(numbers)) if valid_numbers and valid_status else [])
+        for raw in letters:
             letter = _letter(raw)
             if letter is not None:
                 result.setdefault(letter, []).append({
-                    'disk_numbers': indices, 'status': entry.get('status', 'unknown')
+                    'disk_numbers': indices,
+                    'status': status if valid_numbers and valid_status else 'unknown'
                 })
     return result
 
@@ -93,11 +104,14 @@ def assess_backup_target(disks, volumes, extent_mapping, spaces_membership,
     blockers = []
 
     entries = extents.get(target, [])
-    if len(entries) == 1 and len(entries[0]['disk_numbers']) == 1 and entries[0]['status'] != 'unknown':
+    if len(entries) == 1 and entries[0]['disk_numbers'] and entries[0]['status'] in OBSERVED_EXTENT_STATUSES:
         destination_numbers = entries[0]['disk_numbers']
+        if len(destination_numbers) > 1:
+            issues.append('Destino ocupa múltiplos discos lógicos segundo extents; '
+                          'a composição e a segurança física exigem revisão.')
     else:
         destination_numbers = []
-        issues.append('Destino: associação GUID/extents para um único disco lógico não confirmada.')
+        issues.append('Destino: associação GUID/extents para discos lógicos não confirmada.')
     volume_rows = vmap.get(target, [])
     capacity_free = _bytes(volume_rows[0].get('SizeRemaining')) if len(volume_rows) == 1 else None
     if capacity_free is None:
@@ -124,19 +138,26 @@ def assess_backup_target(disks, volumes, extent_mapping, spaces_membership,
                 blockers.append('Destino coincide com a unidade de origem ' + source + ':.')
                 continue
             rows = extents.get(source, [])
-            if len(rows) != 1 or not rows[0]['disk_numbers'] or rows[0]['status'] == 'unknown':
-                issues.append('Origem '+source+': não possui associação confiável a discos lógicos.')
+            if (len(rows) != 1 or not rows[0]['disk_numbers']
+                    or rows[0]['status'] not in OBSERVED_EXTENT_STATUSES):
+                issues.append('Origem '+source+': não possui associação observada de extents a discos lógicos.')
                 source_status = 'partial'
                 continue
+            if len(rows[0]['disk_numbers']) > 1:
+                issues.append('Origem '+source+': ocupa múltiplos discos lógicos; composição exige revisão.')
             if destination_numbers and set(rows[0]['disk_numbers']) & set(destination_numbers):
                 blockers.append('Destino '+target+': e origem '+source+
                                 ': compartilham pelo menos um disco lógico segundo extents.')
     related_spaces = sorted(set(destination_numbers) & set(spaces))
     spaces_detail = []
     membership = spaces_membership if isinstance(spaces_membership, dict) else {}
+    virtual_disks = membership.get('virtual_disks', [])
+    virtual_disks = virtual_disks if isinstance(virtual_disks, list) else []
     for number in related_spaces:
-        matches = [row for row in membership.get('virtual_disks', [])
-                   if isinstance(row, dict) and number in row.get('logical_disk_numbers', [])]
+        matches = [row for row in virtual_disks
+                   if isinstance(row, dict)
+                   and isinstance(row.get('logical_disk_numbers'), (list, tuple))
+                   and number in row['logical_disk_numbers']]
         if len(matches) != 1:
             issues.append('Storage Spaces no Disco '+str(number)+
                           ': associação física incompleta ou ambígua.')
@@ -264,7 +285,8 @@ def mark_candidate_boot_risks(candidates, *, boot_layout=None,
 
 def list_backup_target_candidates(disks, volumes, extent_mapping, spaces_membership):
     """Present available drive-letter candidates, NOT automatic destinations."""
-    unique_letters = sorted({_letter(v.get('DriveLetter')) for v in volumes
+    unique_letters = sorted({_letter(v.get('DriveLetter')) for v in
+                             (volumes if isinstance(volumes, list) else [])
                              if isinstance(v, dict) and _letter(v.get('DriveLetter'))})
     return [assess_backup_target(disks, volumes, extent_mapping, spaces_membership,
                                  target_letter=letter)
