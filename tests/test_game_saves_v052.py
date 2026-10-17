@@ -5,7 +5,7 @@ import sys
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from game_saves import find_game_saves, associate_saves, same_game, progress_is_online
-from backup_core import build_plan
+from backup_core import build_plan, norm
 
 class GameSaveV052Tests(unittest.TestCase):
     def make_roots(self, home):
@@ -71,7 +71,7 @@ class GameSaveV052Tests(unittest.TestCase):
             self.assertIn(str(cfg),trusted)
             plan=build_plan({str(cfg):'keep'},[str(home)])
             self.assertEqual(plan.count,1)
-            self.assertEqual(plan.files[0].source,str(cfg))
+            self.assertEqual(norm(plan.files[0].source), norm(str(cfg)))
 
     def test_other_game_default_cfg_not_auto_added(self):
         with tempfile.TemporaryDirectory() as t:
@@ -107,3 +107,4 @@ class GameSaveV052Tests(unittest.TestCase):
             self.assertIn(str(path.parent),trusted)
 
 if __name__=='__main__': unittest.main()
+

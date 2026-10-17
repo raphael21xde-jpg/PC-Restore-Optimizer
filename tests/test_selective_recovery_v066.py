@@ -15,7 +15,7 @@ class SelectiveRecovery066(TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.base = Path(self.tmp.name)
+        self.base = Path(self.tmp.name).resolve()
         self.root = self.base/'fake_volume'
         self.src = self.root/'Users'/'sample'/'Saved Games'/'GoW'
         self.src.mkdir(parents=True)
@@ -118,3 +118,4 @@ class SelectiveRecovery066(TestCase):
     def test_source_missing_raises_not_fake_success(self):
         with self.assertRaisesRegex(ValueError,'Fonte não encontrada'):
             prepare_selected_c([str(self.src/'not-existing')],test_root=self.root)
+

@@ -100,10 +100,12 @@ class BoundedExplorerTests(unittest.TestCase):
         d.mkdir(parents=True)
         (d / 'test.dat').write_text('x')
         r = scan([], [self.root])
-        self.assertGreaterEqual(r['volume_stats']['SEM UNIDADE']['directories'], 2)
-        self.assertEqual(r['volume_stats']['SEM UNIDADE']['files'], 1)
+        volume = volume_of(str(self.root))
+        self.assertGreaterEqual(r['volume_stats'][volume]['directories'], 2)
+        self.assertEqual(r['volume_stats'][volume]['files'], 1)
         self.assertEqual(r['directories'], sum(v['directories'] for v in r['volume_stats'].values()))
 
 
 if __name__ == '__main__':
     unittest.main()
+

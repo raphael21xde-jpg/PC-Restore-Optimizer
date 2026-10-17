@@ -111,7 +111,7 @@ class ResumeTests(unittest.TestCase):
             (target/keys[0]).write_bytes(b'bad')
             path,n=restore_selected(manifest,keys,root,resume_from=target)
             self.assertEqual(n,7)
-            self.assertEqual(path,target)
+            self.assertEqual(path.resolve(), target.resolve())
             self.assertEqual(json.loads((path/'ESTADO-RESTAURACAO.json').read_text())['status'],'concluida')
             self.assertTrue(all(sha256_file(path/k)==verified_entries(manifest)[k]['sha256'] for k in keys))
             with self.assertRaises(ValueError):resume_information(path,manifest)
@@ -126,3 +126,4 @@ class ResumeTests(unittest.TestCase):
             self.assertFalse(list(root.glob('TESTE-RESTAURACAO-*')))
 
 if __name__ == '__main__':unittest.main()
+
