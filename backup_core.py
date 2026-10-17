@@ -242,7 +242,8 @@ def _plan_fingerprint(plan):
 
 
 def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=(),
-                display_name=None, item_descriptors=None, *, resume_manifest=None):
+                display_name=None, item_descriptors=None, *, resume_manifest=None,
+                strategy_inventory=None):
     """Verified isolated backup with progress throttling and opt-in safe resume.
 
     Existing v0.4 manifests remain readable. Resume is allowed ONLY for v0.5.19
@@ -306,7 +307,7 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                         bytes_expected=plan.total, file_count_expected=plan.count,
                         files=[], errors=[], resume_count=0)
         existing = {}
-    strategy = choose_strategy(plan.files[0].source, backup_base)
+    strategy = choose_strategy(plan.files[0].source, backup_base, inventory=strategy_inventory)
     manifest['transfer_strategy'] = strategy.description
     atomic_json(manifest_path, manifest)  # checkpoint before writing the first file
     meter = TransferMeter(plan.total, plan.count)
