@@ -9,7 +9,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from file_index_ui import show_file_index
+from file_index_ui import show_file_index, format_index_row
 
 
 def walk(widget):
@@ -52,6 +52,8 @@ class TestFileIndexUI(unittest.TestCase):
                     for text in ("CRIAR índice", "ABRIR índice", "Exportar escolhas",
                                  "Marcar PRESERVAR", "NÃO COPIAR", "Revisar depois"):
                         self.assertTrue(button(text).winfo_ismapped(), text)
+                    search_button = button("Pesquisar")
+                    self.assertTrue(search_button.instate(["disabled"]))
                     button("CRIAR índice").invoke()
                     deadline = time.monotonic() + 20
                     trees = [w for w in walk(win) if isinstance(w, ttk.Treeview)]
@@ -63,6 +65,7 @@ class TestFileIndexUI(unittest.TestCase):
                     app.update()
                     self.assertTrue(index_file.exists(), "SQLite index not generated")
                     self.assertEqual(len(tree.get_children()), 1)
+                    self.assertFalse(search_button.instate(["disabled"]))
                     tree.selection_set(tree.get_children()[0])
                     button("Marcar PRESERVAR").invoke()
                     button("Exportar escolhas").invoke()
@@ -80,6 +83,20 @@ class TestFileIndexUI(unittest.TestCase):
                     close_command = win.protocol("WM_DELETE_WINDOW")
                     win.tk.call(close_command)
                 app.destroy()
+
+    def test_directories_display_unmeasured_not_zero(self):
+        row = format_index_row({
+            "path": r"C:\\Games\\MeuJogo", "kind": "directory",
+            "bytes": 0, "decision": "revisar",
+        })
+        self.assertEqual(row[1], "Pasta")
+        self.assertEqual(row[2], "Não calculado")
+        file_row = format_index_row({
+            "path": r"C:\\Games\\MeuJogo\\save.dat", "kind": "file",
+            "bytes": 0, "decision": "preservar",
+        })
+        self.assertEqual(file_row[1], "Arquivo")
+        self.assertEqual(file_row[2], 0)
 
 
 if __name__ == "__main__":
