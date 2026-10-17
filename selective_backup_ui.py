@@ -27,6 +27,9 @@ from autotestes_falhas import (run_large_transfer_autotest, run_many_files_autot
 
 from autotestes_escala import (run_gigabyte_autotest, run_abrupt_exit_autotest,
                                 run_responsiveness_autotest)
+from autotestes_bateria import (run_tiny_files_stress_autotest,
+                               run_readonly_inventory_autotest,
+                               run_isolated_full_restore_autotest)
 
 
 def show_selective_backup(app, plan):
@@ -84,6 +87,9 @@ def show_selective_backup(app, plan):
     row13 = ttk.Frame(controls); row13.pack(fill='x', pady=3)
     row14 = ttk.Frame(controls); row14.pack(fill='x', pady=3)
     row15 = ttk.Frame(controls); row15.pack(fill='x', pady=3)
+    row16 = ttk.Frame(controls); row16.pack(fill='x', pady=3)
+    row17 = ttk.Frame(controls); row17.pack(fill='x', pady=3)
+    row18 = ttk.Frame(controls); row18.pack(fill='x', pady=3)
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
     manifest_label = tk.StringVar(value='Manifesto: ainda não existe')
     ttk.Label(container, textvariable=destination, wraplength=980).pack(anchor='w')
@@ -277,6 +283,19 @@ def show_selective_backup(app, plan):
                         state['report'] = outcome
                         summary.set(f"AUTOTESTE #{number}: {outcome['status'].upper()}. Exporte o relatório.")
                         write_log(f"[AUTOTESTE #{number}] " + json.dumps(outcome, ensure_ascii=False))
+                    elif job in ('autotest38', 'autotest39', 'autotest40'):
+                        number = int(job[-2:])
+                        state['report'] = outcome
+                        summaries = {
+                            38: 'Carga de arquivos pequenos, restauração e SHA-256.',
+                            39: 'Leitura limitada de metadados; inventário NÃO completo.',
+                            40: 'Seleção granular e restauração fictícia em pasta isolada.',
+                        }
+                        summary.set(f"AUTOTESTE #{number}: {outcome['status'].upper()}. "
+                                    + summaries[number] + ' Exporte o JSON.')
+                        write_log(f'[AUTOTESTE #{number}] ' +
+                                  json.dumps(outcome, ensure_ascii=False))
+                        write_log(f'[AUTOTESTE #{number}] Não autoriza formatação.')
                     elif job == 'restore':
                         state['report'] = outcome
                         summary.set(f'RECUPERAÇÃO DE TESTE APROVADA: {outcome["files_verified"]} arquivos, '
@@ -447,6 +466,8 @@ def show_selective_backup(app, plan):
             return messagebox.showinfo('Sem relatório', 'Execute uma etapa para gerar resultado.', parent=window)
         location = filedialog.asksaveasfilename(parent=window, defaultextension='.json',
                           initialfile=(f"resultado-autoteste{state['report']['schema'].rsplit('v', 1)[-1]}.json"
+                                       if state['report'].get('schema') in {f'pcro-autoteste-bateria-v{n}' for n in (38,39,40)}
+                                       else f"resultado-autoteste{state['report']['schema'].rsplit('v', 1)[-1]}.json"
                                         if state['report'].get('schema') in {f'pcro-autoteste-escala-v{n}' for n in (35, 36, 37)}
                                         else 'resultado-autoteste31.json'
                                         if state['report'].get('schema') == 'pcro-autoteste-falhas-v31'
@@ -527,6 +548,18 @@ def show_selective_backup(app, plan):
     probe_button = ttk.Button(row15, text='Cancelar cópia fictícia (#37)',
                               command=invoke_probe_cancel, state='disabled')
     probe_button.pack(side='left', padx=8)
+    add_button(row16, '18. Autoteste #38: 2.048 arquivos pequenos',
+               lambda: run_fault_autotest(38, run_tiny_files_stress_autotest))
+    ttk.Label(row16, text='Somente arquivos temporários; SHA-256.',
+              wraplength=390).pack(side='left', padx=(8, 0))
+    add_button(row17, '19. Autoteste #39: auditoria limitada somente leitura',
+               lambda: run_fault_autotest(39, run_readonly_inventory_autotest))
+    ttk.Label(row17, text='Lê metadados de volumes locais; não é varredura completa.',
+              wraplength=410).pack(side='left', padx=(8, 0))
+    add_button(row18, '20. Autoteste #40: recuperação integral isolada',
+               lambda: run_fault_autotest(40, run_isolated_full_restore_autotest))
+    ttk.Label(row18, text='Seleção sintética, exclusões e restauração em pasta nova.',
+              wraplength=410).pack(side='left', padx=(8, 0))
     stop = ttk.Button(row2, text='Cancelar operação', command=cancelled.set, state='disabled')
     stop.pack(side='right')
     def close():
