@@ -138,7 +138,8 @@ class MultiDestinationsTests(unittest.TestCase):
                 self.prepare(selections)
 
     def test_space_reserve_prevents_risky_copy(self):
-        with patch.object(multi, 'volume_of', return_value='E:'):
+        with patch.object(multi, 'volume_of',
+                          side_effect=lambda p: 'E:' if 'target_external' in str(p) else 'C:'):
             with self.assertRaisesRegex(ValueError, 'Sem espaço suficiente'):
                 multi.make_multi_backup_plan(
                     self.plan, self.destinations[:1],
