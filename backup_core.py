@@ -243,7 +243,7 @@ def _plan_fingerprint(plan):
 
 def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=(),
                 display_name=None, item_descriptors=None, *, resume_manifest=None,
-                strategy_inventory=None):
+                strategy_inventory=None, test_space_probe=None, test_fault_hook=None):
     """Verified isolated backup with progress throttling and opt-in safe resume.
 
     Existing v0.4 manifests remain readable. Resume is allowed ONLY for v0.5.19
@@ -293,7 +293,7 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
         manifest['errors'] = []
         manifest['status'] = 'em_andamento'
     else:
-        free, reserve, adequate = check_space(plan, backup_base)
+        free, reserve, adequate = (test_space_probe or check_space)(plan, backup_base)
         if not adequate:
             raise OSError(f'Espaço insuficiente ({human_size(free)} livres; reserva {human_size(reserve)}).')
         stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -371,10 +371,14 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                     while True:
                         if cancelled and cancelled.is_set():
                             raise InterruptedError('Backup interrompido')
+                        if test_fault_hook is not None:
+                            test_fault_hook('backup_before_read')
                         data = src.read(strategy.chunk)
                         if not data:
                             break
                         dst.write(data)
+                        if test_fault_hook is not None:
+                            test_fault_hook('backup_after_write')
                         dig.update(data)
                         size_read += len(data)
                         notify.send(index, plan.count, copied + size_read, plan.total, str(source))
