@@ -2,12 +2,17 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import tempfile
+from types import SimpleNamespace
 import tkinter as tk
 from tkinter import ttk
 import unittest
 from unittest.mock import Mock, patch
 
 from workflow_ui import build_preservation
+from app import App
+from backup_core import Plan
 
 
 def descend(widget):
@@ -107,6 +112,20 @@ class PreservationRemoveChoiceUITests(unittest.TestCase):
         warning.assert_called_once()
         self.assertIn(self.old, self.app.choices)
         self.app._on_change.assert_not_called()
+
+
+class RecycleBinPreflightTests(unittest.TestCase):
+    def test_recycle_bin_choice_blocks_backup_not_original_data(self):
+        """An obsolete Recycle Bin keep rule is never copied unnoticed."""
+        with tempfile.TemporaryDirectory(prefix="PCRO-REVIEW-PREFLIGHT-") as folder:
+            dummy = SimpleNamespace(dest=SimpleNamespace(get=lambda: folder))
+            plan = Plan(selected=[r"C:\\$Recycle.Bin\\SID\\trashed-file.osz"])
+            issues = App._preflight(dummy, plan)
+            self.assertTrue(any("Lixeira" in issue for issue in issues), issues)
+            # Preview remains non-destructive: never modifies any original.
+            plan.selected = [r"C:\\Users\\example\\PCRO-TESTE-UI\\preservar.txt"]
+            clean = App._preflight(dummy, plan)
+            self.assertFalse(any("Lixeira" in issue for issue in clean), clean)
 
 
 if __name__ == "__main__":
