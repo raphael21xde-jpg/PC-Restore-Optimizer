@@ -13,9 +13,10 @@ from tkinter import ttk, filedialog, messagebox
 
 from inventory_index import FileMetadataIndex, index_roots
 from inventory_paged import discover_local_roots
+from index_choices_bridge import read_index_choices, preview_import, apply_imported_choices
 
 
-def show_file_index(parent):
+def show_file_index(parent, app=None):
     win = tk.Toplevel(parent)
     win.title("PCRO | Índice detalhado e escolhas — nenhuma exclusão")
     screen_w, screen_h = win.winfo_screenwidth(), win.winfo_screenheight()
@@ -191,10 +192,48 @@ def show_file_index(parent):
             except (OSError, ValueError) as err:
                 messagebox.showerror("Exportação bloqueada", str(err), parent=win)
 
+    def import_to_preview():
+        # Import requires an explicit file selection and a separate confirmation.
+        # It never copies data, deletes files or authorizes Windows installation.
+        if app is None or state["busy"]:
+            return
+        path = filedialog.askopenfilename(
+            parent=win, title="Importar escolhas do índice para a PRÉVIA",
+            filetypes=[("Escolhas PCRO", "*.json")])
+        if not path:
+            return
+        try:
+            parsed = read_index_choices(path)
+            preview = preview_import(app, parsed)
+            if not preview["total"]:
+                messagebox.showinfo("Sem escolhas", "O JSON não contém marcações.", parent=win)
+                return
+            warning = ("IMPORTAR APENAS ESCOLHAS DE PRESERVAÇÃO?\\n\\n"
+                       f"Preservar: {preview['keep']} | Não copiar: {preview['skip']}\\n"
+                       f"Conflitos com escolhas atuais: {preview['conflicts']}\\n"
+                       f"Estado do índice: {preview['source_state']}\\n\\n"
+                       "Os conflitos serão substituídos somente se confirmar.\\n"
+                       "Não copia nem apaga arquivos, e não confirma que os caminhos "
+                       "ainda existem. O plano anterior será invalidado e precisará "
+                       "ser recalculado antes de qualquer backup.")
+            if not messagebox.askyesno("Confirmar importação para prévia",
+                                       warning, parent=win):
+                return
+            result = apply_imported_choices(app, parsed)
+            messagebox.showinfo("Escolhas importadas para prévia",
+                                f"{result['applied']} escolha(s) registrada(s). "
+                                "Revise os caminhos no plano antes de copiar.",
+                                parent=win)
+        except (OSError, ValueError, TypeError, RuntimeError) as err:
+            messagebox.showerror("Importação não aplicada", str(err), parent=win)
+
     start_button = add_action("CRIAR índice detalhado (somente leitura das fontes)", start_scan)
     open_button = add_action("ABRIR índice anterior", open_existing)
     export_button = add_action("Exportar escolhas JSON", export_choices,
                                second_row=True)
+    if app is not None:
+        add_action("IMPORTAR JSON para prévia do aplicativo", import_to_preview,
+                   second_row=True)
     stop_button = add_action("Parar varredura", stop_scan, second_row=True)
     stop_button.configure(state="disabled")
     ttk.Button(lookup, text="Pesquisar", command=lambda: refresh(reset=True)).pack(side="left")
