@@ -1735,15 +1735,21 @@ class App(tk.Tk):
             numbers = item.get('destination_logical_disks') or []
             disks_label = ', '.join('Disco '+str(n) for n in numbers) if numbers else 'DISCO NÃO CONFIRMADO'
             free_bytes = item.get('free_bytes_reported')
-            free_label = str(free_bytes)+' bytes' if free_bytes is not None else 'desconhecido'
+            free_label = (f'{free_bytes / 1024**3:.1f} GiB ({free_bytes} bytes)'
+                          if type(free_bytes) is int and free_bytes >= 0 else 'desconhecido')
             text.append('  '+letter+': | '+disks_label+' | livres informados: '+free_label+
                         ' | '+str(item.get('status', 'requires_review')))
+            for risk in item.get('risk_details', []):
+                text.append('    ATENÇÃO: '+str(risk))
             for pool in item.get('storage_spaces_membership', []):
                 text.append('    Pool: '+str(pool.get('virtual_name','desconhecido'))+
                             ' | membros relatados: '+str(pool.get('member_count_reported','?'))+
                             ' | resiliência: '+str(pool.get('resiliency_reported','?')))
             for blocker in item.get('blockers', []):
                 text.append('    BLOQUEIO: '+str(blocker))
+        text.append('  Espaço livre em GiB é informativo; não representa espaço reservado para backup.')
+        text.append('  BOOTMGR registrado NÃO comprova entrada UEFI efetivamente usada (BootCurrent).')
+        text.append('  requires_review é esperado enquanto origem, tamanho e independência não forem validados.')
         text.append('  Origem e tamanho do backup não selecionados neste diagnóstico.')
         text.append('  Independência física, espaço para plano real e SHA-256: NÃO VERIFICADOS.')
         text.append('  Nenhuma unidade foi aprovada automaticamente para backup/reinstalação.')

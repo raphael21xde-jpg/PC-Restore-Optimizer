@@ -1,7 +1,8 @@
 """Backup preflight is pure metadata logic; no real disks/files are touched."""
 import unittest
 
-from backup_target_preflight import assess_backup_target, list_backup_target_candidates
+from backup_target_preflight import (assess_backup_target, list_backup_target_candidates,
+                                     mark_candidate_boot_risks)
 
 
 def disks():
@@ -145,6 +146,74 @@ class BackupTargetPreflightTests(unittest.TestCase):
         self.assertEqual([x['target_letter'] for x in candidates], ['C', 'D', 'F', 'G'])
         self.assertTrue(all(not x['approved_for_copy'] for x in candidates))
         self.assertTrue(all(x['status'] == 'requires_review' for x in candidates))
+
+    def test_real_pc_registered_boot_risks_and_spaces_are_distinguished(self):
+        candidates = list_backup_target_candidates(disks(), volumes(), extents(), membership())
+        tagged = mark_candidate_boot_risks(
+            candidates,
+            boot_layout={'boot_disks': [2]},
+            boot_dependency={
+                'status': 'separate_disks_reported',
+                'windows_disk_numbers': [2],
+                'bootmgr_disk_numbers': [1]},
+            firmware_order={'status': 'registered_bootmgr_cross_disk',
+                            'bootmgr_disks': [1], 'bootcurrent_verified': False})
+        by_letter = {x['target_letter']: x for x in tagged}
+        self.assertEqual([x['target_letter'] for x in tagged], ['C', 'D', 'F', 'G'])
+        self.assertIn('windows_in_use', by_letter['C']['risk_tags'])
+        self.assertNotIn('bootmgr_registered', by_letter['C']['risk_tags'])
+        self.assertEqual(by_letter['D']['risk_tags'], [])
+        self.assertIn('bootmgr_registered', by_letter['F']['risk_tags'])
+        self.assertIn('BootCurrent', ' '.join(by_letter['F']['risk_details']))
+        self.assertIn('spaces_simple', by_letter['G']['risk_tags'])
+        self.assertIn('1 membro(s)', ' '.join(by_letter['G']['risk_details']))
+        self.assertTrue(all(x['status'] == 'requires_review' for x in tagged))
+        self.assertTrue(all(x['bootcurrent_verified'] is False for x in tagged))
+        self.assertTrue(all(x['approved_for_format'] is False for x in tagged))
+        self.assertTrue(all(x['backup_destination_verified'] is False for x in tagged))
+
+    def test_missing_firmware_and_bcd_never_imply_bootmgr_location(self):
+        candidates = list_backup_target_candidates(disks(), volumes(), extents(), membership())
+        tagged = mark_candidate_boot_risks(candidates, boot_layout={},
+            boot_dependency={'status': 'unverified', 'bootmgr_disk_numbers': [1]},
+            firmware_order={'status': 'unavailable', 'bootmgr_disks': [1]})
+        f = next(x for x in tagged if x['target_letter'] == 'F')
+        self.assertNotIn('bootmgr_registered', f['risk_tags'])
+        self.assertFalse(f['bootcurrent_verified'])
+
+    def test_bcd_correlated_without_firmware_remains_registered_only(self):
+        candidates = list_backup_target_candidates(disks(), volumes(), extents(), membership())
+        tagged = mark_candidate_boot_risks(candidates, boot_layout={'boot_disks': [2]},
+            boot_dependency={'status': 'separate_disks_reported',
+                             'bootmgr_disk_numbers': [1]},
+            firmware_order={'status': 'unavailable'})
+        f = next(x for x in tagged if x['target_letter'] == 'F')
+        self.assertIn('bootmgr_registered', f['risk_tags'])
+        self.assertIn('BCDEdit', ' '.join(f['risk_details']))
+        self.assertFalse(f['bootcurrent_verified'])
+
+    def test_ambiguous_volume_disk_mapping_does_not_assign_efi_risk(self):
+        e = extents()
+        e['volumes'].append(
+            {'letters': ['F'], 'disk_numbers': [3], 'status': 'logical_disk_reported'})
+        candidates = list_backup_target_candidates(disks(), volumes(), e, membership())
+        tagged = mark_candidate_boot_risks(candidates,
+            boot_layout={'boot_disks': [2]},
+            firmware_order={'status': 'registered_bootmgr_cross_disk',
+                            'bootmgr_disks': [1]})
+        f = next(x for x in tagged if x['target_letter'] == 'F')
+        self.assertEqual(f['destination_logical_disks'], [])
+        self.assertNotIn('bootmgr_registered', f['risk_tags'])
+        self.assertFalse(f['approved_for_copy'])
+
+    def test_incomplete_spaces_membership_remains_review_required(self):
+        candidates = list_backup_target_candidates(disks(), volumes(), extents(),
+                                                    membership(complete=False))
+        tagged = mark_candidate_boot_risks(candidates)
+        g = next(x for x in tagged if x['target_letter'] == 'G')
+        self.assertIn('spaces_membership_incomplete', g['risk_tags'])
+        self.assertFalse(g['physical_independence_verified'])
+        self.assertFalse(g['backup_destination_verified'])
 
     def test_works_without_storage_spaces(self):
         r = assess_backup_target(

@@ -187,6 +187,81 @@ def assess_backup_target(disks, volumes, extent_mapping, spaces_membership,
     }
 
 
+def _disk_set(values):
+    if not isinstance(values, (list, tuple)):
+        return set()
+    return {n for x in values if (n := _number(x)) is not None}
+
+
+def mark_candidate_boot_risks(candidates, *, boot_layout=None,
+                              boot_dependency=None, firmware_order=None):
+    """Add observed boot/storage risks to a preflight already marked unapproved.
+
+    Boot manager registration is NOT BootCurrent and can never authorize edits.
+    Only attach a disk-specific boot label when its mapping is uniquely reported.
+    """
+    layout = boot_layout if isinstance(boot_layout, dict) else {}
+    dependency = boot_dependency if isinstance(boot_dependency, dict) else {}
+    firmware = firmware_order if isinstance(firmware_order, dict) else {}
+
+    windows_disks = _disk_set(layout.get('boot_disks'))
+    # Prefer the firmware REGISTERED order when uniquely correlated. Falling
+    # back to BCDEdit BOOTMGR evidence is also registered, never the current boot.
+    if firmware.get('status') in (
+        'registered_bootmgr_cross_disk', 'registered_bootmgr_same_disk'
+    ) and len(_disk_set(firmware.get('bootmgr_disks'))) == 1:
+        bootmgr_disks = _disk_set(firmware['bootmgr_disks'])
+        bootmgr_source = 'ordem UEFI registrada'
+    elif dependency.get('status') in (
+        'separate_disks_reported', 'same_disk_reported'
+    ) and len(_disk_set(dependency.get('bootmgr_disk_numbers'))) == 1:
+        bootmgr_disks = _disk_set(dependency['bootmgr_disk_numbers'])
+        bootmgr_source = 'BCDEdit/volume NT registrado'
+    else:
+        bootmgr_disks = set()
+        bootmgr_source = None
+    results = []
+    for value in candidates if isinstance(candidates, list) else []:
+        if not isinstance(value, dict):
+            continue
+        item = dict(value)
+        numbers = _disk_set(item.get('destination_logical_disks'))
+        # Avoid attaching a disk-specific risk if extents are missing/ambiguous.
+        unique = len(numbers) == 1
+        risks = []
+        tags = []
+        if unique and numbers & windows_disks:
+            tags.append('windows_in_use')
+            risks.append('Disco lógico associado ao Windows EM USO. Não presumir '
+                         'que o backup sobreviveria à reinstalação desse disco.')
+        if unique and numbers & bootmgr_disks:
+            tags.append('bootmgr_registered')
+            risks.append('BOOTMGR aponta para este disco segundo ' + bootmgr_source +
+                         '. BootCurrent/EFI efetivamente usada NÃO verificados; '
+                         'não alterar nem desconectar este disco.')
+        for pool in item.get('storage_spaces_membership') or []:
+            if not isinstance(pool, dict):
+                continue
+            if str(pool.get('resiliency_reported') or '').strip().casefold() in ('simple', 'simples'):
+                tags.append('spaces_simple')
+                count = pool.get('member_count_reported')
+                count_text = (str(count) if type(count) is int and count >= 0
+                              else 'quantidade não confirmada')
+                risks.append('Storage Spaces Simple; ' + count_text +
+                             ' membro(s) físico(s) reportado(s), sem redundância informada.')
+            if pool.get('membership_status') != 'members_reported':
+                tags.append('spaces_membership_incomplete')
+                risks.append('Associação física do Storage Spaces permanece incompleta.')
+        item['risk_tags'] = tags
+        item['risk_details'] = risks
+        item['bootcurrent_verified'] = False
+        item['physical_independence_verified'] = False
+        item['backup_destination_verified'] = False
+        item['approved_for_format'] = False
+        results.append(item)
+    return results
+
+
 def list_backup_target_candidates(disks, volumes, extent_mapping, spaces_membership):
     """Present available drive-letter candidates, NOT automatic destinations."""
     unique_letters = sorted({_letter(v.get('DriveLetter')) for v in volumes
