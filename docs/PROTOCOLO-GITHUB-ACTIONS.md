@@ -10,7 +10,7 @@ minutos de runners hospedados têm franquia e cobrança conforme o plano vigente
 | Situação | Onde | O que roda |
 |---|---|---|
 | Codificar, alterar tela, corrigir pequeno erro | PC / PowerShell | Sintaxe e testes focados |
-| Abrir ou atualizar PR com destino à `main` | GitHub Actions automático | `syntax.yml` (análise AST) + `quality.yml` (testes rápidos, **só Linux**) |
+| Abrir ou atualizar PR com destino à `main` | GitHub Actions automático | `syntax.yml` (análise AST) + `quality.yml` (testes rápidos no **Windows**) |
 | Atualizar branch com `push` sem PR | Local | **Nenhum** Actions automático |
 | Integrar mudança relevante de motor, inventário, recuperação ou lançamento importante | `quality.yml` → **Run workflow** | Suíte completa Windows + Linux (solicitada manualmente para o **HEAD atual da PR**) |
 | Publicar tag de versão `v*` | GitHub Actions automático | Suíte completa Windows + Linux |
@@ -19,10 +19,12 @@ minutos de runners hospedados têm franquia e cobrança conforme o plano vigente
 O workflow `quality.yml` conserva **todos** os testes pesados pré-existentes,
 incluindo 2 GiB, falhas sintéticas, event loop Tk, verificações SHA-256 e
 regressão completa. Apenas o gatilho mudou. `syntax.yml` roda em runner
-Ubuntu com Python já instalado, sem instalar ferramentas adicionais.
+Ubuntu com Python já instalado, sem instalar ferramentas adicionais; o job
+rápido funcional roda em **Windows**, que é a plataforma-alvo.
 
-A validação rápida de PR é intencionalmente parcial: **não certifica Windows**
-nem execução de backup de grande porte. **Aprovação de PR importante exige**
+A validação rápida de PR é intencionalmente parcial: testa a lógica essencial no
+**Windows**, mas não substitui os testes de integração, backup de grande porte,
+interface Tk nem validação completa do sistema. **Aprovação de PR importante exige**
 realizar e conferir o workflow manual **Full regression** na branch exata que
 será integrada. Se novos commits forem adicionados após esse teste, repita a
 verificação completa pertinente ao código modificado. A política é operacional;
