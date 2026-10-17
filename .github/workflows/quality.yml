@@ -25,6 +25,8 @@ jobs:
         run: python -m unittest discover -s tests -p "test_autoteste_interrupcao_v027.py" -v
       - name: 'Test #28-30 synthetic multi-block, corruption repair and resume guards'
         run: python -m unittest discover -s tests -p "test_autotestes_resiliencia_v028_v030.py" -v
+      - name: 'Test #31-34 synthetic transfer, small files, errors and interrupted checkpoints'
+        run: python -m unittest discover -s tests -p "test_autotestes_falhas_v031_v034.py" -v
       - name: Test multiple destinations and SHA-256 with temporary files
         run: python -m unittest discover -s tests -p "test_multi_destinations_v083.py" -v
       - name: Test read-only interactive backup preflight scenarios (mocked)
