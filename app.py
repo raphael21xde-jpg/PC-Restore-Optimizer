@@ -549,6 +549,10 @@ class App(tk.Tk):
                                      command=self.begin_backup, state='disabled')
         self.backup_btn.pack(side='left')
         ttk.Button(buttons,text='Retomar backup interrompido',command=self.select_backup_resume).pack(side='left',padx=(10,0))
+        ttk.Button(buttons,text='3. Histórico / Testar restauração',
+                   command=lambda:(self.refresh_history(), self.navigate(self.history))).pack(side='left',padx=(10,0))
+        ttk.Button(buttons,text='Voltar às escolhas',
+                   command=lambda:self.navigate(self.preservation)).pack(side='left',padx=(10,0))
         self.review_feedback=tk.StringVar(value='Backup bloqueado até o plano ser calculado sem avisos impeditivos.')
         tk.Label(self.review,textvariable=self.review_feedback,bg=BG,fg=AMBER,
                  font=('Segoe UI',9),anchor='w').pack(fill='x',padx=18,pady=(0,5))
@@ -636,6 +640,16 @@ class App(tk.Tk):
 
     def _preflight(self,plan,quiet=False):
         issues=list(plan.warnings)
+        # Persisted choices may refer to deleted content under the Windows
+        # recycle bin. Never silently back up old trashed paths: the user must
+        # explicitly withdraw them on the Preservação screen.
+        for source in plan.selected:
+            path_parts = ntpath.normpath(str(source)).replace('/', '\\').casefold().split('\\')
+            if '$recycle.bin' in path_parts or 'recycler' in path_parts:
+                issues.append(
+                    'Seleção antiga da Lixeira encontrada: '
+                    + str(source)
+                    + '. Retire esta escolha em Preservação antes de copiar.')
         dst=Path(self.dest.get()).expanduser()
         anchor=dst
         while not anchor.exists() and anchor!=anchor.parent:anchor=anchor.parent
@@ -727,6 +741,17 @@ class App(tk.Tk):
             'Não formate nenhuma unidade antes de testar a restauração.')
         self.refresh_history()
         self._refresh_home_metrics()
+        if manifest.get('status') == 'concluido':
+            # Offer the next real step immediately after a successful copy:
+            # select the new manifest in the history without starting restore.
+            expected = Path(folder) / 'manifest.json'
+            for index, listed in enumerate(self.backup_manifests):
+                if os.path.normcase(os.path.abspath(str(listed))) == os.path.normcase(os.path.abspath(str(expected))):
+                    self.backup_list.selection_clear(0, 'end')
+                    self.backup_list.selection_set(index)
+                    self.backup_list.see(index)
+                    break
+            self.navigate(self.history)
 
     def _build_browsers(self):
         """Fluxo visual: encontrar -> sincronizar -> proteger -> verificar -> recuperar."""

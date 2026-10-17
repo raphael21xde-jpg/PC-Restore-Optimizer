@@ -141,6 +141,13 @@ def build_preservation(app):
     tree.configure(yscrollcommand=scroll.set)
     scroll.pack(side='right', fill='y')
     tree.pack(side='left', fill='x', expand=True)
+    # Controls are deliberately next to the rows they edit, rather than at
+    # the top of a long scrollable page where they are invisible.
+    choice_actions = ttk.Frame(frame)
+    choice_actions.pack(fill='x', pady=(6, 11))
+    ttk.Label(choice_actions, text='Selecione um caminho acima para retirar somente sua marcação.').pack(side='left', padx=(0, 9))
+    ttk.Button(choice_actions, text='Retirar do backup (não apaga)',
+               command=lambda: remove_selected_path_choice()).pack(side='left')
 
     ttk.Label(frame, text='Vínculos de jogos e dados associados  •  não representam backup concluído',
               font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(10, 5))
@@ -253,6 +260,55 @@ def build_preservation(app):
         except OSError as exc:
             messagebox.showerror('Erro ao exportar', str(exc), parent=app)
 
+    def remove_selected_path_choice():
+        """Remove one explicit preservation decision, never a filesystem path."""
+        selected = tree.selection()
+        if not selected:
+            messagebox.showwarning(
+                'Escolha um caminho',
+                'Selecione uma linha de arquivo ou pasta na tabela de caminhos, abaixo dos jogos.',
+                parent=app)
+            return
+        item = selected[0]
+        values = tree.item(item, 'values')
+        if not tree.parent(item) or len(values) != 3:
+            messagebox.showwarning('Selecione um arquivo ou pasta',
+                                   'A linha da unidade não é uma escolha individual.',
+                                   parent=app)
+            return
+        path = str(values[2])
+        # Do not remove game/app associations, fictitious summary rows or
+        # paths changed since this view was populated.
+        if path not in app.choices:
+            messagebox.showwarning(
+                'Escolha não encontrada',
+                'Esta linha não corresponde a uma escolha explícita atual. Atualize o plano.',
+                parent=app)
+            return
+        linked = path in getattr(app, 'auto_save_paths', set())
+        notice = ('\n\nPor ser um dado associado a jogo, a escolha será '
+                  'marcada como NÃO PRESERVAR para que não volte automaticamente. '
+                  'A associação continuará disponível para revisão.'
+                  if linked else '')
+        if not messagebox.askyesno(
+                'Retirar somente do backup?',
+                'Retirar este caminho do conjunto de arquivos a copiar?\n\n'
+                + path
+                + notice
+                + '\n\nO arquivo original NÃO será apagado. '
+                  'Nenhuma cópia, limpeza ou formatação será realizada.',
+                parent=app):
+            return
+        if linked:
+            # Explicit skip takes precedence over game-data auto detection.
+            # The association is preserved, never deleted automatically.
+            app.choices[path] = 'skip'
+        else:
+            app.choices.pop(path)
+            app.personal_paths.discard(path)
+        app._on_change()  # Invalidates backup preview and saves choices.
+        make_preview()
+
     ttk.Button(bar, text='Atualizar plano', style='Primary.TButton', command=make_preview).pack(side='left', padx=(0, 8))
     ttk.Button(bar, text='Importar escolhas da versão anterior', command=app.import_previous_choices).pack(side='left', padx=5)
     ttk.Button(bar, text='Explorar discos', command=lambda: app.navigate(app.home)).pack(side='left', padx=5)
@@ -272,11 +328,18 @@ def build_preservation(app):
         from selective_backup_ui import show_selective_backup
         plan, _ = make_preview()  # Always use the current choices and approved C: paths.
         show_selective_backup(app, plan)
-    ttk.Button(backupbar, text='Backup seletivo e TESTE de recuperação do C: • v0.6.6',
-               style='Primary.TButton', command=open_selective_backup).pack(side='left', padx=(0, 10))
-    ttk.Label(backupbar, text='Analisar → copiar/validar SHA-256 → restaurar em pasta separada. '
-              'Não libera instalação nem limpeza.', wraplength=560,
+    ttk.Button(backupbar, text='Próximo: revisar backup dos arquivos escolhidos →',
+               style='Primary.TButton',
+               command=lambda: app.navigate(app.review)).pack(side='left', padx=(0, 10))
+    ttk.Label(backupbar, text='Fluxo atual: revisão → cópia verificada SHA-256 → recuperação pelo histórico. '
+              'A revisão de reinstalação do Windows protege o C:; outras unidades permanecem no local. '
+              'Nenhuma formatação é autorizada.', wraplength=620,
               foreground=AMBER).pack(side='left')
+    backup_extra = ttk.Frame(frame)
+    backup_extra.pack(fill='x', pady=(0, 9))
+    ttk.Button(backup_extra, text='Backup seletivo avançado do C: • v0.6.6',
+               command=open_selective_backup).pack(side='left', padx=(0, 10))
+
     auditbar = ttk.Frame(frame)
     auditbar.pack(fill='x', pady=(0, 10))
     def audit_completeness():
