@@ -253,6 +253,52 @@ def build_preservation(app):
         except OSError as exc:
             messagebox.showerror('Erro ao exportar', str(exc), parent=app)
 
+    def remove_selected_path_choice():
+        """Remove one explicit preservation decision, never a filesystem path."""
+        selected = tree.selection()
+        if not selected:
+            messagebox.showwarning(
+                'Escolha um caminho',
+                'Selecione uma linha de arquivo ou pasta na tabela de caminhos, abaixo dos jogos.',
+                parent=app)
+            return
+        item = selected[0]
+        values = tree.item(item, 'values')
+        if not tree.parent(item) or len(values) != 3:
+            messagebox.showwarning('Selecione um arquivo ou pasta',
+                                   'A linha da unidade não é uma escolha individual.',
+                                   parent=app)
+            return
+        path = str(values[2])
+        # Do not remove game/app associations, fictitious summary rows or
+        # paths changed since this view was populated.
+        if path not in app.choices:
+            messagebox.showwarning(
+                'Escolha não encontrada',
+                'Esta linha não corresponde a uma escolha explícita atual. Atualize o plano.',
+                parent=app)
+            return
+        if path in getattr(app, 'auto_save_paths', set()):
+            messagebox.showwarning(
+                'Save associado a jogo',
+                'Este caminho foi associado automaticamente a um jogo. Revise a ficha do jogo primeiro.',
+                parent=app)
+            return
+        if not messagebox.askyesno(
+                'Retirar somente a marcação?',
+                'Retirar a escolha deste caminho do plano?\\n\\n'
+                + path
+                + '\\n\\nO arquivo original NÃO será apagado. '
+                  'Nenhuma cópia, limpeza ou formatação será realizada.',
+                parent=app):
+            return
+        app.choices.pop(path)
+        app.personal_paths.discard(path)
+        app._on_change()  # Invalida plano de backup antigo e persiste escolhas.
+        make_preview()
+
+    ttk.Button(bar, text='Retirar escolha selecionada (não apaga)',
+               command=remove_selected_path_choice).pack(side='left', padx=(0, 8))
     ttk.Button(bar, text='Atualizar plano', style='Primary.TButton', command=make_preview).pack(side='left', padx=(0, 8))
     ttk.Button(bar, text='Importar escolhas da versão anterior', command=app.import_previous_choices).pack(side='left', padx=5)
     ttk.Button(bar, text='Explorar discos', command=lambda: app.navigate(app.home)).pack(side='left', padx=5)
