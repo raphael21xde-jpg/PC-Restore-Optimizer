@@ -18,10 +18,12 @@ from inventory_paged import discover_local_roots
 def show_file_index(parent):
     win = tk.Toplevel(parent)
     win.title("PCRO | Índice detalhado e escolhas — nenhuma exclusão")
-    win.geometry("990x660")
-    win.minsize(620, 430)
+    screen_w, screen_h = win.winfo_screenwidth(), win.winfo_screenheight()
+    win.geometry(f"{min(1040, screen_w-60)}x{min(690, screen_h-70)}")
+    win.minsize(min(620, screen_w-60), min(420, screen_h-70))
     win.resizable(True, True)
-    win.transient(parent)
+    # A transient child may lose the maximize control on Windows.
+    # Keep this window independently resizable, like backup seletivo.
     status = tk.StringVar(value="Crie um índice novo ou abra um existente. Nenhum backup será realizado.")
     search = tk.StringVar()
     q = Queue()
@@ -37,9 +39,14 @@ def show_file_index(parent):
         "Não abre arquivos, não copia dados e NÃO apaga nada."), wraplength=790).pack(anchor="w", pady=(3, 7))
     actions = ttk.Frame(header)
     actions.pack(fill="x")
-    def add_action(title, command):
-        b = ttk.Button(actions, text=title, command=command)
-        b.pack(side="left", padx=(0, 6), pady=3)
+    top_actions = ttk.Frame(actions)
+    top_actions.pack(fill="x")
+    bottom_actions = ttk.Frame(actions)
+    bottom_actions.pack(fill="x")
+    def add_action(title, command, *, second_row=False):
+        holder = bottom_actions if second_row else top_actions
+        b = ttk.Button(holder, text=title, command=command)
+        b.pack(side="left", padx=(0, 6), pady=2)
         return b
 
     main = ttk.Frame(win, padding=(10, 2))
@@ -49,21 +56,28 @@ def show_file_index(parent):
     ttk.Label(lookup, text="Filtrar caminho:").pack(side="left")
     ttk.Entry(lookup, textvariable=search, width=55).pack(side="left", fill="x", expand=True, padx=6)
     columns = ("path", "kind", "size", "decision")
-    tree = ttk.Treeview(main, columns=columns, show="headings", selectmode="browse")
+    table = ttk.Frame(main)
+    table.pack(fill="both", expand=True)
+    tree = ttk.Treeview(table, columns=columns, show="headings", selectmode="browse")
     for name, label, width in (
         ("path", "Caminho observado", 550), ("kind", "Tipo", 80),
         ("size", "Bytes", 90), ("decision", "Escolha", 100)):
         tree.heading(name, text=label)
         tree.column(name, width=width, stretch=(name == "path"))
-    tree_scroll = ttk.Scrollbar(main, orient="vertical", command=tree.yview)
-    tree.configure(yscrollcommand=tree_scroll.set)
+    tree_scroll = ttk.Scrollbar(table, orient="vertical", command=tree.yview)
+    tree_horizontal = ttk.Scrollbar(table, orient="horizontal", command=tree.xview)
+    tree.configure(yscrollcommand=tree_scroll.set,
+                   xscrollcommand=tree_horizontal.set)
     tree_scroll.pack(side="right", fill="y")
+    tree_horizontal.pack(side="bottom", fill="x")
     tree.pack(side="left", fill="both", expand=True)
     controls = ttk.Frame(win, padding=10)
     controls.pack(fill="x", side="bottom")
     ttk.Label(controls, textvariable=status, wraplength=800).pack(anchor="w", pady=(0, 4))
-    row = ttk.Frame(controls)
-    row.pack(fill="x")
+    choice_row = ttk.Frame(controls)
+    choice_row.pack(fill="x")
+    paging_row = ttk.Frame(controls)
+    paging_row.pack(fill="x")
     def refresh(reset=False):
         db = state["db"]
         if db is None:
@@ -103,7 +117,7 @@ def show_file_index(parent):
         if path:
             try:
                 load_index(path)
-            except (OSError, ValueError, Exception) as err:
+            except Exception as err:
                 messagebox.showerror("Índice não aberto", str(err), parent=win)
 
     def start_scan():
@@ -179,17 +193,18 @@ def show_file_index(parent):
 
     start_button = add_action("CRIAR índice detalhado (somente leitura das fontes)", start_scan)
     open_button = add_action("ABRIR índice anterior", open_existing)
-    export_button = add_action("Exportar escolhas JSON", export_choices)
-    stop_button = add_action("Parar varredura", stop_scan)
+    export_button = add_action("Exportar escolhas JSON", export_choices,
+                               second_row=True)
+    stop_button = add_action("Parar varredura", stop_scan, second_row=True)
     stop_button.configure(state="disabled")
     ttk.Button(lookup, text="Pesquisar", command=lambda: refresh(reset=True)).pack(side="left")
-    ttk.Button(row, text="Marcar PRESERVAR", command=lambda: choose("preservar")).pack(side="left", padx=4)
-    ttk.Button(row, text="NÃO COPIAR (não apaga)", command=lambda: choose("nao_copiar")).pack(side="left", padx=4)
-    ttk.Button(row, text="Revisar depois", command=lambda: choose("revisar")).pack(side="left", padx=4)
-    ttk.Button(row, text="Anterior 100", command=lambda: (
-        state.update(offset=max(0, state["offset"]-100)), refresh())).pack(side="right", padx=4)
-    ttk.Button(row, text="Próximos 100", command=lambda: (
-        state.update(offset=state["offset"]+100), refresh())).pack(side="right", padx=4)
+    ttk.Button(choice_row, text="Marcar PRESERVAR", command=lambda: choose("preservar")).pack(side="left", padx=4)
+    ttk.Button(choice_row, text="NÃO COPIAR (não apaga)", command=lambda: choose("nao_copiar")).pack(side="left", padx=4)
+    ttk.Button(choice_row, text="Revisar depois", command=lambda: choose("revisar")).pack(side="left", padx=4)
+    ttk.Button(paging_row, text="Anterior 100", command=lambda: (
+        state.update(offset=max(0, state["offset"]-100)), refresh())).pack(side="left", padx=4, pady=2)
+    ttk.Button(paging_row, text="Próximos 100", command=lambda: (
+        state.update(offset=state["offset"]+100), refresh())).pack(side="left", padx=4, pady=2)
 
     def poll():
         if not win.winfo_exists():
@@ -220,7 +235,7 @@ def show_file_index(parent):
                         messagebox.showwarning("Inventário incompleto", details, parent=win)
         except Empty:
             pass
-        win.after(150, poll)
+        state["poll_after"] = win.after(150, poll)
 
     def close():
         if state["busy"]:
@@ -231,7 +246,9 @@ def show_file_index(parent):
             return
         if state["db"] is not None:
             state["db"].close()
+        if state.get("poll_after") is not None:
+            win.after_cancel(state["poll_after"])
         win.destroy()
     win.protocol("WM_DELETE_WINDOW", close)
-    win.after(150, poll)
+    state["poll_after"] = win.after(150, poll)
     return win
