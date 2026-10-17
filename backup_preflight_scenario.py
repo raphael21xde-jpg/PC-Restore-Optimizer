@@ -163,7 +163,7 @@ def scenario_text(result):
         # ATENÇÃO (quantidade de membros). Preservar o alerta original nos
         # dados estruturados e ocultar somente sua repetição textual.
         if ('spaces_simple' in result.get('risk_tags', []) and
-                re.fullmatch(r'Disco [0-9]+: pool Simple sem redundância informada\\.', issue)):
+                re.fullmatch(r'Disco [0-9]+: pool Simple sem redundância informada\.', issue)):
             continue
         lines.append('  OBSERVAÇÃO: '+issue)
     lines.extend([
