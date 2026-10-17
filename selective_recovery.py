@@ -92,8 +92,10 @@ def validate_target(destination, *, restore=False, test_root=None, forbidden=())
         raise ValueError('Selecione uma pasta de destino existente e acessível.')
     _any_reparse_ancestor(target)
     if test_root is None:
-        if os.name != 'nt' or volume_of(str(target)) not in ('D:', 'F:', 'G:'):
-            raise ValueError('Escolha uma pasta no D:, F: ou G:. O C: não pode receber esse teste.')
+        drive = volume_of(str(target))
+        if os.name != 'nt' or drive == 'SEM UNIDADE' or drive == 'C:':
+            raise ValueError('Escolha uma pasta existente em unidade diferente de C:. '
+                             'Este fluxo preserva somente origens selecionadas no C:.')
     resolved = target.resolve(strict=True)
     for source in forbidden:
         other = Path(source).resolve(strict=True)
