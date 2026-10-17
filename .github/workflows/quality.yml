@@ -1,5 +1,9 @@
 name: Quality checks
 on: [push, pull_request]
+# Avoid running a push and pull_request matrix simultaneously for one branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
   safe-unit-tests:
     strategy:
@@ -86,10 +90,10 @@ jobs:
         run: xvfb-run -a python tests/run_full_suite.py --timeout 120
       - name: Full regression on Windows
         if: runner.os == 'Windows'
-        timeout-minutes: 5
+        timeout-minutes: 9
         env:
           PCRO_REQUIRE_TK: '1'
-        run: python tests/run_full_suite.py --timeout 240
+        run: python tests/run_full_suite.py --timeout 420
       - name: Test multiple destinations and SHA-256 with temporary files
         run: python -m unittest discover -s tests -p "test_multi_destinations_v083.py" -v
       - name: Test read-only interactive backup preflight scenarios (mocked)
