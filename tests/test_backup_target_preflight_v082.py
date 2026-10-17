@@ -215,6 +215,77 @@ class BackupTargetPreflightTests(unittest.TestCase):
         self.assertFalse(g['physical_independence_verified'])
         self.assertFalse(g['backup_destination_verified'])
 
+    def test_multidisk_destination_blocks_overlap_even_if_not_single_disk(self):
+        e = extents()
+        e['volumes'].append({'letters': ['H'], 'disk_numbers': [2, 3],
+                             'status': 'multi_disk'})
+        v = volumes() + [{'DriveLetter': 'H', 'SizeRemaining': 100_000}]
+        r = check(letter='H', sources=['C'], estimate=5_000, e=e, v=v)
+        self.assertEqual(r['destination_logical_disks'], [2, 3])
+        self.assertEqual(r['status'], 'blocked')
+        self.assertTrue(any('compartilham' in text for text in r['blockers']))
+        self.assertTrue(any('múltiplos discos' in text for text in r['issues']))
+        self.assertFalse(r['approved_for_copy'])
+
+    def test_multidisk_origin_blocks_overlap_with_single_disk_target(self):
+        e = extents()
+        e['volumes'].append({'letters': ['H'], 'disk_numbers': [2, 3],
+                             'status': 'multi_disk'})
+        v = volumes() + [{'DriveLetter': 'H', 'SizeRemaining': 100_000}]
+        r = check(letter='D', sources=['H'], estimate=1, e=e, v=v)
+        self.assertEqual(r['status'], 'blocked')
+        self.assertTrue(any('compartilham' in text for text in r['blockers']))
+        self.assertFalse(r['approved_for_format'])
+
+    def test_multidisk_no_overlap_requires_review_not_approval(self):
+        e = extents()
+        e['volumes'].append({'letters': ['H'], 'disk_numbers': [2, 3],
+                             'status': 'multi_disk'})
+        v = volumes() + [{'DriveLetter': 'H', 'SizeRemaining': 100_000}]
+        r = check(letter='H', sources=['F'], estimate=100, e=e, v=v)
+        self.assertEqual(r['status'], 'requires_review')
+        self.assertFalse(r['physical_independence_verified'])
+        self.assertFalse(r['approved_for_copy'])
+
+    def test_malformed_extent_lists_and_statuses_are_not_trusted(self):
+        for broken in (
+            {'letters': None, 'disk_numbers': [4], 'status': 'virtual_spaces'},
+            {'letters': ['G'], 'disk_numbers': [4, '2'], 'status': 'virtual_spaces'},
+            {'letters': ['G'], 'disk_numbers': [4], 'status': ['virtual_spaces']},
+            {'letters': ['G'], 'disk_numbers': [4], 'status': 'arbitrary'},
+            {'letters': ['G'], 'disk_numbers': None, 'status': 'virtual_spaces'},
+        ):
+            with self.subTest(broken=broken):
+                r = check(letter='G', sources=['C'], e={'volumes': [broken]},
+                          estimate=1)
+                self.assertEqual(r['destination_logical_disks'], [])
+                self.assertEqual(r['status'], 'requires_review')
+                self.assertFalse(r['approved_for_copy'])
+        for bad_extents in ({'volumes': None}, {'volumes': {}}, {}, None):
+            with self.subTest(bad_extents=bad_extents):
+                r = check(e=bad_extents)
+                self.assertFalse(r['backup_destination_verified'])
+
+    def test_malformed_spaces_virtual_disk_rows_not_crash_or_approve(self):
+        for broken in (
+            {'virtual_disks': None},
+            {'virtual_disks': {}},
+            {'virtual_disks': [{'logical_disk_numbers': 4}]},
+            {'virtual_disks': [{'logical_disk_numbers': None}]},
+        ):
+            with self.subTest(broken=broken):
+                r = check(m=broken)
+                self.assertEqual(r['status'], 'requires_review')
+                self.assertFalse(r['physical_independence_verified'])
+                self.assertTrue(any('associação física incompleta' in x
+                                    for x in r['issues']))
+
+    def test_invalid_volume_list_yields_no_candidate_but_never_authorizes(self):
+        self.assertEqual(list_backup_target_candidates(disks(), None,
+                         extents(), membership()), [])
+        self.assertEqual(list_backup_target_candidates(disks(), {},
+                         extents(), membership()), [])
+
     def test_works_without_storage_spaces(self):
         r = assess_backup_target(
             [{'Number': 2, 'BusType': 'NVMe'}, {'Number': 3, 'BusType': 'NVMe'}],
