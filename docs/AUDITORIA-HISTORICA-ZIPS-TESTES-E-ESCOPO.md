@@ -90,7 +90,7 @@ A v0.1 já alertava que não tinha VSS/snapshot, imagem do sistema ou bare-metal
 ## Recomendações técnicas obrigatórias para o próximo desenvolvimento
 
 - **Não criar outro motor de backup nem pedir novo teste de 2 GiB, inventário de 1 milhão ou arquivo de 34 B.**
-- Implementar primeiro o **painel de prontidão por caminho/dado** do [Marco A](ESTADO-DO-PROJETO-E-PROXIMOS-MARCOS.md): usar as seleções e resultados existentes, ler manifestos já salvos quando escolhidos, conferir provas de recuperação reais quando disponíveis, registrar lacunas sem refazer cópia.
+- **Completar a auditoria já existente** (`audit_v069.py`, `audit_v068.py`, `completeness_audit_ui_v068.py`) e vinculá-la às escolhas, SQLite, manifestos e evidências de recuperação. Apresentar resultado integrado na interface, **não criar um novo mecanismo de auditoria**. O Marco A é uma integração e extensão do trabalho da v0.6.9.
 - Em paralelo lógico, exibir aviso de **boot/EFI atravessando discos físicos**, usando os módulos já presentes. Na máquina de testes, preservar o F: e G: e o Windows funcional enquanto não houver ensaio seguro.
 - Somente depois desenhar o **fluxo de reinstalação controlada em VM/equipamento descartável**, guias para mídia oficial, mapa de partições e recuperação pós-OS; jamais liberar formatação a partir de relatório incompleto.
 - Reutilizar módulos e testes existentes; alterações pequenas exigem teste focado, alterações críticas exigem revisão de segurança e testes apropriados. CI GitHub atualmente falha antes dos steps (`steps=null`), não atribuir aprovação automática.
