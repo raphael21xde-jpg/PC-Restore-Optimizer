@@ -17,6 +17,7 @@ from selective_recovery import (prepare_selected_c, run_selected_backup,
 from multi_backup_destinations import make_multi_backup_plan, run_multiple_backups
 from multi_backup_destinations_ui import open_destination_picker
 from autoteste_integridade import run_integrity_autotest
+from autoteste_incompleto import run_incomplete_backup_autotest
 
 
 def show_selective_backup(app, plan):
@@ -54,6 +55,7 @@ def show_selective_backup(app, plan):
     row1 = ttk.Frame(controls); row1.pack(fill='x', pady=3)
     row2 = ttk.Frame(controls); row2.pack(fill='x', pady=3)
     row3 = ttk.Frame(controls); row3.pack(fill='x', pady=3)
+    row4 = ttk.Frame(controls); row4.pack(fill='x', pady=3)
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
     manifest_label = tk.StringVar(value='Manifesto: ainda não existe')
     ttk.Label(container, textvariable=destination, wraplength=980).pack(anchor='w')
@@ -171,6 +173,15 @@ def show_selective_backup(app, plan):
                         write_log('[AUTOTESTE #25] SHA-256 divergente; restauração recusada antes de escrever arquivos.')
                         write_log('[AUTOTESTE #25] Originais fictícios preservados; dados temporários removidos.')
                         write_log('[AUTOTESTE #25] Não verifica backups reais nem autoriza formatação.')
+                    elif job == 'autotest26':
+                        state['report'] = outcome
+                        summary.set('AUTOTESTE #26 APROVADO: arquivo ausente, backup parcial e '
+                                    'manifesto incompleto detectados; restaurações inseguras bloqueadas.')
+                        write_log('[AUTOTESTE #26] Arquivo fictício ausente: detectado e bloqueado.')
+                        write_log('[AUTOTESTE #26] Backup fictício parcial: detectado e bloqueado.')
+                        write_log('[AUTOTESTE #26] Manifesto fictício incompleto: detectado e bloqueado.')
+                        write_log('[AUTOTESTE #26] Nenhum arquivo restaurado; dados temporários removidos.')
+                        write_log('[AUTOTESTE #26] Não testou backups reais e NÃO autoriza formatação.')
                     elif job == 'restore':
                         state['report'] = outcome
                         summary.set(f'RECUPERAÇÃO DE TESTE APROVADA: {outcome["files_verified"]} arquivos, '
@@ -290,13 +301,20 @@ def show_selective_backup(app, plan):
         # Isolated synthetic data only; does not use the current plan or real backups.
         start_job('autotest25', lambda: run_integrity_autotest(cancelled=cancelled))
 
+    def run_autotest26():
+        # Exercises only newly created synthetic fixtures, never selected backups.
+        state['report'] = None
+        start_job('autotest26', lambda: run_incomplete_backup_autotest(cancelled=cancelled))
+
     def export_report():
         if state['report'] is None:
             return messagebox.showinfo('Sem relatório', 'Execute uma etapa para gerar resultado.', parent=window)
         location = filedialog.asksaveasfilename(parent=window, defaultextension='.json',
-                          initialfile=('resultado-autoteste25.json'
-                                        if state['report'].get('schema') == 'pcro-autoteste-integridade-v1'
-                                        else 'resultado-backup-restauracao-v066.json'),
+                          initialfile=('resultado-autoteste26.json'
+                                        if state['report'].get('schema') == 'pcro-autoteste-backup-incompleto-v1'
+                                        else ('resultado-autoteste25.json'
+                                              if state['report'].get('schema') == 'pcro-autoteste-integridade-v1'
+                                              else 'resultado-backup-restauracao-v066.json')),
                           filetypes=[('JSON','*.json')])
         if location:
             try:
@@ -321,6 +339,9 @@ def show_selective_backup(app, plan):
     add_button(row3, '5. Autoteste #25: corrupção SHA-256 (isolado)', run_autotest25)
     ttk.Label(row3, text='Dados fictícios temporários; nenhum backup real será alterado.',
               wraplength=470).pack(side='left', padx=(8, 0))
+    add_button(row4, '6. Autoteste #26: arquivos ausentes / incompletos (isolado)', run_autotest26)
+    ttk.Label(row4, text='3 falhas fictícias; bloqueia restaurações inseguras.',
+              wraplength=410).pack(side='left', padx=(8, 0))
     stop = ttk.Button(row2, text='Cancelar operação', command=cancelled.set, state='disabled')
     stop.pack(side='right')
     def close():
