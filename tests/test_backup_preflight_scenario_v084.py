@@ -66,7 +66,7 @@ class ScenarioTests(unittest.TestCase):
         report = scenario_text(result)
         self.assertIn('ATENÇÃO: Storage Spaces Simple; 1 membro(s)', report)
         self.assertNotIn('OBSERVAÇÃO: Disco 4: pool Simple sem redundância informada.', report)
-        self.assertIn('pool Simple sem redundância informada.', result['issues'])
+        self.assertIn('Disco 4: pool Simple sem redundância informada.', result['issues'])
         self.assertIn('DeviceId de membro físico não equivale', report)
         self.assertEqual(result['status'], 'requires_review')
         self.assertFalse(result['approved_for_format'])
