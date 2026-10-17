@@ -49,3 +49,7 @@ abre a janela real, invoca os controles, exporta o JSON e confere as métricas.
 A varredura e a expansão de pastas também entregam atualizações ao Tk pela
 fila da interface. Workers não chamam mais after() diretamente nessa tela.
 A regressão completa roda com display nos dois sistemas, com prazo máximo.
+
+A suíte completa usa tests/run_full_suite.py para não repetir inventários reais
+de hardware nas cópias fictícias antigas que não forneciam strategy_inventory.
+Inventários explícitos e testes de diagnóstico/API continuam sendo exercitados.
