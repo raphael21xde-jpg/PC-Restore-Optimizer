@@ -108,7 +108,8 @@ def resume_information(folder, manifest_path):
 
 
 def restore_selected(manifest_path, choices, destination_parent, max_total_bytes=None, *,
-                     cancelled=None, progress=None, resume_from=None):
+                     cancelled=None, progress=None, resume_from=None,
+                     strategy_inventory=None):
     """Restore verified files in an isolated folder; v0.5.19 resumes only its own journal.
 
     Verified destinations are rehashed when resuming; corrupt/uncertain files
@@ -150,7 +151,7 @@ def restore_selected(manifest_path, choices, destination_parent, max_total_bytes
     byte_total = sum(int(entries[c].get('bytes') or 0) for c in choices)
     meter = TransferMeter(byte_total, len(choices))
     limiter = ProgressLimiter(progress)
-    strategy = choose_strategy(backup_root, target)
+    strategy = choose_strategy(backup_root, target, inventory=strategy_inventory)
     journal['transfer_strategy'] = strategy.description
     last_checkpoint = time.monotonic()
     copied_total = 0
