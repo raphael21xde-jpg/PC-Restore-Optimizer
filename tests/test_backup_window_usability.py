@@ -37,12 +37,12 @@ class TestBackupWindowUsability(unittest.TestCase):
                     'ready_for_format': False,
                     'real_user_backups_accessed': False,
                 }
-                with patch('selective_backup_ui.run_readonly_inventory_autotest',
-                           return_value=fake_report) as scan, \\
-                     patch('selective_backup_ui.filedialog.asksaveasfilename',
-                           return_value=str(output)), \\
-                     patch('selective_backup_ui.messagebox.showerror') as errors, \\
-                     patch('selective_backup_ui.messagebox.showinfo'):
+                with (patch('selective_backup_ui.run_readonly_inventory_autotest',
+                            return_value=fake_report) as scan,
+                      patch('selective_backup_ui.filedialog.asksaveasfilename',
+                            return_value=str(output)),
+                      patch('selective_backup_ui.messagebox.showerror') as errors,
+                      patch('selective_backup_ui.messagebox.showinfo')):
                     window = show_selective_backup(app, {'requires_verified_backup': []})
                     window.geometry('720x520+10+10')
                     app.update()
