@@ -34,6 +34,7 @@ from autotestes_41_43 import (run_inventory_permissions_autotest,
                               run_cross_volume_links_autotest,
                               run_restore_write_recovery_autotest)
 from inventory_paged import PagedMetadataScanner, discover_local_roots
+from file_index_ui import show_file_index
 from autotestes_44_46 import (run_paged_inventory_autotest,
                               run_pause_resume_inventory_autotest,
                               run_gaps_inventory_autotest)
@@ -124,7 +125,7 @@ def show_selective_backup(app, plan):
     tabs.add(next_tab, text='#41–43')
     tabs.add(paged_tab, text='Novos #44–46')
     rows = []
-    for number in range(1, 28):
+    for number in range(1, 29):
         parent = (operations_tab if number <= 2 else
                   integrity_tab if number <= 8 else
                   performance_tab if number <= 15 else
@@ -133,7 +134,7 @@ def show_selective_backup(app, plan):
         row = ttk.Frame(parent)
         row.pack(fill='x', pady=3)
         rows.append(row)
-    (row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11, row12, row13, row14, row15, row16, row17, row18, row19, row20, row21, row22, row23, row24, row25, row26, row27) = rows
+    (row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11, row12, row13, row14, row15, row16, row17, row18, row19, row20, row21, row22, row23, row24, row25, row26, row27, row28) = rows
     # Open directly to the newest battery when requested by keyboard.
     window.bind('<Alt-n>', lambda _: tabs.select(paged_tab), add='+')
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
@@ -713,6 +714,11 @@ def show_selective_backup(app, plan):
     ttk.Label(row27, text=('Cada página examina 2.000 entradas. A análise longa roda fora '
                            'da interface e pode ser interrompida. Não lê conteúdo nem '
                            'certifica todos os saves ou arquivos protegidos.'),
+              wraplength=475).pack(anchor='w', padx=(8, 0))
+    add_button(row28, 'Inventário DETALHADO: pesquisar arquivos e marcar escolhas',
+               lambda: show_file_index(window))
+    ttk.Label(row28, text=('Cria um índice SQLite somente de metadados. '
+                           'As escolhas não apagam nem copiam arquivos automaticamente.'),
               wraplength=475).pack(anchor='w', padx=(8, 0))
     export_button = ttk.Button(toolbar, text='Exportar relatório', command=export_report)
     export_button.pack(side='left', padx=(0, 8))
