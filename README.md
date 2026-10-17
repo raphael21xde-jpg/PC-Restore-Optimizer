@@ -1,5 +1,7 @@
 # PC Restore & Optimizer
 
+> **Ponto de retomada do desenvolvimento (17/10/2026):** [estado consolidado, testes já aprovados e próximos marcos](docs/ESTADO-DO-PROJETO-E-PROXIMOS-MARCOS.md). Consulte esse documento antes de criar novos testes ou repetir etapas. O próximo marco é integrar evidências de cobertura, backup e restauração por caminho, não reconstruir o motor.
+
 Base histórica v0.6.9, preservada a partir do arquivo disponibilizado pelo autor. **Não é a versão v0.8.1.** Não executar em produção operações de disco, instalação ou restauração sem testes.
 
 ## Objetivo
