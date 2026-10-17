@@ -128,7 +128,7 @@ class PagedMetadataScanner:
                      "um retrato consistente, ACLs legíveis, saves ou dependências."),
         }
 
-    def step(self, *, page_size=2000, cancelled=None, progress=None):
+    def step(self, *, page_size=2000, cancelled=None, progress=None, on_entry=None):
         if not isinstance(page_size, int) or isinstance(page_size, bool) or not 1 <= page_size <= 10000:
             raise ValueError("Tamanho de página inválido.")
         if not self._lock.acquire(blocking=False):
@@ -166,19 +166,29 @@ class PagedMetadataScanner:
                 volume["entries_examined"] += 1
                 self.entries_examined += 1
                 processed += 1
+                record = None
                 try:
                     info = entry.stat(follow_symlinks=False)
                     if entry.is_symlink() or _stat_is_reparse(info):
                         volume["reparse_skipped"] += 1
                     elif stat.S_ISDIR(info.st_mode):
                         volume["folders"] += 1
-                        if entry.name.casefold() in CANDIDATES:
+                        candidate = entry.name.casefold() in CANDIDATES
+                        if candidate:
                             volume["candidate_folders"] += 1
                         self.queue.append((Path(entry.path), self._current_volume))
+                        record = (str(entry.path), "directory", 0, int(info.st_mtime_ns),
+                                  int(candidate), volume["root"])
                     elif stat.S_ISREG(info.st_mode):
                         volume["files"] += 1
+                        record = (str(entry.path), "file", int(info.st_size),
+                                  int(info.st_mtime_ns), 0, volume["root"])
                 except OSError as exc:
                     _count_error(volume, exc)
+                # User-supplied record consumers run outside the file-access
+                # exception handler: index write errors must fail closed.
+                if record is not None and on_entry is not None:
+                    on_entry(record)
                 if progress is not None and processed % 512 == 0:
                     progress(self.entries_examined)
             self.pages += 1
