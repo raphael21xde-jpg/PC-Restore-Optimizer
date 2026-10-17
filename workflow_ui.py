@@ -297,9 +297,9 @@ def build_preservation(app):
         app._on_change()  # Invalida plano de backup antigo e persiste escolhas.
         make_preview()
 
+    ttk.Button(bar, text='Atualizar plano', style='Primary.TButton', command=make_preview).pack(side='left', padx=(0, 8))
     ttk.Button(bar, text='Retirar escolha selecionada (não apaga)',
                command=remove_selected_path_choice).pack(side='left', padx=(0, 8))
-    ttk.Button(bar, text='Atualizar plano', style='Primary.TButton', command=make_preview).pack(side='left', padx=(0, 8))
     ttk.Button(bar, text='Importar escolhas da versão anterior', command=app.import_previous_choices).pack(side='left', padx=5)
     ttk.Button(bar, text='Explorar discos', command=lambda: app.navigate(app.home)).pack(side='left', padx=5)
     ttk.Button(bar, text='Exportar JSON', command=export).pack(side='left', padx=5)
