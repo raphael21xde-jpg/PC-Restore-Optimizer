@@ -53,7 +53,7 @@ class PreservationRemoveChoiceUITests(unittest.TestCase):
         self.remove_button = next(
             t for t in descend(self.app.preservation)
             if isinstance(t, ttk.Button)
-            and str(t.cget("text")).startswith("Retirar escolha selecionada"))
+            and str(t.cget("text")).startswith("Retirar do backup"))
         self.next_button = next(
             t for t in descend(self.app.preservation)
             if isinstance(t, ttk.Button)
@@ -104,14 +104,18 @@ class PreservationRemoveChoiceUITests(unittest.TestCase):
         self.app.navigate.assert_called_once_with(self.app.review)
         self.assertEqual(len(self.app.choices), 3)
 
-    def test_automatically_associated_save_is_not_removed_silently(self):
+    def test_automatically_associated_save_is_excluded_without_losing_link(self):
         self.app.auto_save_paths.add(self.old)
         self.select_path(self.old)
-        with patch("workflow_ui.messagebox.showwarning") as warning:
+        with patch("workflow_ui.messagebox.askyesno", return_value=True) as confirm:
             self.remove_button.invoke()
-        warning.assert_called_once()
-        self.assertIn(self.old, self.app.choices)
-        self.app._on_change.assert_not_called()
+        confirm.assert_called_once()
+        self.assertEqual(self.app.choices[self.old], "skip")
+        self.assertIn(self.old, self.app.auto_save_paths)
+        self.assertEqual(self.app.choices[self.keep], "keep")
+        self.assertEqual(
+            self.app.last_preservation_audit["selection_metrics"]["backup_required_paths_c"], 1)
+        self.app._on_change.assert_called_once()
 
 
 class RecycleBinPreflightTests(unittest.TestCase):
