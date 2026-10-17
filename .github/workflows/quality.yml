@@ -1,5 +1,5 @@
 name: Quality checks
-# PR = fast Linux safety checks; full suite = explicit approval or release tag.
+# PR = fast Windows safety checks; full suite = explicit approval or release tag.
 on:
   pull_request:
     branches: [main]
@@ -18,10 +18,10 @@ concurrency:
 
 jobs:
   fast-tests:
-    name: Fast PR safety (Linux)
+    name: Fast PR safety (Windows)
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    runs-on: windows-latest
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
