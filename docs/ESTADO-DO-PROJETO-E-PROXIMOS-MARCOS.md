@@ -4,6 +4,8 @@
 
 **Auditoria retrospectiva completa dos 40 ZIPs (15–16/out), evidências e marcos até o GitHub:** [AUDITORIA-HISTORICA-ZIPS-TESTES-E-ESCOPO.md](AUDITORIA-HISTORICA-ZIPS-TESTES-E-ESCOPO.md). Releia antes de propor repetição de testes de backup, integração ou reinstalação.
 
+**Revisão complementar de conversas, screenshots e situação dos MP4s:** [COMPLEMENTO-AUDITORIA-CONVERSAS-CAPTURAS-VIDEOS.md](COMPLEMENTO-AUDITORIA-CONVERSAS-CAPTURAS-VIDEOS.md). **A inspeção integral dos vídeos ainda está pendente**: não apresentar o material como 100% revisto.
+
 > **Documento de continuidade.** Substitui planos improvisados em conversas e evita refazer funcionalidades testadas. Não é certificado de segurança, não é autorização de exclusão, formatação, alteração de EFI ou reinstalação real. O PC do desenvolvedor é **somente o ambiente inicial de testes**; o produto deve atender diferentes computadores Windows.
 
 ## 1. Missão do produto (acordada com o autor)
