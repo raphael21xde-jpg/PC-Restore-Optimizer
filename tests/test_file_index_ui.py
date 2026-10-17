@@ -28,8 +28,8 @@ class TestFileIndexUI(unittest.TestCase):
             self.skipTest(f"Display unavailable: {exc}")
         app.withdraw()
         win = None
-        try:
-            with tempfile.TemporaryDirectory(prefix="PCRO-INDEX-UI-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="PCRO-INDEX-UI-") as tmp:
+            try:
                 root = Path(tmp)
                 source = root / "source"
                 source.mkdir()
@@ -73,10 +73,13 @@ class TestFileIndexUI(unittest.TestCase):
                     self.assertFalse(choices["verified_backup"])
                     self.assertEqual(target_file.read_bytes(), b"beatmap fixture")
                     errors.assert_not_called()
-        finally:
-            if win is not None and win.winfo_exists():
-                win.destroy()
-            app.destroy()
+            finally:
+                # Follow the window's real close handler while the temporary
+                # folder still exists: it closes SQLite before Windows cleanup.
+                if win is not None and win.winfo_exists():
+                    close_command = win.protocol("WM_DELETE_WINDOW")
+                    win.tk.call(close_command)
+                app.destroy()
 
 
 if __name__ == "__main__":
