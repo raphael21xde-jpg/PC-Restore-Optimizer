@@ -50,13 +50,22 @@ class AuditUIHotfix0681Tests(unittest.TestCase):
             trees = [x for x in widgets if x.winfo_class() == 'Treeview']
             buttons = [x for x in widgets if x.winfo_class() == 'TButton']
             inspector = next(x for x in buttons if 'Examinar selecionado' in x.cget('text'))
+            def wait_for_preview():
+                if any('arquivo-teste.txt' in str(t.item(iid)['text']) for t in trees
+                       for iid in t.get_children()):
+                    self.app.quit()
+                else:
+                    self.app.after(40, wait_for_preview)
             def click_after_first_audit():
                 loc = next((t for t in trees if t.exists('loc-0')), None)
-                self.assertIsNotNone(loc, 'Initial audit must finish before preview')
+                if loc is None:
+                    self.app.after(40, click_after_first_audit)
+                    return
                 loc.selection_set('loc-0')
                 inspector.invoke()
-            self.app.after(400, click_after_first_audit)
-            self.app.after(1300, self.app.quit)
+                self.app.after(40, wait_for_preview)
+            self.app.after(40, click_after_first_audit)
+            self.app.after(10000, self.app.quit)
             self.app.mainloop()
             self.assertTrue(any('arquivo-teste.txt' in str(t.item(iid)['text']) for t in trees
                                 for iid in t.get_children()),
@@ -65,3 +74,4 @@ class AuditUIHotfix0681Tests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

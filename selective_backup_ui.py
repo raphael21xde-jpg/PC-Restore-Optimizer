@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from queue import Queue, Empty
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -24,6 +25,9 @@ from autotestes_resiliencia import (run_midfile_autotest, run_repair_autotest,
 from autotestes_falhas import (run_large_transfer_autotest, run_many_files_autotest,
                               run_storage_fault_autotest, run_restart_recovery_autotest)
 
+from autotestes_escala import (run_gigabyte_autotest, run_abrupt_exit_autotest,
+                                run_responsiveness_autotest)
+
 
 def show_selective_backup(app, plan):
     sources = list(plan.get('requires_verified_backup', []))
@@ -33,8 +37,16 @@ def show_selective_backup(app, plan):
     window.geometry('1050x820')
     window.minsize(840, 620)
     window.transient(app)
-    container = ttk.Frame(window, padding=18)
-    container.pack(fill='both', expand=True)
+    # A scrollable viewport keeps all test controls reachable at normal screen sizes.
+    viewport = tk.Canvas(window, highlightthickness=0)
+    page_scroll = ttk.Scrollbar(window, orient='vertical', command=viewport.yview)
+    viewport.configure(yscrollcommand=page_scroll.set)
+    page_scroll.pack(side='right', fill='y')
+    viewport.pack(side='left', fill='both', expand=True)
+    container = ttk.Frame(viewport, padding=18)
+    page_item = viewport.create_window((0, 0), window=container, anchor='nw')
+    container.bind('<Configure>', lambda e: viewport.configure(scrollregion=viewport.bbox('all')))
+    viewport.bind('<Configure>', lambda e: viewport.itemconfigure(page_item, width=e.width))
     ttk.Label(container, text='Preservação real — fontes selecionadas do C:',
               font=('Segoe UI', 16, 'bold')).pack(anchor='w')
     ttk.Label(container, text=(
@@ -69,6 +81,9 @@ def show_selective_backup(app, plan):
     row10 = ttk.Frame(controls); row10.pack(fill='x', pady=3)
     row11 = ttk.Frame(controls); row11.pack(fill='x', pady=3)
     row12 = ttk.Frame(controls); row12.pack(fill='x', pady=3)
+    row13 = ttk.Frame(controls); row13.pack(fill='x', pady=3)
+    row14 = ttk.Frame(controls); row14.pack(fill='x', pady=3)
+    row15 = ttk.Frame(controls); row15.pack(fill='x', pady=3)
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
     manifest_label = tk.StringVar(value='Manifesto: ainda não existe')
     ttk.Label(container, textvariable=destination, wraplength=980).pack(anchor='w')
@@ -90,7 +105,7 @@ def show_selective_backup(app, plan):
     event_queue = Queue()
     cancelled = threading.Event()
     state = {'busy': False, 'plan': None, 'manifest': None, 'backup_dir': None,
-             'report': None, 'dest': None, 'multi_targets': [], 'worker': None}
+             'report': None, 'dest': None, 'multi_targets': [], 'worker': None, 'job': None, 'probe': None}
 
     def write_log(line):
         log.configure(state='normal')
@@ -114,10 +129,25 @@ def show_selective_backup(app, plan):
     def process_events():
         if not window.winfo_exists():
             return
+        probe = state.get('probe')
+        if state['busy'] and state.get('job') == 'autotest37' and probe is not None:
+            now = time.monotonic()
+            probe['gaps'].append(now - probe['last'])
+            probe['last'] = now
+            probe['ticks'] += 1
+            if probe['armed']:
+                probe['armed_ticks'] += 1
+                stage.set(f"Teste da interface: {probe['ticks']} atualizações; cancelamento automático em andamento.")
+                if probe['armed_ticks'] == 8:
+                    probe_button.invoke()  # dispatch the actual Tk button command on the GUI thread
         try:
             while True:
                 typ, data = event_queue.get_nowait()
-                if typ == 'progress':
+                if typ == 'autotest_note':
+                    stage.set(str(data))
+                    if state.get('job') == 'autotest37' and state.get('probe'):
+                        state['probe']['armed'] = True
+                elif typ == 'progress':
                     try:
                         args = data
                         if len(args) == 5:  # backup: index, total, bytes done, total bytes, filename
@@ -231,6 +261,22 @@ def show_selective_backup(app, plan):
                         write_log(f'[AUTOTESTE #{number}] ' + summaries[number])
                         write_log(f'[AUTOTESTE #{number}] Área temporária eliminada.')
                         write_log(f'[AUTOTESTE #{number}] Sem acesso a backups reais; formatação bloqueada.')
+                    elif job in ('autotest35', 'autotest36', 'autotest37'):
+                        number = int(job[-2:])
+                        if number == 37:
+                            probe = state['probe']
+                            maximum = max(probe['gaps'], default=999)
+                            valid = (probe['ticks'] >= 8 and maximum <= 1.0 and probe['invoked'])
+                            outcome.update(tk_event_loop_ticks=probe['ticks'],
+                                maximum_tk_gap_seconds=round(maximum, 4),
+                                tk_gap_limit_seconds=1.0, tk_cancel_button_invoked=probe['invoked'],
+                                tk_event_loop_passed=valid)
+                            probe_button.configure(state='disabled')
+                            if not valid:
+                                outcome['status'] = 'reprovado'
+                        state['report'] = outcome
+                        summary.set(f"AUTOTESTE #{number}: {outcome['status'].upper()}. Exporte o relatório.")
+                        write_log(f"[AUTOTESTE #{number}] " + json.dumps(outcome, ensure_ascii=False))
                     elif job == 'restore':
                         state['report'] = outcome
                         summary.set(f'RECUPERAÇÃO DE TESTE APROVADA: {outcome["files_verified"]} arquivos, '
@@ -241,6 +287,7 @@ def show_selective_backup(app, plan):
                 elif typ == 'error':
                     toggle_busy(False)
                     job, exception = data
+                    probe_button.configure(state='disabled')
                     stage.set('Falha/cancelamento na etapa: ' + job)
                     write_log(f'[FALHA {job}] {exception}')
                     messagebox.showerror('Operação não aprovada', str(exception), parent=window)
@@ -252,6 +299,7 @@ def show_selective_backup(app, plan):
         if state['busy']:
             return
         cancelled.clear()
+        state['job'] = kind
         toggle_busy(True, 'Iniciando ' + kind + '...')
         def run():
             try:
@@ -369,11 +417,38 @@ def show_selective_backup(app, plan):
         state['report'] = None
         start_job('autotest' + str(number), lambda: runner(cancelled=cancelled))
 
+    def run_scale_autotest(number, runner):
+        if state['busy']:
+            return
+        state['report'] = None
+        start_job('autotest' + str(number), lambda: runner(cancelled=cancelled,
+                    progress=lambda note: event_queue.put(('autotest_note', note))))
+
+    def invoke_probe_cancel():
+        probe = state.get('probe')
+        if state['busy'] and state.get('job') == 'autotest37' and probe and probe['armed']:
+            probe['invoked'] = True
+            probe['cancel'].set()
+            probe_button.configure(state='disabled')
+
+    def run_ui_autotest():
+        if state['busy']:
+            return
+        state['report'] = None
+        state['probe'] = dict(last=time.monotonic(), ticks=0, gaps=[], armed=False,
+                              armed_ticks=0, invoked=False, cancel=threading.Event())
+        start_job('autotest37', lambda: run_responsiveness_autotest(cancelled=cancelled,
+                    ui_cancel=state['probe']['cancel'],
+                    progress=lambda note: event_queue.put(('autotest_note', note))))
+        probe_button.configure(state='normal')
+
     def export_report():
         if state['report'] is None:
             return messagebox.showinfo('Sem relatório', 'Execute uma etapa para gerar resultado.', parent=window)
         location = filedialog.asksaveasfilename(parent=window, defaultextension='.json',
-                          initialfile=('resultado-autoteste31.json'
+                          initialfile=(f"resultado-autoteste{state['report']['schema'].rsplit('v', 1)[-1]}.json"
+                                        if state['report'].get('schema') in {f'pcro-autoteste-escala-v{n}' for n in (35, 36, 37)}
+                                        else 'resultado-autoteste31.json'
                                         if state['report'].get('schema') == 'pcro-autoteste-falhas-v31'
                                         else 'resultado-autoteste32.json'
                                         if state['report'].get('schema') == 'pcro-autoteste-falhas-v32'
@@ -444,6 +519,14 @@ def show_selective_backup(app, plan):
                lambda: run_fault_autotest(33, run_storage_fault_autotest))
     add_button(row12, '14. Autoteste #34: checkpoint e retomada (simulado)',
                lambda: run_fault_autotest(34, run_restart_recovery_autotest))
+    add_button(row13, '15. Autoteste #35: 2 GiB e pico de memória',
+               lambda: run_scale_autotest(35, run_gigabyte_autotest))
+    add_button(row14, '16. Autoteste #36: encerramento abrupto de subprocesso',
+               lambda: run_scale_autotest(36, run_abrupt_exit_autotest))
+    add_button(row15, '17. Autoteste #37: resposta da interface e cancelamento', run_ui_autotest)
+    probe_button = ttk.Button(row15, text='Cancelar cópia fictícia (#37)',
+                              command=invoke_probe_cancel, state='disabled')
+    probe_button.pack(side='left', padx=8)
     stop = ttk.Button(row2, text='Cancelar operação', command=cancelled.set, state='disabled')
     stop.pack(side='right')
     def close():
@@ -458,3 +541,4 @@ def show_selective_backup(app, plan):
     write_log('O backup grava em uma pasta nova. A recuperação também grava em outra pasta nova.')
     window.after(150, process_events)
     return window
+

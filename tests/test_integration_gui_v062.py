@@ -38,6 +38,8 @@ class SequentialScanGUI(unittest.TestCase):
         root.choices = {'C:/Save/previous': 'keep', 'D:/Save/new': 'keep'}
         root.cleanup_candidates = set()
         root.deep_scan_running = False
+        root.deep_scan_report = dict(schema='pcro-discovery-v1', records=[], roots=[],
+                                        errors=[], skipped=[], apps=[], volume_stats={})
         root._on_change = lambda: None
         root.navigate = lambda target: None
         calls = []
@@ -49,6 +51,8 @@ class SequentialScanGUI(unittest.TestCase):
              patch('deep_discovery_ui.discover_apps',return_value=[]), \
              patch('deep_discovery_ui.collect',return_value={'shortcuts':[], 'packages':[], 'errors':[]}), \
              patch('deep_discovery_ui.find_app_data',return_value=[]), \
+             patch('deep_discovery_ui.known_save_roots', return_value={}), \
+             patch('deep_discovery_ui.find_game_saves', return_value=[]), \
              patch('deep_discovery_ui.atomic_json'):
             show_deep_discovery(root)
             win = next(w for w in root.winfo_children() if isinstance(w, tk.Toplevel))
@@ -116,3 +120,4 @@ class CatalogPreservationGUI(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+

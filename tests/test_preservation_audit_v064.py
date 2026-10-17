@@ -155,6 +155,10 @@ class ImportOldInventoryTests(TestCase):
                 'errors':[], 'skipped':[], 'unassociated_executables':[],
             }),encoding='utf-8')
             for widget in list(app.home.winfo_children()): widget.destroy()
+            # Earlier GUI tests may have saved a real synthetic inventory file.
+            # Explicit empty snapshot keeps this import test independent of it.
+            app.deep_scan_report = dict(schema='pcro-discovery-v1', records=[], roots=[],
+                                        errors=[], skipped=[], apps=[], volume_stats={})
             with patch('deep_discovery_ui.local_drives',return_value=['C:/','D:/']):
                 show_deep_discovery(app,container=app.home)
             app.catalog_choices['old']='keep'
@@ -171,3 +175,4 @@ class ImportOldInventoryTests(TestCase):
                  patch('deep_discovery_ui.messagebox.showinfo'):
                 import_btn.invoke()
             self.assertEqual(app.scan_reports_by_drive['C:']['volume_stats']['C:']['files'],999)
+

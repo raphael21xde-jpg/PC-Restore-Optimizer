@@ -13,6 +13,9 @@ class UnifiedSelectionTests(TestCase):
         except tk.TclError:
             self.skipTest('Display server not available')
         from app import App
+        drives = mock.patch('app.DISKS', ['C'])
+        drives.start()
+        self.addCleanup(drives.stop)
         self.temp=tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         with mock.patch.object(App, 'refresh_catalog', lambda self: None):
@@ -37,7 +40,7 @@ class UnifiedSelectionTests(TestCase):
     def test_manual_file_enters_one_plan_without_searching_disks(self):
         app=self.app
         file=Path(self.temp.name)/'important.txt';file.write_text('my data')
-        with mock.patch('app.drive_of',return_value='C:'):
+        with mock.patch('app.drive_of', return_value='C:'), mock.patch('app.DISKS', ['C']):
             app._add_path(str(file))
         key=__import__('app').norm(str(file))
         self.assertEqual(app.choices[key],'keep')
@@ -93,3 +96,4 @@ class UnifiedSelectionTests(TestCase):
         self.assertIn(norm(str(file)),app.personal_paths)
         self.assertEqual(app.catalog_choices['steam:1'],'keep')
         self.assertEqual(app.dest.get(),'C:/Backups')
+

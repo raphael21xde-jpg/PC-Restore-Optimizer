@@ -13,6 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install declared runtime dependencies
+        run: python -m pip install -r requirements.txt
       - name: Check Python syntax
         run: python -m compileall -q .
       - name: Test GUID volume inventory (no disk writes)
@@ -27,6 +29,41 @@ jobs:
         run: python -m unittest discover -s tests -p "test_autotestes_resiliencia_v028_v030.py" -v
       - name: 'Test #31-34 synthetic transfer, small files, errors and interrupted checkpoints'
         run: python -m unittest discover -s tests -p "test_autotestes_falhas_v031_v034.py" -v
+      - name: Make space on disposable Linux runner for three synthetic copies
+        if: runner.os == 'Linux'
+        run: |
+          # Only preinstalled Android tooling on the ephemeral hosted runner.
+          sudo rm -rf /usr/local/lib/android/sdk
+          df -h /tmp
+      - name: 'Test #35-37: 2 GiB, abrupt child exit and cancellation guards'
+        env:
+          PCRO_RUN_2GIB: '1'
+        run: python -m unittest discover -s tests -p "test_autotestes_escala_v035_v037.py" -v
+      - name: Install virtual display for actual Tk event loop
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: Test actual Tk controls on Linux (display required)
+        if: runner.os == 'Linux'
+        env:
+          PCRO_REQUIRE_TK: '1'
+        run: xvfb-run -a python -m unittest discover -s tests -p "test_autotestes_escala_v035_v037.py" -v
+      - name: Test actual Tk controls on Windows (display required)
+        if: runner.os == 'Windows'
+        env:
+          PCRO_REQUIRE_TK: '1'
+        run: python -m unittest discover -s tests -p "test_autotestes_escala_v035_v037.py" -v
+      - name: Full regression with virtual display on Linux
+        timeout-minutes: 3
+        if: runner.os == 'Linux'
+        env:
+          PCRO_REQUIRE_TK: '1'
+        run: xvfb-run -a python tests/run_full_suite.py --timeout 120
+      - name: Full regression on Windows
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        env:
+          PCRO_REQUIRE_TK: '1'
+        run: python tests/run_full_suite.py --timeout 240
       - name: Test multiple destinations and SHA-256 with temporary files
         run: python -m unittest discover -s tests -p "test_multi_destinations_v083.py" -v
       - name: Test read-only interactive backup preflight scenarios (mocked)
@@ -61,3 +98,4 @@ jobs:
         run: python -m unittest discover -s tests -p "test_runtime_volumes_v070.py" -v
       - name: Test backup/restore on temporary test files
         run: python -m unittest discover -s tests -p "test_safe_features.py" -v
+
