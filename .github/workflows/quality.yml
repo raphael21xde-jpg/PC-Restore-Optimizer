@@ -19,6 +19,8 @@ jobs:
         run: python -m unittest discover -s tests -p "test_volume_inventory_v071.py" -v
       - name: Test multiple destinations and SHA-256 with temporary files
         run: python -m unittest discover -s tests -p "test_multi_destinations_v083.py" -v
+      - name: Test read-only interactive backup preflight scenarios (mocked)
+        run: python -m unittest discover -s tests -p "test_backup_preflight_scenario_v084.py" -v
       - name: Test backup target preflight safety (mocked)
         run: python -m unittest discover -s tests -p "test_backup_target_preflight_v082.py" -v
       - name: Test Storage Spaces physical membership (mocked)
