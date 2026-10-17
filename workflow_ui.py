@@ -286,9 +286,9 @@ def build_preservation(app):
             return
         if not messagebox.askyesno(
                 'Retirar somente a marcação?',
-                'Retirar a escolha deste caminho do plano?\\n\\n'
+                'Retirar a escolha deste caminho do plano?\n\n'
                 + path
-                + '\\n\\nO arquivo original NÃO será apagado. '
+                + '\n\nO arquivo original NÃO será apagado. '
                   'Nenhuma cópia, limpeza ou formatação será realizada.',
                 parent=app):
             return
