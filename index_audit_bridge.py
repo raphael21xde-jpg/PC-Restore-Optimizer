@@ -6,6 +6,7 @@ Loading its decisions never applies them to the active preservation plan.
 from __future__ import annotations
 
 from pathlib import Path
+from contextlib import closing
 import sqlite3
 
 from index_choices_bridge import MAX_CHOICES, MAPPING, _validate_path
@@ -24,7 +25,7 @@ def read_saved_index_choices(filename):
         raise ValueError("Selecione um arquivo SQLite existente, sem link simbólico.")
     uri = file.resolve(strict=True).as_uri() + "?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=5) as db:
+        with closing(sqlite3.connect(uri, uri=True, timeout=5)) as db:
             schema = db.execute("SELECT value FROM meta WHERE key='schema'").fetchone()
             if not schema or schema[0] != INDEX_SCHEMA:
                 raise ValueError("Arquivo não é um índice SQLite do PCRO.")
