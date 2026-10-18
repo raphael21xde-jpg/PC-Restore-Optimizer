@@ -68,7 +68,12 @@ class CompletenessAudit067Tests(unittest.TestCase):
     def test_symlink_not_followed(self):
         with tempfile.TemporaryDirectory() as folder:
             link = Path(folder)/'link'; target = Path(folder)/'target'; target.mkdir()
-            link.symlink_to(target, target_is_directory=True)
+            try:
+                link.symlink_to(target, target_is_directory=True)
+            except OSError as exc:
+                if getattr(exc, 'winerror', None) == 1314:
+                    self.skipTest('Windows sem privilégio para criar symlink (WinError 1314)')
+                raise
             row = audit_candidate_rows([{'name':'link', 'path':str(link), 'category':'PESSOAL'}],
                                        [], lstat=os.lstat)[0]
             self.assertEqual(row['status'], 'REVISAR LINK')
