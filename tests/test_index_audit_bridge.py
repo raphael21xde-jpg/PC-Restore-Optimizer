@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from index_audit_bridge import read_saved_index_choices
+from completeness_audit_ui_v068 import format_index_readiness_note
 from index_choices_bridge import preview_import, apply_imported_choices, read_index_choices
 from inventory_index import FileMetadataIndex
 
@@ -155,6 +156,24 @@ class IndexAuditBridgeTests(unittest.TestCase):
         self.assertEqual(app.choices, {})
         self.assertEqual(app.personal_paths, set())
         app._on_change.assert_not_called()
+
+
+    def test_index_readiness_status_preview_does_not_crash_tk_callback(self):
+        # Regression: PR #51 used an adjacent f-string followed by parentheses,
+        # which Tk evaluated as calling the string when an index was opened.
+        result = format_index_readiness_note(
+            {"total": 0, "conflicts": 0}, ignored_count=2, applied=False)
+        self.assertIn("0 escolha(s) importável(is)", result)
+        self.assertIn("2 item(ns) da Lixeira ignorado(s)", result)
+        self.assertIn("só entram no plano após confirmação", result)
+        self.assertNotIn("importação já confirmada", result)
+
+    def test_index_readiness_status_after_confirmed_import(self):
+        result = format_index_readiness_note(
+            {"total": 3, "conflicts": 1}, ignored_count=0, applied=True)
+        self.assertIn("3 escolha(s) importável(is)", result)
+        self.assertIn("1 conflito(s)", result)
+        self.assertIn("importação já confirmada", result)
 
 
 if __name__ == "__main__":
