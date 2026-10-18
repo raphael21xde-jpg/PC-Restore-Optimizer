@@ -1053,6 +1053,8 @@ class App(tk.Tk):
                                     relief='flat',font=('Consolas',11))
         self.backup_list.pack(fill='both',expand=True,padx=18,pady=16)
         ttk.Button(self.history, text='Ver conteúdo: programas, jogos, saves e arquivos', command=self.show_backup_contents).pack(anchor='w', padx=18, pady=4)
+        ttk.Button(self.history, text='Auditar este backup + dados + EFI (sem formatar)',
+                   command=self.audit_selected_backup).pack(anchor='w', padx=18, pady=4)
         controls=ttk.Frame(self.history);controls.pack(fill='x',padx=18,pady=(0,14))
         ttk.Button(controls,text='Atualizar histórico',command=self.refresh_history).pack(side='left',padx=(0,9))
         ttk.Button(controls,text='Testar restauração de arquivo pequeno',command=self.test_restore).pack(side='left',padx=(0,9))
@@ -1091,6 +1093,20 @@ class App(tk.Tk):
     def selected_manifest(self):
         ids=self.backup_list.curselection()
         return self.backup_manifests[ids[0]] if ids else None
+
+    def audit_selected_backup(self):
+        """Reuse the existing v0.6.9 auditor with the selected history backup.
+
+        Opening is read-only. SHA-256 of the manifest must be initiated
+        explicitly in the audit dialog; no copy, restore or format is run.
+        """
+        manifest=self.selected_manifest()
+        if manifest is None:
+            messagebox.showinfo('Auditoria de preservação',
+                                'Selecione primeiro um backup em Histórico e relatórios.')
+            return
+        from completeness_audit_ui_v068 import show_completeness_audit
+        show_completeness_audit(self, {}, history_manifest=manifest)
 
     def test_restore(self):
         manifest=self.selected_manifest()
