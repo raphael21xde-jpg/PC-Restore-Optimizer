@@ -17,6 +17,7 @@ import stat
 import time
 import uuid
 from transfer_engine import choose_strategy, TransferMeter, ProgressLimiter, performance_report
+from backup_source_guard import open_verified_backup_source, sha256_verified_backup_source
 
 CHUNK = 2 * 1024 * 1024
 REPARSE_FLAG = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
@@ -349,7 +350,7 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 # source and destination, without trusting its filename alone.
                 if entry is None and destination.is_file() and not is_reparse(destination):
                     if destination.stat().st_size == task.size:
-                        source_hash = sha256_file(source, cancelled)
+                        source_hash = sha256_verified_backup_source(source, task.size, task.mtime_ns, cancelled)
                         destination_hash = sha256_file(destination, cancelled)
                         if source_hash == destination_hash:
                             new_entry = {'source': str(source), 'relative': task.destination,
@@ -364,7 +365,7 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 temp = destination.with_name(destination.name + '.partial-' + uuid.uuid4().hex[:8])
                 dig = hashlib.sha256()
                 size_read = 0
-                with open(source, 'rb') as src, open(temp, 'xb') as dst:
+                with open_verified_backup_source(source, task.size, task.mtime_ns) as src, open(temp, 'xb') as dst:
                     while True:
                         if cancelled and cancelled.is_set():
                             raise InterruptedError('Backup interrompido')
