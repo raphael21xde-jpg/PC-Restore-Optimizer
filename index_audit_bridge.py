@@ -9,7 +9,7 @@ from pathlib import Path
 from contextlib import closing
 import sqlite3
 
-from index_choices_bridge import MAX_CHOICES, MAPPING, _validate_path
+from index_choices_bridge import MAX_CHOICES, MAPPING, _validate_path, is_legacy_system_choice
 from inventory_index import SCHEMA as INDEX_SCHEMA
 
 
@@ -40,13 +40,25 @@ def read_saved_index_choices(filename):
     if len(rows) > MAX_CHOICES:
         raise ValueError("Índice contém mais de 4.000 escolhas; revise/exporte em grupos menores.")
     choices = {}
+    ignored_system_choices = []
+    seen = set()
     for path, decision in rows:
         normalized = _validate_path(path)
-        if normalized in choices:
+        if normalized in seen:
             raise ValueError("Caminhos duplicados após normalização no índice.")
+        seen.add(normalized)
+        if is_legacy_system_choice(normalized):
+            # Keep this evidence visible, but never apply it or change SQLite.
+            ignored_system_choices.append({
+                "path": normalized,
+                "decision": MAPPING[decision],
+                "reason": "Lixeira do Windows: escolha histórica não importável",
+            })
+            continue
         choices[normalized] = MAPPING[decision]
     return {
         "choices": choices,
+        "ignored_system_choices": ignored_system_choices,
         "source_state": str(state[0] if state else "parcial"),
         "source_kind": "sqlite-index-readonly",
         "complete_backup": False,
