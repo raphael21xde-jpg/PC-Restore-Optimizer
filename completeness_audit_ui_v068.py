@@ -156,7 +156,7 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
                 'unchanged_in_current_plan': snap['unchanged'],
                 'applied_to_current_plan': index_state['status'] == 'APLICADO AO PLANO',
                 'source_is_backup': False,
-                'read_only_preview': True,
+                'read_only_preview': index_state['status'] != 'APLICADO AO PLANO',
                 'note': ('Decisões históricas são intenções; não provam que os arquivos '
                          'ainda existam ou estejam protegidos.'),
             }
@@ -176,7 +176,9 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
             readiness_status.set(
                 readiness_status.get() +
                 f" Índice histórico: {snap['total']} escolha(s), {snap['conflicts']} conflito(s); "
-                "estas escolhas só entram no plano após confirmação.")
+                ("importação já confirmada; rever caminhos e recalcular a prévia."
+                 if index_state['status'] == 'APLICADO AO PLANO'
+                 else "estas escolhas só entram no plano após confirmação."))
         status.set(f"{counts['locations_reviewed']} local(is) conferido(s) por metadados · "
                    f"{counts['locations_needing_review']} exigem revisão · "
                    f"Inventário C: {report['scan_c']['status']} · {counts['c_scan_errors']} falhas + {counts['c_scan_skipped']} itens ignorados (não apagados) · "
@@ -559,13 +561,13 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
         summary = preview_import(app, parsed)
         if not messagebox.askyesno(
                 'Confirmar importação das escolhas históricas',
-                f"Preservar: {summary['keep']} · Não copiar: {summary['skip']}\\n"
-                f"Conflitos com o plano atual: {summary['conflicts']}\\n"
-                f"Estado histórico: {summary['source_state']}\\n\\n"
+                f"Preservar: {summary['keep']} · Não copiar: {summary['skip']}\n"
+                f"Conflitos com o plano atual: {summary['conflicts']}\n"
+                f"Estado histórico: {summary['source_state']}\n\n"
                 "As escolhas do SQLite terão prioridade nos conflitos. "
                 "Não copiar nunca significa apagar. Arquivos antigos podem ter mudado "
                 "e o backup precisará de nova prévia antes de qualquer cópia. "
-                "Importar NÃO verifica backup, restauração ou EFI.\\n\\n"
+                "Importar NÃO verifica backup, restauração ou EFI.\n\n"
                 "Aplicar essas escolhas ao plano de preservação?",
                 parent=window):
             return
