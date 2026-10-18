@@ -23,6 +23,23 @@ import os
 import ntpath
 
 
+
+def format_index_readiness_note(preview, ignored_count, *, applied=False):
+    """Render the index status without invoking adjacent string literals.
+
+    Historical decisions are not proof of a verified backup, restoration,
+    EFI independence, or permission to install Windows.
+    """
+    action = ("importação já confirmada; rever caminhos e recalcular a prévia."
+              if applied else "estas escolhas só entram no plano após confirmação.")
+    return (
+        f" Índice histórico: {preview['total']} escolha(s) importável(is), "
+        f"{ignored_count} item(ns) da Lixeira ignorado(s), "
+        f"{preview['conflicts']} conflito(s); "
+        + action
+    )
+
+
 def show_completeness_audit(app, plan, *, history_manifest=None):
     window = tk.Toplevel(app)
     window.title('v0.6.9 • Auditoria inteligente e discos / EFI')
@@ -175,13 +192,11 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
         if index_state['parsed'] is not None:
             snap = preview_import(app, index_state['parsed'])
             readiness_status.set(
-                readiness_status.get() +
-                f" Índice histórico: {snap['total']} escolha(s) importável(is), "
-                f"{len(index_state['parsed'].get('ignored_system_choices', []))} item(ns) da Lixeira ignorado(s), "
-                f"{snap['conflicts']} conflito(s); "
-                ("importação já confirmada; rever caminhos e recalcular a prévia."
-                 if index_state['status'] == 'APLICADO AO PLANO'
-                 else "estas escolhas só entram no plano após confirmação."))
+                readiness_status.get() + format_index_readiness_note(
+                    snap,
+                    len(index_state['parsed'].get('ignored_system_choices', [])),
+                    applied=index_state['status'] == 'APLICADO AO PLANO',
+                ))
         status.set(f"{counts['locations_reviewed']} local(is) conferido(s) por metadados · "
                    f"{counts['locations_needing_review']} exigem revisão · "
                    f"Inventário C: {report['scan_c']['status']} · {counts['c_scan_errors']} falhas + {counts['c_scan_skipped']} itens ignorados (não apagados) · "
