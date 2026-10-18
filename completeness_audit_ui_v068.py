@@ -13,6 +13,8 @@ from audit_v068 import (collect_disk_evidence_068, classify_boot_068,
     inspect_verified_manifest, enhance_report_068)
 from audit_v069 import (collect_disk_evidence_069 as collect_disk_evidence_068,
     classify_boot_069 as classify_boot_068, enhance_report_069 as enhance_report_068)
+from index_audit_bridge import read_saved_index_choices
+from index_choices_bridge import preview_import, apply_imported_choices
 from scan_sessions import merge_cache
 from backup_core import norm
 from drive_catalog import safe_to_mark
@@ -53,12 +55,14 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
     boot_tab = ttk.Frame(notebook, padding=8)
     recovery_tab = ttk.Frame(notebook, padding=8)
     tasks_tab = ttk.Frame(notebook, padding=8)
+    index_tab = ttk.Frame(notebook, padding=8)
     for tab, label in ((paths_tab, 'Locais de dados'),
                        (review_tab, 'Revisar pasta'),
                        (gaps_tab, 'Erros do C:'),
                        (boot_tab, 'Discos e EFI'),
                        (recovery_tab, 'Mapa de recuperação'),
-                       (tasks_tab, 'Checklist pendente')):
+                       (tasks_tab, 'Checklist pendente'),
+                       (index_tab, 'Escolhas do índice SQLite')):
         notebook.add(tab, text=label)
 
     def make_table(parent, cols):
@@ -89,6 +93,7 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
     review_controls.pack(fill='x', pady=(8,0))
     view_state = {'root': None, 'initial_root': None, 'offset': 0, 'more': False, 'paths': {}, 'busy': False, 'request_id': 0}
     proof_state = {'proof': None}
+    index_state = {'parsed': None, 'filename': None, 'status': 'NÃO CONSULTADO'}
     chosen_paths = {}
     efi_tree = make_table(boot_tab, [('type', 'Tipo'), ('detail', 'Detalhes')])
     recovery_tree = make_table(recovery_tab, [('status', 'Situação'), ('detail', 'Destino após reinstalação')])
@@ -97,6 +102,23 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
     notes.pack(fill='both', expand=True)
     notes.insert('1.0', 'Carregando checklist...')
     notes.configure(state='disabled')
+
+    ttk.Label(index_tab, text=(
+        'Reaproveite as escolhas de um inventário detalhado SQLite já criado. '
+        'A consulta é somente leitura, não repete varreduras e não importa nada '
+        'automaticamente. Índices são históricos e NÃO comprovam cópias ou recuperação.'),
+        wraplength=1100).pack(anchor='w', pady=(0, 9))
+    index_controls = ttk.Frame(index_tab)
+    index_controls.pack(fill='x', pady=(0, 7))
+    index_load_button = ttk.Button(index_controls, text='Abrir índice SQLite existente')
+    index_load_button.pack(side='left', padx=(0, 9))
+    index_apply_button = ttk.Button(index_controls, text='Aplicar escolhas ao plano (confirmar)',
+                                    state='disabled')
+    index_apply_button.pack(side='left', padx=(0, 9))
+    index_status = tk.StringVar(value='Nenhum índice conectado; o plano atual permanece inalterado.')
+    ttk.Label(index_tab, textvariable=index_status, wraplength=1100).pack(anchor='w', pady=(0, 6))
+    index_tree = make_table(index_tab, [('decision', 'Escolha no índice'),
+                                       ('current', 'Situação no plano atual')])
 
     path_actions = ttk.Frame(paths_tab)
     path_actions.pack(fill='x', pady=(8, 0))
@@ -124,6 +146,20 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
         report['review_decisions'] = [{'path': p, 'decision': c}
                                        for p, c in sorted(app.choices.items())
                                        if volume_of(p) == 'C:' and c in ('keep', 'skip')]
+        if index_state['parsed'] is not None:
+            snap = preview_import(app, index_state['parsed'])
+            report['index_choices_evidence'] = {
+                'source_file': index_state['filename'],
+                'index_state': snap['source_state'],
+                'reviewed_choice_count': snap['total'],
+                'conflicts_with_current_plan': snap['conflicts'],
+                'unchanged_in_current_plan': snap['unchanged'],
+                'applied_to_current_plan': index_state['status'] == 'APLICADO AO PLANO',
+                'source_is_backup': False,
+                'read_only_preview': index_state['status'] != 'APLICADO AO PLANO',
+                'note': ('Decisões históricas são intenções; não provam que os arquivos '
+                         'ainda existam ou estejam protegidos.'),
+            }
         result['report'] = report
         counts = report['counts']
         readiness = report['preservation_readiness']
@@ -135,6 +171,14 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
             f"{readiness['scan_gaps_overlapping_choices']} lacuna(s) cruzando escolhas · "
             f"Boot/EFI: {readiness['boot_status']}. "
             "Cobertura integral e restauração pós-Windows NÃO comprovadas.")
+        if index_state['parsed'] is not None:
+            snap = preview_import(app, index_state['parsed'])
+            readiness_status.set(
+                readiness_status.get() +
+                f" Índice histórico: {snap['total']} escolha(s), {snap['conflicts']} conflito(s); "
+                ("importação já confirmada; rever caminhos e recalcular a prévia."
+                 if index_state['status'] == 'APLICADO AO PLANO'
+                 else "estas escolhas só entram no plano após confirmação."))
         status.set(f"{counts['locations_reviewed']} local(is) conferido(s) por metadados · "
                    f"{counts['locations_needing_review']} exigem revisão · "
                    f"Inventário C: {report['scan_c']['status']} · {counts['c_scan_errors']} falhas + {counts['c_scan_skipped']} itens ignorados (não apagados) · "
@@ -260,11 +304,15 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
         if kind == 'review' and report['request_id'] != view_state['request_id']:
             window.after(150, poll)
             return
+        if kind == 'index':
+            index_load_button.configure(state='normal')
         if kind == 'proof':
             proof_button.configure(state='normal')
             history_proof_button.configure(
                 state='normal' if history_manifest is not None else 'disabled')
         if error:
+            if kind == 'index':
+                index_status.set('Não foi possível ler o índice: ' + error)
             if kind == 'review':
                 review_status.set('Não foi possível consultar a pasta: ' + error)
             else:
@@ -273,6 +321,14 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
         elif kind == 'audit':
             result['base'] = report
             draw(report)
+        elif kind == 'index':
+            filename, parsed = report
+            index_state.update(parsed=parsed, filename=filename, status='SOMENTE PRÉVIA')
+            render_index_preview()
+            index_apply_button.configure(state='normal' if parsed['choices'] else 'disabled')
+            if result['base']:
+                draw(result['base'])
+            notebook.select(index_tab)
         elif kind == 'import':
             merged, added = report
             if not added:
@@ -447,6 +503,91 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 results_queue.put(('import', None, str(exc)))
         threading.Thread(target=work, daemon=True, name='PCRO-v068-import').start()
+
+    def render_index_preview():
+        parsed = index_state['parsed']
+        if parsed is None:
+            return
+        preview = preview_import(app, parsed)
+        current = {ntpath.normcase(ntpath.normpath(p)): choice
+                   for p, choice in app.choices.items()}
+        choices = parsed['choices']
+        c_keep = sum(volume_of(p) == 'C:' and v == 'keep' for p, v in choices.items())
+        c_skip = sum(volume_of(p) == 'C:' and v == 'skip' for p, v in choices.items())
+        index_status.set(
+            f"Índice: {index_state['filename']} · estado: {preview['source_state']} · "
+            f"{preview['total']} escolha(s): {preview['keep']} preservar, "
+            f"{preview['skip']} não copiar · {preview['conflicts']} conflito(s) "
+            f"com o plano atual · C: {c_keep} preservar, {c_skip} não copiar · "
+            f"estado: {index_state['status']}. "
+            "Nenhum arquivo foi copiado; a origem não foi examinada novamente.")
+        index_tree.delete(*index_tree.get_children())
+        # A bounded preview keeps Tk responsive; every choice is still applied
+        # through the existing validated importer upon explicit confirmation.
+        entries = sorted(choices.items(), key=lambda x: (volume_of(x[0]) != 'C:', x[0]))
+        for p, decision in entries[:200]:
+            old = current.get(ntpath.normcase(ntpath.normpath(p)))
+            conflict = 'CONFLITO — escolha diferente' if old and old != decision else (
+                'JÁ IGUAL' if old == decision else 'NÃO IMPORTADO')
+            index_tree.insert('', 'end', text=p,
+                              values=('PRESERVAR' if decision == 'keep' else 'NÃO COPIAR (não apaga)',
+                                      conflict))
+        if len(entries) > 200:
+            index_tree.insert('', 'end', text=f"... {len(entries) - 200} escolhas adicionais",
+                              values=('PRÉVIA LIMITADA', 'Serão consideradas na confirmação'))
+
+    def load_saved_index():
+        filename = filedialog.askopenfilename(
+            parent=window, title='Escolher índice SQLite PCRO existente (somente leitura)',
+            filetypes=[('Índice SQLite', '*.sqlite3'), ('Todos os arquivos', '*.*')])
+        if not filename:
+            return
+        index_load_button.configure(state='disabled')
+        index_apply_button.configure(state='disabled')
+        index_state.update(parsed=None, filename=None, status='AGUARDANDO LEITURA')
+        index_status.set('Lendo somente escolhas registradas; não varre discos...')
+        def work():
+            try:
+                parsed = read_saved_index_choices(filename)
+                results_queue.put(('index', (filename, parsed), None))
+            except (OSError, ValueError, TypeError) as exc:
+                results_queue.put(('index', None, str(exc)))
+        threading.Thread(target=work, daemon=True, name='PCRO-read-index-choices').start()
+
+    def apply_index_to_current_plan():
+        parsed = index_state['parsed']
+        if not parsed:
+            return
+        summary = preview_import(app, parsed)
+        if not messagebox.askyesno(
+                'Confirmar importação das escolhas históricas',
+                f"Preservar: {summary['keep']} · Não copiar: {summary['skip']}\n"
+                f"Conflitos com o plano atual: {summary['conflicts']}\n"
+                f"Estado histórico: {summary['source_state']}\n\n"
+                "As escolhas do SQLite terão prioridade nos conflitos. "
+                "Não copiar nunca significa apagar. Arquivos antigos podem ter mudado "
+                "e o backup precisará de nova prévia antes de qualquer cópia. "
+                "Importar NÃO verifica backup, restauração ou EFI.\n\n"
+                "Aplicar essas escolhas ao plano de preservação?",
+                parent=window):
+            return
+        try:
+            outcome = apply_imported_choices(app, parsed)
+        except (OSError, ValueError, TypeError, RuntimeError) as exc:
+            messagebox.showerror('Não foi possível aplicar escolhas', str(exc), parent=window)
+            return
+        index_state['status'] = 'APLICADO AO PLANO'
+        index_apply_button.configure(state='disabled')
+        render_index_preview()
+        launch_audit()
+        messagebox.showinfo(
+            'Escolhas importadas',
+            f"{outcome['applied']} escolha(s) recebida(s) no plano. "
+            "Nada foi copiado ou apagado. Revise a preservação antes de iniciar backup.",
+            parent=window)
+
+    index_load_button.configure(command=load_saved_index)
+    index_apply_button.configure(command=apply_index_to_current_plan)
 
     def verify_manifest_path(filename):
         # This is an explicit request by the user, never executed on opening
