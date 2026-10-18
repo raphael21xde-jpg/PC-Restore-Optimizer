@@ -5,6 +5,7 @@ This is not an atomic defense against privileged concurrent filesystem swaps.
 """
 from pathlib import Path
 import os
+import stat
 from backup_core import is_reparse
 
 
@@ -19,6 +20,8 @@ def validate_backup_destination_path(folder, destination):
         raise ValueError('Destino fora da pasta autorizada.') from exc
     if not rel.parts or any(part in ('.', '..') for part in rel.parts):
         raise ValueError('Destino inválido.')
+    # Check only the authorized ancestry and target, including ancestors of base.
+    # Broken links must also be rejected; pathlib.exists() follows links.
     for path in (base, *base.parents, target, *target.parents):
         if is_reparse(path):
             raise ValueError('Link ou junção detectado no destino.')
