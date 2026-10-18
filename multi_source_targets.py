@@ -11,11 +11,11 @@ import shutil
 
 from multi_backup_destinations import _resolved_folder, _under
 from volume_paths import volume_of
-from backup_core import human_size
+from backup_target_preflight import assess_backup_target
 
 
 def preview_multi_source_targets(plan, destinations, *, usage=shutil.disk_usage,
-                                 volume_lookup=volume_of):
+                                 volume_lookup=volume_of, disk_diagnostic=None):
     """Require existing, disjoint destinations on volumes outside every source.
 
     This preview cannot certify separate physical devices and is not an
@@ -60,6 +60,33 @@ def preview_multi_source_targets(plan, destinations, *, usage=shutil.disk_usage,
         targets.append({'path': str(folder), 'volume': volume.upper(),
                         'free_bytes': free, 'reserve_bytes': reserve,
                         'preflight_status': 'requires_review'})
+    if disk_diagnostic is not None:
+        if not isinstance(disk_diagnostic, dict):
+            raise ValueError('Diagnóstico de discos inválido.')
+        source_letters = [v[:-1] for v in sorted(source_volumes)
+                          if len(v) == 2 and v[1] == ':' and v[0].isalpha()]
+        if len(source_letters) != len(source_volumes):
+            raise ValueError('Origens sem letra de unidade verificável.')
+        for target in targets:
+            letter = target['volume']
+            if len(letter) != 2 or letter[1] != ':' or not letter[0].isalpha():
+                raise ValueError('Destino sem letra de unidade verificável.')
+            assessment = assess_backup_target(
+                disk_diagnostic.get('disks', []),
+                disk_diagnostic.get('volumes', []),
+                disk_diagnostic.get('extent_mapping', {}),
+                disk_diagnostic.get('spaces_membership', {}),
+                target_letter=letter, source_letters=source_letters,
+                expected_backup_bytes=int(plan.total))
+            target['logical_disk_numbers'] = assessment['destination_logical_disks']
+            target['disk_preflight_issues'] = assessment['issues']
+            target['disk_preflight_blockers'] = assessment['blockers']
+            if assessment['status'] == 'blocked':
+                raise ValueError('Conflito entre discos detectado: ' +
+                                 '; '.join(assessment['blockers']))
+            # Missing/ambiguous associations remain unverified. A preview
+            # is never authorization to run the real backup executor.
+            target['preflight_status'] = 'requires_review'
     return {'schema': 'pcro-multi-source-target-preview-v1',
             'source_volumes': sorted(source_volumes),
             'destinations': targets,
