@@ -66,12 +66,23 @@ class Audit068Tests(unittest.TestCase):
 
     def test_symlink_preview_not_followed(self):
         with tempfile.TemporaryDirectory() as root:
-            p=Path(root); t=p/'target';t.mkdir(); link=p/'ln';link.symlink_to(t,target_is_directory=True)
+            p=Path(root); t=p/'target';t.mkdir(); link=p/'ln'
+            try:
+                link.symlink_to(t,target_is_directory=True)
+            except OSError as exc:
+                if getattr(exc, 'winerror', None) == 1314:
+                    self.skipTest('Windows sem privilégio para criar symlink (WinError 1314)')
+                raise
             with self.assertRaises(ValueError): inspect_children_once(link)
 
     def test_preview_reparse_child_not_followed(self):
         with tempfile.TemporaryDirectory() as root:
-            p=Path(root); t=p/'target';t.mkdir();(p/'ln').symlink_to(t,target_is_directory=True)
+            p=Path(root); t=p/'target';t.mkdir();try:
+                (p/'ln').symlink_to(t,target_is_directory=True)
+            except OSError as exc:
+                if getattr(exc, 'winerror', None) == 1314:
+                    self.skipTest('Windows sem privilégio para criar symlink (WinError 1314)')
+                raise
             rows=inspect_children_once(p)['rows']
             self.assertEqual(next(x for x in rows if x['name']=='ln')['type'], 'LINK — NÃO SEGUIR')
 
