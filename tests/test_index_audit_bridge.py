@@ -1,6 +1,7 @@
 """Focused tests: reuse existing indexed choices without re-scanning drives."""
 import sqlite3
 import tempfile
+from contextlib import closing
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -68,13 +69,13 @@ class IndexAuditBridgeTests(unittest.TestCase):
         app._on_change.assert_called_once()
 
     def test_rejects_wrong_schema_and_invalid_paths(self):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE meta SET value='unknown' WHERE key='schema'")
         with self.assertRaises(ValueError):
             read_saved_index_choices(self.path)
 
     def test_rejects_invalid_selected_path_without_partial_import(self):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE records SET path=? WHERE path=?",
                        ("..\\bad", r"C:\Games\osu!\Songs"))
         with self.assertRaises(ValueError):
@@ -87,7 +88,7 @@ class IndexAuditBridgeTests(unittest.TestCase):
         self.assertFalse(missing.exists())
 
     def test_empty_saved_choices_still_report_partial_index(self):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE records SET decision='revisar'")
         data = read_saved_index_choices(self.path)
         self.assertEqual(data["choices"], {})
