@@ -23,6 +23,23 @@ import os
 import ntpath
 
 
+
+def format_index_readiness_note(preview, ignored_count, *, applied=False):
+    """Render the index status without invoking adjacent string literals.
+
+    Historical decisions are not proof of a verified backup, restoration,
+    EFI independence, or permission to install Windows.
+    """
+    action = ("importação já confirmada; rever caminhos e recalcular a prévia."
+              if applied else "estas escolhas só entram no plano após confirmação.")
+    return (
+        f" Índice histórico: {preview['total']} escolha(s) importável(is), "
+        f"{ignored_count} item(ns) da Lixeira ignorado(s), "
+        f"{preview['conflicts']} conflito(s); "
+        + action
+    )
+
+
 def show_completeness_audit(app, plan, *, history_manifest=None):
     window = tk.Toplevel(app)
     window.title('v0.6.9 • Auditoria inteligente e discos / EFI')
@@ -152,6 +169,7 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
                 'source_file': index_state['filename'],
                 'index_state': snap['source_state'],
                 'reviewed_choice_count': snap['total'],
+                'ignored_system_choice_count': len(index_state['parsed'].get('ignored_system_choices', [])),
                 'conflicts_with_current_plan': snap['conflicts'],
                 'unchanged_in_current_plan': snap['unchanged'],
                 'applied_to_current_plan': index_state['status'] == 'APLICADO AO PLANO',
@@ -174,11 +192,11 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
         if index_state['parsed'] is not None:
             snap = preview_import(app, index_state['parsed'])
             readiness_status.set(
-                readiness_status.get() +
-                f" Índice histórico: {snap['total']} escolha(s), {snap['conflicts']} conflito(s); "
-                ("importação já confirmada; rever caminhos e recalcular a prévia."
-                 if index_state['status'] == 'APLICADO AO PLANO'
-                 else "estas escolhas só entram no plano após confirmação."))
+                readiness_status.get() + format_index_readiness_note(
+                    snap,
+                    len(index_state['parsed'].get('ignored_system_choices', [])),
+                    applied=index_state['status'] == 'APLICADO AO PLANO',
+                ))
         status.set(f"{counts['locations_reviewed']} local(is) conferido(s) por metadados · "
                    f"{counts['locations_needing_review']} exigem revisão · "
                    f"Inventário C: {report['scan_c']['status']} · {counts['c_scan_errors']} falhas + {counts['c_scan_skipped']} itens ignorados (não apagados) · "
@@ -512,12 +530,14 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
         current = {ntpath.normcase(ntpath.normpath(p)): choice
                    for p, choice in app.choices.items()}
         choices = parsed['choices']
+        ignored = parsed.get('ignored_system_choices', [])
         c_keep = sum(volume_of(p) == 'C:' and v == 'keep' for p, v in choices.items())
         c_skip = sum(volume_of(p) == 'C:' and v == 'skip' for p, v in choices.items())
         index_status.set(
             f"Índice: {index_state['filename']} · estado: {preview['source_state']} · "
             f"{preview['total']} escolha(s): {preview['keep']} preservar, "
-            f"{preview['skip']} não copiar · {preview['conflicts']} conflito(s) "
+            f"{preview['skip']} não copiar · {len(ignored)} escolha(s) da Lixeira bloqueada(s) · "
+            f"{preview['conflicts']} conflito(s) "
             f"com o plano atual · C: {c_keep} preservar, {c_skip} não copiar · "
             f"estado: {index_state['status']}. "
             "Nenhum arquivo foi copiado; a origem não foi examinada novamente.")
@@ -532,9 +552,13 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
             index_tree.insert('', 'end', text=p,
                               values=('PRESERVAR' if decision == 'keep' else 'NÃO COPIAR (não apaga)',
                                       conflict))
-        if len(entries) > 200:
-            index_tree.insert('', 'end', text=f"... {len(entries) - 200} escolhas adicionais",
-                              values=('PRÉVIA LIMITADA', 'Serão consideradas na confirmação'))
+        for item in ignored[:max(0, 200 - len(entries))]:
+            index_tree.insert('', 'end', text=item['path'],
+                              values=('LIXEIRA — IGNORADO', 'BLOQUEADO: escolha não importável'))
+        if len(entries) + len(ignored) > 200:
+            index_tree.insert('', 'end',
+                              text=f"... {len(entries) + len(ignored) - 200} itens adicionais",
+                              values=('PRÉVIA LIMITADA', 'Confira contagens acima'))
 
     def load_saved_index():
         filename = filedialog.askopenfilename(
