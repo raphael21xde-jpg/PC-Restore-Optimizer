@@ -51,9 +51,10 @@ class AuditUI068Tests(unittest.TestCase):
             self.assertTrue(any('Não preservar' in x for x in buttons))
             tabs=[x for x in widgets if x.winfo_class()=='TNotebook']
             self.assertEqual(len(tabs),1)
-            self.assertEqual(len(tabs[0].tabs()),6)
+            self.assertEqual(len(tabs[0].tabs()),7)
+            self.assertIn('Escolhas do índice SQLite', [tabs[0].tab(tab, 'text') for tab in tabs[0].tabs()])
             trees=[x for x in widgets if x.winfo_class()=='Treeview']
-            self.assertEqual(len(trees),5)
+            self.assertEqual(len(trees),6)
             self.assertTrue(any('Kingston' in str(t.item(iid)['text']) for t in trees
                                 for iid in t.get_children()))
             w.destroy()

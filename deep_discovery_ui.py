@@ -46,9 +46,26 @@ def show_deep_discovery(parent, container=None):
     cancel = threading.Event()
     ui_callbacks = Queue()
     last_progress = [0.0]
+    poll_job = [None]
+    poll_closed = [False]
+
+    def stop_polling(event):
+        if event.widget is not frame:
+            return
+        poll_closed[0] = True
+        job = poll_job[0]
+        poll_job[0] = None
+        if job is not None:
+            try:
+                frame.after_cancel(job)
+            except tk.TclError:
+                pass
+
+    frame.bind('<Destroy>', stop_polling, add='+')
 
     def poll_ui():
-        if not win.winfo_exists():
+        poll_job[0] = None
+        if poll_closed[0] or not frame.winfo_exists():
             return
         for _ in range(100):
             try:
@@ -56,7 +73,8 @@ def show_deep_discovery(parent, container=None):
             except Empty:
                 break
             callback()
-        parent.after(100, poll_ui)
+        if not poll_closed[0] and frame.winfo_exists():
+            poll_job[0] = frame.after(100, poll_ui)
 
     state = {'busy': False, 'report': None, 'records': [], 'nodes': {},
              'folders': {}, 'dynamic': {}, 'angle': 0, 'group_count': 0, 'sequence': 0, 'grouped': {}, 'active_roots': [], 'animation_job': None,
@@ -788,6 +806,6 @@ def show_deep_discovery(parent, container=None):
     else:
         render()
     parent.refresh_scan_groups = render
-    parent.after(100, poll_ui)
+    poll_job[0] = frame.after(100, poll_ui)
     return frame
 

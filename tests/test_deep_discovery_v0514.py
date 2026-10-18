@@ -24,7 +24,13 @@ class DeepDiscoveryTests(unittest.TestCase):
         p=self.root/'random';p.mkdir();self.apps[0]['install_location']=str(p)
         self.assertTrue(any(x['confidence']=='caminho identificado' for x in self.run_scan()['records']))
     def test_symlink_is_reported_not_followed(self):
-        outside=self.root/'other';outside.mkdir();(self.root/'link').symlink_to(outside,target_is_directory=True)
+        outside=self.root/'other'; outside.mkdir()
+        try:
+            (self.root/'link').symlink_to(outside,target_is_directory=True)
+        except OSError as exc:
+            if getattr(exc, 'winerror', None) == 1314:
+                self.skipTest('Windows sem privilégio para criar symlink (WinError 1314)')
+            raise
         r=self.run_scan();self.assertTrue(any(x['path'].endswith('link') for x in r['skipped']))
     def test_excluded_backups_not_treated_as_installation(self):
         p=self.root/'backups'/'My Program';p.mkdir(parents=True)

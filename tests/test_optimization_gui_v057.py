@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 import tkinter as tk
 from unittest.mock import patch
@@ -7,6 +8,11 @@ from unittest.mock import patch
 class OptimizationGUIV057Tests(unittest.TestCase):
     def test_optimization_is_one_main_section(self):
         from app import App
+        isolated = tempfile.TemporaryDirectory()
+        self.addCleanup(isolated.cleanup)
+        env_patch = patch.dict(os.environ, {'LOCALAPPDATA': isolated.name})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
         try:
             with patch('app.App.refresh_catalog', lambda self: None):
                 root=App()
@@ -21,7 +27,9 @@ class OptimizationGUIV057Tests(unittest.TestCase):
             self.assertEqual(len(root.optimizer_panel.tabs.tabs()),6)
             self.assertFalse(root.optimizer_panel.running)
             self.assertIsNone(root.optimizer_panel.report)
-            self.assertFalse(root.optimizer_panel.power_journal.exists())
+            if os.name == 'nt':
+                self.assertEqual(root.optimizer_panel.state_dir, __import__('pathlib').Path(isolated.name) / 'PC-Restore-Optimizer')
+                self.assertFalse(root.optimizer_panel.power_journal.exists())
             root.optimizer_panel.tabs.select(3)
             root.update_idletasks()
             self.assertTrue(root.optimizer_panel.btn_apply.winfo_ismapped())
