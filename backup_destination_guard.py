@@ -119,3 +119,26 @@ def safe_cleanup_backup_temp(folder, destination, temp_path, ancestry_before):
     except (OSError, ValueError):
         # Leaving a partial fixture is safer than deleting outside a swapped folder.
         return
+
+
+def verify_committed_backup_file(folder, destination, ancestry_before,
+                                 expected_size, expected_sha256, cancelled=None):
+    """Bind a committed destination handle to its name, size and SHA-256.
+
+    Fail closed before the manifest labels a copied file as verified. The
+    parent directory identity is checked before and after the read, but
+    pathname operations are not atomic on Windows.
+    """
+    from backup_source_guard import sha256_verified_backup_source
+
+    require_unchanged_destination_ancestry(folder, destination, ancestry_before)
+    info = os.lstat(destination)
+    if (not stat.S_ISREG(info.st_mode) or not info.st_ino
+            or is_reparse(destination) or info.st_size != expected_size):
+        raise OSError('Arquivo de destino não é um arquivo comum íntegro.')
+    checksum = sha256_verified_backup_source(
+        destination, expected_size, info.st_mtime_ns, cancelled)
+    require_unchanged_destination_ancestry(folder, destination, ancestry_before)
+    if checksum != expected_sha256:
+        raise OSError('SHA-256 do destino mudou após a gravação.')
+    return checksum
