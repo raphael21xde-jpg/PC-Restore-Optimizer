@@ -39,6 +39,8 @@ class RootSelectionTests(unittest.TestCase):
         result = filter_report(report, ['C:/'])
         self.assertEqual([x['path'] for x in result['records']], ['C:/osu/Songs'])
         self.assertEqual([x['path'] for x in result['errors']], ['C:/a'])
+        self.assertFalse(in_scope('Metadados Windows', ['C:/']))
+        self.assertFalse(in_scope('pasta/relativa', ['C:/']))
         self.assertEqual(result['volume_stats'], {'C:': {'files': 8}})
         self.assertEqual(result['unassociated_executables'], ['C:/ok.exe'])
 
