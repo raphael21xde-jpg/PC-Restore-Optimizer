@@ -334,36 +334,50 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 from backup_destination_guard import (
                     validate_backup_destination_path, destination_ancestry_identity,
                     require_unchanged_destination_ancestry, open_verified_backup_temp,
-                    safe_cleanup_backup_temp, verify_committed_backup_file)
+                    safe_cleanup_backup_temp, verify_committed_backup_file,
+                    hash_existing_backup_file)
                 validate_backup_destination_path(folder, destination)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 validate_backup_destination_path(folder, destination)
                 ancestry_before = destination_ancestry_identity(folder, destination)
                 entry = existing.get(task.destination)
-                if entry is not None and entry.get('verified') is True and entry.get('bytes') == task.size:
-                    if (destination.is_file() and not is_reparse(destination) and
-                        sha256_file(destination, cancelled) == entry.get('sha256')):
+                # On resume, neither an old manifest entry nor a pathname hash
+                # alone proves that the original source still matches the copy.
+                # Rebind the destination to a verified file handle, then hash
+                # the current authorized source before reusing either file.
+                destination_hash = (hash_existing_backup_file(
+                    folder, destination, ancestry_before, task.size, cancelled)
+                    if resume else None)
+                if (entry is not None and entry.get('verified') is True
+                        and entry.get('bytes') == task.size
+                        and destination_hash == entry.get('sha256')):
+                    source_hash = sha256_verified_backup_source(
+                        source, task.size, task.mtime_ns, cancelled)
+                    if source_hash != destination_hash:
+                        raise OSError('Fonte diverge do backup existente; gere nova prévia.')
+                    require_unchanged_destination_ancestry(
+                        folder, destination, ancestry_before)
+                    copied += task.size
+                    completed += 1
+                    notify.send(index, plan.count, copied, plan.total, str(source), force=True)
+                    continue
+                # A crash can leave a committed file ahead of its checkpoint.
+                # Only adopt it after identity-verified SHA-256 of both ends.
+                if entry is None and destination_hash is not None:
+                    source_hash = sha256_verified_backup_source(
+                        source, task.size, task.mtime_ns, cancelled)
+                    if source_hash == destination_hash:
+                        require_unchanged_destination_ancestry(
+                            folder, destination, ancestry_before)
+                        new_entry = {'source': str(source), 'relative': task.destination,
+                                     'bytes': task.size, 'sha256': destination_hash,
+                                     'verified': True, 'owners': owners_for(source, item_descriptors)}
+                        manifest['files'].append(new_entry)
+                        existing[task.destination] = new_entry
                         copied += task.size
                         completed += 1
                         notify.send(index, plan.count, copied, plan.total, str(source), force=True)
                         continue
-                # A crash may leave an already-written atomic file before the
-                # next manifest checkpoint. Adopt it only after verifying BOTH
-                # source and destination, without trusting its filename alone.
-                if entry is None and destination.is_file() and not is_reparse(destination):
-                    if destination.stat().st_size == task.size:
-                        source_hash = sha256_verified_backup_source(source, task.size, task.mtime_ns, cancelled)
-                        destination_hash = sha256_file(destination, cancelled)
-                        if source_hash == destination_hash:
-                            new_entry = {'source': str(source), 'relative': task.destination,
-                                         'bytes': task.size, 'sha256': destination_hash,
-                                         'verified': True, 'owners': owners_for(source, item_descriptors)}
-                            manifest['files'].append(new_entry)
-                            existing[task.destination] = new_entry
-                            copied += task.size
-                            completed += 1
-                            notify.send(index, plan.count, copied, plan.total, str(source), force=True)
-                            continue
                 temp = destination.with_name(destination.name + '.partial-' + uuid.uuid4().hex[:8])
                 dig = hashlib.sha256()
                 size_read = 0
