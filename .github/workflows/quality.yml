@@ -1,25 +1,29 @@
 name: Quality checks
-# PR = fast Windows safety checks; full suite = explicit approval or release tag.
+# Manual only while GitHub Actions quota is exhausted.
+# Choose fast safety checks or the full regression suite explicitly.
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
+    inputs:
+      suite:
+        description: 'Select test suite to run'
+        required: true
+        default: 'fast'
+        type: choice
+        options:
+          - fast
+          - full
 
 permissions:
   contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  # Never interrupt a manually requested full validation or release.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   fast-tests:
     name: Fast PR safety (Windows)
-    if: github.event_name == 'pull_request'
+    if: inputs.suite == 'fast'
     runs-on: windows-latest
     timeout-minutes: 7
     steps:
@@ -53,7 +57,7 @@ jobs:
 
   safe-unit-tests:
     name: Full regression (${{ matrix.os }})
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    if: inputs.suite == 'full'
     strategy:
       fail-fast: false
       matrix:
