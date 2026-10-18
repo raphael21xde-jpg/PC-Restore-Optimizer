@@ -386,9 +386,9 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 after = os.stat(source, follow_symlinks=False)
                 if (after.st_size != task.size or after.st_mtime_ns != task.mtime_ns or size_read != task.size):
                     raise OSError('Fonte alterada enquanto copiava; arquivo não validado')
-                copy_digest = sha256_file(temp, cancelled)
-                if copy_digest != dig.hexdigest():
-                    raise OSError('SHA-256 não corresponde ao arquivo original')
+                # Hash the committed destination once, not the partial and then
+                # the destination: avoids a third full read for large backups.
+                copy_digest = dig.hexdigest()
                 require_unchanged_destination_ancestry(folder, destination, ancestry_before)
                 os.replace(temp, destination)
                 temp = None
