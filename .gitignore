@@ -25,3 +25,6 @@ vaults/
 *.vhdx
 *.wim
 *.esd
+
+# Logs de testes locais: nao publicar dados da maquina por git push
+.pcro-test-reports/
