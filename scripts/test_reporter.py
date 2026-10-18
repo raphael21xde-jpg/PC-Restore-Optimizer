@@ -65,8 +65,8 @@ def report_comment(log: str, *, pattern: str, exit_code: int,
         "## PC Restore & Optimizer - testes locais\n\n"
         f"- Status: **{status}** (codigo de saida {exit_code})\n"
         f"- Data UTC: {date_utc}\n"
-        f"- Commit testado: \`{sha}\`\n"
-        f"- Padrao de testes: \`{pattern}\`\n"
+        f"- Commit testado: `{sha}`\n"
+        f"- Padrao de testes: `{pattern}`\n"
         "- Execucao: **PowerShell/local, sem GitHub Actions**\n\n"
         "### Resultado\n\n"
         "~~~text\n" + summary + "\n~~~\n\n"
@@ -156,6 +156,10 @@ def main(argv: list[str] | None = None) -> int:
     preview_path = REPORT_DIR / (run_id + "-previsualizacao.md")
     outcome = run_unittest(args.pattern, log_path)
     log = log_path.read_text(encoding="utf-8", errors="replace")
+    # unittest may exit successfully even when discovery matches no tests.
+    if not re.search(r"(?m)^Ran [1-9][0-9]* tests? in ", log):
+        print("Nenhum teste foi encontrado ou o resumo esta ausente.", file=sys.stderr)
+        outcome = outcome or 4
     preview_path.write_text(
         report_comment(log, pattern=args.pattern, exit_code=outcome,
                        sha=git_commit(), date_utc=stamp + " UTC"),
