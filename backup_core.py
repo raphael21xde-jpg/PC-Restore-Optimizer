@@ -334,7 +334,7 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 from backup_destination_guard import (
                     validate_backup_destination_path, destination_ancestry_identity,
                     require_unchanged_destination_ancestry, open_verified_backup_temp,
-                    safe_cleanup_backup_temp)
+                    safe_cleanup_backup_temp, verify_committed_backup_file)
                 validate_backup_destination_path(folder, destination)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 validate_backup_destination_path(folder, destination)
@@ -392,6 +392,11 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 require_unchanged_destination_ancestry(folder, destination, ancestry_before)
                 os.replace(temp, destination)
                 temp = None
+                # The rename alone is not proof of durable, intact destination data.
+                # Do not register a verified manifest entry if the committed file
+                # was replaced or corrupted between the rename and this re-read.
+                verify_committed_backup_file(folder, destination, ancestry_before,
+                                             size_read, copy_digest, cancelled)
                 try:
                     shutil.copystat(source, destination, follow_symlinks=False)
                 except OSError:
