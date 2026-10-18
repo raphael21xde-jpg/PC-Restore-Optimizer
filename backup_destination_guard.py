@@ -142,3 +142,30 @@ def verify_committed_backup_file(folder, destination, ancestry_before,
     if checksum != expected_sha256:
         raise OSError('SHA-256 do destino mudou após a gravação.')
     return checksum
+
+
+def hash_existing_backup_file(folder, destination, ancestry_before,
+                              expected_size, cancelled=None):
+    """Hash an existing resume candidate using identity-bound reads.
+
+    Return None for an absent/size-mismatched regular file (which needs
+    re-copying). A link, swapped file, or changed ancestry fails closed.
+    The digest alone is not permission to skip: compare it to the manifest
+    AND independently re-hash the selected source first.
+    """
+    from backup_source_guard import sha256_verified_backup_source
+
+    require_unchanged_destination_ancestry(folder, destination, ancestry_before)
+    try:
+        info = os.lstat(destination)
+    except FileNotFoundError:
+        return None
+    if (not stat.S_ISREG(info.st_mode) or not info.st_ino
+            or is_reparse(destination)):
+        raise OSError('Candidato de retomada não é arquivo comum seguro.')
+    if info.st_size != expected_size:
+        return None
+    digest = sha256_verified_backup_source(
+        destination, expected_size, info.st_mtime_ns, cancelled)
+    require_unchanged_destination_ancestry(folder, destination, ancestry_before)
+    return digest
