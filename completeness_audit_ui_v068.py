@@ -522,7 +522,7 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
             f"Índice: {index_state['filename']} · estado: {preview['source_state']} · "
             f"{preview['total']} escolha(s): {preview['keep']} preservar, "
             f"{preview['skip']} não copiar · {len(ignored)} escolha(s) da Lixeira bloqueada(s) · "
-            f"{preview['conflicts']} conflito(s) 
+            f"{preview['conflicts']} conflito(s) "
             f"com o plano atual · C: {c_keep} preservar, {c_skip} não copiar · "
             f"estado: {index_state['status']}. "
             "Nenhum arquivo foi copiado; a origem não foi examinada novamente.")
