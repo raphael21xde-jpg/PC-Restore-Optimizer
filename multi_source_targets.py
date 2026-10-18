@@ -6,12 +6,29 @@ Same-volume checks are conservative: actual physical independence remains unprov
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 from pathlib import Path
 import shutil
 
 from multi_backup_destinations import _resolved_folder, _under
 from volume_paths import volume_of
 from backup_target_preflight import assess_backup_target
+
+
+def diagnostic_fingerprint(diagnostic):
+    """Fingerprint observed topology; never interpret it as physical proof."""
+    if not isinstance(diagnostic, dict):
+        raise ValueError('Diagnóstico de discos inválido.')
+    try:
+        payload = json.dumps(
+            {key: diagnostic.get(key) for key in
+             ('disks', 'volumes', 'extent_mapping', 'spaces_membership')},
+            ensure_ascii=False, sort_keys=True, separators=(',', ':'),
+            allow_nan=False).encode('utf-8')
+    except (TypeError, ValueError) as exc:
+        raise ValueError('Diagnóstico de discos inválido.') from exc
+    return hashlib.sha256(payload).hexdigest()
 
 
 def preview_multi_source_targets(plan, destinations, *, usage=shutil.disk_usage,
@@ -60,9 +77,9 @@ def preview_multi_source_targets(plan, destinations, *, usage=shutil.disk_usage,
         targets.append({'path': str(folder), 'volume': volume.upper(),
                         'free_bytes': free, 'reserve_bytes': reserve,
                         'preflight_status': 'requires_review'})
+    fingerprint = None
     if disk_diagnostic is not None:
-        if not isinstance(disk_diagnostic, dict):
-            raise ValueError('Diagnóstico de discos inválido.')
+        fingerprint = diagnostic_fingerprint(disk_diagnostic)
         source_letters = [v[:-1] for v in sorted(source_volumes)
                           if len(v) == 2 and v[1] == ':' and v[0].isalpha()]
         if len(source_letters) != len(source_volumes):
@@ -91,6 +108,7 @@ def preview_multi_source_targets(plan, destinations, *, usage=shutil.disk_usage,
             'source_volumes': sorted(source_volumes),
             'destinations': targets,
             'bytes_per_copy': plan.total,
+            'disk_diagnostic_sha256': fingerprint,
             'physical_independence_verified': False,
             'backup_verified': False,
             'ready_for_format': False,
