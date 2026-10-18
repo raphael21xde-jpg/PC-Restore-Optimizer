@@ -45,6 +45,7 @@ jobs:
           python -m unittest discover -s tests -p "test_preservation_remove_choice_ui.py" -v
           python -m unittest discover -s tests -p "test_audit_v069.py" -v
           python -m unittest discover -s tests -p "test_audit_history_handoff.py" -v
+          python -m unittest discover -s tests -p "test_index_audit_bridge.py" -v
       - name: Smoke-test local PowerShell runner (one test, no heavy suite)
         shell: pwsh
         run: |
