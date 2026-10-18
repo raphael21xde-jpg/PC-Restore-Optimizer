@@ -77,7 +77,8 @@ class Audit068Tests(unittest.TestCase):
 
     def test_preview_reparse_child_not_followed(self):
         with tempfile.TemporaryDirectory() as root:
-            p=Path(root); t=p/'target';t.mkdir();try:
+            p=Path(root); t=p/'target'; t.mkdir()
+            try:
                 (p/'ln').symlink_to(t,target_is_directory=True)
             except OSError as exc:
                 if getattr(exc, 'winerror', None) == 1314:
