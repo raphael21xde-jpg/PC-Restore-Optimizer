@@ -49,6 +49,41 @@ class Audit069Tests(unittest.TestCase):
                                        'skipped':[{'path':r'C:\Saves\Example\link','reason':'link'}]}
         self.assertEqual(len(enhance_report_069(old)['scan_summary']['selected_path_overlaps']),2)
 
+    def test_preservation_readiness_counts_verified_files_without_claiming_full_coverage(self):
+        sample = self.report()
+        sample['boot'] = {'status': 'SISTEMA EM OUTRO DISCO'}
+        proof = {'backup_verified': True, 'manifest': 'manifest.json',
+                 'verified_source_files': [r'C:\Saves\Example\save.dat'],
+                 'files_verified': 1, 'bytes_verified': 128}
+        result = enhance_report_069(sample, proof=proof)
+        progress = result['preservation_readiness']
+        self.assertEqual(progress['selected_paths'], 2)
+        self.assertEqual(progress['paths_with_verified_manifest_files'], 1)
+        self.assertEqual(progress['paths_without_manifest_proof'], 1)
+        self.assertEqual(progress['selected_paths_with_full_coverage_proven'], 0)
+        self.assertEqual(progress['selected_paths_with_restore_proven'], 0)
+        self.assertTrue(progress['manifest_verified_in_this_session'])
+        self.assertEqual(progress['boot_status'], 'SISTEMA EM OUTRO DISCO')
+        self.assertFalse(progress['ready_for_format'])
+        self.assertFalse(progress['installation_authorized'])
+
+    def test_preservation_readiness_without_proof_stays_pending(self):
+        result = enhance_report_069(self.report())
+        progress = result['preservation_readiness']
+        self.assertEqual(progress['paths_without_manifest_proof'], 2)
+        self.assertEqual(progress['paths_with_verified_manifest_files'], 0)
+        self.assertFalse(progress['manifest_verified_in_this_session'])
+        self.assertEqual(progress['boot_status'], 'NÃO CONFERIDO')
+        self.assertFalse(progress['installation_authorized'])
+
+    def test_readiness_includes_scan_overlap_without_repeating_scans(self):
+        report = self.report()
+        report['scan_c'] = {'status': 'COM LACUNAS', 'errors': [
+            {'path': r'C:\Saves\Example\locked.dat', 'reason': 'access denied'}],
+            'skipped': []}
+        progress = enhance_report_069(report)['preservation_readiness']
+        self.assertEqual(progress['scan_gaps_overlapping_choices'], 1)
+
     def test_extent_parser_multidisk_and_offsets(self):
         raw=struct.pack('<I4x',2)+struct.pack('<I4xqq',0,1048576,200)+struct.pack('<I4xqq',7,4096,100)
         self.assertEqual([x['disk_number'] for x in parse_extents(raw)],[0,7])

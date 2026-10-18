@@ -21,7 +21,7 @@ import os
 import ntpath
 
 
-def show_completeness_audit(app, plan):
+def show_completeness_audit(app, plan, *, history_manifest=None):
     window = tk.Toplevel(app)
     window.title('v0.6.9 • Auditoria inteligente e discos / EFI')
     window.geometry('1210x790')
@@ -37,6 +37,13 @@ def show_completeness_audit(app, plan):
               wraplength=1050, foreground='#F3BE67').pack(anchor='w', pady=(0, 8))
     status = tk.StringVar(value='Conferindo caminhos e consultando discos; aguarde...')
     ttk.Label(frame, textvariable=status, wraplength=1050).pack(anchor='w', pady=(0, 7))
+    readiness_status = tk.StringVar(value='Preservação: evidências ainda não avaliadas. Formatação bloqueada.')
+    ttk.Label(frame, textvariable=readiness_status, wraplength=1050,
+              foreground='#F3BE67').pack(anchor='w', pady=(0, 7))
+    if history_manifest is not None:
+        ttk.Label(frame, text='Backup escolhido no Histórico: ' + str(history_manifest)
+                  + ' (ainda não verificado nesta sessão).',
+                  wraplength=1050).pack(anchor='w', pady=(0, 6))
     notebook = ttk.Notebook(frame)
     notebook.pack(fill='both', expand=True)
 
@@ -101,6 +108,10 @@ def show_completeness_audit(app, plan):
     import_button.pack(side='left', padx=(0, 8))
     proof_button = ttk.Button(controls, text='Conferir manifest.json anterior')
     proof_button.pack(side='left', padx=(0, 8))
+    history_proof_button = ttk.Button(
+        controls, text='Conferir SHA-256 do backup no Histórico',
+        state='normal' if history_manifest is not None else 'disabled')
+    history_proof_button.pack(side='left', padx=(0, 8))
     export_button = ttk.Button(controls, text='Exportar auditoria JSON', state='disabled')
     export_button.pack(side='left', padx=(0, 8))
     ttk.Button(controls, text='Ver escolhas em Meu Computador',
@@ -115,6 +126,15 @@ def show_completeness_audit(app, plan):
                                        if volume_of(p) == 'C:' and c in ('keep', 'skip')]
         result['report'] = report
         counts = report['counts']
+        readiness = report['preservation_readiness']
+        readiness_status.set(
+            f"PRONTIDÃO: {readiness['state']} · "
+            f"{readiness['selected_paths']} caminho(s) selecionado(s) no C: · "
+            f"{readiness['paths_with_verified_manifest_files']} com algum arquivo SHA-256 verificado · "
+            f"{readiness['paths_without_manifest_proof']} sem prova vinculada · "
+            f"{readiness['scan_gaps_overlapping_choices']} lacuna(s) cruzando escolhas · "
+            f"Boot/EFI: {readiness['boot_status']}. "
+            "Cobertura integral e restauração pós-Windows NÃO comprovadas.")
         status.set(f"{counts['locations_reviewed']} local(is) conferido(s) por metadados · "
                    f"{counts['locations_needing_review']} exigem revisão · "
                    f"Inventário C: {report['scan_c']['status']} · {counts['c_scan_errors']} falhas + {counts['c_scan_skipped']} itens ignorados (não apagados) · "
@@ -175,8 +195,12 @@ def show_completeness_audit(app, plan):
                              values=(evidence.get('status', 'NÃO CONFERIDO'),
                                      f"{evidence.get('files_verified', 0)} arquivos do manifesto. Cobertura completa NÃO comprovada."))
         for row in report.get('recovery_map', []):
+            count = row.get('verified_manifest_files', 0)
+            detail = (row['restore_target_after_windows']
+                      + f' · {count} arquivo(s) do manifesto verificado(s) neste caminho.'
+                      + ' Cobertura integral e restauração NÃO comprovadas.')
             recovery_tree.insert('', 'end', text=row['source_path'],
-                                 values=(row['status'], row['restore_target_after_windows'] + ' · Restauração não comprovada nesta auditoria'))
+                                 values=(row['status'], detail))
         if not report.get('recovery_map'):
             recovery_tree.insert('', 'end', text='Nenhum caminho do C: selecionado.',
                                  values=('REVISAR', 'Escolha dados antes de planejar recuperação'))
@@ -238,6 +262,8 @@ def show_completeness_audit(app, plan):
             return
         if kind == 'proof':
             proof_button.configure(state='normal')
+            history_proof_button.configure(
+                state='normal' if history_manifest is not None else 'disabled')
         if error:
             if kind == 'review':
                 review_status.set('Não foi possível consultar a pasta: ' + error)
@@ -422,25 +448,35 @@ def show_completeness_audit(app, plan):
                 results_queue.put(('import', None, str(exc)))
         threading.Thread(target=work, daemon=True, name='PCRO-v068-import').start()
 
-    def verify_old():
-        filename = filedialog.askopenfilename(parent=window, title='Selecione manifest.json do backup real',
-                                              filetypes=[('JSON do manifesto', '*.json')])
-        if not filename:
-            return
+    def verify_manifest_path(filename):
+        # This is an explicit request by the user, never executed on opening
+        # the audit or on selecting an entry in Histórico.
         proof_button.configure(state='disabled')
+        history_proof_button.configure(state='disabled')
         proof_state['proof'] = None
         if result['base']:
             draw(result['base'])
-        status.set('Verificando hashes do backup anterior. Pode demorar...')
+        status.set('Verificando SHA-256 dos arquivos do manifesto. Isso pode demorar; nenhuma cópia será criada.')
         def work():
             try:
                 results_queue.put(('proof', inspect_verified_manifest(filename), None))
             except Exception as exc:
                 results_queue.put(('proof', None, str(exc)))
-        threading.Thread(target=work, daemon=True, name='PCRO-v068-proof').start()
+        threading.Thread(target=work, daemon=True, name='PCRO-v069-proof').start()
+
+    def verify_old():
+        filename = filedialog.askopenfilename(parent=window, title='Selecione manifest.json do backup real',
+                                              filetypes=[('JSON do manifesto', '*.json')])
+        if filename:
+            verify_manifest_path(filename)
+
+    def verify_history():
+        if history_manifest is not None:
+            verify_manifest_path(history_manifest)
 
     import_button.configure(command=import_old)
     proof_button.configure(command=verify_old)
+    history_proof_button.configure(command=verify_history)
     ttk.Button(path_actions, text='Examinar selecionado (sem copiar)', command=inspect_candidate).pack(side='left', padx=(0,6))
     ttk.Button(path_actions, text='Marcar esta pasta para manter', command=mark_candidate).pack(side='left', padx=6)
     ttk.Button(path_actions, text='Não preservar esta pasta (não exclui)',
