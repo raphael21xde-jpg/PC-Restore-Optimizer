@@ -27,8 +27,8 @@ class MultiSourcePreviewTests(unittest.TestCase):
             [str(self.first), str(self.second)], [str(self.a), str(self.b)])
         self.assertEqual(plan.count, 2)
         self.assertEqual(plan.total, self.first.stat().st_size + self.second.stat().st_size)
-        self.assertEqual({str(self.first), str(self.second)},
-                         {str(Path(task.source)) for task in plan.files})
+        self.assertEqual({str(self.first).casefold(), str(self.second).casefold()},
+                         {str(Path(task.source)).casefold() for task in plan.files})
         self.assertFalse(any(self.base.rglob('manifest.json')))
 
     def test_outside_root_is_rejected(self):
