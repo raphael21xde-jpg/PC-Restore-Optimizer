@@ -330,15 +330,10 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 if current.st_size != task.size or current.st_mtime_ns != task.mtime_ns:
                     raise OSError('Arquivo mudou desde a conferência; gere nova prévia')
                 destination = folder / task.destination
-                if not beneath(destination, folder):
-                    raise ValueError('Destino fora da pasta de backup.')
+                from backup_destination_guard import validate_backup_destination_path
+                validate_backup_destination_path(folder, destination)
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                # Do not trust junctions added between interrupted runs.
-                ancestor = destination.parent
-                while ancestor != folder:
-                    if is_reparse(ancestor):
-                        raise ValueError('Junção encontrada no destino do backup.')
-                    ancestor = ancestor.parent
+                validate_backup_destination_path(folder, destination)
                 entry = existing.get(task.destination)
                 if entry is not None and entry.get('verified') is True and entry.get('bytes') == task.size:
                     if (destination.is_file() and not is_reparse(destination) and
@@ -390,6 +385,7 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 copy_digest = sha256_file(temp, cancelled)
                 if copy_digest != dig.hexdigest():
                     raise OSError('SHA-256 não corresponde ao arquivo original')
+                validate_backup_destination_path(folder, destination)
                 os.replace(temp, destination)
                 temp = None
                 try:
