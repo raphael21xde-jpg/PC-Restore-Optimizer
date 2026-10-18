@@ -1,8 +1,7 @@
 name: Python source syntax
-# One lightweight job per PR (not per push); no pip, Windows runner or setup-python.
+# Manual only while GitHub Actions quota is exhausted; no pip, Windows runner or setup-python.
 on:
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
