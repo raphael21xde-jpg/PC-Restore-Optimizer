@@ -20,9 +20,15 @@ def in_scope(path, roots):
     """Only an absolute path under one of the explicitly chosen roots qualifies."""
     if not path:
         return False
-    value = normalized(path)
     raw = str(path)
-    drive = ntpath.splitdrive(raw.replace('/', '\\'))[0]
+    windows_path = raw.replace('/', '\\')
+    # Do not turn labels or relative paths into paths under the current drive.
+    # A Windows absolute drive path and a native absolute POSIX path are allowed.
+    if not (ntpath.isabs(windows_path) and len(ntpath.splitdrive(windows_path)[0]) == 2
+            or os.path.isabs(raw)):
+        return False
+    value = normalized(path)
+    drive = ntpath.splitdrive(windows_path)[0]
     if drive and (len(drive) != 2 or not ntpath.isabs(raw.replace('/', '\\'))):
         return False
     for root in roots:
