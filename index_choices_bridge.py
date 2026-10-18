@@ -19,6 +19,16 @@ MAX_CHOICES = 4000
 MAPPING = {"preservar": "keep", "nao_copiar": "skip"}
 
 
+def is_legacy_system_choice(path):
+    """Identify obsolete Recycle Bin paths regardless of drive or casing.
+
+    Such historical decisions may be viewed in the index but must never be
+    reintroduced into app.choices (whether preserve OR do-not-copy).
+    """
+    parts = ntpath.normcase(ntpath.normpath(str(path))).split("\\")
+    return any(part in ("$recycle.bin", "recycler") for part in parts)
+
+
 def _validate_path(path):
     if not isinstance(path, str) or not 4 <= len(path) <= 4096:
         raise ValueError("Escolha contém caminho inválido.")
@@ -57,6 +67,8 @@ def read_index_choices(path):
     result = {}
     for path, decision in choices.items():
         name = _validate_path(path)
+        if is_legacy_system_choice(name):
+            raise ValueError("Escolhas históricas da Lixeira não podem ser importadas; retire-as do JSON.")
         if decision not in MAPPING:
             raise ValueError("Escolha não reconhecida; exclusão nunca é permitida.")
         if name in result:
@@ -91,7 +103,9 @@ def apply_imported_choices(app, parsed):
     # Validate ALL paths and choices before the first application change.
     changes = {}
     for path, decision in parsed["choices"].items():
-        _validate_path(path)
+        name = _validate_path(path)
+        if is_legacy_system_choice(name):
+            raise ValueError("Escolha histórica da Lixeira bloqueada antes de alterar o plano.")
         if decision not in ("keep", "skip"):
             raise ValueError("Decisão inválida.")
         changes[norm(path)] = decision
