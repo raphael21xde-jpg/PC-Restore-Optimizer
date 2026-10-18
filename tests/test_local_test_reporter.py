@@ -6,7 +6,8 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch, SimpleNamespace
+from unittest.mock import patch
+from types import SimpleNamespace
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "test_reporter.py"
 SPEC = importlib.util.spec_from_file_location("pcro_test_reporter", SCRIPT)
