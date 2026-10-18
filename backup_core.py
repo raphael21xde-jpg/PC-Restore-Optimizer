@@ -334,6 +334,8 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 validate_backup_destination_path(folder, destination)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 validate_backup_destination_path(folder, destination)
+                from backup_destination_guard import destination_ancestry_identity, require_unchanged_destination_ancestry
+                ancestry_before = destination_ancestry_identity(folder, destination)
                 entry = existing.get(task.destination)
                 if entry is not None and entry.get('verified') is True and entry.get('bytes') == task.size:
                     if (destination.is_file() and not is_reparse(destination) and
@@ -385,7 +387,7 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 copy_digest = sha256_file(temp, cancelled)
                 if copy_digest != dig.hexdigest():
                     raise OSError('SHA-256 não corresponde ao arquivo original')
-                validate_backup_destination_path(folder, destination)
+                require_unchanged_destination_ancestry(folder, destination, ancestry_before)
                 os.replace(temp, destination)
                 temp = None
                 try:
