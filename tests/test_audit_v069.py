@@ -53,7 +53,7 @@ class Audit069Tests(unittest.TestCase):
         sample = self.report()
         sample['boot'] = {'status': 'SISTEMA EM OUTRO DISCO'}
         proof = {'backup_verified': True, 'manifest': 'manifest.json',
-                 'verified_source_files': [r'C:\\Saves\\Example\\save.dat'],
+                 'verified_source_files': [r'C:\Saves\Example\save.dat'],
                  'files_verified': 1, 'bytes_verified': 128}
         result = enhance_report_069(sample, proof=proof)
         progress = result['preservation_readiness']
@@ -79,7 +79,7 @@ class Audit069Tests(unittest.TestCase):
     def test_readiness_includes_scan_overlap_without_repeating_scans(self):
         report = self.report()
         report['scan_c'] = {'status': 'COM LACUNAS', 'errors': [
-            {'path': r'C:\\Saves\\Example\\locked.dat', 'reason': 'access denied'}],
+            {'path': r'C:\Saves\Example\locked.dat', 'reason': 'access denied'}],
             'skipped': []}
         progress = enhance_report_069(report)['preservation_readiness']
         self.assertEqual(progress['scan_gaps_overlapping_choices'], 1)
