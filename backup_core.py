@@ -331,11 +331,13 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 if current.st_size != task.size or current.st_mtime_ns != task.mtime_ns:
                     raise OSError('Arquivo mudou desde a conferência; gere nova prévia')
                 destination = folder / task.destination
-                from backup_destination_guard import validate_backup_destination_path
+                from backup_destination_guard import (
+                    validate_backup_destination_path, destination_ancestry_identity,
+                    require_unchanged_destination_ancestry, open_verified_backup_temp,
+                    safe_cleanup_backup_temp)
                 validate_backup_destination_path(folder, destination)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 validate_backup_destination_path(folder, destination)
-                from backup_destination_guard import destination_ancestry_identity, require_unchanged_destination_ancestry
                 ancestry_before = destination_ancestry_identity(folder, destination)
                 entry = existing.get(task.destination)
                 if entry is not None and entry.get('verified') is True and entry.get('bytes') == task.size:
@@ -365,7 +367,8 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 temp = destination.with_name(destination.name + '.partial-' + uuid.uuid4().hex[:8])
                 dig = hashlib.sha256()
                 size_read = 0
-                with open_verified_backup_source(source, task.size, task.mtime_ns) as src, open(temp, 'xb') as dst:
+                with (open_verified_backup_source(source, task.size, task.mtime_ns) as src,
+                      open_verified_backup_temp(folder, destination, temp, ancestry_before) as dst):
                     while True:
                         if cancelled and cancelled.is_set():
                             raise InterruptedError('Backup interrompido')
@@ -380,8 +383,6 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                         dig.update(data)
                         size_read += len(data)
                         notify.send(index, plan.count, copied + size_read, plan.total, str(source))
-                    dst.flush()
-                    os.fsync(dst.fileno())
                 after = os.stat(source, follow_symlinks=False)
                 if (after.st_size != task.size or after.st_mtime_ns != task.mtime_ns or size_read != task.size):
                     raise OSError('Fonte alterada enquanto copiava; arquivo não validado')
@@ -416,10 +417,7 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 manifest['errors'].append({'source': task.source, 'error': str(err)})
             finally:
                 if temp is not None:
-                    try:
-                        Path(temp).unlink(missing_ok=True)
-                    except OSError:
-                        pass
+                    safe_cleanup_backup_temp(folder, destination, temp, ancestry_before)
         manifest['status'] = ('interrompido' if stopped else
                               ('concluido' if not manifest['errors'] and len(manifest['files']) == plan.count
                                else 'parcial_com_erros'))
