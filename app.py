@@ -1054,7 +1054,7 @@ class App(tk.Tk):
         self.backup_list.pack(fill='both',expand=True,padx=18,pady=16)
         ttk.Button(self.history, text='Ver conteúdo: programas, jogos, saves e arquivos', command=self.show_backup_contents).pack(anchor='w', padx=18, pady=4)
         ttk.Button(self.history, text='Auditar este backup + dados + EFI (sem formatar)',
-                   command=self.audit_selected_backup).pack(anchor='w', padx=18, pady=4)
+                   command=self.open_selected_backup_completeness_audit).pack(anchor='w', padx=18, pady=4)
         controls=ttk.Frame(self.history);controls.pack(fill='x',padx=18,pady=(0,14))
         ttk.Button(controls,text='Atualizar histórico',command=self.refresh_history).pack(side='left',padx=(0,9))
         ttk.Button(controls,text='Testar restauração de arquivo pequeno',command=self.test_restore).pack(side='left',padx=(0,9))
@@ -1094,7 +1094,7 @@ class App(tk.Tk):
         ids=self.backup_list.curselection()
         return self.backup_manifests[ids[0]] if ids else None
 
-    def audit_selected_backup(self):
+    def open_selected_backup_completeness_audit(self):
         """Reuse the existing v0.6.9 auditor with the selected history backup.
 
         Opening is read-only. SHA-256 of the manifest must be initiated
