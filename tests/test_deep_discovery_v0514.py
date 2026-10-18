@@ -24,7 +24,8 @@ class DeepDiscoveryTests(unittest.TestCase):
         p=self.root/'random';p.mkdir();self.apps[0]['install_location']=str(p)
         self.assertTrue(any(x['confidence']=='caminho identificado' for x in self.run_scan()['records']))
     def test_symlink_is_reported_not_followed(self):
-        outside=self.root/'other';outside.mkdir();try:
+        outside=self.root/'other'; outside.mkdir()
+        try:
             (self.root/'link').symlink_to(outside,target_is_directory=True)
         except OSError as exc:
             if getattr(exc, 'winerror', None) == 1314:
