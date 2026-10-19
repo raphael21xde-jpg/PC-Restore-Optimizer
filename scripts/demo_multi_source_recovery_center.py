@@ -20,9 +20,8 @@ sys.path.insert(0, str(ROOT))
 
 import backup_core
 from multi_source_fixture_runner import run_multi_source_fixture_backups
-from multi_source_offline_import import reopen_fixture_backup_session
+from multi_source_offline_reopen_ui import show_fixture_offline_reopen
 from multi_source_plan import prepare_multi_source_preview
-from multi_source_recovery_center_ui import show_fixture_recovery_center
 from multi_source_targets import preview_multi_source_targets
 from transfer_engine import choose_strategy
 
@@ -71,22 +70,22 @@ def create_demo(root):
             usage=usage, volume_lookup=volume)
     if copies['status'] != 'all_local_copies_verified':
         raise RuntimeError('Não foi possível preparar as cópias fictícias.')
-    # Simulate reopening the application with NO previous inventory in memory.
-    offline = reopen_fixture_backup_session(
-        [str(backup_a), str(backup_b)], str(restore), test_root=str(root))
-    return offline['plan'], offline['copies_report'], restore
+    # Intentionally discard the plan and reports. The next UI will reconstruct
+    # the entire offline session only from the backup folders.
+    return [backup_a, backup_b], restore
 
 
 def main():
     with tempfile.TemporaryDirectory(prefix='pcro-centro-demo-') as name:
         sandbox = Path(name).resolve()
-        plan, copies, restore = create_demo(sandbox)
+        backup_roots, restore = create_demo(sandbox)
         root = tk.Tk()
         root.withdraw()
         try:
-            dialog = show_fixture_recovery_center(
-                root, plan, copies,
-                test_root=str(sandbox), restore_parent=str(restore))
+            dialog = show_fixture_offline_reopen(
+                root, test_root=str(sandbox),
+                restore_parent=str(restore),
+                initial_backup_roots=[str(path) for path in backup_roots])
             root.wait_window(dialog)
         finally:
             root.destroy()
