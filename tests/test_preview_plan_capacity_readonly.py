@@ -82,7 +82,7 @@ class PreviewPlanBridgeTests(unittest.TestCase):
             files=[file_task('D', 'app.bin', 4 * GIB),
                    file_task('Y', 'music.osz', 2 * GIB)],
             total=6 * GIB,
-            selected=['D:\\Apps', 'Y:\\Games'],
+            selected=['D:\\Chosen', 'Y:\\Chosen'],
             skipped=[], warnings=[])
         result = reviewed_preview_capacity(plan, ['y:', 'd:'])
         self.assertEqual(result['size_text'], '6,000')
@@ -142,6 +142,24 @@ class PreviewPlanBridgeTests(unittest.TestCase):
         value = reviewed_preview_capacity(plan, ['Z'])
         self.assertEqual(value['size_text'], '0,001')
         self.assertGreater(parse_estimated_backup_gib(value['size_text']), 1)
+
+    def test_reject_unselected_path_on_same_drive(self):
+        plan = preview()
+        plan.files[0].source = 'Q:\\Other\\one.dat'
+        with self.assertRaises(ValueError):
+            reviewed_preview_capacity(plan, ['Q'])
+
+    def test_reject_drive_relative_path_even_if_drive_matches(self):
+        plan = preview()
+        plan.files[0].source = 'Q:relative.dat'
+        with self.assertRaises(ValueError):
+            reviewed_preview_capacity(plan, ['Q'])
+
+    def test_reject_selected_root_without_file_coverage(self):
+        plan = preview()
+        plan.selected.append('Q:\\Empty')
+        with self.assertRaises(ValueError):
+            reviewed_preview_capacity(plan, ['Q'])
 
     def test_reject_path_without_drive_instead_of_guessing(self):
         plan = preview()
