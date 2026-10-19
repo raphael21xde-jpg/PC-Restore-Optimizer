@@ -21,6 +21,14 @@ VALID_CROSSCHECK = frozenset({
     'unavailable', 'inconclusive', 'extent_only', 'partition_only',
     'conflict', 'limited_match', 'logical_match',
 })
+VALID_SPACES_EVIDENCE = frozenset({
+    'not_applicable', 'not_confirmed', 'ambiguous',
+    'incomplete', 'members_reported_unverified',
+})
+VALID_WMI_EVIDENCE = frozenset({
+    'not_applicable', 'not_confirmed', 'ambiguous', 'reported', 'not_reported',
+})
+VALID_RESILIENCY = frozenset({'unknown', 'simple', 'mirror', 'parity'})
 VALID_CAPACITY = frozenset({
     'insufficient', 'unknown', 'not_evaluated', 'reported_sufficient',
 })
@@ -44,6 +52,35 @@ def _enum(value, allowed):
     if not isinstance(value, str) or value not in allowed:
         raise ValueError('Estado inválido no relatório.')
     return value
+
+
+
+def _bounded_count(value, max_count):
+    if value is None:
+        return None
+    if type(value) is not int or not 0 <= value <= max_count:
+        raise ValueError('Contagem de dispositivos inválida.')
+    return value
+
+
+def _safe_hardware_evidence(value):
+    if value is None:  # Legacy simulated reports lack the optional evidence.
+        value = {}
+    if not isinstance(value, dict):
+        raise ValueError('Evidência de hardware inválida.')
+    return {
+        'spaces_membership_status': _enum(
+            value.get('spaces_membership_status', 'not_applicable'), VALID_SPACES_EVIDENCE),
+        'spaces_members_count': _bounded_count(value.get('spaces_members_count'), 256),
+        'spaces_resiliency': _enum(
+            value.get('spaces_resiliency', 'unknown'), VALID_RESILIENCY),
+        'wmi_diskdrive_status': _enum(
+            value.get('wmi_diskdrive_status', 'not_applicable'), VALID_WMI_EVIDENCE),
+        'wmi_partition_status': _enum(
+            value.get('wmi_partition_status', 'not_applicable'), VALID_WMI_EVIDENCE),
+        'wmi_partition_count': _bounded_count(
+            value.get('wmi_partition_count'), 256),
+    }
 
 
 def sanitized_drive_report(data):
@@ -85,6 +122,7 @@ def sanitized_drive_report(data):
                 row.get('partition_crosscheck', 'unavailable'), VALID_CROSSCHECK),
             'partition_logical_disk_numbers': _disk_numbers(
                 row.get('partition_logical_disk_numbers', [])),
+            'hardware_evidence': _safe_hardware_evidence(row.get('hardware_evidence')),
         })
     for row in targets:
         if not isinstance(row, dict):
@@ -106,6 +144,7 @@ def sanitized_drive_report(data):
                 row.get('partition_crosscheck', 'unavailable'), VALID_CROSSCHECK),
             'partition_logical_disk_numbers': _disk_numbers(
                 row.get('partition_logical_disk_numbers', [])),
+            'hardware_evidence': _safe_hardware_evidence(row.get('hardware_evidence')),
             'capacity_status': _enum(row.get('capacity_status'), VALID_CAPACITY),
             'status': _enum(row.get('status'), VALID_TARGET_STATUS),
             'blocker_count': len(blockers),
