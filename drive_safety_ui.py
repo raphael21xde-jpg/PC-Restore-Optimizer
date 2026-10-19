@@ -325,9 +325,28 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
         show_details('Seleção alterada. Faça nova conferência somente leitura.')
         status.set('Seleção modificada; diagnóstico anterior não é mais válido.')
 
-    source.trace_add('write', invalidate_on_edit)
-    target.trace_add('write', invalidate_on_edit)
-    size_estimate.trace_add('write', invalidate_on_edit)
+    # StringVar.trace_add registers Tcl command callbacks holding Python
+    # closures. Remove those registrations while Tk is still on the main
+    # thread, before Tcl interpreter shutdown / cyclic garbage collection.
+    # Leaving them behind can cause Python 3.13 Tk teardown warnings when
+    # a background inventory worker happens to trigger GC.
+    edit_traces = (
+        (source, source.trace_add('write', invalidate_on_edit)),
+        (target, target.trace_add('write', invalidate_on_edit)),
+        (size_estimate, size_estimate.trace_add('write', invalidate_on_edit)),
+    )
+
+    def cleanup_traces(event):
+        if event.widget is not dialog:
+            return
+        for variable, callback_name in edit_traces:
+            try:
+                variable.trace_remove('write', callback_name)
+            except (tk.TclError, RuntimeError):
+                # Tk might already have torn down this Tcl callback.
+                pass
+
+    dialog.bind('<Destroy>', cleanup_traces, add='+')
 
     def poll():
         if timers.closed:
