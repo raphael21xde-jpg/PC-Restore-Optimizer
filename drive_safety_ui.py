@@ -15,6 +15,7 @@ from drive_safety_report import _normalize_letters, inspect_fresh_drive_safety
 from drive_safety_export import safe_drive_report_json
 from drive_diagnostic_advice import FINDING_TEXT
 from backup_capacity_input import parse_estimated_backup_gib
+from preview_plan_capacity import reviewed_preview_capacity
 from runtime_volumes import discover_drive_letters
 from ui_timers import WindowTimers
 
@@ -240,6 +241,38 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
         copy_btn.configure(state='normal' if enabled and state['result'] is not None
                            else 'disabled')
 
+    def use_preview_size():
+        # Explicit action: only previously generated in-memory selection Plan.
+        # No disk scan and no external API. Never assume the plan includes
+        # additional browsers, saves or sources not actually in its FileTasks.
+        if state['busy']:
+            return
+        try:
+            src = _normalize_letters(
+                [p.strip() for p in source.get().split(',')],
+                maximum=32, field='Origens')
+            if getattr(parent, 'busy', False) is True:
+                raise ValueError('Prévia ainda em atualização.')
+            reviewed = reviewed_preview_capacity(getattr(parent, 'plan', None), src)
+        except ValueError:
+            # Avoid retaining a previous result if the operator tried to
+            # change estimates using an unverified/incomplete preview.
+            state['result'] = None
+            copy_btn.configure(state='disabled')
+            show_details('Prévia indisponível ou parcial para estas origens. '
+                         'Gere/revise o plano correspondente ou digite '
+                         'manualmente uma estimativa de tamanho.')
+            status.set('Tamanho da prévia recusado; nenhum disco consultado.')
+            return
+        size_estimate.set(reviewed['size_text'])
+        show_details('Usando tamanho da prévia já calculada: ' +
+                     str(reviewed['reported_files']) +
+                     ' arquivos, arredondado para cima a 0,001 GiB. '
+                     'Não abrange itens fora da prévia; revise suas escolhas. '
+                     'Clique Conferir discos para comparar o espaço disponível.')
+        status.set('Tamanho da prévia preenchido; confira as origens '
+                   'e solicite novo diagnóstico somente leitura.')
+
     def verify():
         if state['busy']:
             return
@@ -307,6 +340,9 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
     verify_btn = ttk.Button(
         controls, text='Conferir discos (SOMENTE LEITURA)', command=verify)
     verify_btn.pack(side='left')
+    preview_btn = ttk.Button(
+        controls, text='Usar tamanho da prévia', command=use_preview_size)
+    preview_btn.pack(side='left', padx=(10, 0))
     copy_btn = ttk.Button(
         controls, text='Copiar resumo seguro', command=copy_safe_summary,
         state='disabled')
