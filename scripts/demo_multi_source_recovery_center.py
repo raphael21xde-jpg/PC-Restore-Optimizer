@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 import backup_core
 from multi_source_fixture_runner import run_multi_source_fixture_backups
+from multi_source_offline_import import reopen_fixture_backup_session
 from multi_source_plan import prepare_multi_source_preview
 from multi_source_recovery_center_ui import show_fixture_recovery_center
 from multi_source_targets import preview_multi_source_targets
@@ -70,7 +71,10 @@ def create_demo(root):
             usage=usage, volume_lookup=volume)
     if copies['status'] != 'all_local_copies_verified':
         raise RuntimeError('Não foi possível preparar as cópias fictícias.')
-    return plan, copies, restore
+    # Simulate reopening the application with NO previous inventory in memory.
+    offline = reopen_fixture_backup_session(
+        [str(backup_a), str(backup_b)], str(restore), test_root=str(root))
+    return offline['plan'], offline['copies_report'], restore
 
 
 def main():
