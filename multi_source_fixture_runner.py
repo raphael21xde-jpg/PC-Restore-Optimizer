@@ -47,3 +47,101 @@ def run_multi_source_fixture_backup(plan, target_preview, *, test_root,
             'physical_independence_verified': False,
             'ready_for_format': False,
             'installation_authorized': False}
+
+
+def run_multi_source_fixture_backups(plan, target_preview, *, test_root,
+                                     volume_lookup, usage, cancelled=None):
+    """Rehearse separate verified copies to 1-8 targets in a test sandbox.
+
+    Every source and every target is preflighted BEFORE the first write.
+    Each destination has its own manifest and SHA-256 verification. This
+    operation deliberately has no production/UI entry point or disk-format
+    authorization. It does NOT prove two paths are physically independent.
+    """
+    if test_root is None:
+        raise ValueError('Executor experimental exige raiz de testes isolada.')
+    sandbox = Path(test_root).resolve(strict=True)
+    if not sandbox.is_dir():
+        raise ValueError('Raiz de testes inválida.')
+
+    from selective_recovery import _any_reparse_ancestor
+
+    _any_reparse_ancestor(Path(test_root))
+    if not getattr(plan, 'files', None):
+        raise ValueError('Plano de fontes de teste inválido.')
+    if not isinstance(target_preview, dict):
+        raise ValueError('Prévia multidestino de teste inválida.')
+    requested = target_preview.get('destinations')
+    if not isinstance(requested, list) or not 1 <= len(requested) <= 8:
+        raise ValueError('Informe entre um e oito destinos de teste.')
+
+    def inside_sandbox(value):
+        raw = Path(value)
+        if not raw.is_absolute():
+            raise ValueError('Caminho de teste não é absoluto.')
+        _any_reparse_ancestor(raw)
+        resolved = raw.resolve(strict=True)
+        if resolved == sandbox or sandbox not in resolved.parents:
+            raise ValueError('Arquivo ou destino fora da raiz isolada.')
+        return resolved
+
+    # Check the entire selection before creating even the first backup.
+    for task in plan.files:
+        inside_sandbox(task.source)
+    folders = []
+    for row in requested:
+        if not isinstance(row, dict) or not isinstance(row.get('path'), str):
+            raise ValueError('Destino de teste inválido.')
+        folder = inside_sandbox(row['path'])
+        if not folder.is_dir():
+            raise ValueError('Destino de teste não é pasta.')
+        folders.append(folder)
+
+    fresh = recheck_multi_source_preview(
+        plan, target_preview, volume_lookup=volume_lookup, usage=usage)
+    if len(fresh['destinations']) != len(folders):
+        raise ValueError('Quantidade de destinos mudou após revalidação.')
+    for folder, observed in zip(folders, fresh['destinations']):
+        if str(folder) != observed['path']:
+            raise ValueError('Destino divergente após revalidação.')
+
+    results = []
+    for index, folder in enumerate(folders):
+        if cancelled is not None and cancelled.is_set():
+            results.append({'path': str(folder), 'status': 'cancelled_before_copy'})
+            break
+        try:
+            # The existing one-target fixture runner validates its scope and
+            # source metadata again immediately before each copy.
+            single_preview = dict(target_preview)
+            single_preview['destinations'] = [requested[index]]
+            report = run_multi_source_fixture_backup(
+                plan, single_preview, test_root=str(sandbox),
+                volume_lookup=volume_lookup, usage=usage, cancelled=cancelled)
+            if (report.get('backup_verified') is not True
+                    or report.get('files_verified') != plan.count):
+                raise OSError('Cópia experimental incompleta ou não verificada.')
+            results.append({
+                'path': str(folder), 'status': 'local_copy_verified',
+                'manifest': report['manifest'],
+                'files_verified': report['files_verified'],
+            })
+        except (OSError, ValueError, InterruptedError) as exc:
+            results.append({'path': str(folder), 'status': 'failed_or_interrupted',
+                            'error': str(exc)[:500]})
+            break
+
+    passed = sum(row['status'] == 'local_copy_verified' for row in results)
+    status = ('all_local_copies_verified' if passed == len(folders)
+              else 'partially_verified' if passed else 'not_verified')
+    return {
+        'schema': 'pcro-multi-source-fixture-copies-v1',
+        'status': status, 'copies_requested': len(folders),
+        'copies_verified_locally': passed, 'destinations': results,
+        'backup_verified': passed == len(folders),
+        'restore_test_verified': False,
+        'physical_independence_verified': False,
+        'ready_for_format': False, 'installation_authorized': False,
+        'note': ('Ensaio apenas com arquivos fictícios em raiz isolada. '
+                 'Cópias locais verificadas não provam independência física.'),
+    }
