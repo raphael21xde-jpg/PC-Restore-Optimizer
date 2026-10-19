@@ -201,7 +201,7 @@ class PreviewPlanCapacityUiTests(unittest.TestCase):
                     buttons[child.cget('text')] = child
                 if isinstance(child, ttk.Entry):
                     entries.append(child)
-                if isinstance(child, tk.Entry):
+                elif isinstance(child, tk.Entry):
                     entries.append(child)
                 if isinstance(child, tk.Text):
                     details.append(child)
