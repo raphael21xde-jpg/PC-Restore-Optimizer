@@ -18,7 +18,9 @@ from ui_timers import WindowTimers
 
 def show_drive_safety_dialog(parent, *, available_letters=None):
     """Show a read-only diagnostic UI; no collection until explicit click."""
-    if getattr(parent, 'busy', False):
+    # Tk widgets may expose a callable `busy` method. Only the App's
+    # explicit boolean busy=True means an operation is actually running.
+    if getattr(parent, 'busy', False) is True:
         messagebox.showinfo('Diagnóstico em andamento',
                             'Aguarde a análise anterior terminar.', parent=parent)
         return None
