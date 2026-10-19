@@ -16,6 +16,16 @@ from drive_safety_export import safe_drive_report_json
 from runtime_volumes import discover_drive_letters
 from ui_timers import WindowTimers
 
+HARDWARE_LABELS = {
+    'not_applicable': 'não se aplica',
+    'not_confirmed': 'não confirmado',
+    'ambiguous': 'associação ambígua',
+    'incomplete': 'evidência incompleta',
+    'members_reported_unverified': 'membros relatados (não verificados fisicamente)',
+    'reported': 'reportado pela fonte',
+    'not_reported': 'não reportado pela fonte',
+}
+
 CROSSCHECK_LABELS = {
     'unavailable': 'Sem dados suficientes do Get-Partition',
     'inconclusive': 'Partições com registros inválidos',
@@ -118,7 +128,10 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
     items.column('disks', width=300)
     items.pack(fill='both', expand=True, pady=(0, 10))
 
-    details = tk.Text(outer, wrap='word', height=9)
+    details = tk.Text(outer, wrap='word', height=9,
+                      bg='#192438', fg='#EFF4FF', insertbackground='#EFF4FF',
+                      relief='flat', highlightthickness=1,
+                      highlightbackground='#2B3952')
     details.pack(fill='both', expand=True)
     details.insert('1.0', 'Nenhuma unidade foi aprovada para backup ou formatação.')
     details.configure(state='disabled')
@@ -138,6 +151,15 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
         for item in report['source_volumes']:
             notes.append(item['letter'] + ' — ' + CROSSCHECK_LABELS.get(
                 item.get('partition_crosscheck'), 'Conferência não disponível'))
+            hw = item.get('hardware_evidence') or {}
+            if item['extent_status'] == 'disk_not_listed':
+                notes.append('  Win32_DiskDrive: ' + HARDWARE_LABELS.get(
+                    hw.get('wmi_diskdrive_status'), 'não confirmado'))
+                notes.append('  Win32_DiskPartition: ' + HARDWARE_LABELS.get(
+                    hw.get('wmi_partition_status'), 'não confirmado'))
+                if type(hw.get('wmi_partition_count')) is int:
+                    notes.append('  Partições WMI relatadas: ' +
+                                 str(hw['wmi_partition_count']))
             items.insert(
                 '', 'end', text=item['letter'],
                 values=('Origem', EXTENT_LABELS.get(item['extent_status'], 'Inconclusivo'),
@@ -153,6 +175,20 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                          ' | ' + EXTENT_LABELS.get(item['extent_status'], 'Inconclusivo'))
             notes.append('  Partições/IOCTL: ' + CROSSCHECK_LABELS.get(
                 item.get('partition_crosscheck'), 'Conferência não disponível'))
+            hw = item.get('hardware_evidence') or {}
+            if item['extent_status'] == 'virtual_spaces':
+                notes.append('  Storage Spaces: ' + HARDWARE_LABELS.get(
+                    hw.get('spaces_membership_status'), 'não confirmado'))
+                if type(hw.get('spaces_members_count')) is int:
+                    notes.append('  Membros relatados (não independência física): ' +
+                                 str(hw['spaces_members_count']))
+                notes.append('  Resiliência informada: ' +
+                             str(hw.get('spaces_resiliency') or 'unknown'))
+            elif item['extent_status'] == 'disk_not_listed':
+                notes.append('  Win32_DiskDrive: ' + HARDWARE_LABELS.get(
+                    hw.get('wmi_diskdrive_status'), 'não confirmado'))
+                notes.append('  Win32_DiskPartition: ' + HARDWARE_LABELS.get(
+                    hw.get('wmi_partition_status'), 'não confirmado'))
             notes.extend('  BLOQUEIO: ' + msg for msg in item['blockers'])
             notes.extend('  REVISÃO: ' + msg for msg in item['issues'])
         notes.extend([
