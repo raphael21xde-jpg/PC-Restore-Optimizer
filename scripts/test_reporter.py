@@ -23,6 +23,9 @@ MAX_DETAILS = 38_000
 
 def sanitize_for_public_comment(value: str, home: Path | None = None) -> str:
     """Best-effort redaction. Review the preview: never assume logs are private."""
+    # Python repr(traceback) sometimes doubles Windows backslashes.
+    # Normalize before redacting so escaped paths cannot leak usernames.
+    value = re.sub(r"\\{2,}", r"\\", value)
     home_str = str(home or Path.home())
     for prefix in (home_str, home_str.replace("\\", "/")):
         if prefix:
