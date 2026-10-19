@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import re
 
+from drive_diagnostic_advice import VALID_FINDINGS
+
 DRIVE = re.compile(r'[A-Z]:\Z')
 VALID_REPORT_STATUS = frozenset({'blocked', 'incomplete', 'requires_review'})
 VALID_TARGET_STATUS = frozenset({'blocked', 'requires_review'})
@@ -83,6 +85,19 @@ def _safe_hardware_evidence(value):
     }
 
 
+
+def _safe_findings(value):
+    # Source fields may be untrusted: only static, documented code identifiers
+    # can be copied, never raw error or disk strings.
+    if value is None:
+        value = []
+    if (not isinstance(value, list) or len(value) > 16
+            or any(type(code) is not str or code not in VALID_FINDINGS
+                   for code in value) or len(set(value)) != len(value)):
+        raise ValueError('Avisos de disco inválidos.')
+    return list(value)
+
+
 def sanitized_drive_report(data):
     """Strict allowlist; reject malformed data instead of dumping extras.
 
@@ -123,6 +138,7 @@ def sanitized_drive_report(data):
             'partition_logical_disk_numbers': _disk_numbers(
                 row.get('partition_logical_disk_numbers', [])),
             'hardware_evidence': _safe_hardware_evidence(row.get('hardware_evidence')),
+            'findings': _safe_findings(row.get('findings')),
         })
     for row in targets:
         if not isinstance(row, dict):
@@ -145,6 +161,7 @@ def sanitized_drive_report(data):
             'partition_logical_disk_numbers': _disk_numbers(
                 row.get('partition_logical_disk_numbers', [])),
             'hardware_evidence': _safe_hardware_evidence(row.get('hardware_evidence')),
+            'findings': _safe_findings(row.get('findings')),
             'capacity_status': _enum(row.get('capacity_status'), VALID_CAPACITY),
             'status': _enum(row.get('status'), VALID_TARGET_STATUS),
             'blocker_count': len(blockers),
