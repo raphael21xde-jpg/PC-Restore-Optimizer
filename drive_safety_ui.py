@@ -9,7 +9,7 @@ from __future__ import annotations
 from queue import Empty, Queue
 import threading
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from drive_safety_report import _normalize_letters, inspect_fresh_drive_safety
 from runtime_volumes import discover_drive_letters
@@ -19,7 +19,9 @@ from ui_timers import WindowTimers
 def show_drive_safety_dialog(parent, *, available_letters=None):
     """Show a read-only diagnostic UI; no collection until explicit click."""
     if getattr(parent, 'busy', False):
-        raise ValueError('Aguarde a análise anterior antes de iniciar outra.')
+        messagebox.showinfo('Diagnóstico em andamento',
+                            'Aguarde a análise anterior terminar.', parent=parent)
+        return None
     available = (discover_drive_letters() if available_letters is None
                  else available_letters)
     if not isinstance(available, (list, tuple)):
