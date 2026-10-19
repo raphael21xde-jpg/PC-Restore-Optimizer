@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -164,6 +165,24 @@ class SmartRestoreFixtureTests(unittest.TestCase):
                      for p in Path(report['restored_folder']).rglob('*')
                      if p.is_file() and p.name in self.expected}
         self.assertEqual(recovered, self.expected)
+
+    def test_missing_first_manifest_can_use_second_copy(self):
+        first = Path(self.copies['destinations'][0]['manifest'])
+        first.unlink()
+        report = self.recover()
+        self.assertEqual(report['status'], 'restored_verified')
+        self.assertEqual(report['chosen_copy_index'], 2)
+        self.assertEqual(report['copy_checks'][0]['status'], 'manifest_missing')
+        self.assert_sources_untouched()
+
+    def test_cancelled_verification_never_claims_restore_success(self):
+        stop = threading.Event()
+        stop.set()
+        with self.assertRaises(InterruptedError):
+            recover_from_fixture_copies(
+                self.plan, self.copies, self.keys, self.restore_parent,
+                test_root=str(self.root), cancelled=stop)
+        self.assert_no_restoration()
 
     def test_rejects_unselected_or_unsafe_file(self):
         with self.assertRaisesRegex(ValueError, 'não pertence ao plano'):
