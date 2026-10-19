@@ -17,6 +17,7 @@ from multi_source_fixture_restore import (
     _inside, recover_from_fixture_copies,
 )
 from multi_source_recovery_center import inspect_fixture_recovery
+from selective_recovery import _any_reparse_ancestor
 from ui_timers import WindowTimers
 
 PAGE_SIZE = 200
@@ -37,7 +38,10 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
     """Open an opt-in lab-only UI. It never starts copying on opening."""
     if test_root is None:
         raise ValueError('A central exige uma raiz isolada de testes.')
+    _any_reparse_ancestor(Path(test_root))
     sandbox = Path(test_root).resolve(strict=True)
+    if not sandbox.is_dir():
+        raise ValueError('Raiz isolada inválida.')
     _inside(sandbox, restore_parent)
 
     dlg = tk.Toplevel(parent)
