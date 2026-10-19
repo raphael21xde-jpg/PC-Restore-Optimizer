@@ -12,6 +12,7 @@ import re
 from backup_target_preflight import assess_backup_target
 from diagnostics import disk_inventory
 from partition_extent_crosscheck import crosscheck_partitions
+from drive_hardware_evidence import summarize_hardware_evidence
 
 DRIVE = re.compile(r'[A-Za-z]:?\Z')
 OBSERVED = frozenset({'logical_disk_reported', 'reported'})
@@ -217,6 +218,8 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
             'extent_status': extent_status,
             'partition_crosscheck': comparison['status'],
             'partition_logical_disk_numbers': comparison['partition_logical_disks'],
+            'hardware_evidence': summarize_hardware_evidence(
+                report, disks, extent_status),
             'capacity_status': assessment['capacity_status'],
             'status': 'blocked' if blockers else 'requires_review',
             'blockers': list(dict.fromkeys(blockers)),
@@ -236,7 +239,9 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
              'logical_disk_numbers': disks,
              'extent_status': extent_status,
              'partition_crosscheck': comparison['status'],
-             'partition_logical_disk_numbers': comparison['partition_logical_disks']}
+             'partition_logical_disk_numbers': comparison['partition_logical_disks'],
+             'hardware_evidence': summarize_hardware_evidence(
+                 report, disks, extent_status)}
             for letter, (disks, extent_status, comparison) in source_info.items()
         ],
         'destinations': outcomes,
