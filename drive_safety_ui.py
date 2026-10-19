@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from drive_safety_report import _normalize_letters, inspect_fresh_drive_safety
+from drive_safety_export import safe_drive_report_json
 from runtime_volumes import discover_drive_letters
 from ui_timers import WindowTimers
 
@@ -148,6 +149,8 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
         verify_btn.configure(state='normal' if enabled else 'disabled')
         source_input.configure(state='normal' if enabled else 'disabled')
         target_input.configure(state='normal' if enabled else 'disabled')
+        copy_btn.configure(state='normal' if enabled and state['result'] is not None
+                           else 'disabled')
 
     def verify():
         if state['busy']:
@@ -164,6 +167,9 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                 raise ValueError('Destino coincide com uma unidade de origem.')
         except ValueError:
             state['result'] = None
+            copy_btn.configure(state='disabled')
+            for row in items.get_children(''):
+                items.delete(row)
             show_details('Seleção inválida. Informe unidades diferentes e revise as letras.')
             status.set('Entrada recusada; inventário não consultado.')
             return
@@ -190,9 +196,28 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
         else:
             dialog.destroy()
 
+    def copy_safe_summary():
+        if state['busy'] or state['result'] is None:
+            return
+        try:
+            serialized = safe_drive_report_json(state['result'])
+            # Clipboard is changed only after an EXPLICIT user click.
+            dialog.clipboard_clear()
+            dialog.clipboard_append(serialized)
+        except (ValueError, TypeError, tk.TclError):
+            status.set('Não foi possível copiar um resumo seguro.')
+            return
+        status.set(
+            'Resumo filtrado copiado para a área de transferência. '
+            'Revise antes de compartilhar; nenhuma ação em disco autorizada.')
+
     verify_btn = ttk.Button(
         controls, text='Conferir discos (SOMENTE LEITURA)', command=verify)
     verify_btn.pack(side='left')
+    copy_btn = ttk.Button(
+        controls, text='Copiar resumo seguro', command=copy_safe_summary,
+        state='disabled')
+    copy_btn.pack(side='left', padx=(10, 0))
     ttk.Button(controls, text='Fechar', command=close).pack(side='right')
 
     def poll():
@@ -207,7 +232,6 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                 state['busy'] = False
                 dialog.destroy()
                 return
-            enable(True)
             if result == 'ok':
                 state['result'] = payload
                 display(payload)
@@ -216,6 +240,7 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                 status.set('Diagnóstico indisponível; nenhuma operação autorizada.')
                 show_details('Não foi possível completar a leitura. Revise o sistema '
                              'e o PowerShell antes de tentar novamente.')
+            enable(True)
         if not timers.closed:
             timers.after(100, poll)
 
