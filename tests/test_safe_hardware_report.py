@@ -306,6 +306,36 @@ class SafeHardwareReportUiTests(unittest.TestCase):
                 str(buttons['Copiar resumo seguro'].cget('state')), 'disabled')
             inspector.assert_called_once()
 
+    def test_unverified_extent_categories_are_readable_in_ui(self):
+        doc = fixture_report()
+        doc['source_volumes'][0]['letter'] = 'F:'
+        doc['source_volumes'][0]['logical_disk_numbers'] = [1]
+        doc['source_volumes'][0]['extent_status'] = 'disk_not_listed'
+        doc['destinations'][0]['extent_status'] = 'virtual_spaces'
+        doc['destinations'][0]['logical_disk_numbers'] = [4]
+        doc['destinations'][0]['status'] = 'blocked'
+        doc['status'] = 'blocked'
+        doc['destinations'][0]['blockers'] = [
+            'Destino em Storage Spaces: membros físicos não confirmados.']
+        with patch('drive_safety_ui.inspect_fresh_drive_safety',
+                   return_value=doc):
+            dlg, buttons, entries = self.make_dialog()
+            self.choose(entries, source='F:', target='G:')
+            buttons['Conferir discos (SOMENTE LEITURA)'].invoke()
+            self.wait_for(lambda:
+                          str(buttons['Copiar resumo seguro'].cget('state'))
+                          == 'normal')
+            table = next(node for node in dlg.winfo_children()[0].winfo_children()
+                         if isinstance(node, ttk.Treeview))
+            rows = table.get_children('')
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(table.set(rows[0], 'state'),
+                             'Disco ausente no Get-Disk')
+            summary = next(node for node in dlg.winfo_children()[0].winfo_children()
+                           if isinstance(node, tk.Text)).get('1.0', 'end')
+            self.assertIn('Storage Spaces / virtual', summary)
+            self.assertIn('NÃO AUTORIZADOS', summary)
+
     def test_editing_drives_immediately_invalidates_copied_report(self):
         with patch('drive_safety_ui.inspect_fresh_drive_safety',
                    return_value=fixture_report()) as inspector:
