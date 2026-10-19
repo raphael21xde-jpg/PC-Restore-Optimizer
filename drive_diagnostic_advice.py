@@ -38,6 +38,15 @@ FINDING_TEXT = {
     'capacity_not_evaluated': (
         'O espaço disponível para a cópia planejada ainda não foi avaliado. '
         'Este diagnóstico não aprovou o destino.'),
+    'capacity_insufficient': (
+        'O espaço livre relatado é menor que a estimativa manual informada. '
+        'Este destino não comporta o tamanho planejado segundo a leitura atual.'),
+    'capacity_unknown': (
+        'O Windows não confirmou o espaço livre necessário para comparar '
+        'com a estimativa manual de backup.'),
+    'capacity_reported_only': (
+        'O espaço livre informado parece suficiente para a estimativa manual, '
+        'mas não há margem de segurança reservada nem cópia autorizada.'),
     'backup_target_blocked': (
         'Este candidato a destino está bloqueado para operações reais. '
         'Apenas consultas de diagnóstico são permitidas.'),
@@ -95,8 +104,15 @@ def classify_drive_findings(row, *, boot_related_disks=(), is_target=False):
             codes.append('spaces_members_unknown')
 
     if is_target:
-        if row.get('capacity_status') == 'not_evaluated':
+        capacity_status = row.get('capacity_status')
+        if capacity_status == 'not_evaluated':
             codes.append('capacity_not_evaluated')
+        elif capacity_status == 'insufficient':
+            codes.append('capacity_insufficient')
+        elif capacity_status == 'unknown':
+            codes.append('capacity_unknown')
+        elif capacity_status == 'reported_sufficient':
+            codes.append('capacity_reported_only')
         if row.get('status') == 'blocked':
             codes.append('backup_target_blocked')
     codes.append('physical_independence_unverified')
