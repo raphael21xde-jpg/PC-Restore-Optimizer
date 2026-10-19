@@ -17,6 +17,10 @@ VALID_EXTENT = frozenset({
     'incomplete', 'observed_logical_only',
     'disk_not_listed', 'virtual_spaces', 'multi_disk',
 })
+VALID_CROSSCHECK = frozenset({
+    'unavailable', 'inconclusive', 'extent_only', 'partition_only',
+    'conflict', 'limited_match', 'logical_match',
+})
 VALID_CAPACITY = frozenset({
     'insufficient', 'unknown', 'not_evaluated', 'reported_sufficient',
 })
@@ -77,6 +81,10 @@ def sanitized_drive_report(data):
             'letter': letter,
             'logical_disk_numbers': _disk_numbers(row.get('logical_disk_numbers')),
             'extent_status': _enum(row.get('extent_status'), VALID_EXTENT),
+            'partition_crosscheck': _enum(
+                row.get('partition_crosscheck', 'unavailable'), VALID_CROSSCHECK),
+            'partition_logical_disk_numbers': _disk_numbers(
+                row.get('partition_logical_disk_numbers', [])),
         })
     for row in targets:
         if not isinstance(row, dict):
@@ -94,6 +102,10 @@ def sanitized_drive_report(data):
             'letter': letter,
             'logical_disk_numbers': _disk_numbers(row.get('logical_disk_numbers')),
             'extent_status': _enum(row.get('extent_status'), VALID_EXTENT),
+            'partition_crosscheck': _enum(
+                row.get('partition_crosscheck', 'unavailable'), VALID_CROSSCHECK),
+            'partition_logical_disk_numbers': _disk_numbers(
+                row.get('partition_logical_disk_numbers', [])),
             'capacity_status': _enum(row.get('capacity_status'), VALID_CAPACITY),
             'status': _enum(row.get('status'), VALID_TARGET_STATUS),
             'blocker_count': len(blockers),
