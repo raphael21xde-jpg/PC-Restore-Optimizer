@@ -155,6 +155,7 @@ def recover_from_fixture_copies(plan, copies_report, selected, restore_parent, *
         'status': 'no_usable_copy' if usable is None else 'ready_for_restore',
         'copies_checked': len(rows), 'copy_checks': report_rows,
         'files_requested': len(keys), 'files_restored': 0,
+        'restored_files': [],
         'restore_verified': False, 'backup_verified': usable is not None,
         'physical_independence_verified': False, 'ready_for_format': False,
         'installation_authorized': False,
@@ -180,9 +181,20 @@ def recover_from_fixture_copies(plan, copies_report, selected, restore_parent, *
             size, digest = matching[key]
             verify_committed_backup_file(
                 folder, destination, ancestry, size, digest, cancelled)
-        result.update(status='restored_verified', restore_verified=True,
-                      files_restored=count, restored_folder=str(folder),
-                      chosen_manifest=str(usable))
+        # Publish per-file details only after the full selection has passed
+        # the independent identity-bound verification above. Never claim an
+        # individual file as restored on a partial or interrupted run.
+        result.update(
+            status='restored_verified', restore_verified=True,
+            files_restored=count, restored_folder=str(folder),
+            chosen_manifest=str(usable),
+            restored_files=[
+                {'key': key, 'bytes': matching[key][0],
+                 'status': 'sha256_verified',
+                 'copy_index': chosen['copy_index']}
+                for key in keys
+            ],
+        )
     except InterruptedError:
         raise
     except (OSError, ValueError, TypeError):
