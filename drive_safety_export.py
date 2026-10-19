@@ -13,7 +13,10 @@ import re
 DRIVE = re.compile(r'[A-Z]:\Z')
 VALID_REPORT_STATUS = frozenset({'blocked', 'incomplete', 'requires_review'})
 VALID_TARGET_STATUS = frozenset({'blocked', 'requires_review'})
-VALID_EXTENT = frozenset({'incomplete', 'observed_logical_only'})
+VALID_EXTENT = frozenset({
+    'incomplete', 'observed_logical_only',
+    'disk_not_listed', 'virtual_spaces', 'multi_disk',
+})
 VALID_CAPACITY = frozenset({
     'insufficient', 'unknown', 'not_evaluated', 'reported_sufficient',
 })
