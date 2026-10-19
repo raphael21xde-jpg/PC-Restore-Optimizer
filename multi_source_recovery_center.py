@@ -72,7 +72,7 @@ def inspect_fixture_recovery(plan, copies_report, restore_parent, *,
         status = {'copy_index': index, 'path': str(base),
                   'status': 'not_verified', 'files_verified': 0}
         statuses.append(status)
-        if row.get('status') != 'local_copy_verified':
+        if row.get('status') not in ('local_copy_verified', 'discovered_unverified'):
             status['status'] = 'not_completed_at_backup'
             continue
 
