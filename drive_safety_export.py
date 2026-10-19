@@ -86,6 +86,14 @@ def _safe_hardware_evidence(value):
 
 
 
+def _optional_capacity_bytes(value):
+    if value is None:
+        return None
+    if type(value) is not int or not 0 <= value <= (1 << 63):
+        raise ValueError('Quantidade de bytes inválida.')
+    return value
+
+
 def _safe_findings(value):
     # Source fields may be untrusted: only static, documented code identifiers
     # can be copied, never raw error or disk strings.
@@ -163,6 +171,10 @@ def sanitized_drive_report(data):
             'hardware_evidence': _safe_hardware_evidence(row.get('hardware_evidence')),
             'findings': _safe_findings(row.get('findings')),
             'capacity_status': _enum(row.get('capacity_status'), VALID_CAPACITY),
+            'expected_backup_bytes': _optional_capacity_bytes(
+                row.get('expected_backup_bytes')),
+            'free_bytes_reported': _optional_capacity_bytes(
+                row.get('free_bytes_reported')),
             'status': _enum(row.get('status'), VALID_TARGET_STATUS),
             'blocker_count': len(blockers),
         })
