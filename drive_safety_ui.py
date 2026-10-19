@@ -16,6 +16,14 @@ from drive_safety_export import safe_drive_report_json
 from runtime_volumes import discover_drive_letters
 from ui_timers import WindowTimers
 
+EXTENT_LABELS = {
+    'incomplete': 'Mapeamento inconclusivo',
+    'observed_logical_only': 'Disco lógico observado',
+    'disk_not_listed': 'Disco ausente no Get-Disk',
+    'virtual_spaces': 'Storage Spaces / virtual',
+    'multi_disk': 'Vários discos lógicos',
+}
+
 
 def show_drive_safety_dialog(parent, *, available_letters=None):
     """Show a read-only diagnostic UI; no collection until explicit click."""
@@ -119,7 +127,7 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
         for item in report['source_volumes']:
             items.insert(
                 '', 'end', text=item['letter'],
-                values=('Origem', item['extent_status'],
+                values=('Origem', EXTENT_LABELS.get(item['extent_status'], 'Inconclusivo'),
                         ', '.join(str(x) for x in item['logical_disk_numbers'])
                         or 'Não identificado'))
         notes = []
@@ -129,7 +137,8 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                 values=('Destino', item['status'],
                         ', '.join(str(x) for x in item['logical_disk_numbers'])
                         or 'Não identificado'))
-            notes.append(item['letter'] + ' — ' + item['status'])
+            notes.append(item['letter'] + ' — ' + item['status'] +
+                         ' | ' + EXTENT_LABELS.get(item['extent_status'], 'Inconclusivo'))
             notes.extend('  BLOQUEIO: ' + msg for msg in item['blockers'])
             notes.extend('  REVISÃO: ' + msg for msg in item['issues'])
         notes.extend([
