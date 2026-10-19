@@ -222,6 +222,10 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
             'hardware_evidence': summarize_hardware_evidence(
                 report, disks, extent_status),
             'capacity_status': assessment['capacity_status'],
+            # Pure metadata from the same snapshot; manual estimate is never
+            # interpreted as an actual manifest or verified capacity reserve.
+            'expected_backup_bytes': expected_backup_bytes,
+            'free_bytes_reported': assessment['free_bytes_reported'],
             'status': 'blocked' if blockers else 'requires_review',
             'blockers': list(dict.fromkeys(blockers)),
             'issues': [
