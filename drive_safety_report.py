@@ -11,6 +11,7 @@ import re
 
 from backup_target_preflight import assess_backup_target
 from diagnostics import disk_inventory
+from partition_extent_crosscheck import crosscheck_partitions
 
 DRIVE = re.compile(r'[A-Za-z]:?\Z')
 OBSERVED = frozenset({'logical_disk_reported', 'reported'})
@@ -149,16 +150,19 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
     source_info = {}
     for letter in sources:
         disks, extent_status = _drive_extents(report, letter)
-        source_info[letter] = (disks, extent_status)
+        comparison = crosscheck_partitions(report, letter, disks, extent_status)
+        source_info[letter] = (disks, extent_status, comparison)
     boot_disks = _boot_disk_numbers(report)
     any_incomplete = any(
-        status != 'observed_logical_only'
-        for _, status in source_info.values())
+        status != 'observed_logical_only' or compare['status'] in ('conflict', 'inconclusive')
+        for _, status, compare in source_info.values())
     outcomes = []
 
     for letter in targets:
         disks, extent_status = _drive_extents(report, letter)
-        any_incomplete |= extent_status != 'observed_logical_only'
+        comparison = crosscheck_partitions(report, letter, disks, extent_status)
+        any_incomplete |= (extent_status != 'observed_logical_only' or
+                           comparison['status'] in ('conflict', 'inconclusive'))
         assessment = assess_backup_target(
             report['disks'], report['volumes'],
             report['extent_mapping'], report['spaces_membership'],
@@ -167,7 +171,7 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
         blockers = list(assessment['blockers'])
         if letter in sources:
             blockers.append('Destino coincide com uma unidade selecionada como origem.')
-        for source, (origin_disks, origin_status) in source_info.items():
+        for source, (origin_disks, origin_status, origin_comparison) in source_info.items():
             # Even a partially identified extent can conclusively veto a
             # destination if it reports overlapping logical disk numbers.
             if disks and origin_disks and set(disks) & set(origin_disks):
@@ -185,8 +189,24 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
         if extent_status in extent_blockers:
             blockers.append(extent_blockers[extent_status])
         if any(status != 'observed_logical_only'
-               for _, status in source_info.values()):
+               for _, status, _ in source_info.values()):
             blockers.append('Mapeamento de extents de uma ou mais origens não confirmado.')
+        if comparison['status'] == 'conflict':
+            blockers.append('Get-Partition e IOCTL divergem sobre o disco lógico do destino.')
+        if comparison['status'] == 'inconclusive':
+            blockers.append('Get-Partition retornou associação inválida para o destino.')
+        if any(info['status'] in ('conflict', 'inconclusive')
+               for _, _, info in source_info.values()):
+            blockers.append('Uma origem possui evidências de partição contraditórias ou inválidas.')
+        # Any reported logical collision is a veto, including when it is only
+        # reported by partitions rather than IOCTL. It is not positive proof.
+        source_candidates = [set(origin_disks) | set(info['partition_logical_disks'])
+                             for origin_disks, _, info in source_info.values()]
+        target_candidates = set(disks) | set(comparison['partition_logical_disks'])
+        if any(target_candidates & nums for nums in source_candidates):
+            blockers.append('Possível compartilhamento de disco lógico segundo extents/partições.')
+        if target_candidates & boot_disks:
+            blockers.append('Possível disco de sistema/EFI identificado por partições/extents.')
         if assessment['capacity_status'] in ('insufficient', 'unknown'):
             blockers.append('Espaço insuficiente ou não confirmável.')
         # The underlying assessment may be review-only even with disjoint
@@ -195,6 +215,8 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
             'letter': letter + ':',
             'logical_disk_numbers': disks,
             'extent_status': extent_status,
+            'partition_crosscheck': comparison['status'],
+            'partition_logical_disk_numbers': comparison['partition_logical_disks'],
             'capacity_status': assessment['capacity_status'],
             'status': 'blocked' if blockers else 'requires_review',
             'blockers': list(dict.fromkeys(blockers)),
@@ -212,8 +234,10 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
         'source_volumes': [
             {'letter': letter + ':',
              'logical_disk_numbers': disks,
-             'extent_status': extent_status}
-            for letter, (disks, extent_status) in source_info.items()
+             'extent_status': extent_status,
+             'partition_crosscheck': comparison['status'],
+             'partition_logical_disk_numbers': comparison['partition_logical_disks']}
+            for letter, (disks, extent_status, comparison) in source_info.items()
         ],
         'destinations': outcomes,
         'boot_related_logical_disks': sorted(boot_disks),
