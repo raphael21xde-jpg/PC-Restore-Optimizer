@@ -5,6 +5,8 @@ All collections are synthetic and the UI inspector is replaced by a mock.
 from __future__ import annotations
 
 from decimal import Decimal
+import gc
+import threading
 import json
 import tkinter as tk
 from tkinter import ttk
@@ -131,7 +133,16 @@ class CapacityInputUiTests(unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest('Tk indisponível: ' + str(exc))
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
+        self.addCleanup(self.cleanup_tk_on_main_thread)
+
+    def cleanup_tk_on_main_thread(self):
+        # Finalize test-owned Tcl on main thread, not on a worker GC pass.
+        self.assertIs(threading.current_thread(), threading.main_thread())
+        try:
+            self.root.destroy()
+        finally:
+            self.root = None
+            gc.collect()
 
     def dialog(self):
         dlg = show_drive_safety_dialog(
@@ -168,6 +179,27 @@ class CapacityInputUiTests(unittest.TestCase):
                 return
             time.sleep(.01)
         self.fail('Tempo esgotado aguardando atualização Tk.')
+
+    def test_variable_traces_are_unregistered_on_dialog_destroy(self):
+        actual_remove = tk.StringVar.trace_remove
+        calls = []
+
+        def spy(variable, mode, callback_name):
+            self.assertIs(threading.current_thread(), threading.main_thread())
+            calls.append((mode, callback_name))
+            return actual_remove(variable, mode, callback_name)
+
+        with (patch.object(tk.StringVar, 'trace_remove', new=spy),
+              patch('drive_safety_ui.inspect_fresh_drive_safety') as inspect):
+            # Repeated open/close should not leave registered Tcl callbacks.
+            for _ in range(5):
+                dialog = show_drive_safety_dialog(
+                    self.root, available_letters=('Q', 'R'))
+                self.root.update()
+                dialog.destroy()
+            inspect.assert_not_called()
+        self.assertEqual(len(calls), 15)
+        self.assertTrue(all(mode == 'write' for mode, _ in calls))
 
     def test_open_does_not_consult_hardware(self):
         with patch('drive_safety_ui.inspect_fresh_drive_safety') as collect:
