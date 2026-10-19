@@ -14,6 +14,7 @@ from tkinter import messagebox, ttk
 from drive_safety_report import _normalize_letters, inspect_fresh_drive_safety
 from drive_safety_export import safe_drive_report_json
 from drive_diagnostic_advice import FINDING_TEXT
+from backup_capacity_input import parse_estimated_backup_gib
 from runtime_volumes import discover_drive_letters
 from ui_timers import WindowTimers
 
@@ -102,13 +103,23 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
     target_input = ttk.Entry(fields, textvariable=target)
     source_input.grid(row=0, column=1, sticky='ew', padx=(10, 0), pady=4)
     target_input.grid(row=1, column=1, sticky='ew', padx=(10, 0), pady=4)
+    ttk.Label(fields, text='Tamanho estimado do backup (GiB, opcional):').grid(
+        row=2, column=0, sticky='w', pady=4)
+    size_estimate = tk.StringVar(master=dialog)
+    # Keep existing drive-letter fields stable for older UI/test integrations.
+    size_input = tk.Entry(
+        fields, textvariable=size_estimate, bg='#192438',
+        fg='#EFF4FF', insertbackground='#EFF4FF', relief='flat',
+        highlightthickness=1, highlightbackground='#2B3952')
+    size_input.grid(row=2, column=1, sticky='ew', padx=(10, 0), pady=4)
     fields.columnconfigure(1, weight=1)
     ttk.Label(
         outer,
         text=('Exemplo de formato: C:,D:  |  G:. '
               'São exemplos, não escolhas automáticas. '
               'O diagnóstico identifica conflitos, mas não prova '
-              'independência física entre dispositivos.'),
+              'independência física entre dispositivos. O tamanho opcional '
+              'é uma estimativa manual; não representa varredura de arquivos.'),
         wraplength=900,
     ).pack(anchor='w', pady=(9, 7))
 
@@ -179,6 +190,16 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                          ' | ' + EXTENT_LABELS.get(item['extent_status'], 'Inconclusivo'))
             notes.append('  Partições/IOCTL: ' + CROSSCHECK_LABELS.get(
                 item.get('partition_crosscheck'), 'Conferência não disponível'))
+            expected = item.get('expected_backup_bytes')
+            free = item.get('free_bytes_reported')
+            notes.append('  Backup estimado: ' +
+                         (f'{expected / (1024 ** 3):.3f} GiB (manual)'
+                          if type(expected) is int else 'não informado'))
+            notes.append('  Espaço livre relatado: ' +
+                         (f'{free / (1024 ** 3):.3f} GiB'
+                          if type(free) is int else 'não confirmado'))
+            notes.append('  Conferência de capacidade: ' +
+                         str(item.get('capacity_status', 'não avaliada')))
             hw = item.get('hardware_evidence') or {}
             if item['extent_status'] == 'virtual_spaces':
                 notes.append('  Storage Spaces: ' + HARDWARE_LABELS.get(
@@ -215,6 +236,7 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
         verify_btn.configure(state='normal' if enabled else 'disabled')
         source_input.configure(state='normal' if enabled else 'disabled')
         target_input.configure(state='normal' if enabled else 'disabled')
+        size_input.configure(state='normal' if enabled else 'disabled')
         copy_btn.configure(state='normal' if enabled and state['result'] is not None
                            else 'disabled')
 
@@ -231,6 +253,7 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                 maximum=8, field='Destinos')
             if set(src) & set(dst):
                 raise ValueError('Destino coincide com uma unidade de origem.')
+            estimated_bytes = parse_estimated_backup_gib(size_estimate.get())
         except ValueError:
             state['result'] = None
             copy_btn.configure(state='disabled')
@@ -248,7 +271,11 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
         status.set('Coletando novo inventário de discos, somente leitura…')
         def worker():
             try:
-                report = inspect_fresh_drive_safety(src, dst)
+                if estimated_bytes is None:
+                    report = inspect_fresh_drive_safety(src, dst)
+                else:
+                    report = inspect_fresh_drive_safety(
+                        src, dst, expected_backup_bytes=estimated_bytes)
                 queue.put(('ok', report))
             except Exception:
                 # Never expose PowerShell or device details in the UI on error.
@@ -300,6 +327,7 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
 
     source.trace_add('write', invalidate_on_edit)
     target.trace_add('write', invalidate_on_edit)
+    size_estimate.trace_add('write', invalidate_on_edit)
 
     def poll():
         if timers.closed:
