@@ -18,6 +18,8 @@ MAX_FILES = 5_000_000
 def _drive_of_source(value):
     if not isinstance(value, str) or not value:
         return None
+    if not ntpath.isabs(value.strip()):
+        return None
     drive, _ = ntpath.splitdrive(value.strip())
     if len(drive) != 2 or drive[1] != ':' or not drive[0].isalpha():
         return None
@@ -66,6 +68,8 @@ def reviewed_preview_capacity(plan, source_letters):
     if None in selected_drives or selected_drives != required:
         raise ValueError('A prévia não cobre exatamente as origens selecionadas.')
 
+    selected_roots = [ntpath.normcase(ntpath.normpath(path)) for path in selected]
+    selected_has_files = [False] * len(selected_roots)
     found = set()
     drives_with_files = set()
     sum_bytes = 0
@@ -76,7 +80,19 @@ def reviewed_preview_capacity(plan, source_letters):
         if (drive not in required or type(count) is not int
                 or not 0 <= count <= MAX_BYTES or not isinstance(source, str)):
             raise ValueError('A prévia contém arquivos ou tamanhos inválidos.')
-        name_key = source.casefold()
+        name_key = ntpath.normcase(ntpath.normpath(source))
+        # Files in the preview must be descendants of the user's explicitly
+        # selected roots, not merely from the same logical drive.
+        matched_root = False
+        for index, root in enumerate(selected_roots):
+            try:
+                if ntpath.commonpath((root, name_key)) == root:
+                    selected_has_files[index] = True
+                    matched_root = True
+            except ValueError:
+                pass
+        if not matched_root:
+            raise ValueError('A prévia inclui arquivo fora da seleção revisada.')
         if name_key in found:
             raise ValueError('A prévia contém arquivos duplicados.')
         found.add(name_key)
@@ -84,7 +100,8 @@ def reviewed_preview_capacity(plan, source_letters):
         sum_bytes += count
         if sum_bytes > MAX_BYTES:
             raise ValueError('Tamanho da prévia fora do limite.')
-    if sum_bytes != total or drives_with_files != required:
+    if (sum_bytes != total or drives_with_files != required
+            or not all(selected_has_files)):
         raise ValueError('A prévia não representa integralmente as origens selecionadas.')
 
     # UI accepts at most three decimals in GiB. Never round DOWN.
