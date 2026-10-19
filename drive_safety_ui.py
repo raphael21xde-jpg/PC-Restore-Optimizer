@@ -220,6 +220,21 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
     copy_btn.pack(side='left', padx=(10, 0))
     ttk.Button(controls, text='Fechar', command=close).pack(side='right')
 
+    def invalidate_on_edit(*_):
+        # Editing even one letter invalidates any previous snapshot before
+        # the user can copy a report for the wrong selected drives.
+        if state['result'] is None:
+            return
+        state['result'] = None
+        copy_btn.configure(state='disabled')
+        for row in items.get_children(''):
+            items.delete(row)
+        show_details('Seleção alterada. Faça nova conferência somente leitura.')
+        status.set('Seleção modificada; diagnóstico anterior não é mais válido.')
+
+    source.trace_add('write', invalidate_on_edit)
+    target.trace_add('write', invalidate_on_edit)
+
     def poll():
         if timers.closed:
             return
