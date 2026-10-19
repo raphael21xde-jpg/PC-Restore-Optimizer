@@ -145,6 +145,8 @@ def recover_from_fixture_copies(plan, copies_report, selected, restore_parent, *
             outcome['status'] = 'copy_verified'
             if usable is None:
                 usable = path
+        except InterruptedError:
+            raise
         except (OSError, ValueError, TypeError, KeyError):
             outcome['status'] = 'integrity_failed'
 
