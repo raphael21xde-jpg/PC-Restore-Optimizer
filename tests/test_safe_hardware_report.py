@@ -186,6 +186,21 @@ class SafeHardwareReportUiTests(unittest.TestCase):
                 str(buttons['Copiar resumo seguro'].cget('state')), 'disabled')
             inspector.assert_called_once()
 
+    def test_editing_drives_immediately_invalidates_copied_report(self):
+        with patch('drive_safety_ui.inspect_fresh_drive_safety',
+                   return_value=fixture_report()) as inspector:
+            dlg, buttons, entries = self.make_dialog()
+            self.choose(entries)
+            buttons['Conferir discos (SOMENTE LEITURA)'].invoke()
+            self.wait_for(lambda:
+                          str(buttons['Copiar resumo seguro'].cget('state'))
+                          == 'normal')
+            entries[1].delete(0, 'end')
+            entries[1].insert(0, 'D:')
+            self.assertEqual(
+                str(buttons['Copiar resumo seguro'].cget('state')), 'disabled')
+            inspector.assert_called_once()
+
     def test_failed_new_collection_invalidates_previous_copy(self):
         with patch('drive_safety_ui.inspect_fresh_drive_safety',
                    side_effect=[fixture_report(), RuntimeError('PRIVATE-SERIAL')]):
