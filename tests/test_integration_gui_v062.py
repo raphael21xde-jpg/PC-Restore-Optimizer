@@ -89,8 +89,11 @@ class SequentialScanGUI(unittest.TestCase):
             else:
                 root.after(15, poll)
         root.after(15, poll)
-        root.after(8000, root.quit)
-        root.mainloop()
+        timeout = root.after(8000, root.quit)
+        try:
+            root.mainloop()
+        finally:
+            root.after_cancel(timeout)
         if root.deep_scan_running:
             raise AssertionError('scan was not completed')
 
