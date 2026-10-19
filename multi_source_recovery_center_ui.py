@@ -114,6 +114,17 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
 
     chosen_status = tk.StringVar(master=dlg, value='Nenhum arquivo selecionado.')
     ttk.Label(body, textvariable=chosen_status).pack(anchor='w')
+    ttk.Label(body, text='Resultado da última recuperação verificada',
+              font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(6, 0))
+    restored_view = ttk.Treeview(
+        body, columns=('verification', 'copy'), show='tree headings', height=4)
+    restored_view.heading('#0', text='Arquivo restaurado')
+    restored_view.heading('verification', text='Integridade')
+    restored_view.heading('copy', text='Cópia utilizada')
+    restored_view.column('#0', width=650)
+    restored_view.column('verification', width=190)
+    restored_view.column('copy', width=140, anchor='center')
+    restored_view.pack(fill='x', pady=(3, 5))
     actions = ttk.Frame(body)
     actions.pack(fill='x', pady=(8, 0))
 
@@ -169,6 +180,10 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
     def launch(kind, task):
         if state['busy']:
             return
+        # Never let an older recovery result look like the outcome of a new
+        # inspection or copy attempt.
+        for row in restored_view.get_children(''):
+            restored_view.delete(row)
         cancelled.clear()
         set_busy(True)
         status.set('Verificando SHA-256…' if kind == 'inspect'
@@ -253,7 +268,13 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
             else:
                 status.set('Nenhuma cópia íntegra disponível para recuperar.')
         else:
-            if value['status'] == 'restored_verified' and value['restore_verified']:
+            if (value['status'] == 'restored_verified'
+                    and value['restore_verified']
+                    and value['files_restored'] == len(value.get('restored_files', []))):
+                for item in value['restored_files']:
+                    restored_view.insert(
+                        '', 'end', text=item['key'],
+                        values=('SHA-256 aprovado', f"#{item['copy_index']}"))
                 status.set(
                     f"Recuperados e verificados {value['files_restored']} arquivo(s) "
                     f"da cópia #{value['chosen_copy_index']}. "
