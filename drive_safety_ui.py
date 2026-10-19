@@ -16,6 +16,7 @@ from drive_safety_export import safe_drive_report_json
 from drive_diagnostic_advice import FINDING_TEXT
 from backup_capacity_input import parse_estimated_backup_gib
 from preview_plan_capacity import reviewed_preview_capacity
+from selection_coverage_audit import audit_selection_coverage, REASON_TEXT
 from runtime_volumes import discover_drive_letters
 from ui_timers import WindowTimers
 
@@ -241,6 +242,42 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
         copy_btn.configure(state='normal' if enabled and state['result'] is not None
                            else 'disabled')
 
+    def coverage():
+        # Only existing user selections and Plan metadata, never disk access.
+        return audit_selection_coverage(
+            getattr(parent, 'plan', None),
+            choices=getattr(parent, 'choices', {}),
+            catalog_choices=getattr(parent, 'catalog_choices', {}),
+            catalog_items=getattr(parent, 'catalog_items', {}),
+            browser_keep_paths=getattr(parent, 'browser_keep_paths', ()),
+            auto_save_paths=getattr(parent, 'auto_save_paths', ()),
+        )
+
+    def review_coverage():
+        if state['busy']:
+            return
+        result = coverage()
+        if result['status'] != 'no_unresolved_extra_choices':
+            state['result'] = None
+            copy_btn.configure(state='disabled')
+        lines = ['AUDITORIA DA SELEÇÃO (sem consultar discos):',
+                 'Arquivos/pastas escolhidos fora da prévia: ' +
+                 str(result['file_choices_outside_preview']),
+                 'Saves escolhidos fora da prévia: ' +
+                 str(result['auto_saves_outside_preview']),
+                 'Jogos/aplicativos escolhidos: ' +
+                 str(result['catalog_selected']),
+                 'Caminhos de jogos/aplicativos pendentes: ' +
+                 str(result['catalog_pending_paths']),
+                 'Perfis de navegador escolhidos: ' +
+                 str(result['browser_profiles_selected'])]
+        lines.extend('  ATENÇÃO: ' + REASON_TEXT[reason]
+                     for reason in result['reasons'] if reason in REASON_TEXT)
+        lines.append('Mesmo sem pendências registradas, esta análise não comprova '
+                     'backup completo, independência física ou capacidade real.')
+        show_details('\n'.join(lines))
+        status.set('Auditoria informativa concluída, sem cópia ou varredura.')
+
     def use_preview_size():
         # Explicit action: only previously generated in-memory selection Plan.
         # No disk scan and no external API. Never assume the plan includes
@@ -254,14 +291,18 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
             if getattr(parent, 'busy', False) is True:
                 raise ValueError('Prévia ainda em atualização.')
             reviewed = reviewed_preview_capacity(getattr(parent, 'plan', None), src)
+            coverage_result = coverage()
+            if not coverage_result['can_use_file_preview_estimate']:
+                raise ValueError('Seleções adicionais fora da prévia.')
         except ValueError:
             # Avoid retaining a previous result if the operator tried to
             # change estimates using an unverified/incomplete preview.
             state['result'] = None
             copy_btn.configure(state='disabled')
-            show_details('Prévia indisponível ou parcial para estas origens. '
-                         'Gere/revise o plano correspondente ou digite '
-                         'manualmente uma estimativa de tamanho.')
+            show_details('Prévia indisponível, parcial ou com outras escolhas '
+                         'pendentes (jogos, saves ou navegadores). '
+                         'Conferir cobertura da seleção, revisar as escolhas '
+                         'ou informar uma estimativa manual separadamente.')
             status.set('Tamanho da prévia recusado; nenhum disco consultado.')
             return
         size_estimate.set(reviewed['size_text'])
@@ -340,6 +381,9 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
     verify_btn = ttk.Button(
         controls, text='Conferir discos (SOMENTE LEITURA)', command=verify)
     verify_btn.pack(side='left')
+    coverage_btn = ttk.Button(
+        controls, text='Conferir cobertura da seleção', command=review_coverage)
+    coverage_btn.pack(side='left', padx=(10, 0))
     preview_btn = ttk.Button(
         controls, text='Usar tamanho da prévia', command=use_preview_size)
     preview_btn.pack(side='left', padx=(10, 0))
