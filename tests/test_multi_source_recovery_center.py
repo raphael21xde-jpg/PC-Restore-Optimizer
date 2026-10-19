@@ -24,7 +24,7 @@ def descendants(widget):
         yield from descendants(child)
 
 
-class RecoveryCenterFixtureTests(unittest.TestCase):
+class _FixtureBase:
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix='pcro-center-')
         self.addCleanup(temp.cleanup)
@@ -74,6 +74,7 @@ class RecoveryCenterFixtureTests(unittest.TestCase):
         self.assertFalse(list(
             self.restore_parent.glob('TESTE-RESTAURACAO-v05-*')))
 
+class RecoveryCenterFixtureTests(_FixtureBase, unittest.TestCase):
     def test_two_good_copies_are_read_only_and_never_authorize_format(self):
         report = self.inspect()
         self.assertEqual(report['status'], 'copy_available')
@@ -156,7 +157,7 @@ class RecoveryCenterFixtureTests(unittest.TestCase):
         self.assert_no_restore_writes()
 
 
-class RecoveryCenterTkTests(RecoveryCenterFixtureTests):
+class RecoveryCenterTkTests(_FixtureBase, unittest.TestCase):
     def setUp(self):
         super().setUp()
         try:
