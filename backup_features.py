@@ -13,6 +13,7 @@ import time
 import uuid
 from transfer_engine import choose_strategy, TransferMeter, ProgressLimiter, performance_report
 from backup_core import atomic_json, is_reparse, sha256_file
+from backup_source_guard import open_verified_backup_source
 from safe_publication import file_version, publish_copy, verify_published
 from backup_destination_guard import (
     validate_backup_destination_path, destination_ancestry_identity,
@@ -206,8 +207,14 @@ def restore_selected(manifest_path, choices, destination_parent, max_total_bytes
             digest = hashlib.sha256()
             copied = 0
             try:
-                with original.open('rb') as src, open_verified_backup_temp(
-                    target, restored, partial, ancestry_before) as dst:
+                # The backup being restored is also an untrusted filesystem
+                # path: bind its opened handle to the file and directory IDs
+                # observed before the read, not merely a matching SHA-256.
+                with open_verified_backup_source(
+                    original, total, os.lstat(original).st_mtime_ns
+                ) as src, open_verified_backup_temp(
+                    target, restored, partial, ancestry_before
+                ) as dst:
                     while True:
                         if cancelled and cancelled.is_set(): raise InterruptedError('Restauração cancelada')
                         if test_fault_hook is not None:
