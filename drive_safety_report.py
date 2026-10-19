@@ -13,6 +13,7 @@ from backup_target_preflight import assess_backup_target
 from diagnostics import disk_inventory
 from partition_extent_crosscheck import crosscheck_partitions
 from drive_hardware_evidence import summarize_hardware_evidence
+from drive_diagnostic_advice import classify_drive_findings
 
 DRIVE = re.compile(r'[A-Za-z]:?\Z')
 OBSERVED = frozenset({'logical_disk_reported', 'reported'})
@@ -229,21 +230,29 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
             ],
         })
 
+    for item in outcomes:
+        item['findings'] = classify_drive_findings(
+            item, boot_related_disks=boot_disks, is_target=True)
+    sources_with_evidence = [
+        {'letter': letter + ':',
+         'logical_disk_numbers': disks,
+         'extent_status': extent_status,
+         'partition_crosscheck': comparison['status'],
+         'partition_logical_disk_numbers': comparison['partition_logical_disks'],
+         'hardware_evidence': summarize_hardware_evidence(
+             report, disks, extent_status)}
+        for letter, (disks, extent_status, comparison) in source_info.items()
+    ]
+    for item in sources_with_evidence:
+        item['findings'] = classify_drive_findings(
+            item, boot_related_disks=boot_disks)
+
     return {
         'schema': 'pcro-readonly-drive-safety-v1',
         'inventory_status': 'fresh_collected',
         'status': ('blocked' if any(x['status'] == 'blocked' for x in outcomes)
                    else 'incomplete' if any_incomplete else 'requires_review'),
-        'source_volumes': [
-            {'letter': letter + ':',
-             'logical_disk_numbers': disks,
-             'extent_status': extent_status,
-             'partition_crosscheck': comparison['status'],
-             'partition_logical_disk_numbers': comparison['partition_logical_disks'],
-             'hardware_evidence': summarize_hardware_evidence(
-                 report, disks, extent_status)}
-            for letter, (disks, extent_status, comparison) in source_info.items()
-        ],
+        'source_volumes': sources_with_evidence,
         'destinations': outcomes,
         'boot_related_logical_disks': sorted(boot_disks),
         'raw_identifiers_included': False,
