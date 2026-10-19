@@ -13,6 +13,7 @@ from tkinter import messagebox, ttk
 
 from drive_safety_report import _normalize_letters, inspect_fresh_drive_safety
 from drive_safety_export import safe_drive_report_json
+from drive_diagnostic_advice import FINDING_TEXT
 from runtime_volumes import discover_drive_letters
 from ui_timers import WindowTimers
 
@@ -160,6 +161,9 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                 if type(hw.get('wmi_partition_count')) is int:
                     notes.append('  Partições WMI relatadas: ' +
                                  str(hw['wmi_partition_count']))
+            notes.extend('  ALERTA: ' + FINDING_TEXT[code]
+                         for code in item.get('findings', [])
+                         if code in FINDING_TEXT)
             items.insert(
                 '', 'end', text=item['letter'],
                 values=('Origem', EXTENT_LABELS.get(item['extent_status'], 'Inconclusivo'),
@@ -191,6 +195,9 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                     hw.get('wmi_partition_status'), 'não confirmado'))
             notes.extend('  BLOQUEIO: ' + msg for msg in item['blockers'])
             notes.extend('  REVISÃO: ' + msg for msg in item['issues'])
+            notes.extend('  ALERTA: ' + FINDING_TEXT[code]
+                         for code in item.get('findings', [])
+                         if code in FINDING_TEXT)
         notes.extend([
             '',
             'NUNCA aprovado automaticamente:',
