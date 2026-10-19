@@ -19,7 +19,7 @@ MAX_BUFFER_CHARS = 65536
 
 
 def query_nt_device(volume_guid):
-    """Returns current NT volume target for an enumerated volume GUID only.
+    r"""Returns current NT volume target for an enumerated volume GUID only.
 
     QueryDosDeviceW uses "Volume{GUID}" (no \\?\ prefix/trailing slash).
     It never creates/assigns drive letters, opens or modifies any disk.
