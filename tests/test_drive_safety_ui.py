@@ -84,8 +84,8 @@ class DriveSafetyUiTests(unittest.TestCase):
 
     def test_explicit_app_busy_true_blocks_dialog_without_collection(self):
         self.root.busy = True
-        with patch('drive_safety_ui.messagebox.showinfo') as notice, \\
-             patch('drive_safety_ui.inspect_fresh_drive_safety') as inspect:
+        with (patch('drive_safety_ui.messagebox.showinfo') as notice,
+              patch('drive_safety_ui.inspect_fresh_drive_safety') as inspect):
             dialog = show_drive_safety_dialog(
                 self.root, available_letters=('C', 'D', 'G'))
         self.assertIsNone(dialog)
