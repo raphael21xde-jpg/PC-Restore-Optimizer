@@ -18,6 +18,7 @@ import time
 import uuid
 from transfer_engine import choose_strategy, TransferMeter, ProgressLimiter, performance_report
 from backup_source_guard import open_verified_backup_source, sha256_verified_backup_source
+from safe_publication import file_version, publish_copy
 
 CHUNK = 2 * 1024 * 1024
 REPARSE_FLAG = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
@@ -317,6 +318,7 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
     completed = 0
     stopped = False
     last_checkpoint = time.monotonic()
+    verified_ancestries = {}
     try:
         for index, task in enumerate(plan.files, 1):
             temp = None
@@ -340,6 +342,10 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 validate_backup_destination_path(folder, destination)
                 ancestry_before = destination_ancestry_identity(folder, destination)
+                verified_ancestries[task.destination] = ancestry_before
+                previous = file_version(destination)
+                if previous is not None and not resume:
+                    raise OSError('Destino ocupado; arquivo existente preservado.')
                 entry = existing.get(task.destination)
                 # On resume, neither an old manifest entry nor a pathname hash
                 # alone proves that the original source still matches the copy.
@@ -404,8 +410,10 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 # the destination: avoids a third full read for large backups.
                 copy_digest = dig.hexdigest()
                 require_unchanged_destination_ancestry(folder, destination, ancestry_before)
-                os.replace(temp, destination)
+                publish_copy(temp, destination, previous)
                 temp = None
+                if test_fault_hook is not None:
+                    test_fault_hook('backup_after_publish')
                 # The rename alone is not proof of durable, intact destination data.
                 # Do not register a verified manifest entry if the committed file
                 # was replaced or corrupted between the rename and this re-read.
@@ -433,10 +441,23 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 stopped = True
                 break
             except (OSError, ValueError) as err:
+                manifest['files'] = [x for x in manifest['files'] if x.get('relative') != task.destination]
                 manifest['errors'].append({'source': task.source, 'error': str(err)})
             finally:
                 if temp is not None:
                     safe_cleanup_backup_temp(folder, destination, temp, ancestry_before)
+        if not stopped:
+            for item in list(manifest['files']):
+                try:
+                    verify_committed_backup_file(
+                        folder, folder / item['relative'], verified_ancestries[item['relative']],
+                        item['bytes'], item['sha256'], cancelled)
+                except InterruptedError:
+                    stopped = True
+                    break
+                except (OSError, ValueError) as err:
+                    manifest['files'].remove(item)
+                    manifest['errors'].append({'source': item['source'], 'error': str(err)})
         manifest['status'] = ('interrompido' if stopped else
                               ('concluido' if not manifest['errors'] and len(manifest['files']) == plan.count
                                else 'parcial_com_erros'))

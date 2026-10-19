@@ -30,18 +30,18 @@ class MultiSourceCommittedFileTests(unittest.TestCase):
             [str(self.source)], [str(self.sources)])
 
     def copy(self, after_commit=None):
-        real_replace = os.replace
+        real_publish = backup_core.publish_copy
         activated = [False]
 
-        def replace_with_fault(src, dst):
-            real_replace(src, dst)
+        def replace_with_fault(src, dst, previous=None):
+            real_publish(src, dst, previous)
             if (after_commit is not None and not activated[0]
                     and '.partial-' in Path(src).name
                     and Path(dst).name == 'sample.dat'):
                 activated[0] = True
                 after_commit(Path(dst))
 
-        with (patch.object(backup_core.os, 'replace', replace_with_fault),
+        with (patch.object(backup_core, 'publish_copy', replace_with_fault),
               patch.object(backup_core, 'choose_strategy',
                            lambda a, b, inventory=None: choose_strategy(a, b, inventory={}))):
             folder, result = backup_core.copy_backup(
