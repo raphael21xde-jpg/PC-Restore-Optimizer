@@ -16,6 +16,16 @@ from drive_safety_export import safe_drive_report_json
 from runtime_volumes import discover_drive_letters
 from ui_timers import WindowTimers
 
+CROSSCHECK_LABELS = {
+    'unavailable': 'Sem dados suficientes do Get-Partition',
+    'inconclusive': 'Partições com registros inválidos',
+    'extent_only': 'Somente IOCTL retornou associação',
+    'partition_only': 'Somente Get-Partition retornou associação',
+    'conflict': 'CONFLITO entre Get-Partition e IOCTL',
+    'limited_match': 'Associação lógica coincidente, com ressalvas',
+    'logical_match': 'Associação lógica coincidente (não física)',
+}
+
 EXTENT_LABELS = {
     'incomplete': 'Mapeamento inconclusivo',
     'observed_logical_only': 'Disco lógico observado',
@@ -124,13 +134,15 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
     def display(report):
         for key in items.get_children(''):
             items.delete(key)
+        notes = []
         for item in report['source_volumes']:
+            notes.append(item['letter'] + ' — ' + CROSSCHECK_LABELS.get(
+                item.get('partition_crosscheck'), 'Conferência não disponível'))
             items.insert(
                 '', 'end', text=item['letter'],
                 values=('Origem', EXTENT_LABELS.get(item['extent_status'], 'Inconclusivo'),
                         ', '.join(str(x) for x in item['logical_disk_numbers'])
                         or 'Não identificado'))
-        notes = []
         for item in report['destinations']:
             items.insert(
                 '', 'end', text=item['letter'],
@@ -139,6 +151,8 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                         or 'Não identificado'))
             notes.append(item['letter'] + ' — ' + item['status'] +
                          ' | ' + EXTENT_LABELS.get(item['extent_status'], 'Inconclusivo'))
+            notes.append('  Partições/IOCTL: ' + CROSSCHECK_LABELS.get(
+                item.get('partition_crosscheck'), 'Conferência não disponível'))
             notes.extend('  BLOQUEIO: ' + msg for msg in item['blockers'])
             notes.extend('  REVISÃO: ' + msg for msg in item['issues'])
         notes.extend([
