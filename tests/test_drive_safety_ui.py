@@ -72,6 +72,26 @@ class DriveSafetyUiTests(unittest.TestCase):
             widget.delete(0, 'end')
             widget.insert(0, value)
 
+    def test_callable_tk_busy_attribute_does_not_block_opening(self):
+        # Tk widgets may have a busy method, not an active-operation flag.
+        self.root.busy = lambda: True
+        with patch('drive_safety_ui.messagebox.showinfo') as notice:
+            dialog = show_drive_safety_dialog(
+                self.root, available_letters=('C', 'D', 'G'))
+        self.assertIsInstance(dialog, tk.Toplevel)
+        self.addCleanup(lambda: dialog.winfo_exists() and dialog.destroy())
+        notice.assert_not_called()
+
+    def test_explicit_app_busy_true_blocks_dialog_without_collection(self):
+        self.root.busy = True
+        with patch('drive_safety_ui.messagebox.showinfo') as notice, \\
+             patch('drive_safety_ui.inspect_fresh_drive_safety') as inspect:
+            dialog = show_drive_safety_dialog(
+                self.root, available_letters=('C', 'D', 'G'))
+        self.assertIsNone(dialog)
+        notice.assert_called_once()
+        inspect.assert_not_called()
+
     def test_opening_window_never_runs_disk_inventory(self):
         with patch('drive_safety_ui.inspect_fresh_drive_safety') as inspect:
             dialog, controls, entries, table, text = self.open_dialog()
