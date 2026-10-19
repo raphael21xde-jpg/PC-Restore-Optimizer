@@ -102,6 +102,126 @@ class SafeHardwareReportTests(unittest.TestCase):
             safe_drive_report_json(item)
 
 
+class ComplexDriveMappingReconciliationTests(unittest.TestCase):
+    """Synthetic evidence similar in kind to incomplete F/G read-only maps."""
+
+    def setUp(self):
+        self.snapshot = {
+            'disks': [
+                {'Number': 2, 'BusType': 'NVMe', 'IsBoot': True,
+                 'IsSystem': True, 'SerialNumber': 'DO-NOT-SHARE'},
+                {'Number': 3, 'BusType': 'SATA'},
+                {'Number': 4, 'BusType': 'Spaces'},
+            ],
+            'partitions': [
+                {'DiskNumber': 2, 'IsSystem': True, 'Type': 'System'}],
+            'volumes': [
+                {'DriveLetter': letter, 'SizeRemaining': 90 * 1024**3}
+                for letter in 'CDFG'
+            ],
+            'extent_mapping': {'volumes': [
+                {'letters': ['C'], 'disk_numbers': [2],
+                 'status': 'logical_disk_reported'},
+                {'letters': ['D'], 'disk_numbers': [3],
+                 'status': 'logical_disk_reported'},
+                {'letters': ['F'], 'disk_numbers': [1],
+                 'status': 'disk_not_listed'},
+                {'letters': ['G'], 'disk_numbers': [4],
+                 'status': 'virtual_spaces'},
+            ]},
+            'spaces_membership': {},
+        }
+
+    def inspect(self, *, sources=('C:', 'D:', 'F:'), targets=('G:',),
+                snapshot=None):
+        from drive_safety_report import inspect_fresh_drive_safety
+        doc = copy.deepcopy(self.snapshot if snapshot is None else snapshot)
+        return inspect_fresh_drive_safety(
+            sources, targets, collector=lambda: doc)
+
+    def test_f_and_g_retain_reported_ids_with_unverified_status(self):
+        result = self.inspect()
+        sources = {row['letter']: row for row in result['source_volumes']}
+        self.assertEqual(sources['C:']['logical_disk_numbers'], [2])
+        self.assertEqual(sources['D:']['logical_disk_numbers'], [3])
+        self.assertEqual(sources['F:']['logical_disk_numbers'], [1])
+        self.assertEqual(sources['F:']['extent_status'], 'disk_not_listed')
+        target = result['destinations'][0]
+        self.assertEqual(target['logical_disk_numbers'], [4])
+        self.assertEqual(target['extent_status'], 'virtual_spaces')
+        self.assertEqual(target['status'], 'blocked')
+        self.assertTrue(any('Storage Spaces' in b
+                            for b in target['blockers']))
+        self.assertFalse(result['physical_independence_verified'])
+        self.assertFalse(result['copy_authorized'])
+        self.assertFalse(result['ready_for_format'])
+        self.assertFalse(result['installation_authorized'])
+
+    def test_safe_share_preserves_categories_but_no_serial(self):
+        result = self.inspect()
+        safe = sanitized_drive_report(result)
+        sources = {row['letter']: row for row in safe['sources']}
+        self.assertEqual(sources['F:']['extent_status'], 'disk_not_listed')
+        self.assertEqual(sources['F:']['logical_disk_numbers'], [1])
+        self.assertEqual(safe['destinations'][0]['extent_status'], 'virtual_spaces')
+        self.assertEqual(safe['destinations'][0]['logical_disk_numbers'], [4])
+        text = safe_drive_report_json(result)
+        self.assertNotIn('DO-NOT-SHARE', text)
+        self.assertFalse(safe['copy_authorized'])
+
+    def test_unlisted_destination_is_blocked_but_number_visible(self):
+        result = self.inspect(sources=('C:',), targets=('F:',))
+        target = result['destinations'][0]
+        self.assertEqual(target['extent_status'], 'disk_not_listed')
+        self.assertEqual(target['logical_disk_numbers'], [1])
+        self.assertTrue(any('Get-Disk' in b for b in target['blockers']))
+
+    def test_virtual_bus_reclassified_even_if_extent_status_says_reported(self):
+        doc = copy.deepcopy(self.snapshot)
+        doc['extent_mapping']['volumes'][-1]['status'] = 'logical_disk_reported'
+        result = self.inspect(snapshot=doc)
+        self.assertEqual(result['destinations'][0]['extent_status'], 'virtual_spaces')
+        self.assertEqual(result['destinations'][0]['status'], 'blocked')
+
+    def test_missing_getdisk_number_is_not_marked_confirmed(self):
+        doc = copy.deepcopy(self.snapshot)
+        doc['extent_mapping']['volumes'][-1]['status'] = 'logical_disk_reported'
+        doc['disks'] = [d for d in doc['disks'] if d['Number'] != 4]
+        target = self.inspect(snapshot=doc)['destinations'][0]
+        self.assertEqual(target['extent_status'], 'disk_not_listed')
+        self.assertEqual(target['logical_disk_numbers'], [4])
+        self.assertEqual(target['status'], 'blocked')
+
+    def test_partial_extent_collision_always_blocks_destination(self):
+        doc = copy.deepcopy(self.snapshot)
+        doc['extent_mapping']['volumes'][-1]['disk_numbers'] = [1]
+        doc['extent_mapping']['volumes'][-1]['status'] = 'disk_not_listed'
+        target = self.inspect(snapshot=doc)['destinations'][0]
+        self.assertTrue(any('compartilham' in b for b in target['blockers']))
+        self.assertEqual(target['logical_disk_numbers'], [1])
+        self.assertEqual(target['status'], 'blocked')
+
+    def test_ambiguous_extent_does_not_invent_logical_disk_number(self):
+        doc = copy.deepcopy(self.snapshot)
+        doc['extent_mapping']['volumes'].append(
+            {'letters': ['G'], 'disk_numbers': [99],
+             'status': 'logical_disk_reported'})
+        target = self.inspect(snapshot=doc)['destinations'][0]
+        self.assertEqual(target['extent_status'], 'incomplete')
+        self.assertEqual(target['logical_disk_numbers'], [])
+        self.assertEqual(target['status'], 'blocked')
+
+    def test_multiple_extent_disks_stay_review_blocked(self):
+        doc = copy.deepcopy(self.snapshot)
+        doc['extent_mapping']['volumes'][-1]['disk_numbers'] = [3, 4]
+        doc['extent_mapping']['volumes'][-1]['status'] = 'multi_disk'
+        target = self.inspect(snapshot=doc)['destinations'][0]
+        self.assertEqual(target['extent_status'], 'multi_disk')
+        self.assertEqual(target['logical_disk_numbers'], [3, 4])
+        self.assertTrue(any('vários discos' in b for b in target['blockers']))
+        self.assertEqual(target['status'], 'blocked')
+
+
 class SafeHardwareReportUiTests(unittest.TestCase):
     def setUp(self):
         try:
