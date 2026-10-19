@@ -97,7 +97,7 @@ def recover_from_fixture_copies(plan, copies_report, selected, restore_parent, *
         outcome = {'copy_index': len(report_rows) + 1,
                    'status': 'not_verified'}
         report_rows.append(outcome)
-        if row.get('status') != 'local_copy_verified':
+        if row.get('status') not in ('local_copy_verified', 'discovered_unverified'):
             outcome['status'] = 'not_completed_at_backup'
             continue
         manifest = row.get('manifest')
