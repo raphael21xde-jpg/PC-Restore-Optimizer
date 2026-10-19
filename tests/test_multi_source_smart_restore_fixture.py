@@ -84,7 +84,8 @@ class SmartRestoreFixtureTests(unittest.TestCase):
             list(self.restore_parent.glob('TESTE-RESTAURACAO-v05-*')))
 
     def test_healthy_copy_recovers_only_selected_file(self):
-        report = self.recover(keys=[self.keys[0]])
+        document_key = next(key for key in self.keys if key.endswith('document.txt'))
+        report = self.recover(keys=[document_key])
         self.assertEqual(report['status'], 'restored_verified')
         self.assertEqual(report['chosen_copy_index'], 1)
         self.assertEqual(report['files_restored'], 1)
