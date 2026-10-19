@@ -33,11 +33,17 @@ def _normalize_letters(values, *, maximum, field):
 
 
 def _drive_extents(report, letter):
-    """Accept only one unambiguous extent record for this drive letter."""
+    """Show reported logical IDs even when their physical mapping is unsafe.
+
+    Do not turn a read-only IOCTL observation into device-independence proof.
+    The collector distinguishes volumes whose extent disk is missing from
+    Get-Disk, volumes backed by Storage Spaces, and multi-disk extents. Those
+    IDs remain useful diagnostic evidence, not an approved backup location.
+    """
     mapping = report.get('extent_mapping')
     raw = mapping.get('volumes') if isinstance(mapping, dict) else None
     if not isinstance(raw, list):
-        return [], False
+        return [], 'incomplete'
     matching = []
     for row in raw:
         if not isinstance(row, dict):
@@ -50,15 +56,40 @@ def _drive_extents(report, letter):
         if letter in names:
             matching.append(row)
     if len(matching) != 1:
-        return [], False
+        return [], 'incomplete'
+
     record = matching[0]
     numbers = record.get('disk_numbers')
-    if (record.get('status') not in OBSERVED or
-            not isinstance(numbers, (list, tuple)) or not numbers or
-            any(type(n) is not int or n < 0 or n >= 65536 for n in numbers) or
-            len(numbers) != len(set(numbers))):
-        return [], False
-    return sorted(numbers), True
+    if (not isinstance(numbers, (list, tuple)) or not numbers or
+            any(type(n) is not int or n < 0 or n >= 65536 for n in numbers)
+            or len(numbers) != len(set(numbers))):
+        return [], 'incomplete'
+    numbers = sorted(numbers)
+    raw_status = record.get('status')
+    if raw_status not in OBSERVED | {
+            'disk_not_listed', 'virtual_spaces', 'multi_disk'}:
+        return [], 'incomplete'
+
+    if len(numbers) > 1:
+        # Multiple logical disks are useful evidence, never a single-device
+        # safe mapping, even if the collector labels them 'reported'.
+        return numbers, 'multi_disk'
+    if raw_status == 'multi_disk':
+        return [], 'incomplete'
+    if raw_status in ('virtual_spaces', 'disk_not_listed'):
+        return numbers, raw_status
+
+    # Independently check the Get-Disk snapshot before treating a reported
+    # extent as a conventional logical disk association.
+    rows = report.get('disks')
+    disks = [x for x in rows if isinstance(x, dict)
+             and x.get('Number') == numbers[0]] if isinstance(rows, list) else []
+    if len(disks) != 1:
+        return numbers, 'disk_not_listed'
+    if str(disks[0].get('BusType') or '').strip().casefold() in (
+            'spaces', 'storage spaces'):
+        return numbers, 'virtual_spaces'
+    return numbers, 'observed_logical_only'
 
 
 def _boot_disk_numbers(report):
@@ -117,15 +148,17 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
 
     source_info = {}
     for letter in sources:
-        disks, observed = _drive_extents(report, letter)
-        source_info[letter] = (disks, observed)
+        disks, extent_status = _drive_extents(report, letter)
+        source_info[letter] = (disks, extent_status)
     boot_disks = _boot_disk_numbers(report)
-    any_incomplete = not all(ok for _, ok in source_info.values())
+    any_incomplete = any(
+        status != 'observed_logical_only'
+        for _, status in source_info.values())
     outcomes = []
 
     for letter in targets:
-        disks, observed = _drive_extents(report, letter)
-        any_incomplete |= not observed
+        disks, extent_status = _drive_extents(report, letter)
+        any_incomplete |= extent_status != 'observed_logical_only'
         assessment = assess_backup_target(
             report['disks'], report['volumes'],
             report['extent_mapping'], report['spaces_membership'],
@@ -134,25 +167,34 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
         blockers = list(assessment['blockers'])
         if letter in sources:
             blockers.append('Destino coincide com uma unidade selecionada como origem.')
-        for source, (origin_disks, origin_ok) in source_info.items():
-            if observed and origin_ok and set(disks) & set(origin_disks):
+        for source, (origin_disks, origin_status) in source_info.items():
+            # Even a partially identified extent can conclusively veto a
+            # destination if it reports overlapping logical disk numbers.
+            if disks and origin_disks and set(disks) & set(origin_disks):
                 blockers.append(
                     f'Destino {letter}: e origem {source}: compartilham disco lógico.')
-        if observed and set(disks) & boot_disks:
+        if disks and set(disks) & boot_disks:
             blockers.append(
                 'Destino contém disco lógico associado a inicialização, sistema ou EFI.')
-        if not observed:
-            blockers.append('Mapeamento de extents do destino desconhecido ou ambíguo.')
-        if any(not ok for _, ok in source_info.values()):
-            blockers.append('Mapeamento de extents de uma ou mais origens incompleto.')
+        extent_blockers = {
+            'incomplete': 'Mapeamento de extents do destino desconhecido ou ambíguo.',
+            'disk_not_listed': 'Disco lógico do destino não aparece em Get-Disk.',
+            'virtual_spaces': 'Destino em Storage Spaces: membros físicos não confirmados.',
+            'multi_disk': 'Destino ocupa vários discos lógicos; composição não confirmada.',
+        }
+        if extent_status in extent_blockers:
+            blockers.append(extent_blockers[extent_status])
+        if any(status != 'observed_logical_only'
+               for _, status in source_info.values()):
+            blockers.append('Mapeamento de extents de uma ou mais origens não confirmado.')
         if assessment['capacity_status'] in ('insufficient', 'unknown'):
             blockers.append('Espaço insuficiente ou não confirmável.')
         # The underlying assessment may be review-only even with disjoint
         # extents. Never interpret that as approval.
         outcomes.append({
             'letter': letter + ':',
-            'logical_disk_numbers': disks if observed else [],
-            'extent_status': 'observed_logical_only' if observed else 'incomplete',
+            'logical_disk_numbers': disks,
+            'extent_status': extent_status,
             'capacity_status': assessment['capacity_status'],
             'status': 'blocked' if blockers else 'requires_review',
             'blockers': list(dict.fromkeys(blockers)),
@@ -169,9 +211,9 @@ def inspect_fresh_drive_safety(source_letters, target_letters, *,
                    else 'incomplete' if any_incomplete else 'requires_review'),
         'source_volumes': [
             {'letter': letter + ':',
-             'logical_disk_numbers': disks if observed else [],
-             'extent_status': 'observed_logical_only' if observed else 'incomplete'}
-            for letter, (disks, observed) in source_info.items()
+             'logical_disk_numbers': disks,
+             'extent_status': extent_status}
+            for letter, (disks, extent_status) in source_info.items()
         ],
         'destinations': outcomes,
         'boot_related_logical_disks': sorted(boot_disks),
