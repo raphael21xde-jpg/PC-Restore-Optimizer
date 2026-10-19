@@ -184,8 +184,6 @@ class CapacityInputUiTests(unittest.TestCase):
             self.choose(drives, size, estimate='1e9')
             btns['Conferir discos (SOMENTE LEITURA)'].invoke()
             collect.assert_not_called()
-            self.assertIn('Entrada recusada', dlg.title() if False else
-                          next(w.cget('text') for w in [])) if False else None
             self.assertIn('Seleção inválida', details.get('1.0', 'end'))
 
     def test_explicit_gib_estimate_is_passed_without_any_backup_action(self):
