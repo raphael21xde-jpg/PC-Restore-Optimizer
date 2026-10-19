@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from test_multi_source_recovery_center import _FixtureBase, descendants
 from multi_source_fixture_restore import recover_from_fixture_copies
+from backup_features import safe_relative
 from multi_source_recovery_center_ui import show_fixture_recovery_center
 
 
@@ -191,7 +192,8 @@ class RecoveryCenterConfirmedFlowTests(_FixtureBase, unittest.TestCase):
         self.assertTrue(outcome['restore_verified'])
         self.assertEqual(outcome['files_restored'], 1)
         self.assertEqual(outcome['restored_files'], [{
-            'key': document, 'bytes': self.first.stat().st_size,
+            'key': safe_relative(document).as_posix(),
+            'bytes': self.first.stat().st_size,
             'status': 'sha256_verified', 'copy_index': 1,
         }])
         self.assertFalse(outcome['ready_for_format'])
