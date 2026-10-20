@@ -3,7 +3,7 @@
 App desktop Windows (Python 3.13 + Tkinter): inventário de discos, seleção do que preservar, backup verificado com SHA-256, restauração, **reinstalação guiada** do Windows e otimização. Escopo: **só Windows**, qualquer PC (fraco até topo de linha, qualquer marca). O dono do projeto é o Raphael. Responda em **português**, com linguagem simples: ele está aprendendo programação.
 
 ## Antes de começar qualquer tarefa
-1. Confira o branch e o commit (`git status -sb`, `git log -1 --oneline`). Branch base atual: `fix/full-suite-message-drift-20261019`. **Não** trabalhe a partir da `main` antiga (17/10) sem confirmação.
+1. Confira o branch e o commit (`git status -sb`, `git log -1 --oneline`). Branch base atual: `main` (atualizada com a PR #55 em 20/10/2026). Crie um branch novo a partir dela para cada etapa.
 2. Leia `docs/ETAPA31_AUDITORIA_E_ROTEIRO_PARA_VERSAO_UTILIZAVEL.md` e `docs/ESTADO-DO-PROJETO-E-PROXIMOS-MARCOS.md` antes de propor mudanças grandes. Não recomece o motor de backup.
 
 ## Regras de segurança (inegociáveis)
