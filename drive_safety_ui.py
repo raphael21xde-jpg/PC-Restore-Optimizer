@@ -165,7 +165,7 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
             notes.append(item['letter'] + ' — ' + CROSSCHECK_LABELS.get(
                 item.get('partition_crosscheck'), 'Conferência não disponível'))
             hw = item.get('hardware_evidence') or {}
-            if item['extent_status'] == 'disk_not_listed':
+            if item.get('extent_status') == 'disk_not_listed':
                 notes.append('  Win32_DiskDrive: ' + HARDWARE_LABELS.get(
                     hw.get('wmi_diskdrive_status'), 'não confirmado'))
                 notes.append('  Win32_DiskPartition: ' + HARDWARE_LABELS.get(
@@ -178,7 +178,7 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                          if code in FINDING_TEXT)
             items.insert(
                 '', 'end', text=item['letter'],
-                values=('Origem', EXTENT_LABELS.get(item['extent_status'], 'Inconclusivo'),
+                values=('Origem', EXTENT_LABELS.get(item.get('extent_status'), 'Inconclusivo'),
                         ', '.join(str(x) for x in item['logical_disk_numbers'])
                         or 'Não identificado'))
         for item in report['destinations']:
@@ -188,7 +188,7 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                         ', '.join(str(x) for x in item['logical_disk_numbers'])
                         or 'Não identificado'))
             notes.append(item['letter'] + ' — ' + item['status'] +
-                         ' | ' + EXTENT_LABELS.get(item['extent_status'], 'Inconclusivo'))
+                         ' | ' + EXTENT_LABELS.get(item.get('extent_status'), 'Inconclusivo'))
             notes.append('  Partições/IOCTL: ' + CROSSCHECK_LABELS.get(
                 item.get('partition_crosscheck'), 'Conferência não disponível'))
             expected = item.get('expected_backup_bytes')
@@ -202,7 +202,7 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
             notes.append('  Conferência de capacidade: ' +
                          str(item.get('capacity_status', 'não avaliada')))
             hw = item.get('hardware_evidence') or {}
-            if item['extent_status'] == 'virtual_spaces':
+            if item.get('extent_status') == 'virtual_spaces':
                 notes.append('  Storage Spaces: ' + HARDWARE_LABELS.get(
                     hw.get('spaces_membership_status'), 'não confirmado'))
                 if type(hw.get('spaces_members_count')) is int:
@@ -210,7 +210,7 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                                  str(hw['spaces_members_count']))
                 notes.append('  Resiliência informada: ' +
                              str(hw.get('spaces_resiliency') or 'unknown'))
-            elif item['extent_status'] == 'disk_not_listed':
+            elif item.get('extent_status') == 'disk_not_listed':
                 notes.append('  Win32_DiskDrive: ' + HARDWARE_LABELS.get(
                     hw.get('wmi_diskdrive_status'), 'não confirmado'))
                 notes.append('  Win32_DiskPartition: ' + HARDWARE_LABELS.get(
@@ -397,10 +397,16 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
                 dialog.destroy()
                 return
             if result == 'ok':
-                state['result'] = payload
-                display(payload)
-            else:
+                try:
+                    display(payload)
+                    state['result'] = payload
+                except Exception:
+                    # A malformed report must never leave the dialog stuck busy.
+                    result = 'error'
+            if result != 'ok':
                 state['result'] = None
+                for row in items.get_children(''):
+                    items.delete(row)
                 status.set('Diagnóstico indisponível; nenhuma operação autorizada.')
                 show_details('Não foi possível completar a leitura. Revise o sistema '
                              'e o PowerShell antes de tentar novamente.')

@@ -162,6 +162,11 @@ class RecoveryCenterConfirmedFlowTests(_FixtureBase, unittest.TestCase):
             == 'normal')
         controls['Verificar cópias (SHA-256)'].invoke()
         self.assertFalse(trees[2].get_children(''))
+        # Let the SHA-256 worker release the backup files; Windows cannot
+        # delete the temporary sandbox while a file is still open.
+        self.wait_for(lambda:
+            str(controls['Verificar cópias (SHA-256)'].cget('state'))
+            == 'normal')
 
     def test_close_while_worker_is_busy_cancels_and_removes_callbacks(self):
         started = threading.Event()

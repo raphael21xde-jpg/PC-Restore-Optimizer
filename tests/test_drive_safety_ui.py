@@ -125,7 +125,9 @@ class DriveSafetyUiTests(unittest.TestCase):
             _, controls, entries, table, result = self.open_dialog()
             self.configure(entries, source='c:', target='g:')
             controls['Conferir discos (SOMENTE LEITURA)'].invoke()
-            self.wait_until(lambda: len(table.get_children('')) == 2)
+            # Wait for the final summary, not only the table rows.
+            self.wait_until(lambda: len(table.get_children('')) == 2 and
+                            'NÃO AUTORIZADOS' in result.get('1.0', 'end'))
         self.assertEqual(calls, [(['C'], ['G'])])
         rows = [table.item(x, 'text') for x in table.get_children('')]
         self.assertEqual(rows, ['C:', 'G:'])
