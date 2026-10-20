@@ -156,7 +156,7 @@ class FreshDriveSafetyReportTests(unittest.TestCase):
             if 'C' not in row['letters']]
         result = self.run_review(snapshot=doc)
         self.assertEqual(result['status'], 'blocked')
-        self.assertTrue(any('origens incompleto' in x for x in
+        self.assertTrue(any('origens não confirmado' in x for x in
                             result['destinations'][0]['blockers']))
         self.assert_unapproved(result)
 
