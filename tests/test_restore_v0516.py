@@ -18,7 +18,12 @@ class RestoreTests(unittest.TestCase):
             root=Path(tmp);manifest,keys=self.prepare(root);events=[]
             with patch('backup_features.sha256_file', wraps=sha256_file) as hashing:
                 target,count=restore_selected(manifest,keys,root,progress=lambda *args:events.append(args))
-                self.assertEqual(hashing.call_count,1)  # Source hashed during copy; only destination reread.
+                # The source is hashed while streaming. Re-read the temporary
+                # and published destination, including the completion audit.
+                checked = [Path(call.args[0]) for call in hashing.call_args_list]
+                self.assertTrue(all(path.is_relative_to(target) for path in checked))
+                self.assertIn(target / keys[0], checked)
+                self.assertTrue(any('.partial-' in path.name for path in checked))
             self.assertEqual(count,1)
             self.assertEqual((target/keys[0]).read_bytes(),b'x'*(5*1024*1024))
             self.assertEqual(json.loads((target/'ESTADO-RESTAURACAO.json').read_text())['status'],'concluida')

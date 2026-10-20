@@ -1,0 +1,374 @@
+"""Privacy-safe Windows diagnostic sharing with a synthetic collector only."""
+import copy
+import json
+import time
+import tkinter as tk
+from tkinter import ttk
+import unittest
+from unittest.mock import patch
+
+from drive_safety_export import safe_drive_report_json, sanitized_drive_report
+from drive_safety_ui import show_drive_safety_dialog
+
+
+def fixture_report():
+    return {
+        'schema': 'pcro-readonly-drive-safety-v1',
+        'status': 'requires_review',
+        'inventory_status': 'fresh_collected',
+        'source_volumes': [{
+            'letter': 'C:', 'logical_disk_numbers': [0],
+            'extent_status': 'observed_logical_only',
+            'SerialNumber': 'SECRET-ORIGIN-SERIAL',
+        }],
+        'destinations': [{
+            'letter': 'G:', 'logical_disk_numbers': [3],
+            'extent_status': 'observed_logical_only',
+            'capacity_status': 'not_evaluated',
+            'status': 'requires_review', 'blockers': [],
+            'issues': ['Sensitive notes: PRIVATE-USER-MODEL-XYZ'],
+            'Path': 'SECRET-DESTINATION-GUID',
+        }],
+        'boot_related_logical_disks': [0],
+        'raw_identifiers_included': False,
+        'physical_independence_verified': False,
+        'backup_verified': False,
+        'copy_authorized': False,
+        'ready_for_format': False,
+        'installation_authorized': False,
+        'SerialNumber': 'SECRET-ROOT-SERIAL',
+        'alerts': ['SECRET-PRIVATE-ALERT'],
+        'nt_volume_mapping': {'nt_device': 'SECRET-NTPATH'},
+    }
+
+
+class SafeHardwareReportTests(unittest.TestCase):
+    def test_only_allowlisted_fields_are_exported_without_serials(self):
+        safe = sanitized_drive_report(fixture_report())
+        text = json.dumps(safe, ensure_ascii=False)
+        for secret in ('SECRET-ORIGIN-SERIAL', 'SECRET-DESTINATION-GUID',
+                       'SECRET-ROOT-SERIAL', 'SECRET-PRIVATE-ALERT',
+                       'SECRET-NTPATH', 'PRIVATE-USER-MODEL-XYZ'):
+            self.assertNotIn(secret, text)
+        self.assertEqual(safe['sources'][0]['letter'], 'C:')
+        self.assertEqual(safe['destinations'][0]['logical_disk_numbers'], [3])
+        self.assertEqual(safe['boot_related_logical_disks'], [0])
+        self.assertFalse(safe['copy_authorized'])
+        self.assertFalse(safe['installation_authorized'])
+
+    def test_safe_json_roundtrip_contains_no_raw_power_shell_fields(self):
+        parsed = json.loads(safe_drive_report_json(fixture_report()))
+        self.assertEqual(parsed['schema'], 'pcro-drive-diagnostic-safe-share-v1')
+        self.assertEqual(parsed['destinations'][0]['capacity_status'], 'not_evaluated')
+        self.assertEqual(parsed['destinations'][0]['blocker_count'], 0)
+        self.assertNotIn('SerialNumber', parsed)
+        self.assertNotIn('alerts', parsed)
+        self.assertFalse(parsed['ready_for_format'])
+
+    def test_unauthorized_approval_flags_are_rejected(self):
+        for key in ('copy_authorized', 'backup_verified',
+                    'physical_independence_verified', 'ready_for_format',
+                    'installation_authorized'):
+            row = fixture_report()
+            row[key] = True
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                safe_drive_report_json(row)
+
+    def test_raw_identifiers_flag_or_wrong_schema_is_rejected(self):
+        item = fixture_report()
+        item['raw_identifiers_included'] = True
+        with self.assertRaises(ValueError):
+            safe_drive_report_json(item)
+        item = fixture_report()
+        item['schema'] = 'unexpected'
+        with self.assertRaises(ValueError):
+            safe_drive_report_json(item)
+
+    def test_invalid_disk_numbers_rejected_instead_of_dumping_inventory(self):
+        for invalid in ([True], [-1], [65536], ['3'], [1, 1]):
+            item = fixture_report()
+            item['destinations'][0]['logical_disk_numbers'] = invalid
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                safe_drive_report_json(item)
+
+    def test_malformed_target_fields_cannot_bypass_privacy_filter(self):
+        item = fixture_report()
+        item['destinations'][0]['letter'] = r'C:\Sensitive\Path'
+        with self.assertRaises(ValueError):
+            safe_drive_report_json(item)
+        item = fixture_report()
+        item['destinations'][0]['capacity_status'] = 'serial-SECRET'
+        with self.assertRaises(ValueError):
+            safe_drive_report_json(item)
+
+
+class ComplexDriveMappingReconciliationTests(unittest.TestCase):
+    """Synthetic evidence similar in kind to incomplete F/G read-only maps."""
+
+    def setUp(self):
+        self.snapshot = {
+            'disks': [
+                {'Number': 2, 'BusType': 'NVMe', 'IsBoot': True,
+                 'IsSystem': True, 'SerialNumber': 'DO-NOT-SHARE'},
+                {'Number': 3, 'BusType': 'SATA'},
+                {'Number': 4, 'BusType': 'Spaces'},
+            ],
+            'partitions': [
+                {'DiskNumber': 2, 'IsSystem': True, 'Type': 'System'}],
+            'volumes': [
+                {'DriveLetter': letter, 'SizeRemaining': 90 * 1024**3}
+                for letter in 'CDFG'
+            ],
+            'extent_mapping': {'volumes': [
+                {'letters': ['C'], 'disk_numbers': [2],
+                 'status': 'logical_disk_reported'},
+                {'letters': ['D'], 'disk_numbers': [3],
+                 'status': 'logical_disk_reported'},
+                {'letters': ['F'], 'disk_numbers': [1],
+                 'status': 'disk_not_listed'},
+                {'letters': ['G'], 'disk_numbers': [4],
+                 'status': 'virtual_spaces'},
+            ]},
+            'spaces_membership': {},
+        }
+
+    def inspect(self, *, sources=('C:', 'D:', 'F:'), targets=('G:',),
+                snapshot=None):
+        from drive_safety_report import inspect_fresh_drive_safety
+        doc = copy.deepcopy(self.snapshot if snapshot is None else snapshot)
+        return inspect_fresh_drive_safety(
+            sources, targets, collector=lambda: doc)
+
+    def test_f_and_g_retain_reported_ids_with_unverified_status(self):
+        result = self.inspect()
+        sources = {row['letter']: row for row in result['source_volumes']}
+        self.assertEqual(sources['C:']['logical_disk_numbers'], [2])
+        self.assertEqual(sources['D:']['logical_disk_numbers'], [3])
+        self.assertEqual(sources['F:']['logical_disk_numbers'], [1])
+        self.assertEqual(sources['F:']['extent_status'], 'disk_not_listed')
+        target = result['destinations'][0]
+        self.assertEqual(target['logical_disk_numbers'], [4])
+        self.assertEqual(target['extent_status'], 'virtual_spaces')
+        self.assertEqual(target['status'], 'blocked')
+        self.assertTrue(any('Storage Spaces' in b
+                            for b in target['blockers']))
+        self.assertFalse(result['physical_independence_verified'])
+        self.assertFalse(result['copy_authorized'])
+        self.assertFalse(result['ready_for_format'])
+        self.assertFalse(result['installation_authorized'])
+
+    def test_safe_share_preserves_categories_but_no_serial(self):
+        result = self.inspect()
+        safe = sanitized_drive_report(result)
+        sources = {row['letter']: row for row in safe['sources']}
+        self.assertEqual(sources['F:']['extent_status'], 'disk_not_listed')
+        self.assertEqual(sources['F:']['logical_disk_numbers'], [1])
+        self.assertEqual(safe['destinations'][0]['extent_status'], 'virtual_spaces')
+        self.assertEqual(safe['destinations'][0]['logical_disk_numbers'], [4])
+        text = safe_drive_report_json(result)
+        self.assertNotIn('DO-NOT-SHARE', text)
+        self.assertFalse(safe['copy_authorized'])
+
+    def test_unlisted_destination_is_blocked_but_number_visible(self):
+        result = self.inspect(sources=('C:',), targets=('F:',))
+        target = result['destinations'][0]
+        self.assertEqual(target['extent_status'], 'disk_not_listed')
+        self.assertEqual(target['logical_disk_numbers'], [1])
+        self.assertTrue(any('Get-Disk' in b for b in target['blockers']))
+
+    def test_virtual_bus_reclassified_even_if_extent_status_says_reported(self):
+        doc = copy.deepcopy(self.snapshot)
+        doc['extent_mapping']['volumes'][-1]['status'] = 'logical_disk_reported'
+        result = self.inspect(snapshot=doc)
+        self.assertEqual(result['destinations'][0]['extent_status'], 'virtual_spaces')
+        self.assertEqual(result['destinations'][0]['status'], 'blocked')
+
+    def test_missing_getdisk_number_is_not_marked_confirmed(self):
+        doc = copy.deepcopy(self.snapshot)
+        doc['extent_mapping']['volumes'][-1]['status'] = 'logical_disk_reported'
+        doc['disks'] = [d for d in doc['disks'] if d['Number'] != 4]
+        target = self.inspect(snapshot=doc)['destinations'][0]
+        self.assertEqual(target['extent_status'], 'disk_not_listed')
+        self.assertEqual(target['logical_disk_numbers'], [4])
+        self.assertEqual(target['status'], 'blocked')
+
+    def test_partial_extent_collision_always_blocks_destination(self):
+        doc = copy.deepcopy(self.snapshot)
+        doc['extent_mapping']['volumes'][-1]['disk_numbers'] = [1]
+        doc['extent_mapping']['volumes'][-1]['status'] = 'disk_not_listed'
+        target = self.inspect(snapshot=doc)['destinations'][0]
+        self.assertTrue(any('compartilham' in b for b in target['blockers']))
+        self.assertEqual(target['logical_disk_numbers'], [1])
+        self.assertEqual(target['status'], 'blocked')
+
+    def test_ambiguous_extent_does_not_invent_logical_disk_number(self):
+        doc = copy.deepcopy(self.snapshot)
+        doc['extent_mapping']['volumes'].append(
+            {'letters': ['G'], 'disk_numbers': [99],
+             'status': 'logical_disk_reported'})
+        target = self.inspect(snapshot=doc)['destinations'][0]
+        self.assertEqual(target['extent_status'], 'incomplete')
+        self.assertEqual(target['logical_disk_numbers'], [])
+        self.assertEqual(target['status'], 'blocked')
+
+    def test_multiple_extent_disks_stay_review_blocked(self):
+        doc = copy.deepcopy(self.snapshot)
+        doc['extent_mapping']['volumes'][-1]['disk_numbers'] = [3, 4]
+        doc['extent_mapping']['volumes'][-1]['status'] = 'multi_disk'
+        target = self.inspect(snapshot=doc)['destinations'][0]
+        self.assertEqual(target['extent_status'], 'multi_disk')
+        self.assertEqual(target['logical_disk_numbers'], [3, 4])
+        self.assertTrue(any('vários discos' in b for b in target['blockers']))
+        self.assertEqual(target['status'], 'blocked')
+
+
+class SafeHardwareReportUiTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            self.root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f'Tk indisponível: {exc}')
+        self.root.withdraw()
+        self.addCleanup(self.root.destroy)
+
+    def make_dialog(self):
+        dlg = show_drive_safety_dialog(
+            self.root, available_letters=('C', 'G'))
+        self.addCleanup(lambda: dlg.winfo_exists() and dlg.destroy())
+        widgets = []
+        def descend(node):
+            for child in node.winfo_children():
+                widgets.append(child)
+                descend(child)
+        descend(dlg)
+        buttons = {w.cget('text'): w for w in widgets
+                   if isinstance(w, ttk.Button)}
+        entries = [w for w in widgets if isinstance(w, ttk.Entry)]
+        return dlg, buttons, entries
+
+    def wait_for(self, predicate, limit=5):
+        finish = time.monotonic() + limit
+        while time.monotonic() < finish:
+            self.root.update()
+            if predicate():
+                return
+            time.sleep(.01)
+        self.fail('Tempo esgotado ao aguardar a interface.')
+
+    def choose(self, entries, source='C:', target='G:'):
+        for widget, value in zip(entries, (source, target)):
+            widget.delete(0, 'end')
+            widget.insert(0, value)
+
+    def test_copy_requires_completed_explicit_hardware_diagnostic(self):
+        with patch('drive_safety_ui.inspect_fresh_drive_safety') as inspector:
+            dlg, buttons, entries = self.make_dialog()
+            self.root.update()
+            self.assertEqual(
+                str(buttons['Copiar resumo seguro'].cget('state')), 'disabled')
+            buttons['Copiar resumo seguro'].invoke()
+            inspector.assert_not_called()
+
+    def test_copies_safe_json_only_after_successful_diagnostic(self):
+        with patch('drive_safety_ui.inspect_fresh_drive_safety',
+                   return_value=fixture_report()) as inspector:
+            dlg, buttons, entries = self.make_dialog()
+            self.choose(entries)
+            buttons['Conferir discos (SOMENTE LEITURA)'].invoke()
+            self.wait_for(lambda:
+                          str(buttons['Copiar resumo seguro'].cget('state'))
+                          == 'normal')
+            with (patch.object(dlg, 'clipboard_clear') as clear,
+                  patch.object(dlg, 'clipboard_append') as append):
+                buttons['Copiar resumo seguro'].invoke()
+            inspector.assert_called_once_with(['C'], ['G'])
+            clear.assert_called_once()
+            append.assert_called_once()
+            copied = append.call_args.args[0]
+            parsed = json.loads(copied)
+            self.assertEqual(parsed['sources'][0]['letter'], 'C:')
+            self.assertNotIn('SECRET-', copied)
+            self.assertNotIn('PRIVATE-USER-MODEL', copied)
+            self.assertFalse(parsed['copy_authorized'])
+
+    def test_invalid_new_selection_invalidates_previous_copy(self):
+        with patch('drive_safety_ui.inspect_fresh_drive_safety',
+                   return_value=fixture_report()) as inspector:
+            dlg, buttons, entries = self.make_dialog()
+            self.choose(entries)
+            buttons['Conferir discos (SOMENTE LEITURA)'].invoke()
+            self.wait_for(lambda:
+                          str(buttons['Copiar resumo seguro'].cget('state'))
+                          == 'normal')
+            self.choose(entries, source='C:', target='C:')
+            buttons['Conferir discos (SOMENTE LEITURA)'].invoke()
+            self.assertEqual(
+                str(buttons['Copiar resumo seguro'].cget('state')), 'disabled')
+            inspector.assert_called_once()
+
+    def test_unverified_extent_categories_are_readable_in_ui(self):
+        doc = fixture_report()
+        doc['source_volumes'][0]['letter'] = 'F:'
+        doc['source_volumes'][0]['logical_disk_numbers'] = [1]
+        doc['source_volumes'][0]['extent_status'] = 'disk_not_listed'
+        doc['destinations'][0]['extent_status'] = 'virtual_spaces'
+        doc['destinations'][0]['logical_disk_numbers'] = [4]
+        doc['destinations'][0]['status'] = 'blocked'
+        doc['status'] = 'blocked'
+        doc['destinations'][0]['blockers'] = [
+            'Destino em Storage Spaces: membros físicos não confirmados.']
+        with patch('drive_safety_ui.inspect_fresh_drive_safety',
+                   return_value=doc):
+            dlg, buttons, entries = self.make_dialog()
+            self.choose(entries, source='F:', target='G:')
+            buttons['Conferir discos (SOMENTE LEITURA)'].invoke()
+            self.wait_for(lambda:
+                          str(buttons['Copiar resumo seguro'].cget('state'))
+                          == 'normal')
+            table = next(node for node in dlg.winfo_children()[0].winfo_children()
+                         if isinstance(node, ttk.Treeview))
+            rows = table.get_children('')
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(table.set(rows[0], 'state'),
+                             'Disco ausente no Get-Disk')
+            summary = next(node for node in dlg.winfo_children()[0].winfo_children()
+                           if isinstance(node, tk.Text)).get('1.0', 'end')
+            self.assertIn('Storage Spaces / virtual', summary)
+            self.assertIn('NÃO AUTORIZADOS', summary)
+
+    def test_editing_drives_immediately_invalidates_copied_report(self):
+        with patch('drive_safety_ui.inspect_fresh_drive_safety',
+                   return_value=fixture_report()) as inspector:
+            dlg, buttons, entries = self.make_dialog()
+            self.choose(entries)
+            buttons['Conferir discos (SOMENTE LEITURA)'].invoke()
+            self.wait_for(lambda:
+                          str(buttons['Copiar resumo seguro'].cget('state'))
+                          == 'normal')
+            entries[1].delete(0, 'end')
+            entries[1].insert(0, 'D:')
+            self.assertEqual(
+                str(buttons['Copiar resumo seguro'].cget('state')), 'disabled')
+            inspector.assert_called_once()
+
+    def test_failed_new_collection_invalidates_previous_copy(self):
+        with patch('drive_safety_ui.inspect_fresh_drive_safety',
+                   side_effect=[fixture_report(), RuntimeError('PRIVATE-SERIAL')]):
+            dlg, buttons, entries = self.make_dialog()
+            self.choose(entries)
+            buttons['Conferir discos (SOMENTE LEITURA)'].invoke()
+            self.wait_for(lambda:
+                          str(buttons['Copiar resumo seguro'].cget('state'))
+                          == 'normal')
+            buttons['Conferir discos (SOMENTE LEITURA)'].invoke()
+            self.assertEqual(
+                str(buttons['Copiar resumo seguro'].cget('state')), 'disabled')
+            self.wait_for(lambda:
+                          str(buttons['Conferir discos (SOMENTE LEITURA)'].cget('state'))
+                          == 'normal')
+            self.assertEqual(
+                str(buttons['Copiar resumo seguro'].cget('state')), 'disabled')
+
+
+if __name__ == '__main__':
+    unittest.main()

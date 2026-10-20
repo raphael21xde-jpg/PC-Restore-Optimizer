@@ -13,6 +13,13 @@ import time
 import uuid
 from transfer_engine import choose_strategy, TransferMeter, ProgressLimiter, performance_report
 from backup_core import atomic_json, is_reparse, sha256_file
+from backup_source_guard import open_verified_backup_source
+from safe_publication import file_version, publish_copy, verify_published
+from backup_destination_guard import (
+    validate_backup_destination_path, destination_ancestry_identity,
+    open_verified_backup_temp, require_unchanged_destination_ancestry,
+    safe_cleanup_backup_temp,
+)
 
 LABEL_FILE = 'rotulos-v05.json'
 SCHEMAS = {'pc-restore-backup-v0.4', 'pc-restore-backup-v0.5'}
@@ -178,6 +185,11 @@ def restore_selected(manifest_path, choices, destination_parent, max_total_bytes
                     raise ValueError('Pasta de restauração contém junção ou atalho inseguro.')
                 ancestor = ancestor.parent
             restored.parent.mkdir(parents=True, exist_ok=True)
+            validate_backup_destination_path(target, restored)
+            ancestry_before = destination_ancestry_identity(target, restored)
+            previous = file_version(restored)
+            if previous is not None and not resume_from:
+                raise OSError('Destino ocupado; arquivo existente preservado.')
             total = int(entries[choice].get('bytes') or 0)
             if restored.exists() or is_reparse(restored):
                 if is_reparse(restored) or not restored.is_file():
@@ -188,11 +200,21 @@ def restore_selected(manifest_path, choices, destination_parent, max_total_bytes
                     if choice not in journal['verified_keys']: journal['verified_keys'].append(choice)
                     if progress: progress('Arquivo já verificado (retomada)',index+1,len(choices),choice,total,total)
                     continue
+            if choice in journal['verified_keys']:
+                journal['verified_keys'].remove(choice)
+                journal['verified'] = len(journal['verified_keys'])
             partial = restored.with_name(restored.name+'.partial-'+uuid.uuid4().hex[:8])
             digest = hashlib.sha256()
             copied = 0
             try:
-                with original.open('rb') as src, partial.open('xb') as dst:
+                # The backup being restored is also an untrusted filesystem
+                # path: bind its opened handle to the file and directory IDs
+                # observed before the read, not merely a matching SHA-256.
+                with open_verified_backup_source(
+                    original, total, os.lstat(original).st_mtime_ns
+                ) as src, open_verified_backup_temp(
+                    target, restored, partial, ancestry_before
+                ) as dst:
                     while True:
                         if cancelled and cancelled.is_set(): raise InterruptedError('Restauração cancelada')
                         if test_fault_hook is not None:
@@ -205,14 +227,19 @@ def restore_selected(manifest_path, choices, destination_parent, max_total_bytes
                         digest.update(chunk)
                         copied += len(chunk)
                         limiter.send('Copiando',index,len(choices),choice,copied,total,force=copied==len(chunk))
-                    dst.flush()
-                    os.fsync(dst.fileno())
+                    # The protected temporary writer flushes, syncs and
+                    # verifies the opened handle against its pathname.
                 if copied != total or digest.hexdigest() != expected:
                     raise OSError('SHA-256 ou tamanho não corresponde ao backup: '+choice)
                 if progress: progress('Verificando arquivo restaurado',index,len(choices),choice,copied,total)
                 if sha256_file(partial,cancelled) != expected:
                     raise OSError('Restauração não passou na conferência SHA-256: '+choice)
-                partial.replace(restored)
+                require_unchanged_destination_ancestry(
+                    target, restored, ancestry_before)
+                publish_copy(partial, restored, previous)
+                if test_fault_hook is not None:
+                    test_fault_hook('restore_after_publish')
+                verify_published(restored, total, expected, sha256_file, cancelled)
                 copied_total += copied
                 journal['verified'] = index+1
                 if choice not in journal['verified_keys']: journal['verified_keys'].append(choice)
@@ -221,8 +248,18 @@ def restore_selected(manifest_path, choices, destination_parent, max_total_bytes
                     atomic_json(journal_file,journal)
                     last_checkpoint = time.monotonic()
             finally:
-                try: partial.unlink(missing_ok=True)
-                except OSError: pass
+                safe_cleanup_backup_temp(
+                    target, restored, partial, ancestry_before)
+        for choice in choices:
+            restored = target / safe_relative(choice)
+            validate_backup_destination_path(target, restored)
+            try:
+                verify_published(restored, int(entries[choice]['bytes']), entries[choice]['sha256'], sha256_file, cancelled)
+            except (OSError, ValueError):
+                if choice in journal['verified_keys']:
+                    journal['verified_keys'].remove(choice)
+                journal['verified'] = len(journal['verified_keys'])
+                raise
         journal['status'] = 'concluida'
         journal['performance'] = meter.snapshot(bytes_done=copied_total,files_done=len(choices))
         atomic_json(journal_file,journal)

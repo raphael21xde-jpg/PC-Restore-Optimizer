@@ -16,6 +16,7 @@ from backup_core import human_size
 from transfer_engine import time_text, TransferMeter
 from restore_groups import PAGE_SIZE, build_restore_index, sorted_children
 from restore_jobs import Job
+from ui_timers import WindowTimers
 
 
 def show_restore(app, manifest, small=False):
@@ -29,6 +30,7 @@ def show_restore(app, manifest, small=False):
 
     dlg = tk.Toplevel(app)
     app.restore_dialog = dlg
+    timers = WindowTimers(dlg)
     dlg.title('Restauração organizada por jogo, aplicativo e pasta · v0.5.19')
     dlg.geometry('1130x740')
     dlg.minsize(800, 500)
@@ -166,8 +168,8 @@ def show_restore(app, manifest, small=False):
 
     def schedule_filter(*_):
         if state['after'] is not None:
-            dlg.after_cancel(state['after'])
-        state['after'] = dlg.after(250, apply_filter)
+            timers.cancel(state['after'])
+        state['after'] = timers.after(250, apply_filter)
 
     query.trace_add('write', schedule_filter)
 
@@ -270,7 +272,7 @@ def show_restore(app, manifest, small=False):
                     status.set(f'{phase} · {n}/{total} arquivo(s) · {copied:,}/{size:,} bytes no arquivo atual\n{path}')
         result = job.poll()
         if result is None:
-            dlg.after(90, lambda: poll(done))
+            timers.after(90, lambda: poll(done))
             return
         set_busy(False)
         kind, value = result
@@ -367,7 +369,8 @@ def show_restore(app, manifest, small=False):
                 cancel()
         else:
             if state['after'] is not None:
-                dlg.after_cancel(state['after'])
+                timers.cancel(state['after'])
+            timers.close()
             dlg.destroy()
     dlg.protocol('WM_DELETE_WINDOW', close)
 

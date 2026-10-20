@@ -94,7 +94,7 @@ def run_completeness_autotest(*, cancelled=None):
             (
                 "missing_file",
                 "arquivo-faltando",
-                "Arquivo de backup ausente ou SHA-256 divergente",
+                "Arquivo de backup ausente, alterado ou SHA-256 divergente",
             ),
             (
                 "interrupted_manifest",

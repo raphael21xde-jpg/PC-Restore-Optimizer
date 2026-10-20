@@ -60,8 +60,11 @@ class SelectedRootGuiTests(unittest.TestCase):
                 else:
                     parent.after(15, poll)
             parent.after(15, poll)
-            parent.after(3500, parent.quit)
-            parent.mainloop()
+            timeout = parent.after(3500, parent.quit)
+            try:
+                parent.mainloop()
+            finally:
+                parent.after_cancel(timeout)
             self.assertTrue(completed, 'scan did not complete')
             self.assertEqual(fake_scan.call_args.args[1], ['C:/'])
             self.assertEqual([x['path'] for x in parent.deep_scan_report['records']], ['C:/osu/Songs'])

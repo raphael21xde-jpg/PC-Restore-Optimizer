@@ -16,6 +16,8 @@ import stat
 from backup_core import (build_plan, copy_backup, sha256_file, atomic_json,
                          is_reparse, human_size)
 from backup_features import read_manifest, verified_entries, restore_selected
+from backup_destination_guard import (destination_ancestry_identity,
+                                      verify_committed_backup_file)
 from drive_catalog import safe_to_mark
 from volume_paths import volume_of
 
@@ -122,10 +124,18 @@ def verify_complete_manifest(manifest_path, *, cancelled=None):
             raise InterruptedError('Verificação interrompida.')
         target = path.parent / rel
         _any_reparse_ancestor(target)
-        if (not target.is_file() or int(item.get('bytes', -1)) != target.stat().st_size or
-                sha256_file(target, cancelled).lower() != item['sha256'].lower()):
-            raise OSError(f'Arquivo de backup ausente ou SHA-256 divergente: {rel}')
-        checked += int(item['bytes'])
+        # Reuse the identity-bound verifier from the copy engine. A path-only
+        # hash could accept a different file swapped between stat and open.
+        try:
+            ancestry = destination_ancestry_identity(path.parent, target)
+            expected_size = int(item['bytes'])
+            verify_committed_backup_file(
+                path.parent, target, ancestry, expected_size,
+                item['sha256'].lower(), cancelled)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise OSError(
+                f'Arquivo de backup ausente, alterado ou SHA-256 divergente: {rel}') from exc
+        checked += expected_size
     if checked != doc.get('bytes_expected'):
         raise ValueError('O tamanho verificado não corresponde ao esperado.')
     return {'files_verified': len(entries), 'bytes_verified': checked,

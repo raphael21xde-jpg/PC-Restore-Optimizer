@@ -17,6 +17,8 @@ import stat
 import time
 import uuid
 from transfer_engine import choose_strategy, TransferMeter, ProgressLimiter, performance_report
+from backup_source_guard import open_verified_backup_source, sha256_verified_backup_source
+from safe_publication import file_version, publish_copy
 
 CHUNK = 2 * 1024 * 1024
 REPARSE_FLAG = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
@@ -316,6 +318,7 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
     completed = 0
     stopped = False
     last_checkpoint = time.monotonic()
+    verified_ancestries = {}
     try:
         for index, task in enumerate(plan.files, 1):
             temp = None
@@ -330,44 +333,62 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 if current.st_size != task.size or current.st_mtime_ns != task.mtime_ns:
                     raise OSError('Arquivo mudou desde a conferência; gere nova prévia')
                 destination = folder / task.destination
-                if not beneath(destination, folder):
-                    raise ValueError('Destino fora da pasta de backup.')
+                from backup_destination_guard import (
+                    validate_backup_destination_path, destination_ancestry_identity,
+                    require_unchanged_destination_ancestry, open_verified_backup_temp,
+                    safe_cleanup_backup_temp, verify_committed_backup_file,
+                    hash_existing_backup_file)
+                validate_backup_destination_path(folder, destination)
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                # Do not trust junctions added between interrupted runs.
-                ancestor = destination.parent
-                while ancestor != folder:
-                    if is_reparse(ancestor):
-                        raise ValueError('Junção encontrada no destino do backup.')
-                    ancestor = ancestor.parent
+                validate_backup_destination_path(folder, destination)
+                ancestry_before = destination_ancestry_identity(folder, destination)
+                verified_ancestries[task.destination] = ancestry_before
+                previous = file_version(destination)
+                if previous is not None and not resume:
+                    raise OSError('Destino ocupado; arquivo existente preservado.')
                 entry = existing.get(task.destination)
-                if entry is not None and entry.get('verified') is True and entry.get('bytes') == task.size:
-                    if (destination.is_file() and not is_reparse(destination) and
-                        sha256_file(destination, cancelled) == entry.get('sha256')):
+                # On resume, neither an old manifest entry nor a pathname hash
+                # alone proves that the original source still matches the copy.
+                # Rebind the destination to a verified file handle, then hash
+                # the current authorized source before reusing either file.
+                destination_hash = (hash_existing_backup_file(
+                    folder, destination, ancestry_before, task.size, cancelled)
+                    if resume else None)
+                if (entry is not None and entry.get('verified') is True
+                        and entry.get('bytes') == task.size
+                        and destination_hash == entry.get('sha256')):
+                    source_hash = sha256_verified_backup_source(
+                        source, task.size, task.mtime_ns, cancelled)
+                    if source_hash != destination_hash:
+                        raise OSError('Fonte diverge do backup existente; gere nova prévia.')
+                    require_unchanged_destination_ancestry(
+                        folder, destination, ancestry_before)
+                    copied += task.size
+                    completed += 1
+                    notify.send(index, plan.count, copied, plan.total, str(source), force=True)
+                    continue
+                # A crash can leave a committed file ahead of its checkpoint.
+                # Only adopt it after identity-verified SHA-256 of both ends.
+                if entry is None and destination_hash is not None:
+                    source_hash = sha256_verified_backup_source(
+                        source, task.size, task.mtime_ns, cancelled)
+                    if source_hash == destination_hash:
+                        require_unchanged_destination_ancestry(
+                            folder, destination, ancestry_before)
+                        new_entry = {'source': str(source), 'relative': task.destination,
+                                     'bytes': task.size, 'sha256': destination_hash,
+                                     'verified': True, 'owners': owners_for(source, item_descriptors)}
+                        manifest['files'].append(new_entry)
+                        existing[task.destination] = new_entry
                         copied += task.size
                         completed += 1
                         notify.send(index, plan.count, copied, plan.total, str(source), force=True)
                         continue
-                # A crash may leave an already-written atomic file before the
-                # next manifest checkpoint. Adopt it only after verifying BOTH
-                # source and destination, without trusting its filename alone.
-                if entry is None and destination.is_file() and not is_reparse(destination):
-                    if destination.stat().st_size == task.size:
-                        source_hash = sha256_file(source, cancelled)
-                        destination_hash = sha256_file(destination, cancelled)
-                        if source_hash == destination_hash:
-                            new_entry = {'source': str(source), 'relative': task.destination,
-                                         'bytes': task.size, 'sha256': destination_hash,
-                                         'verified': True, 'owners': owners_for(source, item_descriptors)}
-                            manifest['files'].append(new_entry)
-                            existing[task.destination] = new_entry
-                            copied += task.size
-                            completed += 1
-                            notify.send(index, plan.count, copied, plan.total, str(source), force=True)
-                            continue
                 temp = destination.with_name(destination.name + '.partial-' + uuid.uuid4().hex[:8])
                 dig = hashlib.sha256()
                 size_read = 0
-                with open(source, 'rb') as src, open(temp, 'xb') as dst:
+                with (open_verified_backup_source(source, task.size, task.mtime_ns) as src,
+                      open_verified_backup_temp(folder, destination, temp, ancestry_before) as dst):
                     while True:
                         if cancelled and cancelled.is_set():
                             raise InterruptedError('Backup interrompido')
@@ -382,16 +403,22 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                         dig.update(data)
                         size_read += len(data)
                         notify.send(index, plan.count, copied + size_read, plan.total, str(source))
-                    dst.flush()
-                    os.fsync(dst.fileno())
                 after = os.stat(source, follow_symlinks=False)
                 if (after.st_size != task.size or after.st_mtime_ns != task.mtime_ns or size_read != task.size):
                     raise OSError('Fonte alterada enquanto copiava; arquivo não validado')
-                copy_digest = sha256_file(temp, cancelled)
-                if copy_digest != dig.hexdigest():
-                    raise OSError('SHA-256 não corresponde ao arquivo original')
-                os.replace(temp, destination)
+                # Hash the committed destination once, not the partial and then
+                # the destination: avoids a third full read for large backups.
+                copy_digest = dig.hexdigest()
+                require_unchanged_destination_ancestry(folder, destination, ancestry_before)
+                publish_copy(temp, destination, previous)
                 temp = None
+                if test_fault_hook is not None:
+                    test_fault_hook('backup_after_publish')
+                # The rename alone is not proof of durable, intact destination data.
+                # Do not register a verified manifest entry if the committed file
+                # was replaced or corrupted between the rename and this re-read.
+                verify_committed_backup_file(folder, destination, ancestry_before,
+                                             size_read, copy_digest, cancelled)
                 try:
                     shutil.copystat(source, destination, follow_symlinks=False)
                 except OSError:
@@ -414,13 +441,23 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                 stopped = True
                 break
             except (OSError, ValueError) as err:
+                manifest['files'] = [x for x in manifest['files'] if x.get('relative') != task.destination]
                 manifest['errors'].append({'source': task.source, 'error': str(err)})
             finally:
                 if temp is not None:
-                    try:
-                        Path(temp).unlink(missing_ok=True)
-                    except OSError:
-                        pass
+                    safe_cleanup_backup_temp(folder, destination, temp, ancestry_before)
+        if not stopped:
+            for item in list(manifest['files']):
+                try:
+                    verify_committed_backup_file(
+                        folder, folder / item['relative'], verified_ancestries[item['relative']],
+                        item['bytes'], item['sha256'], cancelled)
+                except InterruptedError:
+                    stopped = True
+                    break
+                except (OSError, ValueError) as err:
+                    manifest['files'].remove(item)
+                    manifest['errors'].append({'source': item['source'], 'error': str(err)})
         manifest['status'] = ('interrompido' if stopped else
                               ('concluido' if not manifest['errors'] and len(manifest['files']) == plan.count
                                else 'parcial_com_erros'))

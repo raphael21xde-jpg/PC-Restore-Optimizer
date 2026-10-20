@@ -25,3 +25,12 @@ vaults/
 *.vhdx
 *.wim
 *.esd
+
+# Logs de testes locais: nao publicar dados da maquina por git push
+.pcro-test-reports/
+
+# Relatorios locais do Claude (lidos pelo planejamento no claude.ai, fora do git)
+relatorios-claude/
+
+# Preferencias locais do usuario: nunca publicar
+preferencias-v05.json

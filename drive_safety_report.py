@@ -1,0 +1,271 @@
+"""Read-only, privacy-minimal review of fresh Windows disk inventory.
+
+Not a backup executor and NEVER authorization for copying, formatting or
+Windows installation. Logical disk numbers and volume letters alone do NOT
+prove two destinations are separate physical devices. Raw serial numbers,
+device paths and other inventory details are deliberately not returned.
+"""
+from __future__ import annotations
+
+import re
+
+from backup_target_preflight import assess_backup_target
+from diagnostics import disk_inventory
+from partition_extent_crosscheck import crosscheck_partitions
+from drive_hardware_evidence import summarize_hardware_evidence
+from drive_diagnostic_advice import classify_drive_findings
+
+DRIVE = re.compile(r'[A-Za-z]:?\Z')
+OBSERVED = frozenset({'logical_disk_reported', 'reported'})
+MAX_SOURCES = 32
+MAX_TARGETS = 8
+
+
+def _normalize_letters(values, *, maximum, field):
+    if not isinstance(values, (list, tuple)) or not 1 <= len(values) <= maximum:
+        raise ValueError(f'{field}: quantidade de unidades inválida.')
+    letters = []
+    for item in values:
+        if not isinstance(item, str) or not DRIVE.fullmatch(item.strip()):
+            raise ValueError(f'{field}: letra de unidade inválida.')
+        letter = item.strip()[0].upper()
+        if letter in letters:
+            raise ValueError(f'{field}: letra repetida.')
+        letters.append(letter)
+    return letters
+
+
+def _drive_extents(report, letter):
+    """Show reported logical IDs even when their physical mapping is unsafe.
+
+    Do not turn a read-only IOCTL observation into device-independence proof.
+    The collector distinguishes volumes whose extent disk is missing from
+    Get-Disk, volumes backed by Storage Spaces, and multi-disk extents. Those
+    IDs remain useful diagnostic evidence, not an approved backup location.
+    """
+    mapping = report.get('extent_mapping')
+    raw = mapping.get('volumes') if isinstance(mapping, dict) else None
+    if not isinstance(raw, list):
+        return [], 'incomplete'
+    matching = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        letters = row.get('letters')
+        if not isinstance(letters, (list, tuple)):
+            continue
+        names = [entry.strip().rstrip(':').upper()
+                 for entry in letters if isinstance(entry, str)]
+        if letter in names:
+            matching.append(row)
+    if len(matching) != 1:
+        return [], 'incomplete'
+
+    record = matching[0]
+    numbers = record.get('disk_numbers')
+    if (not isinstance(numbers, (list, tuple)) or not numbers or
+            any(type(n) is not int or n < 0 or n >= 65536 for n in numbers)
+            or len(numbers) != len(set(numbers))):
+        return [], 'incomplete'
+    numbers = sorted(numbers)
+    raw_status = record.get('status')
+    if raw_status not in OBSERVED | {
+            'disk_not_listed', 'virtual_spaces', 'multi_disk'}:
+        return [], 'incomplete'
+
+    if len(numbers) > 1:
+        # Multiple logical disks are useful evidence, never a single-device
+        # safe mapping, even if the collector labels them 'reported'.
+        return numbers, 'multi_disk'
+    if raw_status == 'multi_disk':
+        return [], 'incomplete'
+    if raw_status in ('virtual_spaces', 'disk_not_listed'):
+        return numbers, raw_status
+
+    # Independently check the Get-Disk snapshot before treating a reported
+    # extent as a conventional logical disk association.
+    rows = report.get('disks')
+    disks = [x for x in rows if isinstance(x, dict)
+             and x.get('Number') == numbers[0]] if isinstance(rows, list) else []
+    if len(disks) != 1:
+        return numbers, 'disk_not_listed'
+    if str(disks[0].get('BusType') or '').strip().casefold() in (
+            'spaces', 'storage spaces'):
+        return numbers, 'virtual_spaces'
+    return numbers, 'observed_logical_only'
+
+
+def _boot_disk_numbers(report):
+    """Observed boot/EFI risk is a veto; absence is not evidence of safety."""
+    found = set()
+    for field in ('disks', 'partitions'):
+        rows = report.get(field, [])
+        if not isinstance(rows, list):
+            continue
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            number = item.get('Number') if field == 'disks' else item.get('DiskNumber')
+            if type(number) is not int or number < 0 or number >= 65536:
+                continue
+            sensitive = item.get('IsBoot') is True or item.get('IsSystem') is True
+            if field == 'partitions':
+                kind = str(item.get('Type') or '').strip().casefold()
+                sensitive |= kind in ('system', 'efi system partition')
+            if sensitive:
+                found.add(number)
+    return found
+
+
+def inspect_fresh_drive_safety(source_letters, target_letters, *,
+                               collector=disk_inventory,
+                               expected_backup_bytes=None):
+    """Use a NEW inventory and report blockers without leaking raw hardware IDs.
+
+    Inputs are selected logical drive letters, not fixed C/D/F/G assumptions.
+    A successful inspection never certifies device independence nor enables a
+    real backup. Collector injection exists solely for deterministic fixtures.
+    """
+    sources = _normalize_letters(source_letters, maximum=MAX_SOURCES,
+                                 field='Origens')
+    targets = _normalize_letters(target_letters, maximum=MAX_TARGETS,
+                                 field='Destinos')
+    if (expected_backup_bytes is not None and
+            (type(expected_backup_bytes) is not int or
+             expected_backup_bytes < 0 or expected_backup_bytes > (1 << 63))):
+        raise ValueError('Tamanho de backup inválido.')
+
+    # Only one call, never a cached snapshot. Missing/failed evidence blocks.
+    try:
+        report = collector()
+    except (OSError, RuntimeError, ValueError, TimeoutError) as exc:
+        raise ValueError('Não foi possível coletar o inventário atualizado.') from exc
+    required = ('disks', 'volumes', 'extent_mapping', 'spaces_membership')
+    if (not isinstance(report, dict) or
+            any(key not in report for key in required) or
+            not isinstance(report['disks'], list) or
+            not isinstance(report['volumes'], list) or
+            not isinstance(report['extent_mapping'], dict) or
+            not isinstance(report['spaces_membership'], dict)):
+        raise ValueError('Inventário atualizado incompleto.')
+
+    source_info = {}
+    for letter in sources:
+        disks, extent_status = _drive_extents(report, letter)
+        comparison = crosscheck_partitions(report, letter, disks, extent_status)
+        source_info[letter] = (disks, extent_status, comparison)
+    boot_disks = _boot_disk_numbers(report)
+    any_incomplete = any(
+        status != 'observed_logical_only' or compare['status'] in ('conflict', 'inconclusive')
+        for _, status, compare in source_info.values())
+    outcomes = []
+
+    for letter in targets:
+        disks, extent_status = _drive_extents(report, letter)
+        comparison = crosscheck_partitions(report, letter, disks, extent_status)
+        any_incomplete |= (extent_status != 'observed_logical_only' or
+                           comparison['status'] in ('conflict', 'inconclusive'))
+        assessment = assess_backup_target(
+            report['disks'], report['volumes'],
+            report['extent_mapping'], report['spaces_membership'],
+            target_letter=letter, source_letters=sources,
+            expected_backup_bytes=expected_backup_bytes)
+        blockers = list(assessment['blockers'])
+        if letter in sources:
+            blockers.append('Destino coincide com uma unidade selecionada como origem.')
+        for source, (origin_disks, origin_status, origin_comparison) in source_info.items():
+            # Even a partially identified extent can conclusively veto a
+            # destination if it reports overlapping logical disk numbers.
+            if disks and origin_disks and set(disks) & set(origin_disks):
+                blockers.append(
+                    f'Destino {letter}: e origem {source}: compartilham disco lógico.')
+        if disks and set(disks) & boot_disks:
+            blockers.append(
+                'Destino contém disco lógico associado a inicialização, sistema ou EFI.')
+        extent_blockers = {
+            'incomplete': 'Mapeamento de extents do destino desconhecido ou ambíguo.',
+            'disk_not_listed': 'Disco lógico do destino não aparece em Get-Disk.',
+            'virtual_spaces': 'Destino em Storage Spaces: membros físicos não confirmados.',
+            'multi_disk': 'Destino ocupa vários discos lógicos; composição não confirmada.',
+        }
+        if extent_status in extent_blockers:
+            blockers.append(extent_blockers[extent_status])
+        if any(status != 'observed_logical_only'
+               for _, status, _ in source_info.values()):
+            blockers.append('Mapeamento de extents de uma ou mais origens não confirmado.')
+        if comparison['status'] == 'conflict':
+            blockers.append('Get-Partition e IOCTL divergem sobre o disco lógico do destino.')
+        if comparison['status'] == 'inconclusive':
+            blockers.append('Get-Partition retornou associação inválida para o destino.')
+        if any(info['status'] in ('conflict', 'inconclusive')
+               for _, _, info in source_info.values()):
+            blockers.append('Uma origem possui evidências de partição contraditórias ou inválidas.')
+        # Any reported logical collision is a veto, including when it is only
+        # reported by partitions rather than IOCTL. It is not positive proof.
+        source_candidates = [set(origin_disks) | set(info['partition_logical_disks'])
+                             for origin_disks, _, info in source_info.values()]
+        target_candidates = set(disks) | set(comparison['partition_logical_disks'])
+        if any(target_candidates & nums for nums in source_candidates):
+            blockers.append('Possível compartilhamento de disco lógico segundo extents/partições.')
+        if target_candidates & boot_disks:
+            blockers.append('Possível disco de sistema/EFI identificado por partições/extents.')
+        if assessment['capacity_status'] in ('insufficient', 'unknown'):
+            blockers.append('Espaço insuficiente ou não confirmável.')
+        # The underlying assessment may be review-only even with disjoint
+        # extents. Never interpret that as approval.
+        outcomes.append({
+            'letter': letter + ':',
+            'logical_disk_numbers': disks,
+            'extent_status': extent_status,
+            'partition_crosscheck': comparison['status'],
+            'partition_logical_disk_numbers': comparison['partition_logical_disks'],
+            'hardware_evidence': summarize_hardware_evidence(
+                report, disks, extent_status),
+            'capacity_status': assessment['capacity_status'],
+            # Pure metadata from the same snapshot; manual estimate is never
+            # interpreted as an actual manifest or verified capacity reserve.
+            'expected_backup_bytes': expected_backup_bytes,
+            'free_bytes_reported': assessment['free_bytes_reported'],
+            'status': 'blocked' if blockers else 'requires_review',
+            'blockers': list(dict.fromkeys(blockers)),
+            'issues': [
+                'Discos lógicos distintos não comprovam mídias fisicamente independentes.',
+                'Diagnóstico pontual; revise também alterações de hardware e inicialização.',
+            ],
+        })
+
+    for item in outcomes:
+        item['findings'] = classify_drive_findings(
+            item, boot_related_disks=boot_disks, is_target=True)
+    sources_with_evidence = [
+        {'letter': letter + ':',
+         'logical_disk_numbers': disks,
+         'extent_status': extent_status,
+         'partition_crosscheck': comparison['status'],
+         'partition_logical_disk_numbers': comparison['partition_logical_disks'],
+         'hardware_evidence': summarize_hardware_evidence(
+             report, disks, extent_status)}
+        for letter, (disks, extent_status, comparison) in source_info.items()
+    ]
+    for item in sources_with_evidence:
+        item['findings'] = classify_drive_findings(
+            item, boot_related_disks=boot_disks)
+
+    return {
+        'schema': 'pcro-readonly-drive-safety-v1',
+        'inventory_status': 'fresh_collected',
+        'status': ('blocked' if any(x['status'] == 'blocked' for x in outcomes)
+                   else 'incomplete' if any_incomplete else 'requires_review'),
+        'source_volumes': sources_with_evidence,
+        'destinations': outcomes,
+        'boot_related_logical_disks': sorted(boot_disks),
+        'raw_identifiers_included': False,
+        'physical_independence_verified': False,
+        'backup_verified': False,
+        'copy_authorized': False,
+        'ready_for_format': False,
+        'installation_authorized': False,
+        'note': ('Somente leitura. Números lógicos, USB, discos virtuais e '
+                 'Storage Spaces exigem verificação física independente; '
+                 'nenhuma ação sobre discos foi autorizada.'),
+    }
