@@ -42,7 +42,12 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
 
 ### P2-02 · Recusar restauração como administrador
 - **Fatia 1:** `concluído` (PR #59).
-- **Fatia 2:** `pronto`. Levar a trava para dentro de `restore_selected` (que agora já tem `new_restore_folder`, da PR #56), para `restore_test` (backup_core) e para `restore_to_staging` (navegadores).
+- **Fatia 2:** `concluído` (branch `auto/P2-02-trava-admin-motores`). A trava agora fica dentro de `restore_selected` (backup_features), `restore_test` (backup_core) e `restore_to_staging` (navegadores). Escolhas de design:
+  - a trava é a **primeira instrução** de cada motor: vem antes do cancelamento, de resolver caminhos, de ler o manifesto/cofre (`verify_vault`) e de criar qualquer pasta; recusado, o destino fica como estava (também na retomada);
+  - novo módulo `elevation_guard.py` **sem importar nada do projeto** (evita import circular entre os motores); `restore_elevation.py` reexporta os mesmos objetos, com os mesmos textos;
+  - só o literal `True` em `allow_elevated` libera (1, 'yes', 'True' e None continuam recusados);
+  - `guarded_restore_selected` repassa `allow_elevated` e `elevation_probe` ao motor, para os dois usarem a mesma resposta; `run_placement` (P2-01) continua usando `require_not_elevated`, agora vindo do módulo novo;
+  - pendente para uma fatia futura: `restore_legacy_opera` e `extract_to_staging` (`.opgx`) ainda não têm a trava dentro do motor.
 
 ### P2-03 · Caminhos longos (LongPathsEnabled)
 - **Status:** `pronto`.

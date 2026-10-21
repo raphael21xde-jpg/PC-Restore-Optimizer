@@ -171,7 +171,8 @@ class GuardedRestoreTests(SyntheticBackupMixin, unittest.TestCase):
                                               resume_from='r', progress=print)
         self.assertEqual(result, ('folder', 7))
         self.assertEqual(calls, [(('m.json', ['k'], 'dest'),
-                                  {'resume_from': 'r', 'progress': print})])
+                                  {'allow_elevated': False, 'elevation_probe': not_elevated,
+                                   'resume_from': 'r', 'progress': print})])
 
 
 class SelectiveRecoveryGuardTests(unittest.TestCase):
