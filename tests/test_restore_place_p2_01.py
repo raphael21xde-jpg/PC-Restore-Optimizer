@@ -236,7 +236,7 @@ class PlaceTests(PlacementFixture):
         popen.assert_not_called()
         startfile.assert_not_called()
         self.assertEqual([f['key'] for f in result['failures']], ['a.cfg'])
-        self.assertIn('administrador', result['failures'][0]['error'])
+        self.assertIn('Não foi possível gravar (pasta protegida', result['failures'][0]['error'])
         self.assertEqual([p.name for p in pd.iterdir()], [])
         source = Path(restore_place.__file__).read_text(encoding='utf-8').lower()
         for word in ('runas', 'shellexecute', 'subprocess', 'ctypes'):
@@ -252,23 +252,68 @@ class PlaceTests(PlacementFixture):
         self.assertEqual(os.stat(staged).st_nlink, 1)
         self.assertEqual(os.stat(staged).st_ino, before.st_ino)
 
-    @unittest.skipUnless(os.name == 'nt', 'ACL do NTFS so existe no Windows')
-    def test_windows_acl_inherited(self):
+    def test_copy_is_exclusive_partial_in_final_folder_then_replace(self):
+        # Prova estrutural da heranca de permissoes (sem ferramenta externa):
+        # o arquivo nasce do zero com open(..., 'xb') na pasta final e so
+        # depois troca de nome com os.replace na mesma pasta. A conferencia
+        # real da DACL no Windows e teste manual do Raphael.
         self.add('acl/arquivo.txt', b'acl')
-        (self.target_root / 'acl').mkdir()
-        reference = self.target_root / 'acl' / 'referencia.txt'
-        reference.write_bytes(b'ref')
-        self.place(self.plan())
+        target = self.target('acl/arquivo.txt')
+        partial = Path(str(target) + '.pcro-partial')
+        opened, replaced = [], []
+        real_open, real_replace = open, os.replace
 
-        def acl(path):
-            out = subprocess.run(['icacls', str(path)], capture_output=True, text=True,
-                                 check=True).stdout
-            lines = [line.strip() for line in out.splitlines() if line.strip()]
-            lines[0] = lines[0][len(str(path)):].strip()
-            return [line for line in lines if not line.lower().startswith('successfully')
-                    and 'processad' not in line.lower()]
+        def spy_open(path, mode='r', *args, **kwargs):
+            opened.append((str(path), mode))
+            return real_open(path, mode, *args, **kwargs)
 
-        self.assertEqual(acl(self.target('acl/arquivo.txt')), acl(reference))
+        def spy_replace(src, dst):
+            replaced.append((str(src), str(dst)))
+            return real_replace(src, dst)
+
+        plan = self.plan()
+        with mock.patch('restore_place.open', side_effect=spy_open, create=True), \
+                mock.patch.object(restore_place.os, 'replace', side_effect=spy_replace), \
+                mock.patch.object(restore_place.os, 'rename') as rename:
+            result = self.place(plan)
+        self.assertEqual(result['placed'], ['acl/arquivo.txt'])
+        writes = [(path, mode) for path, mode in opened if 'b' in mode and mode != 'rb']
+        self.assertEqual(writes, [(str(partial), 'xb')])
+        self.assertEqual(Path(writes[0][0]).parent, target.parent)
+        self.assertIn((str(partial), str(target)), replaced)
+        self.assertFalse([pair for pair in replaced if str(self.staging) in pair[0]])
+        rename.assert_not_called()
+        source = Path(restore_place.__file__).read_text(encoding='utf-8')
+        self.assertNotIn('shutil', source)
+
+    def test_target_appearing_during_copy_is_preserved(self):
+        self.add('novo.txt', b'do backup')
+        target = self.target('novo.txt')
+
+        def someone_creates_target(partial):
+            target.write_bytes(b'apareceu agora')
+
+        plan = self.plan()
+        self.assertEqual(self.by_key(plan)['novo.txt'].category, 'novo')
+        result = self.place(plan, test_after_copy_hook=someone_creates_target)
+        self.assertEqual(target.read_bytes(), b'apareceu agora')
+        self.assertEqual([p.name for p in self.target_root.iterdir()], ['novo.txt'])
+        self.assertEqual([f['key'] for f in result['failures']], ['novo.txt'])
+        self.assertIn('apareceu', result['failures'][0]['error'])
+        self.assertEqual(result['placed'], [])
+
+    def test_existing_changed_during_copy_is_preserved(self):
+        self.add('save.dat', b'do backup')
+        target = self.target('save.dat')
+        target.write_bytes(b'atual')
+
+        def someone_edits_target(partial):
+            target.write_bytes(b'editado durante a copia')
+
+        result = self.place(self.plan(), test_after_copy_hook=someone_edits_target)
+        self.assertEqual(target.read_bytes(), b'editado durante a copia')
+        self.assertEqual([p.name for p in self.target_root.iterdir()], ['save.dat'])
+        self.assertEqual([f['key'] for f in result['failures']], ['save.dat'])
 
     def test_staging_and_backup_untouched(self):
         self.add('a.txt', b'a')
@@ -280,6 +325,71 @@ class PlaceTests(PlacementFixture):
                                            target_map={str(self.original_root): str(self.target_root)}))
         self.assertEqual(result['status'], 'concluido')
         self.assertEqual(self.snapshot(self.staging), before)
+
+
+class BlockedTests(PlacementFixture):
+    def symlink_or_skip(self, link, target):
+        try:
+            os.symlink(target, link, target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f'O sistema nao deixou criar link simbolico: {error}')
+
+    def assert_blocked(self, key):
+        plan = self.plan()
+        self.assertEqual(self.by_key(plan)[key].category, 'bloqueado')
+        result = self.place(plan)
+        self.assertEqual([f['key'] for f in result['failures']], [key])
+        self.assertEqual(result['placed'], [])
+        return result
+
+    def test_blocked_when_target_is_folder(self):
+        self.add('a.txt', b'a')
+        self.target('a.txt').mkdir()
+        self.assert_blocked('a.txt')
+        self.assertTrue(self.target('a.txt').is_dir())
+        self.assertEqual(list(self.target('a.txt').iterdir()), [])
+
+    def test_blocked_when_target_is_symlink(self):
+        self.add('a.txt', b'a')
+        elsewhere = self.root / 'outro-lugar'
+        elsewhere.mkdir()
+        try:
+            os.symlink(elsewhere / 'alvo.txt', self.target('a.txt'))
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f'O sistema nao deixou criar link simbolico: {error}')
+        self.assert_blocked('a.txt')
+        self.assertEqual(list(elsewhere.iterdir()), [])
+
+    def test_blocked_when_parent_is_symlink(self):
+        self.add('pasta/a.txt', b'a')
+        elsewhere = self.root / 'outro-lugar'
+        elsewhere.mkdir()
+        self.symlink_or_skip(self.target('pasta'), elsewhere)
+        self.assert_blocked('pasta/a.txt')
+        self.assertEqual(list(elsewhere.iterdir()), [])
+
+    def test_blocked_when_any_ancestor_below_root_is_symlink(self):
+        self.add('n1/n2/n3/a.txt', b'a')
+        elsewhere = self.root / 'outro-lugar'
+        elsewhere.mkdir()
+        self.symlink_or_skip(self.target('n1'), elsewhere)
+        self.assert_blocked('n1/n2/n3/a.txt')
+        self.assertEqual(list(elsewhere.iterdir()), [])
+
+    def test_system_root_and_windir_are_protected(self):
+        system_root = self.root / 'Windows'
+        windir = self.root / 'WINDIR2'
+        self.environ = {'SystemRoot': str(system_root), 'windir': str(windir)}
+        self.add('a.dll', b'a', source=str(system_root / 'System32' / 'a.dll'))
+        self.add('b.ini', b'b', source=str(windir / 'b.ini'))
+        mapping = {str(system_root): str(system_root), str(windir): str(windir)}
+        plan = self.plan(target_map=mapping)
+        self.assertEqual({i.key: i.category for i in plan.items},
+                         {'a.dll': 'precisa_admin', 'b.ini': 'precisa_admin'})
+        result = self.place(plan)
+        self.assertEqual(sorted(result['skipped_protected']), ['a.dll', 'b.ini'])
+        self.assertFalse(system_root.exists())
+        self.assertFalse(windir.exists())
 
 
 class JournalTests(PlacementFixture):

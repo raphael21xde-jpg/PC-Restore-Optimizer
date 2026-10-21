@@ -24,9 +24,18 @@ Decisoes (P2-01, 21/10/2026):
   ``<nome>.antes-pcro-AAAAMMDD`` (``-2``, ``-3``... se o nome ja existir).
 * Em falha, o unico arquivo que o app pode descartar e o ``.pcro-partial``
   que ele mesmo criou. Um ``.pcro-partial`` que ja estava la fica intacto.
-* Destinos protegidos sao pulados, salvo ``allow_protected=True``. Mesmo
-  assim o app nunca pede elevacao: sem permissao, o arquivo vira falha no
-  relatorio.
+* Logo antes da troca de nome o destino e conferido de novo. Se um arquivo
+  apareceu (classe ``novo``) ou o arquivo atual mudou durante a copia
+  (classe ``renomear``), o app NAO sobrescreve nem renomeia: marca falha e
+  descarta so o proprio ``.pcro-partial``. E a opcao mais segura, porque o
+  arquivo novo pode estar sendo escrito por outro programa. Ainda existe uma
+  janela minima entre a conferencia e o ``os.replace``; ela fica registrada
+  aqui como limite conhecido.
+* Links e juncoes em qualquer nivel entre a raiz (mapeada, ou a raiz do
+  disco) e o destino deixam o item ``bloqueado``.
+* Destinos protegidos (Program Files, ProgramData, Windows) sao pulados,
+  salvo ``allow_protected=True``. Mesmo assim o app nunca pede elevacao:
+  sem permissao, o arquivo vira falha no relatorio.
 * O diario JSON e gravado de forma atomica depois de cada arquivo. Uma
   nova execucao com o mesmo plano pula o que ja foi colocado e conferido.
 """
@@ -47,10 +56,15 @@ JOURNAL_SCHEMA = 'pcro-placement-journal-v1'
 PARTIAL_SUFFIX = '.pcro-partial'
 ASIDE_INFIX = '.antes-pcro-'
 CATEGORIES = ('novo', 'igual', 'renomear', 'ignorado', 'precisa_admin', 'bloqueado')
-PROTECTED_VARS = ('ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432', 'ProgramData')
+PROTECTED_VARS = ('ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432', 'ProgramData',
+                  'SystemRoot', 'windir')
 IGNORED_NAMES = {'desktop.ini'}
-ADMIN_MESSAGE = ('Sem permissão para gravar neste destino: ele precisa de administrador. '
+ADMIN_MESSAGE = ('Não foi possível gravar (pasta protegida ou arquivo aberto em outro programa). '
                  'O app não pede elevação; o arquivo continua na pasta de conferência.')
+APPEARED_MESSAGE = ('Um arquivo apareceu no destino durante a cópia; ele foi preservado e '
+                    'nada foi sobrescrito.')
+CHANGED_MESSAGE = ('O arquivo do destino mudou durante a cópia; ele foi preservado e '
+                   'nada foi renomeado nem sobrescrito.')
 
 
 @dataclass
@@ -59,6 +73,7 @@ class PlacementItem:
     source: str
     target: Path
     staged: Path
+    root: Path
     sha256: str
     size: int
     category: str
@@ -103,8 +118,9 @@ def _original_path(source):
 
 
 def _map_target(source, target_map):
+    """Return (target, root): root is the mapped root or the drive anchor."""
     if not target_map:
-        return Path(source)
+        return Path(source), Path(Path(source).anchor)
     best = None
     for original, replacement in target_map.items():
         if beneath(source, original) and (best is None or len(norm(original)) > len(norm(best[0]))):
@@ -117,7 +133,7 @@ def _map_target(source, target_map):
     target = Path(best[1]) / relative
     if not beneath(target, best[1]):
         raise ValueError('Destino escapa da pasta mapeada: ' + source)
-    return target
+    return target, Path(best[1])
 
 
 def _protected(paths, environ):
@@ -125,11 +141,22 @@ def _protected(paths, environ):
     return any(root and beneath(p, root) for root in roots for p in paths)
 
 
-def _destination_state(target, expected_sha, cancelled=None):
+def _unsafe_ancestor(target, root):
+    """First existing folder between root (exclusive) and target that is a link/junction."""
+    root_key = norm(root)
+    current = target.parent
+    while norm(current) != root_key and current != current.parent:
+        if os.path.lexists(current) and (is_reparse(current) or not current.is_dir()):
+            return current
+        current = current.parent
+    return None
+
+
+def _destination_state(target, expected_sha, root, cancelled=None):
     """Return (state, reason) without changing anything."""
-    parent = target.parent
-    if parent.exists() and (is_reparse(parent) or not parent.is_dir()):
-        return 'bloqueado', 'A pasta de destino é um link, junção ou não é uma pasta.'
+    unsafe = _unsafe_ancestor(target, root)
+    if unsafe is not None:
+        return 'bloqueado', f'A pasta {unsafe} é um link, junção ou não é uma pasta.'
     if not os.path.lexists(target):
         return 'novo', ''
     if is_reparse(target) or not target.is_file():
@@ -158,12 +185,12 @@ def plan_placement(manifest_path, staging_folder, *, target_map=None, today=None
         if not beneath(staged, staging):
             raise ValueError('Arquivo de conferência fora da pasta de conferência.')
         source = _original_path(entry.get('source'))
-        target = _map_target(source, target_map)
+        target, root = _map_target(source, target_map)
         marker = norm(target)
         if marker in seen_targets:
             raise ValueError('Dois arquivos do manifesto apontam para o mesmo destino.')
         seen_targets.add(marker)
-        item = PlacementItem(key=key, source=source, target=target, staged=staged,
+        item = PlacementItem(key=key, source=source, target=target, staged=staged, root=root,
                              sha256=entry['sha256'], size=int(entry.get('bytes', 0) or 0),
                              category='novo')
         if target.name.lower() in IGNORED_NAMES:
@@ -171,7 +198,7 @@ def plan_placement(manifest_path, staging_folder, *, target_map=None, today=None
         elif is_reparse(staged) or not staged.is_file():
             item.category, item.reason = 'bloqueado', 'Arquivo ausente ou inválido na pasta de conferência.'
         else:
-            item.existing, item.reason = _destination_state(target, item.sha256)
+            item.existing, item.reason = _destination_state(target, item.sha256, root)
             if item.existing == 'bloqueado':
                 item.category = 'bloqueado'
             elif _protected((source, target), environ):
@@ -309,7 +336,7 @@ def place_files(plan, *, confirmed_preview=False, allow_protected=False, journal
 
 
 def _place_one(item, plan, journal, journal_path, result, fail, cancelled, hook):
-    state, reason = _destination_state(item.target, item.sha256, cancelled)
+    state, reason = _destination_state(item.target, item.sha256, item.root, cancelled)
     if state == 'bloqueado':
         fail(item, reason)
         return
@@ -319,6 +346,7 @@ def _place_one(item, plan, journal, journal_path, result, fail, cancelled, hook)
                                      'sha256': item.sha256}
         return
     partial = Path(str(item.target) + PARTIAL_SUFFIX)
+    before = _identity(item.target) if state == 'renomear' else None
     created = False
     try:
         item.target.parent.mkdir(parents=True, exist_ok=True)
@@ -330,6 +358,14 @@ def _place_one(item, plan, journal, journal_path, result, fail, cancelled, hook)
         atomic_json(journal_path, journal)
         created = True
         _copy_and_verify(item, partial, cancelled, hook)
+        # Confere de novo logo antes da troca: nunca sobrescrever algo que
+        # apareceu ou mudou durante a cópia.
+        if state == 'novo' and os.path.lexists(item.target):
+            fail(item, APPEARED_MESSAGE)
+            return
+        if state == 'renomear' and _identity(item.target) != before:
+            fail(item, CHANGED_MESSAGE)
+            return
         aside = None
         if state == 'renomear':
             aside = _aside_name(item.target, plan.stamp)
@@ -365,6 +401,14 @@ def _place_one(item, plan, journal, journal_path, result, fail, cancelled, hook)
         if created:
             _discard_own_partial(partial)
         journal['in_progress'] = None
+
+
+def _identity(path):
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    return (info.st_ino, info.st_dev, info.st_size, info.st_mtime_ns)
 
 
 def placement_report(plan, result):
