@@ -314,6 +314,24 @@ class ProgressTests(unittest.TestCase):
                          af.DONE)
         self.assertFalse(partial.exists())
 
+    def test_save_error_text_hides_full_path(self):
+        # FIX-P2-11-01: o aviso leva no máximo o nome do arquivo e o tipo do erro
+        exc = PermissionError(13, 'Acesso negado',
+                              r'C:\Users\fulano\AppData\Local\PC-Restore-Optimizer'
+                              r'\depois-de-formatar\progresso-abc.json.parcial')
+        text = af.progress_error_text(exc)
+        self.assertTrue(text.startswith('Não deu para salvar o progresso'))
+        self.assertIn('progresso-abc.json.parcial', text)
+        self.assertIn('PermissionError', text)
+        for word in ('fulano', 'Users', 'AppData', 'Acesso negado'):
+            self.assertNotIn(word, text)
+
+    def test_save_error_text_without_filename(self):
+        text = af.progress_error_text(ValueError(r'C:\Users\fulano\x'))
+        self.assertIn('ValueError', text)
+        self.assertNotIn('fulano', text)
+        self.assertNotIn('Users', text)
+
     def test_never_deletes(self):
         src = (ROOT / 'after_format.py').read_text(encoding='utf-8')
         for word in ('unlink', 'os.remove', 'rmtree', 'rmdir', 'subprocess', 'os.system'):
@@ -418,6 +436,34 @@ class WindowTests(unittest.TestCase):
         launchers.assert_called_once_with(dlg)
         recovery.assert_called_once_with(dlg)
         self.assertEqual(dlg.after_format_notice.get(), 'Atenção: senhas.csv')
+        dlg.destroy()
+
+    def test_progress_warning_survives_open(self):
+        # FIX-P2-11-01: o aviso do progresso tem linha própria que "Abrir" não apaga
+        path = af.progress_path(self.manifest, self.base)
+        path.parent.mkdir(parents=True)
+        path.write_text('{ estragado', encoding='utf-8')
+        dlg = self.open()
+        warning = dlg.after_format_progress_warning.get()
+        self.assertIn('não pôde ser usado', warning)
+        with mock.patch.object(afu, 'show_restore'), \
+                mock.patch.object(afu, 'show_programs'):
+            dlg.after_format_buttons['restaurar']['Abrir'].invoke()
+            dlg.after_format_buttons['programas']['Abrir'].invoke()
+        self.assertEqual(dlg.after_format_progress_warning.get(), warning)
+        self.assertEqual(dlg.after_format_notice.get(), '')
+        dlg.destroy()
+
+    def test_save_failure_shown_without_full_path(self):
+        dlg = self.open()
+        error = PermissionError(13, 'negado', r'C:\Users\fulano\progresso.json.parcial')
+        with mock.patch.object(afu, 'save_progress', side_effect=error):
+            dlg.after_format_buttons['discos']['Feito'].invoke()
+        with mock.patch.object(afu, 'show_programs'):
+            dlg.after_format_buttons['programas']['Abrir'].invoke()
+        warning = dlg.after_format_progress_warning.get()
+        self.assertIn('Não deu para salvar o progresso', warning)
+        self.assertNotIn('fulano', warning)
         dlg.destroy()
 
     def test_skip_does_not_block(self):

@@ -152,6 +152,19 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   - `app.py`: só o botão "Depois de formatar" na Visão geral e o item no menu lateral (abre a janela; fica fora de `nav_buttons`, que continua com 8 páginas);
   - textos das etapas sem mandar formatar, apagar ou desinstalar (teste confere).
 
+### FIX-P2-11-01 · Avisos do progresso do assistente
+- **Status:** `concluído` (branch `auto/FIX-P2-11-01-avisos-progresso`; ressalvas 2 e 3 da revisão da PR #72).
+- **Aceite:** a falha ao salvar o progresso não mostra o caminho completo (que pode ter o nome de usuário); o aviso "o progresso salvo não pôde ser usado" não some ao clicar em "Abrir".
+- **Escolhas de design (21/10/2026, a opção mais segura):**
+  - `after_format.progress_error_text(exc)` (sem Tk): texto fixo "Não deu para salvar o progresso (<nome do arquivo>, <tipo do erro>). As marcações valem só até fechar a janela."; leva no máximo `exc.filename` reduzido ao nome do arquivo (sem pastas) e o nome da classe do erro, nunca a mensagem do sistema nem o caminho completo;
+  - a janela ganhou uma linha própria para os avisos do progresso (`after_format_progress_warning`), separada da linha de lembretes (`after_format_notice`), que "Abrir" continua limpando; a falha ao salvar também vai para essa linha própria, para não sumir no próximo "Abrir" (mesmo padrão da linha de aviso da janela de launchers do P2-05).
+
+### FIX-P2-11-02 · Progresso do assistente: letra trocada e duas janelas
+- **Status:** `pronto` (ressalvas 1 e 4 da revisão da PR #72).
+- **Problema 1:** o arquivo de progresso usa o SHA-256 do caminho completo do manifesto; se a letra da unidade do backup mudar depois de formatar (ex.: `E:` vira `F:`), o assistente não acha o progresso salvo e começa do zero.
+- **Problema 2:** duas janelas do assistente abertas para o mesmo backup gravam o mesmo `.parcial`, e uma pode atrapalhar a outra.
+- **Aceite:** o progresso continua achado quando só a letra muda (chave estável do backup, sem depender da letra); duas janelas não disputam o mesmo `.parcial` (ex.: nome temporário único ou uma janela por backup); nada é apagado; testes com dados simulados.
+
 ### ✅ Validação do Raphael — M1
 Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar M1"** (etiqueta `precisa-do-raphael`) com o passo a passo:
 1. Atualizar e abrir o app.

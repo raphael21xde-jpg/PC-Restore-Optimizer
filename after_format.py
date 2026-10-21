@@ -278,6 +278,23 @@ def load_progress(manifest, base=None):
     return {'steps': _empty_steps(), 'path': None, 'warnings': warnings}
 
 
+def progress_error_text(exc):
+    """Aviso fixo de falha ao salvar o progresso (FIX-P2-11-01).
+
+    Leva no máximo o nome do arquivo (sem pastas) e o nome da classe do erro;
+    nunca o caminho completo nem a mensagem do sistema, que podem ter o nome
+    de usuário.
+    """
+    detail = type(exc).__name__
+    filename = getattr(exc, 'filename', None)
+    if filename:
+        name = ntpath.basename(str(filename).replace('/', '\\'))
+        if name:
+            detail = f'{name}, {detail}'
+    return (f'Não deu para salvar o progresso ({detail}). As marcações valem só até '
+            'fechar a janela.')
+
+
 def save_progress(path, steps):
     """Grava as marcações de forma atômica (.parcial + os.replace).
 
