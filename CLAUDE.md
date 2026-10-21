@@ -3,7 +3,7 @@
 App desktop Windows (Python 3.13 + Tkinter): inventário de discos, seleção do que preservar, backup verificado com SHA-256, restauração, **reinstalação guiada** do Windows e otimização. Escopo: **só Windows**, qualquer PC (fraco até topo de linha, qualquer marca). O dono do projeto é o Raphael. Responda em **português**, com linguagem simples: ele está aprendendo programação.
 
 ## Antes de começar qualquer tarefa
-1. Confira o branch e o commit (`git status -sb`, `git log -1 --oneline`). Branch base atual: `fix/full-suite-message-drift-20261019`. **Não** trabalhe a partir da `main` antiga (17/10) sem confirmação.
+1. Confira o branch e o commit (`git status -sb`, `git log -1 --oneline`). Branch base: **`origin/main` atualizada** (desde o merge da PR #55, em 20/10/2026). Cada trabalho novo vai num branch próprio (`fix/`, `feature/` ou `auto/`).
 2. Leia `docs/ETAPA31_AUDITORIA_E_ROTEIRO_PARA_VERSAO_UTILIZAVEL.md` e `docs/ESTADO-DO-PROJETO-E-PROXIMOS-MARCOS.md` antes de propor mudanças grandes. Não recomece o motor de backup.
 
 ## Regras de segurança (inegociáveis)
@@ -38,6 +38,11 @@ Ao terminar uma suíte de testes, uma etapa ou uma investigação, salve um rela
 - o que foi alterado e o que ficou pendente.
 
 A pasta `relatorios-claude/` fica **fora do git** (está no `.gitignore`). Esses relatórios são lidos pelo planejamento do projeto no claude.ai.
+
+## Automação (ciclo com agentes)
+- O desenvolvimento roda num **ciclo diário** com quatro agentes (`.claude/agents/`: planejador, desenvolvedor, testador e revisor). O roteiro está em `docs/AUTOMACAO.md`, e a fila de trabalho em `docs/BACKLOG.md`.
+- O ciclo **só** entrega PRs em rascunho. Merge, decisões e testes no hardware real continuam sendo do Raphael.
+- A validação no Windows é feita pelo Raphael com `py -3 scripts\validar_windows.py`, num Terminal normal. Os resultados ficam no branch `validacao-windows`.
 
 ## Plano de entrega (resumo)
 - **Fase 0:** suíte completa com 0 falhas no Windows → uma PR única (rascunho) com o trabalho fora da `main` → o Raphael revisa e faz o merge.
