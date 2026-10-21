@@ -23,6 +23,7 @@ from restore_jobs import Job
 from app_recovery_ui import show_app_recovery
 from browser_recovery_ui import show_recovery
 from after_format_ui import show_after_format
+from recovery_center_ui import show_recovery_center
 from browser_guard import (verify_encrypted_backup as verify_legacy_opera,
                            extract_to_staging as restore_legacy_opera)
 
@@ -268,7 +269,9 @@ class App(tk.Tk):
         self._nav_entry('preservation', '✓', 'Preservação')
         self._nav_entry('installation', '↧', 'Instalar Windows')
         self._nav_entry('recovery', '↗', 'Recuperação')
-        self._nav_action('✚', 'Depois de formatar', self.open_after_format)
+        self.after_format_nav = self._nav_action('✚', 'Depois de formatar', self.open_after_format)
+        self.recovery_center_nav = self._nav_action('⟲', 'Central de recuperação',
+                                                    self.open_recovery_center)
         self._nav_entry('optimization', '⚡', 'Otimização')
         self._nav_heading('SISTEMA E DIAGNÓSTICO')
         self._nav_entry('diagnostic', '◫', 'Diagnóstico')
@@ -321,8 +324,12 @@ class App(tk.Tk):
             label.bind(sequence, lambda event: command())
         label.bind('<Enter>', lambda event: label.configure(bg=HOVER))
         label.bind('<Leave>', lambda event: label.configure(bg=SIDEBAR))
-        self.after_format_nav = label
         return label
+
+    def open_recovery_center(self):
+        """P2-08: central de recuperação (só leitura); começa pela pasta dos backups."""
+        folder = Path(self.dest.get()) if self.dest.get() else None
+        return show_recovery_center(self, folder=folder if folder and folder.is_dir() else None)
 
     def open_after_format(self):
         """P2-11: assistente "Depois de formatar" (pede o manifest.json do backup)."""
@@ -1138,6 +1145,8 @@ class App(tk.Tk):
         self.backup_list=tk.Listbox(self.history,bg=PANEL,fg=TEXT,selectbackground='#235781',
                                     relief='flat',font=('Consolas',11))
         self.backup_list.pack(fill='both',expand=True,padx=18,pady=16)
+        ttk.Button(self.history, text='Central de recuperação', style='Primary.TButton',
+                   command=self.open_recovery_center).pack(anchor='w', padx=18, pady=4)
         ttk.Button(self.history, text='Ver conteúdo: programas, jogos, saves e arquivos', command=self.show_backup_contents).pack(anchor='w', padx=18, pady=4)
         ttk.Button(self.history, text='Auditar este backup + dados + EFI (sem formatar)',
                    command=self.open_selected_backup_completeness_audit).pack(anchor='w', padx=18, pady=4)
