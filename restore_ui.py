@@ -23,6 +23,7 @@ from ui_timers import WindowTimers
 from restore_elevation import (ELEVATION_WARNING, ElevatedRestoreRefused,
                                 guarded_restore_selected, is_process_elevated)
 from restore_place import plan_placement
+from plaintext_passwords import TITLE as PASSWORDS_TITLE, alert_lines, scan_paths
 from long_paths import LIMIT as LONG_LIMIT
 from long_paths import read_long_paths_enabled, staging_target_length, warning_text
 from restore_place_flow import (confirmation_text, friendly_report, run_placement,
@@ -324,7 +325,10 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
             stats=record.get('performance',{})
             detail=f'Tempo: {time_text(stats.get("elapsed_sec"))}; velocidade média: {stats.get("bytes_per_sec",0)/1024**2:.1f} MiB/s'
             status.set(f'Restauração aprovada: {count} arquivo(s) verificados por SHA-256.\n{detail}\n{path}')
-            messagebox.showinfo('Restauração aprovada',f'{count} arquivo(s) recuperados e verificados:\n{path}\n{detail}',parent=dlg)
+            # P2-06: só pelo nome dos arquivos restaurados; nada é aberto nem apagado.
+            passwords=alert_lines(scan_paths(Path(path)/key for key in chosen))
+            extra=('\n\n'+PASSWORDS_TITLE+':\n'+'\n'.join(passwords)) if passwords else ''
+            messagebox.showinfo('Restauração aprovada',f'{count} arquivo(s) recuperados e verificados:\n{path}\n{detail}{extra}',parent=dlg)
         poll(done)
 
     def refuse_if_elevated():
@@ -440,6 +444,13 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
             def placed(result):
                 report = friendly_report(plan, result)
                 status.set(report.split('\n')[2])
+                # P2-06: avisa sobre senhas sem proteção entre os arquivos colocados.
+                done_keys = set(result.get('placed', [])) | set(result.get('resumed', [])) \
+                    | set(result.get('equal', []))
+                passwords = alert_lines(scan_paths(
+                    item.target for item in plan.items if item.key in done_keys))
+                if passwords:
+                    report += '\n' + PASSWORDS_TITLE + ':\n' + '\n'.join(passwords) + '\n'
                 show_report(report)
             poll(placed)
         poll(planned)

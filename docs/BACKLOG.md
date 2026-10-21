@@ -65,7 +65,15 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   - `target_map` na tela e o cofre do navegador ficam fora desta fatia.
 
 ### P2-06 · Senhas de navegador em texto puro
-- **Status:** `pronto`.
+- **Status:** `concluído` (fatia única, `auto/P2-06-senhas-texto-puro`).
+- **Escolhas de design:**
+  - detecta **só pelo nome** (`plaintext_passwords.py`), sem abrir nem ler o arquivo; o alerta mostra nome e pasta, nunca o conteúdo;
+  - **não bloqueia** o backup nem a restauração: só avisa, e na prévia diz quais desses arquivos entram na cópia (o backup não é criptografado);
+  - **sem botão de apagar nem de abrir**: a recomendação é importar no navegador ou num gerenciador de senhas e apagar à mão, também da Lixeira;
+  - a busca não segue links simbólicos nem junções, desce no máximo 2 níveis e olha no máximo 20 mil itens (se bater no teto, avisa que a busca ficou incompleta);
+  - só `.csv` nesta fatia (padrões `*password*`, `*senha*`, `*logins*`, `*credenciais*`, `*credentials*`, sem diferenciar maiúsculas);
+  - pastas: Documentos, Downloads e Área de Trabalho a partir de `USERPROFILE`, inclusive as variantes do OneDrive;
+  - na restauração, olha **só os caminhos restaurados conhecidos** (pasta nova e destinos colocados no lugar original), sem varrer o disco.
 - **Aceite:**
   - detecta `*password*.csv`, `*senha*.csv` e parecidos em Documentos, Downloads e Área de Trabalho, na prévia do backup e depois da restauração;
   - mostra alerta e recomendação;
