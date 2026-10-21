@@ -31,7 +31,8 @@ item, a própria PR do item muda o status dele para `concluído`.
   - testes só com `TemporaryDirectory`.
 
 ### P2-02 · Avisar e recusar restauração como administrador
-- **Status:** concluído · **Depende de:** — · **Raphael:** —
+- **Status:** pronto · **Depende de:** — · **Raphael:** —
+- **Fatia 1 na PR do item:** tela de restauração, saves de jogo e teste de restauração isolado (`selective_backup_ui` → `run_isolated_restore_test`) protegidos; falta: `restore_test` (backup_core) e `restore_to_staging` (navegadores), e mover a trava para dentro de `restore_selected` depois da PR #56.
 - **Aceite:**
   - a tela de restauração detecta processo elevado e mostra aviso claro;
   - o motor recusa, a menos que o chamador passe `allow_elevated=True` explicitamente;

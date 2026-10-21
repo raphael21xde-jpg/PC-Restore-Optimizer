@@ -348,8 +348,9 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
     restore_button.pack(side='left')
 
     def resume_restore():
-        if state['busy'] or state['index'] is None: return
+        if state['busy']: return
         if refuse_if_elevated(): return
+        if state['index'] is None: return
         folder=filedialog.askdirectory(parent=dlg,title='Selecione uma pasta TESTE-RESTAURACAO interrompida v0.5.19')
         if not folder: return
         try:

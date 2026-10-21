@@ -19,16 +19,17 @@ ELEVATION_WARNING = (
     'Atenção: o aplicativo está aberto como administrador. A restauração fica '
     'bloqueada porque a pasta nova seria criada com permissões de administrador, '
     'e seu usuário normal poderia não conseguir usar ou alterar os arquivos '
-    'restaurados. Feche o aplicativo e abra de novo como usuário normal '
-    '(sem "Executar como administrador").'
+    'restaurados. Feche o aplicativo e abra de novo como usuário normal: '
+    "abra pelo atalho normal, sem usar 'Executar como administrador'."
 )
 
 REFUSAL_MESSAGE = (
     'Restauração recusada: o aplicativo está rodando como administrador. '
     'Assim a pasta restaurada ficaria com permissões erradas (de administrador) '
     'e seu usuário normal poderia não conseguir abrir ou alterar os arquivos. '
-    'Feche o aplicativo e abra de novo como usuário normal, sem '
-    '"Executar como administrador". Nada foi criado no destino.'
+    'Feche o aplicativo e abra de novo como usuário normal: '
+    "abra pelo atalho normal, sem usar 'Executar como administrador'. "
+    'Nada foi criado no destino.'
 )
 
 

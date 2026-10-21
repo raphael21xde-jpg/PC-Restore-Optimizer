@@ -13,6 +13,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from backup_core import human_size, atomic_json
+from restore_elevation import ElevatedRestoreRefused, is_process_elevated
 from selective_recovery import (prepare_selected_c, run_selected_backup,
                                 run_isolated_restore_test, verify_complete_manifest)
 from multi_backup_destinations import make_multi_backup_plan, run_multiple_backups
@@ -487,6 +488,8 @@ def show_selective_backup(app, plan):
     def do_restore():
         if not state['manifest']:
             return messagebox.showwarning('Falta backup', 'Conclua um backup ou confira manifesto anterior.', parent=window)
+        if is_process_elevated():
+            return messagebox.showerror('Restauração bloqueada', str(ElevatedRestoreRefused()), parent=window)
         location = filedialog.askdirectory(parent=window,
                            title='Escolha OUTRA pasta fora do C: para restauração de teste')
         if not location:

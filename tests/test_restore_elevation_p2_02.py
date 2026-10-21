@@ -104,10 +104,12 @@ class ProbeTests(unittest.TestCase):
         self.assertIn('pasta', text)
         self.assertIn('permiss', text)
         self.assertIn('usuário normal', text)
+        self.assertIn("abra pelo atalho normal, sem usar 'executar como administrador'", text)
         message = str(ElevatedRestoreRefused()).casefold()
         self.assertIn('administrador', message)
         self.assertIn('usuário normal', message)
         self.assertIn('permiss', message)
+        self.assertIn("abra pelo atalho normal, sem usar 'executar como administrador'", message)
 
 
 class GuardedRestoreTests(SyntheticBackupMixin, unittest.TestCase):
@@ -172,14 +174,76 @@ class GuardedRestoreTests(SyntheticBackupMixin, unittest.TestCase):
                                   {'resume_from': 'r', 'progress': print})])
 
 
+class SelectiveRecoveryGuardTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='pcro-p2-02-sel-')
+        self.addCleanup(temp.cleanup)
+        base = Path(temp.name).resolve()
+        self.volume = base / 'fake_volume'
+        source = self.volume / 'Users' / 'sample' / 'Saved Games' / 'Game'
+        source.mkdir(parents=True)
+        (source / 'save.dat').write_bytes(b'synthetic-save' * 64)
+        self.backup = base / 'other_storage'
+        self.restore = base / 'restore_stage'
+        self.backup.mkdir()
+        self.restore.mkdir()
+        from selective_recovery import prepare_selected_c, run_selected_backup
+        plan = prepare_selected_c([str(source)], test_root=self.volume)
+        report = run_selected_backup(plan, self.backup, test_root=self.volume)
+        self.manifest = report['manifest']
+
+    def test_isolated_restore_test_refuses_when_elevated(self):
+        from selective_recovery import run_isolated_restore_test
+        with self.assertRaises(ElevatedRestoreRefused):
+            run_isolated_restore_test(self.manifest, self.restore, test_root=self.volume,
+                                      elevation_probe=elevated)
+        self.assertEqual(list(self.restore.iterdir()), [])
+
+    def test_isolated_restore_test_runs_when_not_elevated(self):
+        from selective_recovery import run_isolated_restore_test
+        result = run_isolated_restore_test(self.manifest, self.restore, test_root=self.volume,
+                                           elevation_probe=not_elevated)
+        self.assertTrue(result['restore_verified'])
+        self.assertEqual(result['files_verified'], 1)
+
+
 class CallSiteTests(unittest.TestCase):
+    GUARDED = ('restore_ui.py', 'app.py', 'selective_backup_ui.py', 'selective_recovery.py')
+
+    def source(self, name):
+        return (ROOT / name).read_text(encoding='utf-8')
+
     def test_restore_ui_uses_guard(self):
-        for name in ('restore_ui.py', 'app.py'):
+        for name in self.GUARDED:
             with self.subTest(file=name):
-                source = (ROOT / name).read_text(encoding='utf-8')
-                self.assertIn('guarded_restore_selected(', source)
-                direct = re.findall(r'(?<![\w.])restore_selected\(', source)
+                direct = re.findall(r'(?<![\w.])restore_selected\(', self.source(name))
                 self.assertEqual(direct, [], f'{name} calls restore_selected( directly')
+        for name in ('restore_ui.py', 'app.py', 'selective_recovery.py'):
+            with self.subTest(file=name):
+                self.assertIn('guarded_restore_selected(', self.source(name))
+        self.assertIn('require_not_elevated(', self.source('selective_recovery.py'))
+
+    def assert_check_before(self, name, check, prompt):
+        source = self.source(name)
+        prompt_at = source.index(prompt)
+        check_at = source.rfind(check, 0, prompt_at)
+        self.assertNotEqual(check_at, -1, f'{name}: no {check!r} before {prompt!r}')
+        between = source[check_at:prompt_at]
+        self.assertNotIn('\n    def ', between, f'{name}: check is in another function')
+
+    def test_refusal_comes_before_folder_prompt(self):
+        self.assert_check_before('app.py', "'Restauração bloqueada'",
+                                 'Pasta onde criar o teste de restauração')
+        self.assert_check_before('selective_backup_ui.py', "'Restauração bloqueada'",
+                                 'Escolha OUTRA pasta fora do C: para restauração de teste')
+        self.assert_check_before('restore_ui.py', 'if refuse_if_elevated(): return',
+                                 'Selecione uma pasta TESTE-RESTAURACAO interrompida')
+
+    def test_resume_refusal_precedes_index_check(self):
+        source = self.source('restore_ui.py')
+        start = source.index('def resume_restore')
+        body = source[start:source.index('askdirectory', start)]
+        self.assertLess(body.index('refuse_if_elevated()'), body.index("state['index'] is None"))
 
 
 try:

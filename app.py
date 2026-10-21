@@ -30,7 +30,8 @@ from program_catalog import discover_apps, find_desktop_shortcuts, catalog_summa
 from app_data import find_app_data, associate_app_data
 from backup_features import (friendly_backup_name, backup_labels, set_backup_label,
                              verified_entries)
-from restore_elevation import guarded_restore_selected
+from restore_elevation import (guarded_restore_selected, is_process_elevated,
+                               ElevatedRestoreRefused)
 from diagnostics import disk_inventory, system_inventory, make_recommendations, save_report
 from backup_preflight_scenario_ui import show_backup_preflight_scenario
 from drive_safety_ui import show_drive_safety_dialog
@@ -1965,6 +1966,9 @@ class App(tk.Tk):
         box.pack(fill='both',expand=True,padx=12,pady=8)
         for i in games:box.insert('end',i.get('name','Jogo'))
         def start():
+            if is_process_elevated():
+                messagebox.showerror('Restauração bloqueada',str(ElevatedRestoreRefused()),parent=dlg)
+                return
             selection=box.curselection()
             if not selection:return
             game=games[selection[0]]

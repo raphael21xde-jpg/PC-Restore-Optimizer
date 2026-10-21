@@ -15,7 +15,8 @@ import stat
 
 from backup_core import (build_plan, copy_backup, sha256_file, atomic_json,
                          is_reparse, human_size)
-from backup_features import read_manifest, verified_entries, restore_selected
+from backup_features import read_manifest, verified_entries
+from restore_elevation import guarded_restore_selected, require_not_elevated
 from backup_destination_guard import (destination_ancestry_identity,
                                       verify_committed_backup_file)
 from drive_catalog import safe_to_mark
@@ -164,8 +165,12 @@ def run_selected_backup(plan, destination, *, cancelled=None, progress=None, tes
 
 
 def run_isolated_restore_test(manifest_path, destination, *, cancelled=None,
-                              progress=None, test_root=None):
-    """Restore EVERY verified file into an isolated new directory and recheck it."""
+                              progress=None, test_root=None, elevation_probe=None):
+    """Restore EVERY verified file into an isolated new directory and recheck it.
+
+    P2-02: refused before any check or write when the process is elevated.
+    """
+    require_not_elevated(probe=elevation_probe)
     manifest = Path(manifest_path).resolve(strict=True)
     destination_parent = validate_target(destination, restore=True, test_root=test_root,
                                          forbidden=[manifest.parent])
@@ -178,8 +183,9 @@ def run_isolated_restore_test(manifest_path, destination, *, cancelled=None,
     if usage.free < required + reserve:
         raise OSError(f'Espaço insuficiente para teste ({human_size(required)} necessários, '
                       f'{human_size(usage.free)} livres; manter reserva de {human_size(reserve)}).')
-    folder, count = restore_selected(manifest, list(entries), destination_parent,
-                                     cancelled=cancelled, progress=progress)
+    folder, count = guarded_restore_selected(manifest, list(entries), destination_parent,
+                                             elevation_probe=elevation_probe,
+                                             cancelled=cancelled, progress=progress)
     if count != precheck['files_verified']:
         raise OSError('Restauração incompleta; verifique o relatório parcial.')
     report = dict(schema='pcro-selective-restore-test-v066',
