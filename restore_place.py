@@ -24,6 +24,9 @@ Decisoes (P2-01, 21/10/2026):
   ``<nome>.antes-pcro-AAAAMMDD`` (``-2``, ``-3``... se o nome ja existir).
 * Em falha, o unico arquivo que o app pode descartar e o ``.pcro-partial``
   que ele mesmo criou. Um ``.pcro-partial`` que ja estava la fica intacto.
+  A identidade (st_ino, st_dev) do ``.pcro-partial`` e gravada no diario logo
+  depois do ``open('xb')``; na retomada ele so e descartado se a identidade
+  bater. Senao e conservado e o item vira falha.
 * Logo antes da troca de nome o destino e conferido de novo. Se um arquivo
   apareceu (classe ``novo``) ou o arquivo atual mudou durante a copia
   (classe ``renomear``), o app NAO sobrescreve nem renomeia: marca falha e
@@ -32,7 +35,8 @@ Decisoes (P2-01, 21/10/2026):
   janela minima entre a conferencia e o ``os.replace``; ela fica registrada
   aqui como limite conhecido.
 * Links e juncoes em qualquer nivel entre a raiz (mapeada, ou a raiz do
-  disco) e o destino deixam o item ``bloqueado``.
+  disco) e o destino, incluindo a propria raiz, deixam o item ``bloqueado``.
+* ``keys`` limita a previa aos arquivos que foram de fato restaurados.
 * Destinos protegidos (Program Files, ProgramData, Windows) sao pulados,
   salvo ``allow_protected=True``. Mesmo assim o app nunca pede elevacao:
   sem permissao, o arquivo vira falha no relatorio.
@@ -63,6 +67,9 @@ ADMIN_MESSAGE = ('Não foi possível gravar (pasta protegida ou arquivo aberto e
                  'O app não pede elevação; o arquivo continua na pasta de conferência.')
 APPEARED_MESSAGE = ('Um arquivo apareceu no destino durante a cópia; ele foi preservado e '
                     'nada foi sobrescrito.')
+LEFTOVER_MESSAGE = ('Sobrou um arquivo .pcro-partial de uma execução interrompida e não foi '
+                    'possível confirmar que ele foi criado pelo app; ele foi conservado e nada '
+                    'foi alterado.')
 CHANGED_MESSAGE = ('O arquivo do destino mudou durante a cópia; ele foi preservado e '
                    'nada foi renomeado nem sobrescrito.')
 
@@ -141,14 +148,24 @@ def _protected(paths, environ):
     return any(root and beneath(p, root) for root in roots for p in paths)
 
 
+def _unsafe_folder(folder):
+    return os.path.lexists(folder) and (is_reparse(folder) or not Path(folder).is_dir())
+
+
 def _unsafe_ancestor(target, root):
-    """First existing folder between root (exclusive) and target that is a link/junction."""
+    """First existing folder between root (inclusive) and target that is a link/junction.
+
+    A propria raiz tambem e conferida (ressalva do revisor da PR #58): uma raiz
+    que e link ou juncao levaria a escrita para outro lugar.
+    """
     root_key = norm(root)
     current = target.parent
     while norm(current) != root_key and current != current.parent:
-        if os.path.lexists(current) and (is_reparse(current) or not current.is_dir()):
+        if _unsafe_folder(current):
             return current
         current = current.parent
+    if norm(current) == root_key and _unsafe_folder(root):
+        return Path(root)
     return None
 
 
@@ -166,12 +183,15 @@ def _destination_state(target, expected_sha, root, cancelled=None):
     return 'renomear', ''
 
 
-def plan_placement(manifest_path, staging_folder, *, target_map=None, today=None, environ=None):
+def plan_placement(manifest_path, staging_folder, *, target_map=None, today=None, environ=None,
+                   keys=None):
     """Monta a prévia (somente leitura) de onde cada arquivo conferido vai ficar.
 
     ``staging_folder`` é a pasta de conferência: o arquivo de cada entrada está
     em ``staging_folder / entry['relative']``. O destino é ``entry['source']``,
     ou, com ``target_map``, a mesma posição dentro de outra raiz.
+    ``keys`` limita a prévia aos arquivos que foram restaurados na pasta de
+    conferência (os outros arquivos do backup ficam de fora).
     """
     manifest_path = Path(manifest_path)
     staging = Path(staging_folder).resolve(strict=True)
@@ -179,7 +199,13 @@ def plan_placement(manifest_path, staging_folder, *, target_map=None, today=None
     plan = PlacementPlan(manifest_path=manifest_path.resolve(strict=True), staging_folder=staging,
                          today=today or _dt.date.today())
     seen_targets = set()
-    for key, entry in sorted(verified_entries(manifest_path).items()):
+    entries = verified_entries(manifest_path)
+    if keys is not None:
+        wanted = list(dict.fromkeys(keys))
+        if not wanted or any(key not in entries for key in wanted):
+            raise ValueError('Os arquivos da pasta de conferência não correspondem ao backup.')
+        entries = {key: entries[key] for key in wanted}
+    for key, entry in sorted(entries.items()):
         relative = safe_relative(entry.get('relative'))
         staged = staging / relative
         if not beneath(staged, staging):
@@ -224,10 +250,17 @@ def _write_chunk(stream, data):
     stream.write(data)
 
 
-def _copy_and_verify(item, partial, cancelled=None, test_after_copy_hook=None):
-    """Copy staged -> partial (new file, exclusive create) and check SHA-256."""
+def _copy_and_verify(item, partial, cancelled=None, test_after_copy_hook=None, on_created=None):
+    """Copy staged -> partial (new file, exclusive create) and check SHA-256.
+
+    ``on_created`` recebe a identidade (st_ino, st_dev) do arquivo recem-criado,
+    logo depois do ``open('xb')`` e antes de qualquer byte copiado.
+    """
     info = os.stat(item.staged)
     with open(item.staged, 'rb') as reader, open(partial, 'xb') as writer:
+        if on_created:
+            created = os.fstat(writer.fileno())
+            on_created([created.st_ino, created.st_dev])
         while True:
             if cancelled and cancelled.is_set():
                 raise InterruptedError('Operação cancelada.')
@@ -263,11 +296,23 @@ def _load_journal(journal_path, plan):
     return data
 
 
-def _discard_own_partial(partial):
+def _partial_identity(partial):
+    try:
+        info = os.lstat(partial)
+    except FileNotFoundError:
+        return None
+    return [info.st_ino, info.st_dev]
+
+
+def _discard_own_partial(partial, identity):
+    """Apaga o .pcro-partial so se ele for o mesmo arquivo que o app criou."""
+    if identity is None or _partial_identity(partial) != list(identity):
+        return False
     try:
         os.unlink(partial)
     except FileNotFoundError:
         pass
+    return True
 
 
 def place_files(plan, *, confirmed_preview=False, allow_protected=False, journal_path,
@@ -283,11 +328,17 @@ def place_files(plan, *, confirmed_preview=False, allow_protected=False, journal
     by_key = {item.key: item for item in plan.items}
     journal = _load_journal(journal_path, plan)
     pending = journal.get('in_progress')
+    leftover = set()
     if isinstance(pending, dict) and pending.get('key') in by_key:
-        # Sobra de uma execução interrompida: este .pcro-partial foi criado pelo app.
+        # Sobra de uma execução interrompida. Só é descartada se a identidade
+        # gravada logo depois de criar o arquivo bater (ressalva da PR #58).
         expected = str(by_key[pending['key']].target) + PARTIAL_SUFFIX
-        if pending.get('partial') == expected:
-            _discard_own_partial(expected)
+        identity = pending.get('identity')
+        if pending.get('partial') == expected and os.path.lexists(expected):
+            valid = (isinstance(identity, list) and len(identity) == 2 and
+                     all(isinstance(n, int) for n in identity))
+            if not (valid and _discard_own_partial(expected, identity)):
+                leftover.add(pending['key'])
     journal['in_progress'] = None
     result = {'status': 'em_andamento', 'placed': [], 'renamed': [], 'equal': [], 'ignored': [],
               'skipped_protected': [], 'resumed': [], 'failures': [], 'journal': str(journal_path)}
@@ -305,7 +356,9 @@ def place_files(plan, *, confirmed_preview=False, allow_protected=False, journal
             break
         try:
             done = journal['done'].get(item.key)
-            if item.category == 'ignorado':
+            if item.key in leftover:
+                fail(item, LEFTOVER_MESSAGE)
+            elif item.category == 'ignorado':
                 result['ignored'].append(item.key)
             elif item.category == 'bloqueado':
                 fail(item, item.reason or 'Destino bloqueado.')
@@ -347,17 +400,21 @@ def _place_one(item, plan, journal, journal_path, result, fail, cancelled, hook)
         return
     partial = Path(str(item.target) + PARTIAL_SUFFIX)
     before = _identity(item.target) if state == 'renomear' else None
-    created = False
+    created = None   # identidade do .pcro-partial criado por esta execução
+
+    def remember(identity):
+        nonlocal created
+        created = identity
+        journal['in_progress'] = {'key': item.key, 'partial': str(partial), 'identity': identity}
+        atomic_json(journal_path, journal)
+
     try:
         item.target.parent.mkdir(parents=True, exist_ok=True)
         if os.path.lexists(partial):
             fail(item, 'Já existe um arquivo .pcro-partial que não foi criado por esta colocação; '
                        'nada foi alterado.')
             return
-        journal['in_progress'] = {'key': item.key, 'partial': str(partial)}
-        atomic_json(journal_path, journal)
-        created = True
-        _copy_and_verify(item, partial, cancelled, hook)
+        _copy_and_verify(item, partial, cancelled, hook, on_created=remember)
         # Confere de novo logo antes da troca: nunca sobrescrever algo que
         # apareceu ou mudou durante a cópia.
         if state == 'novo' and os.path.lexists(item.target):
@@ -376,7 +433,7 @@ def _place_one(item, plan, journal, journal_path, result, fail, cancelled, hook)
             if aside is not None and not os.path.lexists(item.target):
                 os.rename(aside, item.target)
             raise
-        created = False
+        created = None
         if os.stat(item.target).st_size != os.stat(item.staged).st_size:
             raise OSError('Tamanho do arquivo colocado não confere.')
         entry = {'action': 'renomear' if aside else 'novo', 'target': str(item.target),
@@ -392,14 +449,14 @@ def _place_one(item, plan, journal, journal_path, result, fail, cancelled, hook)
     except PermissionError:
         fail(item, ADMIN_MESSAGE)
     except FileExistsError:
-        created = False
+        created = None
         fail(item, 'Já existe um arquivo .pcro-partial que não foi criado por esta colocação; '
                    'nada foi alterado.')
     except OSError as error:
         fail(item, str(error))
     finally:
-        if created:
-            _discard_own_partial(partial)
+        if created is not None:
+            _discard_own_partial(partial, created)
         journal['in_progress'] = None
 
 

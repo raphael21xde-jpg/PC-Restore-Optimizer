@@ -22,7 +22,7 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
 
 ### P2-01 · Restaurar no lugar original
 - **Fatia 1 (motor + prévia):** `concluído` (PR #58). Decisão registrada: **copiar e manter a pasta de conferência**, sem mover nem apagar.
-- **Fatia 2 (tela):** `pronto`.
+- **Fatia 2 (tela):** `concluído` (branch `auto/P2-01-colocar-no-lugar-original`).
   - Na tela de restauração: botão "Colocar no lugar original";
   - prévia com contagem de novo / igual / renomear / precisa de administrador / bloqueado;
   - confirmação;
@@ -30,6 +30,15 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   - relatório em português simples (sem nomes internos);
   - itens de Program Files e ProgramData só com caixa de confirmação separada;
   - tratar as ressalvas do revisor da #58: raiz do `target_map` com junção, retomada de `.pcro-partial` em `in_progress`.
+  - **Escolhas de design (21/10/2026, a opção mais segura):**
+    - só aceita uma pasta de conferência criada pelo app (`TESTE-RESTAURACAO-v05-…`), do mesmo backup, com a restauração **concluída** e **todos** os arquivos conferidos (`verified_keys` igual a `keys`); parcial, cancelada ou de outro backup é recusada;
+    - a prévia usa só as chaves restauradas nessa pasta (`plan_placement(keys=…)`), para os arquivos do backup que não foram restaurados não aparecerem como "bloqueado";
+    - o diário da colocação tem caminho fixo, ao lado da pasta de conferência e fora dela (`COLOCAR-NO-LUGAR-<pasta>.json`); se ele for um atalho/link, nada é feito; abrir a mesma pasta de novo retoma sem duplicar;
+    - Program Files/ProgramData: caixa **desmarcada** por padrão e, se marcada, uma segunda confirmação própria; só o valor `True` libera;
+    - como administrador, a colocação é recusada antes de gravar qualquer coisa (mesma trava do P2-02);
+    - a raiz do mapeamento também é conferida: raiz que é link/junção deixa o item bloqueado;
+    - a identidade (st_ino, st_dev) do `.pcro-partial` é gravada no diário logo depois de criá-lo; na retomada ele só é descartado se a identidade bater; senão é **conservado** e o item vira falha;
+    - nesta fatia a tela **não** oferece `target_map` (colocar em outra raiz): o destino é sempre o caminho original do manifesto.
 
 ### P2-02 · Recusar restauração como administrador
 - **Fatia 1:** `concluído` (PR #59).

@@ -3,6 +3,8 @@
 Only this restoration dialog is changed. It uses existing verified manifest keys
 and delegates all disk operations to the unchanged restore_selected function,
 through guarded_restore_selected (P2-02), which refuses an elevated process.
+P2-01 (fatia 2) adds "Colocar no lugar original": the screen only calls
+restore_place_flow, which holds every check and text.
 """
 from __future__ import annotations
 
@@ -20,6 +22,9 @@ from restore_jobs import Job
 from ui_timers import WindowTimers
 from restore_elevation import (ELEVATION_WARNING, ElevatedRestoreRefused,
                                 guarded_restore_selected, is_process_elevated)
+from restore_place import plan_placement
+from restore_place_flow import (confirmation_text, friendly_report, run_placement,
+                                staging_info)
 
 
 def show_restore(app, manifest, small=False, *, elevation_probe=None):
@@ -250,6 +255,8 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
         state['busy'] = value
         app.busy = value
         restore_button.configure(state='disabled' if value else 'normal')
+        for button in (resume_button, place_button, resume_place_button):
+            button.configure(state='disabled' if value else 'normal')
         field.configure(state='disabled' if value else 'normal')
         cancel_button.configure(state='normal' if value else 'disabled')
         if value and state['meter'] is None:
@@ -263,7 +270,10 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
         job = state['job']
         if job.latest:
             detail = job.latest
-            if len(detail) == 6:
+            if len(detail) == 3:
+                n, total, key = detail
+                status.set(f'Colocando no lugar original · {n}/{total} arquivo(s)\n{key}')
+            elif len(detail) == 6:
                 phase, n, total, path, copied, size = detail
                 if state['meter'] is not None and state['prefix'] is not None:
                     done_bytes = state['prefix'][min(n,len(state['prefix'])-1)]
@@ -371,6 +381,95 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
 
     resume_button=ttk.Button(actions,text='Retomar restauração interrompida',command=resume_restore)
     resume_button.pack(side='left',padx=(9,0))
+
+    include_protected = tk.BooleanVar(master=dlg, value=False)
+
+    def show_report(text):
+        window = tk.Toplevel(dlg)
+        window.title('Colocar no lugar original — resultado')
+        window.geometry('820x480')
+        box = tk.Text(window, wrap='word')
+        box.insert('1.0', text)
+        box.configure(state='disabled')
+        box.pack(fill='both', expand=True, padx=10, pady=10)
+        ttk.Button(window, text='Fechar', command=window.destroy).pack(pady=(0, 10))
+
+    def start_placement(info, resuming):
+        """Monta a prévia em segundo plano, confirma e coloca os arquivos."""
+        state['meter'] = None
+        state['prefix'] = None
+        progress_bar.configure(mode='indeterminate')
+        set_busy(True)
+        status.set('Montando a prévia: conferindo o que já existe no lugar original…')
+        state['job'] = Job(lambda cancelled, progress: plan_placement(
+            info['manifest'], info['folder'], keys=info['keys']))
+
+        def planned(plan):
+            allow = bool(include_protected.get())
+            title = 'Retomar colocação' if resuming else 'Colocar no lugar original'
+            if not messagebox.askyesno(title, confirmation_text(plan, allow), parent=dlg):
+                status.set('Colocação não iniciada. Nada foi alterado.')
+                return
+            if allow and plan.counts()['precisa_admin']:
+                if not messagebox.askyesno(
+                        'Confirmar pastas do sistema',
+                        'Você marcou a opção de incluir arquivos de Program Files/ProgramData. '
+                        'Arquivos de programas instalados normalmente devem ser reinstalados '
+                        'pelo próprio programa, não copiados.\n\n'
+                        'Incluir mesmo assim esses arquivos?', parent=dlg):
+                    allow = False
+            if refuse_if_elevated():
+                return
+            set_busy(True)
+            status.set('Colocando os arquivos no lugar original…')
+            state['job'] = Job(lambda cancelled, progress: run_placement(
+                plan, allow_protected=allow, cancelled=cancelled,
+                progress=progress,
+                elevation_probe=elevation_probe))
+
+            def placed(result):
+                report = friendly_report(plan, result)
+                status.set(report.split('\n')[2])
+                show_report(report)
+            poll(placed)
+        poll(planned)
+
+    def choose_staging(resuming):
+        if state['busy']:
+            return
+        if refuse_if_elevated():
+            return
+        folder = filedialog.askdirectory(parent=dlg, title=(
+            'Selecione a pasta TESTE-RESTAURACAO da colocação interrompida' if resuming else
+            'Selecione a pasta TESTE-RESTAURACAO (restauração concluída) para colocar no lugar original'))
+        if not folder:
+            return
+        try:
+            info = staging_info(folder, manifest)
+        except Exception as exc:
+            messagebox.showerror('Não é possível colocar no lugar original', str(exc), parent=dlg)
+            return
+        if resuming and not info['has_journal']:
+            messagebox.showinfo('Nada para retomar',
+                                'Não há colocação interrompida para esta pasta. '
+                                'Use "Colocar no lugar original".', parent=dlg)
+            return
+        start_placement(info, resuming)
+
+    def place_original():
+        choose_staging(False)
+
+    def resume_place():
+        choose_staging(True)
+
+    place_button = ttk.Button(actions, text='Colocar no lugar original', command=place_original)
+    place_button.pack(side='left', padx=(9, 0))
+    resume_place_button = ttk.Button(actions, text='Retomar colocação interrompida',
+                                     command=resume_place)
+    resume_place_button.pack(side='left', padx=(9, 0))
+    ttk.Checkbutton(tools, variable=include_protected,
+                    text='Incluir arquivos de Program Files/ProgramData ao colocar no lugar original'
+                    ).pack(side='right')
 
     def cancel():
         if state['job'] is not None and state['busy']:
