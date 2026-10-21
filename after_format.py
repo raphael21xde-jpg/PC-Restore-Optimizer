@@ -417,7 +417,29 @@ def progress_error_text(exc):
             'fechar a janela.')
 
 
-REPLACE_TRIES = 20
+# Espera crescente entre as tentativas de os.replace: 5, 10, 20... até 200 ms
+# por vez e cerca de 2 s no total (no Windows, a troca falha enquanto outra
+# janela ou um leitor está com o arquivo aberto).
+REPLACE_FIRST_WAIT = 0.005
+REPLACE_MAX_WAIT = 0.2
+REPLACE_TOTAL_WAIT = 2.0
+
+
+def _replace_with_retry(partial, path, sleep=None):
+    sleep = time.sleep if sleep is None else sleep
+    wait = REPLACE_FIRST_WAIT
+    waited = 0.0
+    while True:
+        try:
+            os.replace(partial, path)
+            return
+        except PermissionError:
+            if waited >= REPLACE_TOTAL_WAIT:
+                raise
+            step = min(wait, REPLACE_MAX_WAIT, REPLACE_TOTAL_WAIT - waited)
+            sleep(step)
+            waited += step
+            wait *= 2
 
 
 def save_progress(path, steps, backup=None):
@@ -453,13 +475,5 @@ def save_progress(path, steps, backup=None):
         os.fsync(handle)
     finally:
         os.close(handle)
-    for attempt in range(REPLACE_TRIES):
-        try:
-            os.replace(partial, path)
-            break
-        except PermissionError:
-            # no Windows, outra janela pode estar trocando o mesmo arquivo agora
-            if attempt == REPLACE_TRIES - 1:
-                raise
-            time.sleep(0.01)
+    _replace_with_retry(partial, path)
     return clean

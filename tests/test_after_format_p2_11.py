@@ -458,6 +458,38 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(len(partials), 1)  # fica no disco: nada é apagado
         self.assertIn(af.SKIPPED, (path.parent / partials[0]).read_text(encoding='utf-8'))
 
+    def test_replace_retries_with_growing_wait(self):
+        loaded = af.load_progress(self.manifest, self.base)
+        real_replace = os.replace
+        calls = []
+
+        def flaky(src, dst):
+            calls.append(src)
+            if len(calls) <= 3:
+                raise PermissionError(13, 'em uso', str(dst))
+            return real_replace(src, dst)
+        waits = []
+        with mock.patch.object(af.os, 'replace', side_effect=flaky), \
+                mock.patch.object(af.time, 'sleep', side_effect=waits.append):
+            af.save_progress(loaded['path'], dict(loaded['steps'], discos=af.DONE),
+                             loaded['backup'])
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(waits, sorted(waits))
+        self.assertLess(waits[0], waits[-1])
+        self.assertEqual(af.load_progress(self.manifest, self.base)['steps']['discos'], af.DONE)
+
+    def test_replace_gives_up_after_about_two_seconds(self):
+        loaded = af.load_progress(self.manifest, self.base)
+        waits = []
+        with mock.patch.object(af.os, 'replace',
+                               side_effect=PermissionError(13, 'em uso', 'x')), \
+                mock.patch.object(af.time, 'sleep', side_effect=waits.append):
+            with self.assertRaises(PermissionError):
+                af.save_progress(loaded['path'], loaded['steps'], loaded['backup'])
+        self.assertAlmostEqual(sum(waits), af.REPLACE_TOTAL_WAIT, places=6)
+        self.assertLessEqual(max(waits), af.REPLACE_MAX_WAIT)
+        self.assertEqual(len(self._partials(loaded['path'])), 1)  # nada apagado
+
     def test_concurrent_saves_always_valid_json(self):
         import threading
         path = af.progress_path(self.manifest, self.base)
@@ -484,6 +516,7 @@ class ProgressTests(unittest.TestCase):
                     json.loads(data.decode('utf-8'))
                 except ValueError:
                     bad_reads.append(data)
+                time.sleep(0.001)  # pausa curta: deixa a troca do arquivo acontecer
         threads = [threading.Thread(target=writer, args=(v,)) for v in (af.DONE, af.SKIPPED)]
         watcher = threading.Thread(target=reader)
         watcher.start()
@@ -683,6 +716,12 @@ class WindowTests(unittest.TestCase):
         again = afu.show_after_format(self.root, manifest=moved, base=self.base,
                                       checker=lambda m, c: FAKE_CHECK)
         self.assertIs(again, dlg)
+        dlg.iconify()
+        self.root.update()
+        self.assertIs(afu.show_after_format(self.root, manifest=moved, base=self.base,
+                                            checker=lambda m, c: FAKE_CHECK), dlg)
+        self.root.update()
+        self.assertEqual(dlg.state(), 'normal')  # minimizada volta ao normal
         self.assertEqual(len(self.root.after_format_dialogs), 1)
         dlg.destroy()
         self.root.update()

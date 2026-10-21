@@ -59,6 +59,7 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
         except tk.TclError:
             alive = False
         if alive:
+            previous.deiconify()  # traz de volta se estiver minimizada
             previous.lift()
             return previous
         dialogs.pop(key, None)
