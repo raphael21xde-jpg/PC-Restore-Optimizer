@@ -17,7 +17,7 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
 
 ---
 
-## Marco M1 — Restauração completa pelo app
+## Marco M1 — Restauração completa pelo app  ← ATUAL
 **Objetivo:** tudo o que foi feito à mão no PC do Raphael em 20/10 (restaurar, corrigir permissões, programas, launchers, navegador) passa a ser feito **pelo app**, com botões e prévia, sem Terminal.
 
 ### P2-01 · Restaurar no lugar original
@@ -174,7 +174,7 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 
 ---
 
-## Marco M2 — Preservação para qualquer PC  ← ATUAL
+## Marco M2 — Preservação para qualquer PC
 ### P2-07 · Estabilidade da interface Tk — `pronto`
 - Eliminar `invalid command name`, `Tcl interpreter is leaked` e os prints soltos dos testes.
 - Precisa de ambiente com Tk para conferir; os agentes na nuvem (Linux sem Tk) pulam para o próximo item testável.
@@ -189,11 +189,14 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
   - a origem só é aberta com `"rb"`; a amostra usa `os.scandir` em ordem de nome, sem seguir links, junções nem outros reparse points (são pulados e contados); arquivo sozinho maior que o limite fica de fora; a amostra para no primeiro arquivo que passaria do limite (padrão 1 GiB / 5000 arquivos) e no máximo 200 mil itens listados;
   - recusa (sem gravar nada): origem ou destino que é link/junção, destino dentro da origem (ou a mesma pasta), origem dentro do destino, bloco fora de 1–256 MiB, origem sem arquivos e espaço livre menor que **amostra × nº de tamanhos de bloco + 2 GiB** (cada tamanho de bloco grava uma cópia, porque nada é apagado entre as rodadas);
   - só grava numa pasta nova `PCRO-MEDICAO-AAAAMMDD-HHMMSS` criada com `os.mkdir` (se existir, `-2`, `-3`… até 50), com uma subpasta `bloco-<N>MiB` por rodada; as cópias têm nome numérico (`00001.bin`), são abertas com `"xb"` (nunca por cima), gravadas como `.parcial`, com `fsync`, e renomeadas no fim; cada cópia é relida e conferida por SHA-256;
-  - um fluxo por vez (um arquivo de cada vez); mede leitura, escrita (com `fsync`) e conferência por tamanho de bloco; a sugestão escolhe o bloco com a maior velocidade "tudo junto" (leitura + escrita + conferência), diz o gargalo e estima o tempo para 120 GiB; o relatório avisa que a partir da 2ª rodada a leitura pode vir do cache;
+  - um fluxo por vez (um arquivo de cada vez); por tamanho de bloco mede leitura (ler a origem + SHA-256), escrita (gravar + `fsync`) e conferência (reler a cópia + SHA-256); só arquivos conferidos entram nas velocidades (arquivo com erro ou SHA-256 diferente não soma nem tempo nem bytes);
+  - cache (revisão da PR #75): não dá para eliminar com segurança sem ferramentas de sistema, então o relatório (texto e JSON, campo `aviso_cache`) diz que a conferência e as rodadas 2 e 3 podem ler da memória e sair otimistas; a sugestão escolhe o bloco pela maior velocidade de **escrita** (a que menos sofre com o cache) e a estimativa para 120 GiB usa a **primeira rodada** (origem fria): cópia (leitura + escrita) mais uma releitura de tudo na velocidade de leitura dessa rodada, no lugar da conferência medida;
   - **nada é apagado**, nem a pasta de medição: o relatório informa o tamanho dela e diz que pode ser apagada à mão;
   - `relatorio.txt` e `relatorio.json` ficam dentro da pasta de medição e não têm caminhos (só letra da unidade, quantidades, tamanhos e velocidades); o script também não repete caminhos nas mensagens de erro;
   - Ctrl+C ou `cancelled` (Event ou função) param no próximo bloco: o arquivo pela metade fica `.parcial` e o relatório diz "interrompida"; cancelado antes de começar a copiar, nada é gravado;
-  - `scripts/medir_copia.py`: só `argparse` chamando `copy_bench`; código de saída 0 (concluída), 1 (interrompida) e 2 (recusada).
+  - se algo falha depois de criada a pasta de medição (subpasta da rodada → relatório "interrompida" com o motivo; relatório que não grava → `BenchStopped` com o nome da pasta), o script diz "MEDIÇÃO INTERROMPIDA" e que a pasta ficou e pode ser apagada à mão, sem mostrar caminho; "MEDIÇÃO NÃO FEITA" só aparece nas recusas, quando nada foi gravado;
+  - o relatório diz "nenhum arquivo da origem foi gravado ou apagado" (ler pode atualizar a data de último acesso, que é só metadado);
+  - `scripts/medir_copia.py`: só `argparse` chamando `copy_bench`; código de saída 0 (concluída), 1 (interrompida) e 2 (recusada ou erro do sistema).
 ### P2-09 · Executor multi-disco real — `bloqueado`
 - Mexe nas travas de segurança (`copy_authorized` / `physical_independence_verified`). Só com pedido explícito do Raphael.
 
