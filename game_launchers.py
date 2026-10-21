@@ -138,7 +138,7 @@ def _list(path):
                     continue
                 if stat.S_ISLNK(st.st_mode):
                     continue
-                if getattr(st, 'st_file_attributes', 0) & _REPARSE:
+                if (getattr(st, 'st_file_attributes', 0) or 0) & _REPARSE:
                     continue
                 out.append((item.name, item.path, stat.S_ISDIR(st.st_mode),
                             stat.S_ISREG(st.st_mode), st.st_size))

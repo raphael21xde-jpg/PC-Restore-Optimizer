@@ -186,8 +186,27 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 ### P2-07 · Estabilidade da interface Tk — `pronto`
 - Eliminar `invalid command name`, `Tcl interpreter is leaked` e os prints soltos dos testes.
 - Precisa de ambiente com Tk para conferir; os agentes na nuvem (Linux sem Tk) pulam para o próximo item testável.
-### P2-08 · Central de recuperação ligada ao app — `pronto` (depois do M1)
+### P2-08 · Central de recuperação ligada ao app
+- **Status:** `concluído` (fatia 1, branch `auto/P2-08-central-recuperacao`).
 - A central abre manifestos reais (somente leitura) e restaura pelo fluxo do P2-01.
+- **Escolhas de design (21/10/2026, a opção mais segura):**
+  - módulo novo `recovery_center.py` (sem Tk, nunca grava nada): `find_backups(pasta, *, max_entries=500, cancelled=None)` procura `manifest.json` na própria pasta e nas subpastas de 1 nível (não desce mais), com `os.scandir`, pulando links, junções e pontos de reparse; a pasta escolhida que seja link é recusada; passou de 500 itens olhados, para e avisa; cancelamento conferido a cada item;
+  - `inspect_backup(manifest)`: recusa `manifest.json` que seja link, que não seja arquivo comum ou maior que 256 MiB; mostra nome amigável (`friendly_backup_name` + `backup_labels`, só leitura), data (`started`), situação (`status`), quantidade e tamanho dos arquivos verificados; `restorable` só se `status == 'concluido'`, sem `errors`, com a quantidade igual a `file_count_expected` (e sem entradas duplicadas ou não verificadas) e o tamanho igual a `bytes_expected` — as mesmas regras de `selective_recovery.verify_complete_manifest`; parcial, interrompido, com erros, contagem/tamanho errado, JSON estragado, schema desconhecido ou caminhos/SHA-256 inválidos → `restorable=False` com o motivo em português; usa `after_format.backup_identity` para reconhecer cópias do mesmo backup;
+  - `group_copies(linhas)`: junta cópias do mesmo backup (mesma identidade) em pastas diferentes; se a assinatura (lista de caminho, bytes e SHA-256) for diferente, todas ficam sem "restaurar" com o motivo "cópias diferentes"; não altera as linhas de entrada;
+  - `verify_backup(manifest, cancelled)`: conferência **opcional** (não é exigida para restaurar), que usa `selective_recovery.verify_complete_manifest` (relê o SHA-256 de cada arquivo); devolve (aprovado, texto); o texto nunca leva caminhos nem a mensagem original do erro (que pode ter o caminho de dentro do backup), só o nome da pasta do backup;
+  - janela nova `recovery_center_ui.py` (`show_recovery_center(app, *, folder=None, ...)`): tabela (backup, pasta, data, situação, arquivos, tamanho, pode restaurar?, motivo) e os botões "Escolher pasta", "Conferir integridade", "Restaurar…" e "Fechar"; busca e conferência num `Job`, voltando ao Tk por `WindowTimers.after`; uma janela por vez (`deiconify()` + `lift()`); fechar cancela o `Job`; "Restaurar…" fica desligado se o backup não pode ser restaurado e só chama `show_restore(app, manifest)`, sem `allow_elevated`/`allow_protected`;
+  - `app.py`: só o botão "Central de recuperação" no Histórico e o item no menu lateral (fora de `nav_buttons`, que continua com 8 páginas); a central começa pela pasta de destino dos backups, se ela existir; a central de várias cópias (`multi_source_recovery_center*`) ficou como estava;
+  - a tela e os erros mostram só o nome da pasta do backup, nunca o caminho completo nem o nome de usuário; a mensagem "procurando" é genérica e não mostra o nome da pasta escolhida (que pode ser o nome de usuário);
+  - correções da revisão da PR #77:
+    - `st_file_attributes` pode vir `None` num `stat` incompleto no Windows: a checagem de link usa `(getattr(info, 'st_file_attributes', 0) or 0)` em `recovery_center.py`, `after_format.py`, `copy_bench.py` e `game_launchers.py`; em `verify_backup`, a checagem de link fica dentro do tratamento de erro (qualquer falha → "não foi possível abrir", sem quebrar);
+    - cada inspeção lê o `manifest.json` uma vez só (até 256 MiB): a lista de arquivos verificados (mesmas regras de `verified_entries`, com `safe_relative`) e a identidade (`after_format.identity_from`) saem do mesmo JSON já lido;
+    - manifesto de versão antiga, sem `file_count_expected` ou `bytes_expected`: motivo calmo "Backup de uma versão antiga do aplicativo…" e `restorable=False` (a opção mais segura: sem a contagem planejada não dá para confirmar que está completo; os arquivos continuam guardados);
+    - `app.py` não confere mais se a pasta de destino existe na thread da tela: passa o caminho para a central, e a busca (num `Job`) avisa se ela não existir.
+
+### FIX-P2-11-03 · Salvar o progresso do assistente fora da thread da interface
+- **Status:** `pronto` (ressalva 1 da revisão da PR #76).
+- **Problema:** `save_progress` pode esperar até ~2 s tentando trocar o arquivo (espera crescente no Windows) e hoje roda na thread do Tk, então a janela pode congelar nesse tempo.
+- **Aceite:** "Feito"/"Pular" gravam o progresso num `Job` (voltando ao Tk por `WindowTimers.after`), sem gravações fora de ordem (a última marcação vence); fechar a janela não perde a última marcação já pedida; testes com dados simulados.
 ### P2-10 · Medição de cópia com hardware real (script)
 - **Status:** `concluído` (fatia 1, branch `auto/P2-10-medicao-copia`). Falta só o Raphael rodar 1 vez no PC, como pedido na validação do M2.
 - Script de benchmark que só lê a origem e só escreve numa pasta de teste, com relatório.
