@@ -25,7 +25,13 @@ REPARSE_FLAG = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
 
 
 def norm(value):
+    """Comparison key only (lower-case on Windows). Never store it as a path."""
     return os.path.normcase(os.path.abspath(os.path.normpath(str(value))))
+
+
+def absolute(value):
+    """Absolute path that keeps the original upper/lower case of every name."""
+    return os.path.abspath(os.path.normpath(str(value)))
 
 
 def beneath(path, ancestor):
@@ -64,8 +70,13 @@ def effective_choice(path, choices):
 
 
 def destination_relative(src):
-    """Unique, relative backup namespace per volume, with no path escape."""
-    src = norm(src)
+    """Unique, relative backup namespace per volume, with no path escape.
+
+    The original case is preserved so a restore recreates "Nova pasta" and
+    not "nova pasta"; uniqueness still holds because NTFS names are
+    case-insensitive and the plan deduplicates with norm().
+    """
+    src = absolute(src)
     drive, tail = ntpath.splitdrive(src)
     if drive and len(drive) == 2 and drive[1] == ':':
         namespace = drive[0].upper()
@@ -105,6 +116,7 @@ def build_plan(choices, allowed_roots, cancelled=None, progress=None):
     Files and directories reached through symlinks/junctions are never followed.
     Errors remain warnings so the GUI prevents an incomplete backup from starting.
     """
+    original_case = {norm(p): absolute(p) for p, s in choices.items() if s in ('keep', 'skip')}
     choices = {norm(p): s for p, s in choices.items() if s in ('keep', 'skip')}
     roots = [norm(p) for p in allowed_roots if os.path.isdir(p)]
     result = Plan(selected=sorted(p for p, s in choices.items() if s == 'keep'),
@@ -123,14 +135,15 @@ def build_plan(choices, allowed_roots, cancelled=None, progress=None):
     for root in sorted(keep_roots):
         if cancelled and cancelled.is_set():
             raise InterruptedError('Prévia cancelada')
+        real_root = original_case.get(root, root)
         if is_prohibited(root):
-            result.warnings.append(f'Seleção fora das unidades permitidas ou da raiz do disco: {root}')
+            result.warnings.append(f'Seleção fora das unidades permitidas ou da raiz do disco: {real_root}')
             continue
-        if not os.path.lexists(root):
-            result.warnings.append(f'Item selecionado não existe mais: {root}')
+        if not os.path.lexists(real_root):
+            result.warnings.append(f'Item selecionado não existe mais: {real_root}')
             continue
         # A selected child of a reparse parent must not be traversed either.
-        x = root
+        x = real_root
         while any(beneath(x, ar) for ar in roots):
             if is_reparse(x):
                 result.warnings.append(f'Atalho/junção não pode ser copiado diretamente: {x}')
@@ -139,18 +152,18 @@ def build_plan(choices, allowed_roots, cancelled=None, progress=None):
             if parent == x:
                 break
             x = parent
-        else:
-            pass
-        if any(is_reparse(a) for a in _ancestors_until(root, roots)):
+        if any(is_reparse(a) for a in _ancestors_until(real_root, roots)):
             continue
-        stack = [root]
+        # The stack holds real-case paths; norm() is used only to compare.
+        stack = [real_root]
         while stack:
             if cancelled and cancelled.is_set():
                 raise InterruptedError('Prévia cancelada')
             path = stack.pop()
-            if path in listed:
+            key = norm(path)
+            if key in listed:
                 continue
-            listed.add(path)
+            listed.add(key)
             if is_reparse(path):
                 result.warnings.append(f'Atalho/junção ignorado para evitar cópia incorreta: {path}')
                 continue
@@ -158,13 +171,13 @@ def build_plan(choices, allowed_roots, cancelled=None, progress=None):
                 is_dir = os.path.isdir(path)
                 status = effective_choice(path, choices)
                 # Skip a subtree if it cannot contain a more-specific 'keep'.
-                if status != 'keep' and not any(k != path and beneath(k, path) for k in keep):
+                if status != 'keep' and not any(k != key and beneath(k, path) for k in keep):
                     continue
                 if is_dir:
                     with os.scandir(path) as scan:
                         entries = list(scan)
                     for ent in entries:
-                        stack.append(norm(ent.path))
+                        stack.append(absolute(ent.path))
                 else:
                     if status != 'keep':
                         continue
@@ -184,10 +197,10 @@ def build_plan(choices, allowed_roots, cancelled=None, progress=None):
 
 
 def _ancestors_until(path, roots):
-    current = norm(path)
+    current = absolute(path)
     while True:
         yield current
-        if current in roots:
+        if norm(current) in roots:
             break
         parent = os.path.dirname(current)
         if parent == current:

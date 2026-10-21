@@ -8,7 +8,6 @@ import os
 from pathlib import Path, PureWindowsPath
 import re
 import shutil
-import tempfile
 import time
 import uuid
 from transfer_engine import choose_strategy, TransferMeter, ProgressLimiter, performance_report
@@ -93,6 +92,26 @@ def verified_entries(manifest_path):
     return entries
 
 
+def new_restore_folder(parent, prefix='TESTE-RESTAURACAO-v05-'):
+    """Create a fresh restore folder that INHERITS the parent's permissions.
+
+    tempfile.mkdtemp() asks for mode 0o700. Since Python 3.13 (CVE-2024-4030)
+    that becomes a protected Windows ACL for SYSTEM, Administrators and the
+    owner only. When the app runs elevated the owner is the Administrators
+    group, so restored files become unreadable for the normal user (found in
+    the real restore of 20/10/2026). A plain mkdir keeps normal inheritance.
+    """
+    parent = Path(parent)
+    for _ in range(100):
+        candidate = parent / (prefix + uuid.uuid4().hex[:8])
+        try:
+            os.mkdir(candidate)
+        except FileExistsError:
+            continue
+        return candidate
+    raise OSError('Não foi possível criar uma pasta de restauração nova.')
+
+
 def resume_information(folder, manifest_path):
     """Read a v0.5.19 partial restore journal; never follow a journal-supplied target."""
     folder = Path(folder).resolve(strict=True)
@@ -149,7 +168,7 @@ def restore_selected(manifest_path, choices, destination_parent, max_total_bytes
         journal['status'] = 'em_andamento'
         journal.pop('error', None)
     else:
-        target = Path(tempfile.mkdtemp(prefix='TESTE-RESTAURACAO-v05-', dir=destination_parent))
+        target = new_restore_folder(destination_parent)
         journal = {'status':'em_andamento', 'engine_version':'0.5.19',
                    'manifest_path':str(manifest_path), 'keys':choices, 'requested':len(choices),
                    'verified':0, 'verified_keys':[], 'resume_count':0}
