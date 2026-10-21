@@ -86,6 +86,31 @@ class ValidarWindowsTests(unittest.TestCase):
                                 capture_output=True, text=True).stdout.strip()
         self.assertEqual(branch, 'fix/exemplo')
 
+    def test_recovers_from_stale_worktree_holding_the_results_branch(self):
+        """Regression (PC do Raphael, 21/10/2026): a crashed run left a worktree
+        holding 'validacao-windows'; the next run must still publish."""
+        log = 'Ran 1 test in 0.1s\nOK\n'
+        with mock.patch.object(self.mod, 'run_suite', return_value=(0, log)), \
+                mock.patch.object(self.mod, 'is_elevated', return_value=False):
+            self.assertEqual(self.mod.main([]), 0)
+            stale = Path(self.tmp.name) / 'pcro-validacao-stale' / 'resultados-wt'
+            subprocess.run(['git', 'fetch', '-q', 'origin',
+                            '+refs/heads/validacao-windows:refs/remotes/origin/validacao-windows'],
+                           cwd=self.repo, check=True)
+            subprocess.run(['git', 'worktree', 'add', '-q', '-B', 'validacao-windows', str(stale),
+                            'origin/validacao-windows'], cwd=self.repo, check=True)
+            (self.repo / 'c.txt').write_text('c')
+            subprocess.run(['git', 'add', '.'], cwd=self.repo, check=True)
+            subprocess.run(['git', 'commit', '-q', '-m', 'novo'], cwd=self.repo, check=True)
+            subprocess.run(['git', 'push', '-q', 'origin', 'fix/exemplo'], cwd=self.repo, check=True)
+            self.assertEqual(self.mod.main([]), 0)
+        files = subprocess.run(['git', 'ls-tree', '-r', '--name-only', 'validacao-windows'],
+                               cwd=self.remote, capture_output=True, text=True, check=True).stdout.split()
+        self.assertEqual(len([f for f in files if f.startswith('resultados/fix_exemplo/')]), 2)
+        worktrees = subprocess.run(['git', 'worktree', 'list'], cwd=self.repo,
+                                   capture_output=True, text=True, check=True).stdout
+        self.assertNotIn('pcro-validacao', worktrees)
+
     def test_refuses_elevated_terminal(self):
         with mock.patch.object(self.mod, 'is_elevated', return_value=True), \
                 mock.patch.object(self.mod, 'run_suite') as suite:
