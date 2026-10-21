@@ -80,7 +80,7 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   - **o app nunca apaga sozinho**.
 
 ### P2-04 · Reinstalar programas (winget)
-- **Status:** `pronto` (fatia 2 pendente).
+- **Status:** `concluído` (fatias 1 e 2).
 - **Aceite:**
   - o backup guarda o `winget export`;
   - a tela lista os pacotes por categoria (runtimes, launchers, periféricos, dia a dia, dev, outros), com seleção;
@@ -97,6 +97,21 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   - pacotes da Microsoft Store aparecem mas não são marcáveis ("instale pela Microsoft Store"); `ppy.osu` não é marcável (o winget instala o osu!lazer, não o clássico); fonte desconhecida também não;
   - nada vem pré-marcado; categorias por tabela ordenada de prefixos de ID + termos de `program_catalog.PERIPHERAL_TERMS` (Dev antes de Periféricos), sem diferenciar maiúsculas; o resto vai para "Outros";
   - a escolha feita na janela ainda não é salva: isso e o `winget import` com confirmação ficam para a fatia 2.
+- **Fatia 2 (instalar e conferir):** `concluído` (branch `auto/P2-04-instalar-programas-winget`). Módulo novo `winget_install.py` (o **único** que roda `winget import`); na janela "Programas do backup", botão "Instalar marcados…", confirmação e tabela de resultado. **Escolhas de design (21/10/2026, a opção mais segura):**
+  - o arquivo de importação é montado pelo app, só com os IDs marcados que são da fonte `winget`, marcáveis e válidos (`package_id` de novo); nunca Microsoft Store, nunca `ppy.osu`; fonte fixa no código (não copia a do backup) e **sem versões** (instala a atual); lista vazia → recusa;
+  - ordem de instalação = a ordem em que a lista aparece na tela (a de `parse_export`: por categoria e, dentro de cada uma, por ID, sem diferenciar maiúsculas), não a ordem em que a pessoa clicou;
+  - pasta de trabalho **nova** a cada instalação: `%LOCALAPPDATA%\PC-Restore-Optimizer\instalacoes-winget\AAAAMMDD-HHMMSS\` via `os.mkdir` (se já existir, usa `-2`, `-3`…; nunca reaproveita); `importar.json`, `relatorio.json` e `relatorio.txt` gravados de forma atômica; **nada** vai para dentro do backup e nada é apagado;
+  - comando fixo `import --import-file … --ignore-unavailable --no-upgrade --disable-interactivity`, **sem** `--accept-package-agreements`/`--accept-source-agreements`, sem shell, `stdin` fechado, nunca pede elevação; recusa se o app estiver como administrador (`elevation_guard`), fora do Windows ou sem winget (o winget nem é chamado);
+  - antes do import, `winget list --id X --exact` por pacote: os já instalados saem do arquivo e ficam "já instalado"; se todos já estiverem, o import nem roda;
+  - tempo-limite de 2 h que **não** encerra o winget nem os instaladores (só para de esperar); a saída vai para `saida-winget.txt` na pasta de trabalho; a conferência roda mesmo se o tempo acabar ou o winget não abrir;
+  - só um `winget import` por vez: trava no `winget_install` (sem esperar); outra tentativa é recusada com "Já existe uma instalação em andamento" e o botão fica desligado; se o tempo-limite acabar com o winget ainda vivo, a trava continua presa até ele terminar de fato (a tela avisa);
+  - depois do import, confere de novo pacote a pacote: "instalado" só com código 0, sem "No installed package found"/"Nenhum pacote instalado" e com o ID na saída do `winget list` (inteiro, ou cortado com "…" quando o pedaço tem pelo menos 8 letras e é o começo exato do ID); senão "não instalado" com explicação (hash **diferente** → site oficial — só mensagens de divergência, como "hash does not match" ou 0x8a150011; a linha de sucesso "Successfully verified installer hash" não conta; não encontrado; precisa de administrador → instale sozinho pelo site oficial e aceite o aviso do Windows; já instalado; termos de uso; resto → "não deu para confirmar, instale pelo site oficial"), procurando só no trecho da saída entre esse ID e o próximo ID marcado;
+  - relatório com uma linha por pacote (ID, resultado, explicação), sem caminhos; o caminho da pasta só aparece na tela;
+  - `run_install` nunca levanta exceção: erro de pasta, do winget ou inesperado vira texto em português;
+  - tela: botão ativo só com ≥1 marcado e app não-administrador; confirmação com a lista só para leitura, frase "Alguns instaladores podem mostrar o aviso de administrador do Windows; você decide em cada um.", caixa "Entendi que estes programas serão baixados e instalados neste PC" desmarcada, botão "Instalar N programa(s)" desligado até marcar, "Cancelar" é o padrão (Enter/Esc cancelam); durante a instalação os botões ficam travados, sem "cancelar", e fechar a janela mostra "aguarde, a instalação continua"; a instalação roda num `Job` (thread) e volta ao Tk por `after`;
+  - as marcações **não** são salvas: a tela avisa que valem só enquanto a janela estiver aberta;
+  - ressalvas da PR #69: `load_export` com erro de leitura (arquivo em uso/sem permissão) → mensagem em português; termos de periférico com até 5 letras (ex.: "sonar", "swarm", "razer") só contam como pedaço inteiro do ID; o texto de "falta a lista" explica que backups anteriores não têm a lista e quem já formatou deve usar o site oficial;
+  - "Salvar lista agora" (aparece quando a lista falta ou falhou; desligado enquanto a lista está sendo lida), com pergunta Sim/Não (padrão Não) avisando que só faz sentido no Windows antigo, ANTES de formatar; grava numa pasta nova `programas-winget-2`, `-3`… sem tocar nas anteriores; `load_export` lê a pasta íntegra de número mais alto (cai para a anterior se a mais nova estiver incompleta ou alterada).
 
 ### P2-05 · Launchers e bibliotecas de jogos em outros discos
 - **Status:** `pronto`.
