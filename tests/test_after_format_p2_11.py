@@ -35,7 +35,7 @@ def _snapshot(root):
     return sorted(out)
 
 
-def _write_manifest(folder, sources):
+def _write_manifest(folder, sources=(), started=None, fingerprint=None):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     files = []
@@ -43,9 +43,20 @@ def _write_manifest(folder, sources):
         files.append({'source': source, 'relative': relative, 'verified': True,
                       'sha256': hashlib.sha256(str(index).encode()).hexdigest(), 'size': 1})
     path = folder / 'manifest.json'
-    path.write_text(json.dumps({'schema': 'pc-restore-backup-v0.5', 'files': files}),
-                    encoding='utf-8')
+    doc = {'schema': 'pc-restore-backup-v0.5'}
+    if started is not None:
+        doc['started'] = started
+    if fingerprint is not None:
+        doc['plan_fingerprint'] = fingerprint
+    doc['files'] = files
+    # mesmo formato do backup_core.atomic_json (indent=2)
+    path.write_text(json.dumps(doc, indent=2, ensure_ascii=False), encoding='utf-8')
     return path
+
+
+def _backup(root, name='backup-20261021-120000-jogos-abc123', started='2026-10-21T12:00:00',
+            fingerprint='f' * 64):
+    return _write_manifest(Path(root) / name, started=started, fingerprint=fingerprint)
 
 
 def _usage(root):
@@ -211,14 +222,101 @@ class ProgressTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.base = Path(tmp.name) / 'progresso'
-        self.manifest = Path(tmp.name) / 'backup' / 'b1' / 'manifest.json'
+        self.tmp = Path(tmp.name)
+        self.base = self.tmp / 'progresso'
+        self.manifest = _backup(self.tmp / 'E')
 
-    def test_path_uses_manifest_hash(self):
+    def test_path_uses_stable_backup_key(self):
         path = af.progress_path(self.manifest, self.base)
-        key = hashlib.sha256(os.path.normcase(os.path.abspath(str(self.manifest)))
-                             .encode('utf-8')).hexdigest()[:12]
-        self.assertEqual(path, self.base / f'progresso-{key}.json')
+        text = 'v2|backup-20261021-120000-jogos-abc123|2026-10-21T12:00:00|' + 'f' * 64
+        key = hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]
+        self.assertEqual(path, self.base / f'progresso-b-{key}.json')
+
+    def test_unreadable_manifest_uses_path_key_with_warning(self):
+        missing = self.tmp / 'X' / 'b1' / 'manifest.json'
+        broken = _write_manifest(self.tmp / 'Y' / 'b2')  # sem started/plan_fingerprint
+        for manifest in (missing, broken):
+            self.assertIsNone(af.backup_identity(manifest))
+            key = hashlib.sha256(os.path.normcase(os.path.abspath(str(manifest)))
+                                 .encode('utf-8')).hexdigest()[:12]
+            self.assertEqual(af.progress_path(manifest, self.base),
+                             self.base / f'progresso-{key}.json')
+            loaded = af.load_progress(manifest, self.base)
+            self.assertIn(af.NO_IDENTITY_WARNING, loaded['warnings'])
+            self.assertEqual(loaded['path'], self.base / f'progresso-{key}.json')
+
+    def test_letter_change_finds_progress(self):
+        # o mesmo backup, visto por outra "unidade" (outra raiz temporária)
+        first = af.load_progress(self.manifest, self.base)
+        af.save_progress(first['path'], dict(first['steps'], discos=af.DONE), first['backup'])
+        moved = _backup(self.tmp / 'F')
+        self.assertNotEqual(moved, self.manifest)
+        again = af.load_progress(moved, self.base)
+        self.assertEqual(again['steps']['discos'], af.DONE)
+        self.assertEqual(again['path'], first['path'])
+        self.assertEqual(af.window_key(moved), af.window_key(self.manifest))
+
+    def test_folder_name_case_does_not_matter(self):
+        upper = _backup(self.tmp / 'G', name='BACKUP-20261021-120000-JOGOS-ABC123')
+        self.assertEqual(af.progress_path(upper, self.base),
+                         af.progress_path(self.manifest, self.base))
+
+    def test_different_backups_different_keys(self):
+        other_time = _backup(self.tmp / 'E2', started='2026-10-22T08:00:00')
+        other_plan = _backup(self.tmp / 'E3', fingerprint='a' * 64)
+        other_name = _backup(self.tmp / 'E4', name='backup-outro')
+        paths = {af.progress_path(m, self.base)
+                 for m in (self.manifest, other_time, other_plan, other_name)}
+        self.assertEqual(len(paths), 4)
+        keys = {af.window_key(m) for m in (self.manifest, other_time, other_plan, other_name)}
+        self.assertEqual(len(keys), 4)
+
+    def test_big_manifest_reads_only_top_fields(self):
+        big = self.tmp / 'H' / 'backup-grande' / 'manifest.json'
+        big.parent.mkdir(parents=True)
+        doc = {'schema': 'pc-restore-backup-v0.4', 'started': '2026-10-21T12:00:00',
+               'item_descriptors': [{'started': 'falso', 'plan_fingerprint': 'falso'}],
+               'plan_fingerprint': 'c' * 64, 'files': []}
+        text = json.dumps(doc, indent=2)
+        text = text.replace('"files": []', '"files": ["' + 'x' * 1024 + '"' +
+                            (', "' + 'x' * 1024 + '"') * 9000 + ']')
+        big.write_text(text, encoding='utf-8')
+        self.assertGreater(big.stat().st_size, af.IDENTITY_FULL_READ_LIMIT)
+        self.assertEqual(af.backup_identity(big),
+                         {'folder': 'backup-grande', 'started': '2026-10-21T12:00:00',
+                          'plan_fingerprint': 'c' * 64})
+
+    def test_old_progress_is_read_and_never_rewritten(self):
+        old = af.legacy_progress_path(self.manifest, self.base)
+        old.parent.mkdir(parents=True)
+        old.write_text(json.dumps({'schema': af.SCHEMA, 'steps': {'discos': af.DONE}}),
+                       encoding='utf-8')
+        before = (old.read_bytes(), os.stat(old).st_mtime_ns)
+        loaded = af.load_progress(self.manifest, self.base)
+        self.assertEqual(loaded['steps']['discos'], af.DONE)
+        self.assertEqual(loaded['path'], af.progress_path(self.manifest, self.base))
+        self.assertNotEqual(loaded['path'], old)
+        af.save_progress(loaded['path'], dict(loaded['steps'], restaurar=af.DONE),
+                         loaded['backup'])
+        again = af.load_progress(self.manifest, self.base)
+        self.assertEqual(again['steps']['restaurar'], af.DONE)
+        self.assertEqual(again['steps']['discos'], af.DONE)
+        self.assertEqual((old.read_bytes(), os.stat(old).st_mtime_ns), before)
+
+    def test_other_identity_untouched_and_goes_to_2(self):
+        path = af.progress_path(self.manifest, self.base)
+        path.parent.mkdir(parents=True)
+        foreign = {'folder': 'outro', 'started': 'x', 'plan_fingerprint': 'y'}
+        path.write_text(json.dumps({'schema': af.SCHEMA, 'backup': foreign,
+                                    'steps': {'discos': af.DONE}}), encoding='utf-8')
+        before = path.read_bytes()
+        loaded = af.load_progress(self.manifest, self.base)
+        self.assertEqual(loaded['steps']['discos'], af.PENDING)
+        self.assertEqual(loaded['path'].name, path.stem + '-2.json')
+        self.assertTrue(any('outro backup' in w for w in loaded['warnings']))
+        af.save_progress(loaded['path'], loaded['steps'], loaded['backup'])
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(af.load_progress(self.manifest, self.base)['path'], loaded['path'])
 
     def test_default_base_uses_localappdata(self):
         base = af.default_base({'LOCALAPPDATA': str(self.base)})
@@ -229,7 +327,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(set(first['steps'].values()), {af.PENDING})
         self.assertEqual(first['warnings'], [])
         steps = dict(first['steps'], discos=af.DONE, launchers=af.SKIPPED)
-        af.save_progress(first['path'], steps)
+        af.save_progress(first['path'], steps, first['backup'])
         again = af.load_progress(self.manifest, self.base)
         self.assertEqual(again['steps'], steps)
         self.assertEqual(again['path'], first['path'])
@@ -251,7 +349,8 @@ class ProgressTests(unittest.TestCase):
         self.assertTrue(loaded['warnings'])
         self.assertEqual(set(loaded['steps'].values()), {af.PENDING})
         self.assertEqual(loaded['path'].name, path.stem + '-2.json')
-        af.save_progress(loaded['path'], dict(loaded['steps'], discos=af.DONE))
+        af.save_progress(loaded['path'], dict(loaded['steps'], discos=af.DONE),
+                         loaded['backup'])
         self.assertEqual(path.read_bytes(), before)
         again = af.load_progress(self.manifest, self.base)
         self.assertEqual(again['steps']['discos'], af.DONE)
@@ -275,9 +374,9 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(path.stat().st_size, af.PROGRESS_LIMIT + 1)
 
     def test_separate_backups(self):
-        other = self.manifest.parent.parent / 'b2' / 'manifest.json'
+        other = _backup(self.tmp / 'E', name='backup-b2')
         a = af.load_progress(self.manifest, self.base)
-        af.save_progress(a['path'], dict(a['steps'], discos=af.DONE))
+        af.save_progress(a['path'], dict(a['steps'], discos=af.DONE), a['backup'])
         b = af.load_progress(other, self.base)
         self.assertNotEqual(a['path'], b['path'])
         self.assertEqual(b['steps']['discos'], af.PENDING)
@@ -302,17 +401,102 @@ class ProgressTests(unittest.TestCase):
         self.assertIn(af.DONE, target.read_text(encoding='utf-8'))
 
     def test_leftover_partial_ignored(self):
+        # .parcial antigo de nome fixo (P2-11) e um .parcial que é link: ignorados, intocados
         path = af.progress_path(self.manifest, self.base)
         path.parent.mkdir(parents=True)
         partial = path.with_name(path.name + af.PARTIAL_SUFFIX)
         partial.write_text('{ meio gravado', encoding='utf-8')
+        target = self.tmp / 'alvo.txt'
+        target.write_text('não mexer', encoding='utf-8')
+        link = path.with_name(path.name + af.PARTIAL_SUFFIX + '-link')
+        try:
+            os.symlink(target, link)
+        except (OSError, NotImplementedError):
+            link = None
         loaded = af.load_progress(self.manifest, self.base)
         self.assertEqual(loaded['path'], path)
         self.assertEqual(loaded['warnings'], [])
-        af.save_progress(path, dict(loaded['steps'], restaurar=af.DONE))
+        af.save_progress(path, dict(loaded['steps'], restaurar=af.DONE), loaded['backup'])
         self.assertEqual(af.load_progress(self.manifest, self.base)['steps']['restaurar'],
                          af.DONE)
-        self.assertFalse(partial.exists())
+        self.assertEqual(partial.read_text(encoding='utf-8'), '{ meio gravado')
+        self.assertEqual(target.read_text(encoding='utf-8'), 'não mexer')
+        if link is not None:
+            self.assertTrue(os.path.islink(link))
+
+    def _partials(self, path):
+        return sorted(p.name for p in path.parent.iterdir()
+                      if p.name.startswith(path.name + af.PARTIAL_SUFFIX + '-'))
+
+    def test_partial_names_are_unique(self):
+        path = af.progress_path(self.manifest, self.base)
+        seen = []
+        real_replace = os.replace
+
+        def spy(src, dst):
+            seen.append(Path(src).name)
+            return real_replace(src, dst)
+        with mock.patch.object(af.os, 'replace', side_effect=spy):
+            for _ in range(3):
+                af.save_progress(path, {}, af.backup_identity(self.manifest))
+        self.assertEqual(len(set(seen)), 3)
+        for name in seen:
+            self.assertTrue(name.startswith(path.name + af.PARTIAL_SUFFIX + '-'), name)
+        self.assertEqual(self._partials(path), [])
+
+    def test_failed_replace_keeps_partial_and_final(self):
+        loaded = af.load_progress(self.manifest, self.base)
+        path = loaded['path']
+        af.save_progress(path, dict(loaded['steps'], discos=af.DONE), loaded['backup'])
+        before = path.read_bytes()
+        with mock.patch.object(af.os, 'replace', side_effect=OSError('falhou')):
+            with self.assertRaises(OSError):
+                af.save_progress(path, dict(loaded['steps'], discos=af.SKIPPED),
+                                 loaded['backup'])
+        self.assertEqual(path.read_bytes(), before)
+        partials = self._partials(path)
+        self.assertEqual(len(partials), 1)  # fica no disco: nada é apagado
+        self.assertIn(af.SKIPPED, (path.parent / partials[0]).read_text(encoding='utf-8'))
+
+    def test_concurrent_saves_always_valid_json(self):
+        import threading
+        path = af.progress_path(self.manifest, self.base)
+        identity = af.backup_identity(self.manifest)
+        errors = []
+        bad_reads = []
+        stop = threading.Event()
+
+        def writer(value):
+            try:
+                for i in range(50):
+                    af.save_progress(path, {'discos': value if i % 2 else af.PENDING},
+                                     identity)
+            except Exception as exc:  # pragma: no cover - só aparece se falhar
+                errors.append(exc)
+
+        def reader():
+            while not stop.is_set():
+                try:
+                    data = path.read_bytes()
+                except OSError:
+                    continue
+                try:
+                    json.loads(data.decode('utf-8'))
+                except ValueError:
+                    bad_reads.append(data)
+        threads = [threading.Thread(target=writer, args=(v,)) for v in (af.DONE, af.SKIPPED)]
+        watcher = threading.Thread(target=reader)
+        watcher.start()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(30)
+        stop.set()
+        watcher.join(30)
+        self.assertEqual(errors, [])
+        self.assertEqual(bad_reads, [])
+        self.assertEqual(af._read(path, identity)[0], 'ok')
+        self.assertEqual(self._partials(path), [])
 
     def test_save_error_text_hides_full_path(self):
         # FIX-P2-11-01: o aviso leva no máximo o nome do arquivo e o tipo do erro
@@ -380,12 +564,13 @@ class WindowTests(unittest.TestCase):
         self.addCleanup(gc.collect)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.base = Path(tmp.name) / 'progresso'
-        self.manifest = Path(tmp.name) / 'backup' / 'b1' / 'manifest.json'
+        self.tmp = Path(tmp.name)
+        self.base = self.tmp / 'progresso'
+        self.manifest = _backup(self.tmp / 'E')
 
-    def open(self):
-        dlg = afu.show_after_format(self.root, manifest=self.manifest, base=self.base,
-                                    checker=lambda m, c: FAKE_CHECK)
+    def open(self, manifest=None):
+        dlg = afu.show_after_format(self.root, manifest=manifest or self.manifest,
+                                    base=self.base, checker=lambda m, c: FAKE_CHECK)
         until = time.monotonic() + 5
         while dlg.after_format_state['busy'] and time.monotonic() < until:
             self.root.update()
@@ -491,6 +676,28 @@ class WindowTests(unittest.TestCase):
         dlg.destroy()
         self.root.update()
         self.assertTrue(seen['event'].is_set())
+
+    def test_same_backup_twice_one_window(self):
+        dlg = self.open()
+        moved = _backup(self.tmp / 'F')  # o mesmo backup visto por outra letra
+        again = afu.show_after_format(self.root, manifest=moved, base=self.base,
+                                      checker=lambda m, c: FAKE_CHECK)
+        self.assertIs(again, dlg)
+        self.assertEqual(len(self.root.after_format_dialogs), 1)
+        dlg.destroy()
+        self.root.update()
+        self.assertEqual(self.root.after_format_dialogs, {})
+        dlg2 = self.open()
+        self.assertIsNot(dlg2, dlg)
+        dlg2.destroy()
+
+    def test_different_backups_two_windows(self):
+        one = self.open()
+        two = self.open(_backup(self.tmp / 'E', name='backup-outro'))
+        self.assertIsNot(one, two)
+        self.assertEqual(len(self.root.after_format_dialogs), 2)
+        one.destroy()
+        two.destroy()
 
     def test_cancel_manifest_choice_opens_nothing(self):
         self.assertIsNone(afu.show_after_format(self.root, ask_manifest=lambda parent: None))

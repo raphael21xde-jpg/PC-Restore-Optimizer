@@ -15,7 +15,7 @@ from pathlib import Path
 from tkinter import filedialog, ttk
 
 from after_format import (DONE, PENDING, SKIPPED, STEPS, check_drives, load_progress,
-                          password_alert, progress_error_text, save_progress)
+                          password_alert, progress_error_text, save_progress, window_key)
 from browser_recovery_ui import show_recovery
 from launcher_guide_ui import show_launchers
 from restore_jobs import Job
@@ -47,6 +47,21 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
         if not manifest:
             return None
     manifest = Path(manifest)
+    # FIX-P2-11-02: uma janela por backup (a mesma chave vale em qualquer letra)
+    key = window_key(manifest)
+    dialogs = getattr(app, 'after_format_dialogs', None)
+    if not isinstance(dialogs, dict):
+        dialogs = app.after_format_dialogs = {}
+    previous = dialogs.get(key)
+    if previous is not None:
+        try:
+            alive = previous.winfo_exists()
+        except tk.TclError:
+            alive = False
+        if alive:
+            previous.lift()
+            return previous
+        dialogs.pop(key, None)
     run_check = checker or (lambda chosen, cancelled: (check_drives(chosen),
                                                        password_alert(chosen)))
     progress = load_progress(manifest, base)
@@ -55,8 +70,10 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
     dlg.title(TITLE)
     dlg.geometry('1000x760')
     dlg.minsize(720, 520)
+    dialogs[key] = dlg
     timers = WindowTimers(dlg)
     state = {'steps': dict(progress['steps']), 'path': progress['path'], 'job': None,
+             'backup': progress.get('backup'), 'key': key,
              'busy': False, 'drives': None, 'passwords': '', 'manifest': manifest}
     dlg.after_format_state = state
 
@@ -98,7 +115,7 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
         if state['path'] is None:
             return
         try:
-            save_progress(state['path'], state['steps'])
+            save_progress(state['path'], state['steps'], state['backup'])
         except (OSError, ValueError) as exc:
             progress_warning.set(progress_error_text(exc))
 
@@ -230,7 +247,11 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
     ttk.Button(frame, text='Fechar', command=dlg.destroy).pack(anchor='e')
 
     def on_destroy(event):
-        if event.widget is dlg and state['job'] is not None:
+        if event.widget is not dlg:
+            return
+        if dialogs.get(key) is dlg:
+            del dialogs[key]
+        if state['job'] is not None:
             state['job'].cancelled.set()
 
     dlg.bind('<Destroy>', on_destroy, add='+')

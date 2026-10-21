@@ -8,9 +8,12 @@ Regras de segurança:
 - nas unidades, só lê: lista as letras, o tipo e o espaço livre. Nunca troca
   letra, formata, particiona ou apaga nada. A troca de letra é só orientada e
   feita à mão pela pessoa no Gerenciamento de Disco;
-- o único arquivo gravado é o do progresso, de forma atômica (.parcial +
-  os.replace). Um arquivo de progresso estragado, grande demais ou que seja um
-  link fica intocado: o assistente começa do zero num arquivo novo (-2, -3...).
+- o único arquivo gravado é o do progresso, de forma atômica (.parcial de
+  nome único + os.replace). Um arquivo de progresso estragado, grande demais,
+  de outro backup ou que seja um link fica intocado: o assistente começa do
+  zero num arquivo novo (-2, -3...).
+- FIX-P2-11-02: o progresso é ligado ao backup (nome da pasta, started e
+  plan_fingerprint do manifest.json), não à letra da unidade.
 """
 from __future__ import annotations
 
@@ -18,8 +21,11 @@ import hashlib
 import json
 import ntpath
 import os
+import re
 import shutil
 import stat
+import time
+import uuid
 from pathlib import Path
 
 from backup_core import human_size
@@ -190,15 +196,96 @@ def default_base(environ=None):
     return Path(local) / 'PC-Restore-Optimizer' / 'depois-de-formatar'
 
 
+IDENTITY_FULL_READ_LIMIT = 8 * 1024 * 1024
+IDENTITY_HEAD_LIMIT = 1024 * 1024
+_IDENTITY_FIELDS = ('started', 'plan_fingerprint')
+_TOP_LEVEL_FIELD = re.compile(r'^  "(started|plan_fingerprint)": ("(?:[^"\\\r\n]|\\.)*")',
+                              re.MULTILINE)
+NO_IDENTITY_WARNING = (
+    'Não deu para identificar este backup pelo arquivo manifest.json. O progresso fica '
+    'ligado ao lugar do arquivo e não será achado se a letra da unidade mudar.')
+
+
+def _identity_fields(manifest):
+    """Campos de topo 'started' e 'plan_fingerprint' do manifest.json (só leitura)."""
+    with open(manifest, 'rb') as handle:
+        size = os.fstat(handle.fileno()).st_size
+        if size <= IDENTITY_FULL_READ_LIMIT:
+            doc = json.loads(handle.read(IDENTITY_FULL_READ_LIMIT + 1).decode('utf-8'))
+            if not isinstance(doc, dict):
+                return {}
+            return {key: doc.get(key) for key in _IDENTITY_FIELDS}
+        # manifesto enorme (muitos arquivos): os campos de topo ficam no começo
+        # (gravado por backup_core.atomic_json com indent=2); lê só o primeiro 1 MiB
+        head = handle.read(IDENTITY_HEAD_LIMIT).decode('utf-8', errors='replace')
+    found = {}
+    for match in _TOP_LEVEL_FIELD.finditer(head):
+        found.setdefault(match.group(1), json.loads(match.group(2)))
+    return found
+
+
+def backup_identity(manifest):
+    """{'folder', 'started', 'plan_fingerprint'} do backup, ou None.
+
+    Não depende da letra da unidade: usa o nome da pasta do backup (em
+    minúsculas) e os campos de topo do manifest.json. Só lê.
+    """
+    manifest = Path(manifest)
+    try:
+        fields = _identity_fields(manifest)
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    started = fields.get('started')
+    fingerprint = fields.get('plan_fingerprint')
+    folder = manifest.parent.name.casefold()
+    for value in (started, fingerprint):
+        if not isinstance(value, str) or not value.strip() or len(value) > 200:
+            return None
+    if not folder:
+        return None
+    return {'folder': folder, 'started': started, 'plan_fingerprint': fingerprint}
+
+
+def _stable_key(identity):
+    text = '|'.join(('v2', identity['folder'], identity['started'],
+                     identity['plan_fingerprint']))
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]
+
+
 def _manifest_key(manifest):
+    """Chave antiga (P2-11): pelo caminho completo do manifesto."""
     text = os.path.normcase(os.path.abspath(str(manifest)))
     return hashlib.sha256(text.encode('utf-8')).hexdigest()[:12]
 
 
-def progress_path(manifest, base=None):
-    """Arquivo de progresso deste backup: progresso-<12 letras do SHA-256>.json."""
-    base = default_base() if base is None else Path(base)
-    return base / f'progresso-{_manifest_key(manifest)}.json'
+def window_key(manifest):
+    """Chave para não abrir duas janelas do mesmo backup (igual entre letras)."""
+    identity = backup_identity(manifest)
+    if identity is not None:
+        return 'b-' + _stable_key(identity)
+    return 'p-' + os.path.normcase(os.path.abspath(str(manifest)))
+
+
+def _base(base):
+    return default_base() if base is None else Path(base)
+
+
+def legacy_progress_path(manifest, base=None):
+    """Arquivo antigo (P2-11): progresso-<chave do caminho>.json. Só é lido."""
+    return _base(base) / f'progresso-{_manifest_key(manifest)}.json'
+
+
+def progress_path(manifest, base=None, identity=None):
+    """Arquivo de progresso deste backup.
+
+    Com identidade: progresso-b-<chave estável>.json (não muda com a letra).
+    Sem identidade: o nome antigo, pelo caminho do manifesto.
+    """
+    if identity is None:
+        identity = backup_identity(manifest)
+    if identity is None:
+        return legacy_progress_path(manifest, base)
+    return _base(base) / f'progresso-b-{_stable_key(identity)}.json'
 
 
 def _candidate(first, number):
@@ -230,8 +317,14 @@ def _is_link(info):
     return stat.S_ISLNK(info.st_mode) or bool(getattr(info, 'st_file_attributes', 0) & reparse)
 
 
-def _read(path):
-    """('ausente', None) | ('ok', passos) | ('ruim', motivo). Nunca altera o arquivo."""
+_ANY = object()
+
+
+def _read(path, identity=_ANY):
+    """('ausente', None) | ('ok', passos) | ('ruim', motivo). Nunca altera o arquivo.
+
+    identity: se dado, o bloco 'backup' gravado tem de ser igual a ele.
+    """
     try:
         info = os.lstat(path)
     except FileNotFoundError:
@@ -252,30 +345,59 @@ def _read(path):
         doc = json.loads(data.decode('utf-8'))
         if not isinstance(doc, dict) or doc.get('schema') != SCHEMA:
             return 'ruim', 'formato desconhecido'
-        return 'ok', validate_steps(doc.get('steps'))
+        steps = validate_steps(doc.get('steps'))
     except (OSError, ValueError, UnicodeDecodeError):
         return 'ruim', 'estragado'
+    if identity is not _ANY and doc.get('backup') != identity:
+        return 'ruim', 'é de outro backup'
+    return 'ok', steps
+
+
+def _bad_warning(path, reason):
+    return (f'O progresso salvo "{path.name}" não pôde ser usado ({reason}). '
+            'Ele foi deixado como está e o assistente começou do zero.')
+
+
+def _scan(first, identity, warnings):
+    """Primeiro arquivo bom da sequência first, -2, -3... ou o primeiro livre."""
+    for number in range(1, MAX_PROGRESS_FILES + 1):
+        path = _candidate(first, number)
+        kind, value = _read(path, identity)
+        if kind in ('ok', 'ausente'):
+            return kind, value, path
+        warnings.append(_bad_warning(path, value))
+    return 'cheio', None, None
 
 
 def load_progress(manifest, base=None):
     """Progresso salvo deste backup.
 
-    Devolve {'steps', 'path', 'warnings'}. 'path' é onde salvar (None se não
-    houver lugar seguro). Arquivos ruins ficam intocados e são pulados.
+    Devolve {'steps', 'path', 'backup', 'warnings'}. 'path' é onde salvar (None
+    se não houver lugar seguro); 'backup' é a identidade a gravar junto.
+    Arquivos ruins ou de outro backup ficam intocados e são pulados. Sem
+    progresso novo, o arquivo antigo (pelo caminho) é lido só para leitura: o
+    próximo save grava no novo, e o antigo nunca é reescrito nem apagado.
     """
-    first = progress_path(manifest, base)
+    identity = backup_identity(manifest)
     warnings = []
-    for number in range(1, MAX_PROGRESS_FILES + 1):
-        path = _candidate(first, number)
-        kind, value = _read(path)
-        if kind == 'ok':
-            return {'steps': value, 'path': path, 'warnings': warnings}
+    if identity is None:
+        warnings.append(NO_IDENTITY_WARNING)
+        kind, value, path = _scan(legacy_progress_path(manifest, base), _ANY, warnings)
+    else:
+        kind, value, path = _scan(progress_path(manifest, base, identity), identity, warnings)
         if kind == 'ausente':
-            return {'steps': _empty_steps(), 'path': path, 'warnings': warnings}
-        warnings.append(f'O progresso salvo "{path.name}" não pôde ser usado ({value}). '
-                        'Ele foi deixado como está e o assistente começou do zero.')
+            old_warnings = []
+            old_kind, old_value, _old = _scan(legacy_progress_path(manifest, base), _ANY,
+                                              old_warnings)
+            if old_kind == 'ok':
+                kind, value = 'ok', old_value
+    if kind == 'ok':
+        return {'steps': value, 'path': path, 'backup': identity, 'warnings': warnings}
+    if kind == 'ausente':
+        return {'steps': _empty_steps(), 'path': path, 'backup': identity,
+                'warnings': warnings}
     warnings.append('Não há onde salvar o progresso; as marcações valem só até fechar a janela.')
-    return {'steps': _empty_steps(), 'path': None, 'warnings': warnings}
+    return {'steps': _empty_steps(), 'path': None, 'backup': identity, 'warnings': warnings}
 
 
 def progress_error_text(exc):
@@ -295,28 +417,49 @@ def progress_error_text(exc):
             'fechar a janela.')
 
 
-def save_progress(path, steps):
-    """Grava as marcações de forma atômica (.parcial + os.replace).
+REPLACE_TRIES = 20
 
-    Recusa (OSError) gravar por cima de um link ou de algo que não seja um
-    arquivo comum. ValueError se alguma marcação for inválida.
+
+def save_progress(path, steps, backup=None):
+    """Grava as marcações de forma atômica.
+
+    Escreve num .parcial de nome único (<arquivo>.parcial-<8 letras>, criado
+    com O_EXCL, nunca por cima de nada), faz fsync e troca com os.replace. Se
+    algo falhar, o .parcial fica (nada é apagado). Recusa (OSError) gravar por
+    cima de um link ou de algo que não seja um arquivo comum. ValueError se
+    alguma marcação for inválida. backup: identidade gravada junto.
     """
     clean = validate_steps(steps)
     path = Path(path)
-    partial = path.with_name(path.name + PARTIAL_SUFFIX)
-    for target in (path, partial):
-        try:
-            info = os.lstat(target)
-        except FileNotFoundError:
-            continue
-        if _is_link(info) or not stat.S_ISREG(info.st_mode):
-            raise OSError(f'O arquivo de progresso "{target.name}" não é um arquivo comum; '
-                          'nada foi gravado.')
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        info = None
+    if info is not None and (_is_link(info) or not stat.S_ISREG(info.st_mode)):
+        raise OSError(f'O arquivo de progresso "{path.name}" não é um arquivo comum; '
+                      'nada foi gravado.')
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = json.dumps({'schema': SCHEMA, 'steps': clean}, ensure_ascii=False, indent=2)
-    with open(partial, 'w', encoding='utf-8') as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(partial, path)
+    doc = {'schema': SCHEMA, 'steps': clean}
+    if backup is not None:
+        doc['backup'] = backup
+    data = json.dumps(doc, ensure_ascii=False, indent=2).encode('utf-8')
+    partial = path.with_name(f'{path.name}{PARTIAL_SUFFIX}-{uuid.uuid4().hex[:8]}')
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_BINARY', 0)
+    handle = os.open(partial, flags, 0o600)
+    try:
+        view = memoryview(data)
+        while view:
+            view = view[os.write(handle, view):]
+        os.fsync(handle)
+    finally:
+        os.close(handle)
+    for attempt in range(REPLACE_TRIES):
+        try:
+            os.replace(partial, path)
+            break
+        except PermissionError:
+            # no Windows, outra janela pode estar trocando o mesmo arquivo agora
+            if attempt == REPLACE_TRIES - 1:
+                raise
+            time.sleep(0.01)
     return clean
