@@ -7,12 +7,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-import tkinter as tk
-from tkinter import ttk
-from restore_ui import show_restore
+try:
+    import tkinter as tk
+    from tkinter import ttk
+    from restore_ui import show_restore
+except ImportError:  # Python sem Tk (ex.: servidor Linux): os testes de tela pulam.
+    tk = ttk = show_restore = None
+
+NO_DISPLAY = tk is None or (sys.platform != 'win32' and not os.environ.get('DISPLAY'))
 
 
-@unittest.skipIf(sys.platform != 'win32' and not os.environ.get('DISPLAY'), 'No graphical display')
+@unittest.skipIf(NO_DISPLAY, 'No Tk or graphical display')
 class GroupedRestoreWindowTests(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()
@@ -91,5 +96,26 @@ class GroupedRestoreWindowTests(unittest.TestCase):
         self.assertEqual(len(tree.get_children('')),1)
         self.assertEqual(tree.set(tree.get_children('')[0],'mark'),'[x]')
         self.root.restore_dialog.destroy()
+
+    def test_place_original_controls_smoke(self):
+        # P2-01 fatia 2: botoes presentes, caixa das pastas do sistema desmarcada,
+        # e como administrador nada e perguntado nem gravado.
+        with patch('restore_ui.verified_entries',return_value=self.fixture()):
+            show_restore(self.root,'unused.json',elevation_probe=lambda: True)
+            self.wait_ready()
+        dlg=self.root.restore_dialog
+        texts={b.cget('text'):b for b in self.find(ttk.Button,dlg)}
+        self.assertIn('Colocar no lugar original',texts)
+        self.assertIn('Retomar colocação interrompida',texts)
+        box=next(c for c in self.find(ttk.Checkbutton,dlg)
+                 if 'Program Files/ProgramData' in c.cget('text'))
+        self.assertFalse(self.root.getvar(box.cget('variable')) in (1,'1',True))
+        with patch('restore_ui.filedialog.askdirectory') as ask, \
+                patch('restore_ui.messagebox.showerror') as error:
+            texts['Colocar no lugar original'].invoke()
+            texts['Retomar colocação interrompida'].invoke()
+        ask.assert_not_called()
+        self.assertEqual(error.call_count,2)
+        dlg.destroy()
 
 if __name__=='__main__':unittest.main()
