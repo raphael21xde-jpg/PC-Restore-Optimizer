@@ -17,6 +17,7 @@ import tempfile
 import threading
 import types
 import unittest
+from unittest import mock
 
 import copy_bench
 
@@ -106,6 +107,79 @@ class SourceIsOnlyReadTests(Base):
         self.assertEqual(round_.files_ok, 2)
         self.assertEqual(round_.mismatches, 0)
         self.assertEqual(round_.bytes, 1234 + 5 * MIB // 2)
+
+
+class MismatchTests(Base):
+    def test_sha256_diferente_conta_divergencia_e_fica_fora_das_velocidades(self):
+        make_source(self.origem, [2 * MIB, 2 * MIB])
+        real_verify = copy_bench._verify_one
+        calls = {'n': 0}
+
+        def flaky_verify(*args, **kwargs):
+            calls['n'] += 1
+            digest = real_verify(*args, **kwargs)
+            return '0' * 64 if calls['n'] == 1 else digest
+
+        with mock.patch.object(copy_bench, '_verify_one', side_effect=flaky_verify):
+            result = self.run_bench(clock=TickClock())
+        round_ = result.rounds[0]
+        self.assertEqual(round_.mismatches, 1)
+        self.assertEqual(round_.files_ok, 1)
+        self.assertEqual(round_.bytes, 2 * MIB)
+        # Só o arquivo conferido entra: 2 MiB em 2 leituras de 1 s.
+        self.assertAlmostEqual(round_.read_s, 2.0)
+        self.assertAlmostEqual(round_.read_mib_s, 1.0)
+        self.assertAlmostEqual(round_.write_mib_s, 1.0)
+        text, data = copy_bench.bench_report(result)
+        self.assertIn('não bateram com o original', text)
+        self.assertEqual(data['rodadas'][0]['divergencias_sha256'], 1)
+
+    def test_erro_de_leitura_nao_soma_tempo(self):
+        make_source(self.origem, [MIB, MIB])
+        real_copy = copy_bench._copy_one
+        calls = {'n': 0}
+
+        def failing_copy(source, target, size, chunk, clock, cancelled, times):
+            calls['n'] += 1
+            if calls['n'] == 1:
+                times.read_s += 50.0
+                raise PermissionError('simulado')
+            return real_copy(source, target, size, chunk, clock, cancelled, times)
+
+        with mock.patch.object(copy_bench, '_copy_one', side_effect=failing_copy):
+            result = self.run_bench(clock=TickClock())
+        round_ = result.rounds[0]
+        self.assertEqual(round_.errors, 1)
+        self.assertEqual(round_.files_ok, 1)
+        self.assertAlmostEqual(round_.read_s, 1.0)
+
+
+class StoppedAfterFolderTests(Base):
+    def test_erro_ao_gravar_relatorio_avisa_que_a_pasta_ficou(self):
+        make_source(self.origem, [10])
+        with mock.patch.object(copy_bench, '_write_new',
+                               side_effect=OSError(28, 'sem espaço')):
+            with self.assertRaises(copy_bench.BenchStopped) as ctx:
+                self.run_bench()
+        name = ctx.exception.folder_name
+        self.assertTrue(name.startswith('PCRO-MEDICAO-'))
+        self.assertTrue((self.destino / name).is_dir())
+
+    def test_erro_ao_criar_subpasta_vira_interrompida(self):
+        make_source(self.origem, [10])
+        real_mkdir = os.mkdir
+
+        def mkdir(path, *args, **kwargs):
+            if os.path.basename(path).startswith('bloco-'):
+                raise PermissionError('simulado')
+            return real_mkdir(path, *args, **kwargs)
+
+        with mock.patch.object(copy_bench.os, 'mkdir', side_effect=mkdir):
+            result = self.run_bench()
+        self.assertEqual(result.status, 'interrompida')
+        text = (self.destino / result.folder_name / 'relatorio.txt').read_text(
+            encoding='utf-8')
+        self.assertIn('Motivo da interrupção', text)
 
 
 class RefusalTests(Base):
@@ -256,6 +330,25 @@ class LinkTests(Base):
         for path, _ in sample.files:
             self.assertNotIn('fora', path)
 
+    @unittest.skipUnless(os.name == 'nt', 'junção só existe no Windows')
+    def test_juncao_real_na_origem_e_pulada(self):
+        import _winapi
+        make_source(self.origem, [10, 20])
+        outside = make_source(self.tmp / 'fora', [999, 999])
+        junction = self.origem / 'jogos-em-outro-disco'
+        try:
+            _winapi.CreateJunction(str(outside), str(junction))
+        except OSError:
+            self.skipTest('o sistema não deixou criar junção')
+        sample = copy_bench.pick_sample(str(self.origem), GIB, 5000)
+        self.assertEqual(sorted(size for _, size in sample.files), [10, 20])
+        self.assertEqual(sample.skipped_links, 1)
+        result = self.run_bench()
+        self.assertEqual(result.rounds[0].files_ok, 2)
+        with self.assertRaises(copy_bench.BenchRefused):
+            copy_bench.run_bench(str(junction), str(self.destino), usage=plenty)
+        os.rmdir(junction)  # remove só a junção sintética; o alvo fica
+
     def test_origem_que_e_link_recusada(self):
         real = make_source(self.tmp / 'real', [10])
         link = self.tmp / 'origem-link'
@@ -340,6 +433,21 @@ class SpeedTests(Base):
         self.assertAlmostEqual(four.write_mib_s, 2.0)
         self.assertAlmostEqual(four.verify_mib_s, 2.0)
         self.assertEqual(result.suggestion['bloco_mib'], 4)
+        # Estimativa conservadora pela 1ª rodada: cópia a 0,5 MiB/s
+        # (leitura + escrita) mais uma releitura a 1 MiB/s.
+        minutes = (120 * 1024 / 0.5 + 120 * 1024 / 1.0) / 60
+        self.assertAlmostEqual(result.suggestion['minutos_para_120_gib'],
+                               round(minutes, 1))
+        self.assertIn('primeira rodada', result.suggestion['base_da_estimativa'])
+
+    def test_bloco_escolhido_pela_escrita(self):
+        slow = copy_bench.RoundResult(chunk_mib=1, bytes=MIB, read_s=1, write_s=1,
+                                      verify_s=1, complete=True, files_ok=1)
+        fast_verify = copy_bench.RoundResult(chunk_mib=4, bytes=MIB, read_s=1,
+                                             write_s=2, verify_s=0.001,
+                                             complete=True, files_ok=1)
+        suggestion = copy_bench._suggest([slow, fast_verify])
+        self.assertEqual(suggestion['bloco_mib'], 1)
 
     def test_mib_s_sem_tempo(self):
         self.assertIsNone(copy_bench.mib_per_s(MIB, 0))
@@ -360,6 +468,12 @@ class ReportTests(Base):
                               'arquivo000', 'sub0', os.sep + 'origem'):
                 self.assertNotIn(forbidden, blob)
         self.assertIn('pode ser apagada à mão', text)
+        self.assertIn('nenhum arquivo da origem foi gravado ou apagado', text)
+        self.assertNotIn('nada foi alterado', text)
+        self.assertIn('cache', text)
+        self.assertIn('otimistas', text)
+        self.assertIn('otimistas', data['aviso_cache'])
+        self.assertIn('fsync', data['o_que_cada_tempo_mede'])
         self.assertIn('Sugestão', text)
         self.assertEqual(data['situacao'], 'concluída')
         self.assertEqual(data['amostra']['arquivos'], 2)
@@ -399,6 +513,31 @@ class ScriptTests(unittest.TestCase):
             self.assertEqual(done.returncode, 2)
             self.assertIn('dentro da origem', done.stdout)
             self.assertEqual(list(inside.iterdir()), [])
+
+    def test_script_interrompido_depois_da_pasta_nao_diz_nao_feita(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        try:
+            import medir_copia
+        finally:
+            sys.path.pop(0)
+        stop = copy_bench.BenchStopped('PCRO-MEDICAO-20261021-140509',
+                                       'erro do sistema ao gravar o relatório')
+        outputs = {}
+        for label, error, expected_code in (
+                ('parou', stop, 1), ('ctrl-c', KeyboardInterrupt(), 1),
+                ('erro', OSError(28, 'sem espaço'), 2)):
+            with mock.patch.object(medir_copia.copy_bench, 'run_bench',
+                                   side_effect=error):
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    code = medir_copia.main(['--origem', 'x', '--destino', 'y'])
+            text = out.getvalue()
+            outputs[label] = text
+            self.assertEqual(code, expected_code)
+            self.assertNotIn('NÃO FEITA', text)
+            self.assertNotIn('antes de começar', text)
+            self.assertIn('pode ser apagada à mão', text)
+        self.assertIn('INTERROMPIDA', outputs['parou'])
+        self.assertIn('PCRO-MEDICAO-20261021-140509', outputs['parou'])
 
     def test_script_mede_amostra_pequena(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -42,11 +42,28 @@ MAX_CHUNK_MIB = 256
 FOLDER_PREFIX = 'PCRO-MEDICAO-'
 MAX_FOLDER_TRIES = 50
 REFERENCE_GIB = 120  # tamanho de referência para a estimativa (jogos grandes)
+TIMING_NOTE = ('leitura = ler a origem e calcular o SHA-256; escrita = gravar a '
+               'cópia e forçar a gravação no disco (fsync); conferência = reler '
+               'a cópia e calcular o SHA-256. Arquivos com erro ou com SHA-256 '
+               'diferente não entram nas velocidades (nem o tempo, nem os bytes).')
+CACHE_NOTE = ('a conferência e as rodadas 2 e 3 podem ler da memória do Windows '
+              '(cache) e não do disco, então essas velocidades podem sair '
+              'otimistas. Por isso a estimativa usa a primeira rodada como base '
+              'e o bloco é escolhido pela velocidade de escrita.')
 _REPARSE = getattr(_stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
 
 
 class BenchRefused(ValueError):
     """A medição foi recusada antes de gravar qualquer coisa."""
+
+
+class BenchStopped(RuntimeError):
+    """A pasta de medição já existia quando algo impediu terminar o relatório."""
+
+    def __init__(self, folder_name, reason):
+        super().__init__(reason)
+        self.folder_name = folder_name
+        self.reason = reason
 
 
 @dataclass
@@ -105,6 +122,7 @@ class BenchResult:
     written_bytes: int = 0
     suggestion: dict = field(default_factory=dict)
     date: str = ''
+    problem: str = ''
 
 
 def mib_per_s(nbytes, seconds):
@@ -242,7 +260,8 @@ def _check_paths(origem, destino_pai):
                            'Escolha um destino fora da pasta medida.')
     if _inside(real_origem, real_destino):
         raise BenchRefused('A origem fica dentro do destino. '
-                           'Escolha um destino fora da pasta medida.')
+                           'Escolha uma pasta irmã, fora da pasta medida '
+                           '(ex.: E:\\Medicao em vez de E:\\).')
 
 
 def _check_chunks(chunks):
@@ -269,8 +288,21 @@ def _make_folder(destino_pai, moment):
                        'Tente de novo daqui a pouco.')
 
 
-def _copy_one(source, target, size, chunk, clock, cancelled, round_):
-    """Copia um arquivo bloco a bloco. Devolve (sha256, bytes) ou None se cancelado."""
+class _Times:
+    """Tempos de UM arquivo; só entram na rodada se a cópia for conferida."""
+
+    def __init__(self):
+        self.read_s = 0.0
+        self.write_s = 0.0
+        self.verify_s = 0.0
+
+
+def _copy_one(source, target, size, chunk, clock, cancelled, times):
+    """Copia um arquivo bloco a bloco. Devolve (sha256, bytes) ou None se cancelado.
+
+    ``times`` recebe os tempos deste arquivo: leitura = ler a origem e
+    calcular o SHA-256; escrita = gravar e forçar a gravação no disco (fsync).
+    """
     digest = hashlib.sha256()
     copied = 0
     partial = target + '.parcial'
@@ -282,10 +314,11 @@ def _copy_one(source, target, size, chunk, clock, cancelled, round_):
                 return None
             start = clock()
             data = reader.read(min(chunk, remaining))
-            round_.read_s += clock() - start
+            if data:
+                digest.update(data)
+            times.read_s += clock() - start
             if not data:
                 break
-            digest.update(data)
             remaining -= len(data)
             start = clock()
             writer.write(data)
@@ -293,7 +326,7 @@ def _copy_one(source, target, size, chunk, clock, cancelled, round_):
                 writer.flush()
                 os.fsync(writer.fileno())
                 synced = True
-            round_.write_s += clock() - start
+            times.write_s += clock() - start
             copied += len(data)
         if not synced:
             writer.flush()
@@ -302,7 +335,8 @@ def _copy_one(source, target, size, chunk, clock, cancelled, round_):
     return digest.hexdigest(), copied
 
 
-def _verify_one(target, copied, chunk, clock, round_):
+def _verify_one(target, copied, chunk, clock, times):
+    """Conferência = reler a cópia e calcular o SHA-256 (pode vir da memória)."""
     digest = hashlib.sha256()
     with open(target, 'rb') as reader:
         remaining = copied
@@ -311,7 +345,7 @@ def _verify_one(target, copied, chunk, clock, round_):
             data = reader.read(min(chunk, remaining))
             if data:
                 digest.update(data)
-            round_.verify_s += clock() - start
+            times.verify_s += clock() - start
             if not data:
                 break
             remaining -= len(data)
@@ -319,26 +353,39 @@ def _verify_one(target, copied, chunk, clock, round_):
 
 
 def _suggest(rounds):
-    complete = [r for r in rounds if r.complete and r.bytes and r.total_mib_s]
-    if not complete:
+    """Sugestão conservadora (P2-10, revisão):
+
+    - o tamanho de bloco é escolhido pela velocidade de ESCRITA (com fsync),
+      a que menos sofre com o cache; empate fica com o bloco menor;
+    - a estimativa usa a PRIMEIRA rodada (origem ainda fora da memória):
+      tempo de cópia (leitura + escrita) mais uma releitura de tudo na
+      velocidade de leitura dessa rodada, no lugar da conferência medida,
+      que quase sempre vem da memória.
+    """
+    complete = [r for r in rounds if r.complete and r.bytes and r.write_mib_s]
+    first = rounds[0] if rounds else None
+    if not complete or first is None or not first.complete \
+            or not first.copy_mib_s or not first.read_mib_s:
         return {'bloco_mib': None,
                 'texto': 'Sem dados suficientes para sugerir uma estratégia.'}
     best = complete[0]
     for candidate in complete[1:]:
-        if candidate.total_mib_s > best.total_mib_s:
+        if candidate.write_mib_s > best.write_mib_s:
             best = candidate
-    read_speed = best.read_mib_s or 0.0
-    write_speed = best.write_mib_s or 0.0
-    bottleneck = 'escrita (disco de destino)' if write_speed < read_speed \
-        else 'leitura (disco de origem)'
-    minutes = REFERENCE_GIB * 1024 / best.total_mib_s / 60
-    text = ('Use blocos de %d MiB, copiando um arquivo por vez e conferindo '
-            'cada cópia. O ponto mais lento foi a %s. Com essa velocidade, '
-            '%d GiB (um jogo grande) levariam cerca de %s, contando a '
-            'conferência.' % (best.chunk_mib, bottleneck, REFERENCE_GIB,
-                              _duration(minutes)))
+    bottleneck = 'escrita (disco de destino)' \
+        if first.write_mib_s < first.read_mib_s else 'leitura (disco de origem)'
+    reference_mib = REFERENCE_GIB * 1024
+    minutes = (reference_mib / first.copy_mib_s + reference_mib / first.read_mib_s) / 60
+    text = ('Use blocos de %d MiB (a escrita mais rápida), copiando um arquivo '
+            'por vez e conferindo cada cópia. O ponto mais lento foi a %s. '
+            'Pela primeira rodada (a mais realista), %d GiB (um jogo grande) '
+            'levariam cerca de %s, contando a conferência. É uma estimativa: '
+            'o tempo real pode ser maior.'
+            % (best.chunk_mib, bottleneck, REFERENCE_GIB, _duration(minutes)))
     return {'bloco_mib': best.chunk_mib,
-            'mib_s_com_conferencia': round(best.total_mib_s, 2),
+            'criterio_do_bloco': 'maior velocidade de escrita',
+            'base_da_estimativa': 'primeira rodada (bloco de %d MiB)' % first.chunk_mib,
+            'copia_primeira_rodada_mib_s': round(first.copy_mib_s, 2),
             'gargalo': bottleneck,
             'minutos_para_%d_gib' % REFERENCE_GIB: round(minutes, 1),
             'texto': text}
@@ -392,15 +439,21 @@ def run_bench(origem, destino_pai, *, chunks=DEFAULT_CHUNKS_MIB,
             round_ = RoundResult(chunk_mib=chunk_mib)
             result.rounds.append(round_)
             round_folder = os.path.join(folder, 'bloco-%dMiB' % chunk_mib)
-            os.mkdir(round_folder)
+            try:
+                os.mkdir(round_folder)
+            except OSError:
+                result.status = 'interrompida'
+                result.problem = 'erro do sistema ao criar a subpasta da rodada'
+                break
             for index, (source, size) in enumerate(sample.files, start=1):
                 if _is_cancelled(cancelled):
                     result.status = 'interrompida'
                     break
                 target = os.path.join(round_folder, '%05d.bin' % index)
+                times = _Times()
                 try:
                     copied = _copy_one(source, target, size, chunk_mib * MIB,
-                                       clock, cancelled, round_)
+                                       clock, cancelled, times)
                 except OSError:
                     round_.errors += 1
                     continue
@@ -410,26 +463,37 @@ def run_bench(origem, destino_pai, *, chunks=DEFAULT_CHUNKS_MIB,
                 expected, nbytes = copied
                 result.written_bytes += nbytes
                 try:
-                    actual = _verify_one(target, nbytes, chunk_mib * MIB, clock, round_)
+                    actual = _verify_one(target, nbytes, chunk_mib * MIB, clock, times)
                 except OSError:
                     round_.errors += 1
                     continue
                 if actual != expected:
                     round_.mismatches += 1
                     continue
+                # Só arquivos conferidos entram nas velocidades: tempo e bytes
+                # juntos (erro ou divergência não somam nenhum dos dois).
                 round_.files_ok += 1
                 round_.bytes += nbytes
+                round_.read_s += times.read_s
+                round_.write_s += times.write_s
+                round_.verify_s += times.verify_s
             if result.status == 'interrompida':
                 break
             round_.complete = True
     except KeyboardInterrupt:
         result.status = 'interrompida'
-    result.written_bytes += _partial_bytes(folder)
-    result.suggestion = _suggest(result.rounds)
-    text, data = bench_report(result)
-    _write_new(os.path.join(folder, 'relatorio.txt'), text)
-    _write_new(os.path.join(folder, 'relatorio.json'),
-               json.dumps(data, ensure_ascii=False, indent=2))
+    try:
+        result.written_bytes += _partial_bytes(folder)
+        result.suggestion = _suggest(result.rounds)
+        text, data = bench_report(result)
+        _write_new(os.path.join(folder, 'relatorio.txt'), text)
+        _write_new(os.path.join(folder, 'relatorio.json'),
+                   json.dumps(data, ensure_ascii=False, indent=2))
+    except (OSError, KeyboardInterrupt) as error:
+        reason = ('cancelada ao gravar o relatório'
+                  if isinstance(error, KeyboardInterrupt)
+                  else 'erro do sistema ao gravar o relatório')
+        raise BenchStopped(folder_name, reason) from None
     return result
 
 
@@ -510,6 +574,9 @@ def bench_report(result):
             'limitada': sample.truncated,
         },
         'rodadas': rounds,
+        'o_que_cada_tempo_mede': TIMING_NOTE,
+        'aviso_cache': CACHE_NOTE,
+        'problema': result.problem or None,
         'gravado_bytes': result.written_bytes,
         'sugestao': result.suggestion,
     }
@@ -519,7 +586,8 @@ def bench_report(result):
         'Situação: %s' % ('concluída' if result.status == 'concluída'
                           else 'interrompida (parou antes do fim)'),
         'Data: %s' % result.date,
-        'Origem: unidade %s (só lida, nada foi alterado)' % result.source_drive,
+        'Origem: unidade %s (só lida: nenhum arquivo da origem foi gravado ou '
+        'apagado)' % result.source_drive,
         'Destino: unidade %s, pasta de medição %s' % (result.dest_drive,
                                                      result.folder_name),
         '',
@@ -551,12 +619,15 @@ def bench_report(result):
         '',
         'Sugestão: %s' % result.suggestion.get('texto', ''),
         '',
-        'Observação: a partir da segunda rodada o Windows pode ler a origem '
-        'da memória (cache), então a leitura pode parecer mais rápida.',
+        'O que cada tempo mede: %s' % TIMING_NOTE,
+        '',
+        'Atenção (cache): %s' % CACHE_NOTE,
         '',
         'Nada foi apagado. A pasta de medição ocupa %s e pode ser apagada à mão '
         'quando você quiser.' % _size(result.written_bytes),
     ]
+    if result.problem:
+        lines.append('Motivo da interrupção: %s.' % result.problem)
     if result.status != 'concluída':
         lines.append('Arquivos terminados em .parcial são cópias pela metade '
                      'da medição interrompida.')

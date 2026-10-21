@@ -64,12 +64,22 @@ def main(argv=None, *, usage=shutil.disk_usage):
     except copy_bench.BenchRefused as refusal:
         print('MEDIÇÃO NÃO FEITA: %s' % refusal)
         return 2
+    except copy_bench.BenchStopped as stopped:
+        # A pasta de medição já existe: avisar sem mostrar caminho.
+        print('MEDIÇÃO INTERROMPIDA (%s). A pasta de medição %s ficou no '
+              'destino e pode ser apagada à mão; nenhum arquivo da origem foi '
+              'gravado ou apagado.' % (stopped.reason, stopped.folder_name))
+        return 1
     except KeyboardInterrupt:
-        print('Medição cancelada antes de começar a copiar.')
+        print('Medição cancelada. Se uma pasta PCRO-MEDICAO-... chegou a ser '
+              'criada no destino, ela pode ser apagada à mão; nenhum arquivo '
+              'da origem foi gravado ou apagado.')
         return 1
     except OSError as error:
         # Sem repetir o caminho da exceção: pode ter o nome do usuário.
-        print('MEDIÇÃO NÃO FEITA: erro do sistema (%s).'
+        print('MEDIÇÃO INTERROMPIDA: erro do sistema (%s). Se uma pasta '
+              'PCRO-MEDICAO-... chegou a ser criada no destino, ela pode ser '
+              'apagada à mão; nenhum arquivo da origem foi gravado ou apagado.'
               % (error.strerror or type(error).__name__))
         return 2
     text, _data = copy_bench.bench_report(result)
