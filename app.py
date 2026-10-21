@@ -45,6 +45,7 @@ from choice_migration import merge_preferences
 from plaintext_passwords import TITLE as PASSWORDS_TITLE, alert_lines as password_alert_lines
 from plaintext_passwords import find_password_exports, scan_paths as scan_password_paths
 from plaintext_passwords import user_folders
+from winget_programs import export_after_backup
 
 APP_VERSION = "0.7.0-dev"
 
@@ -782,6 +783,36 @@ class App(tk.Tk):
                     self.backup_list.see(index)
                     break
             self.navigate(self.history)
+            self._offer_program_list(folder, manifest)
+
+    def _offer_program_list(self, folder, manifest):
+        """P2-04: só com o "Sim" da pessoa; uma falha aqui nunca afeta o backup."""
+        if manifest.get('status') != 'concluido':
+            return
+        wanted = messagebox.askyesno('Lista de programas',
+            'Backup concluído. Quer salvar junto a lista dos programas instalados?\n\n'
+            'Ela ajuda a reinstalar tudo depois de formatar. O aplicativo só consulta o '
+            'winget (Instalador de Aplicativo da Microsoft); nada é instalado ou removido.')
+        if not wanted:
+            return
+        self.status.set('Salvando a lista de programas…')
+        job = Job(lambda cancelled, progress: export_after_backup(folder, manifest, lambda: True))
+        def poll_programs():
+            result = job.poll()
+            if result is None:
+                self.after(200, poll_programs)
+                return
+            kind, value = result
+            if kind == 'done' and value and value.get('status') == 'salvo':
+                self.status.set(value['message'])
+                messagebox.showinfo('Lista de programas', value['message'] +
+                    '\nPara ver, abra Restaurar e clique em "Programas do backup".')
+            else:
+                text = value.get('message') if isinstance(value, dict) else str(value or '')
+                self.status.set('Lista de programas não salva. O backup continua válido.')
+                messagebox.showwarning('Lista de programas', text or
+                    'Não foi possível salvar a lista de programas. O backup continua válido.')
+        self.after(200, poll_programs)
 
     def _build_browsers(self):
         """Fluxo visual: encontrar -> sincronizar -> proteger -> verificar -> recuperar."""

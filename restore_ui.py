@@ -28,6 +28,7 @@ from long_paths import LIMIT as LONG_LIMIT
 from long_paths import read_long_paths_enabled, staging_target_length, warning_text
 from restore_place_flow import (confirmation_text, friendly_report, run_placement,
                                 staging_info)
+from winget_programs_ui import show_programs
 
 
 def show_restore(app, manifest, small=False, *, elevation_probe=None):
@@ -488,6 +489,9 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
     resume_place_button = ttk.Button(actions, text='Retomar colocação interrompida',
                                      command=resume_place)
     resume_place_button.pack(side='left', padx=(9, 0))
+    # P2-04: só leitura; abre a lista de programas salva na pasta deste backup.
+    ttk.Button(tools, text='Programas do backup',
+               command=lambda: show_programs(dlg, Path(manifest).parent)).pack(side='left', padx=(7, 0))
     ttk.Checkbutton(tools, variable=include_protected,
                     text='Incluir arquivos de Program Files/ProgramData ao colocar no lugar original'
                     ).pack(side='right')

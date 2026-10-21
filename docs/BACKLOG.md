@@ -80,7 +80,7 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   - **o app nunca apaga sozinho**.
 
 ### P2-04 · Reinstalar programas (winget)
-- **Status:** `pronto`.
+- **Status:** `pronto` (fatia 2 pendente).
 - **Aceite:**
   - o backup guarda o `winget export`;
   - a tela lista os pacotes por categoria (runtimes, launchers, periféricos, dia a dia, dev, outros), com seleção;
@@ -88,6 +88,15 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   - depois confere pacote a pacote;
   - explica as falhas (por exemplo, "hash diferente → instale pelo site oficial");
   - nos testes, o winget é sempre simulado.
+- **Fatia 1 (salvar e listar):** `concluído` (branch `auto/P2-04-lista-programas-winget`). Módulos novos `winget_programs.py` e `winget_programs_ui.py`; no fim de um backup `concluido` o app pergunta se salva a lista; na tela de restauração, botão "Programas do backup". Nada é instalado. **Escolhas de design (21/10/2026, a opção mais segura):**
+  - o `winget export` só roda com o "Sim" da pessoa, depois do backup concluído (parcial/cancelado não pergunta); uma falha nunca muda o resultado do backup;
+  - comando fixo `export --output … --source winget --include-versions --disable-interactivity`, sem shell, `stdin` fechado, tempo-limite de 180 s; **sem** `--accept-source-agreements`: se o winget pedir os termos, a mensagem explica que é preciso abrir o winget uma vez;
+  - grava só numa subpasta **nova** `programas-winget/` da pasta do backup (exige `manifest.json` ao lado); recusa se a subpasta já existir (não sobrescreve) ou for link/junção; `manifest.json` e os arquivos copiados ficam intocados;
+  - gravação em `winget-export.json.parcial` → `os.replace` → `info.json` atômico (sha256, quantidade, data); em falha o `.parcial` fica onde está, é ignorado e nada é apagado (para tentar de novo é preciso renomear a subpasta);
+  - leitura confere o sha256 do `info.json` ("lista alterada" se não bater), limite de 5 MB e 5000 pacotes, cada ID validado com `package_id` (Microsoft Store: 12 letras/números), duplicados removidos;
+  - pacotes da Microsoft Store aparecem mas não são marcáveis ("instale pela Microsoft Store"); `ppy.osu` não é marcável (o winget instala o osu!lazer, não o clássico); fonte desconhecida também não;
+  - nada vem pré-marcado; categorias por tabela ordenada de prefixos de ID + termos de `program_catalog.PERIPHERAL_TERMS` (Dev antes de Periféricos), sem diferenciar maiúsculas; o resto vai para "Outros";
+  - a escolha feita na janela ainda não é salva: isso e o `winget import` com confirmação ficam para a fatia 2.
 
 ### P2-05 · Launchers e bibliotecas de jogos em outros discos
 - **Status:** `pronto`.
