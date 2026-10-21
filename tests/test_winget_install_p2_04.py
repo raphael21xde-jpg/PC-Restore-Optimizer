@@ -4,6 +4,7 @@ O winget é SEMPRE simulado: subprocess.run e subprocess.Popen são trocados por
 funções que falham se forem chamadas, e o teste de administrador recebe uma
 função falsa. Só pastas sintéticas em TemporaryDirectory.
 """
+import gc
 import hashlib
 import json
 import os
@@ -340,6 +341,65 @@ class InstallFlowTests(Base):
         self.assertNotIn('interno', result['message'])
 
 
+class LockTests(Base):
+    def test_second_install_is_refused_while_one_runs(self):
+        self.assertTrue(wi._RUN_LOCK.acquire(blocking=False))
+        try:
+            self.assertTrue(wi.installation_running())
+            fake = FakeWinget()
+            result = self.run_install(fake, ['Git.Git'])
+            self.assertEqual(result['status'], 'recusado')
+            self.assertIn('Já existe uma instalação em andamento', result['message'])
+            self.assertEqual(fake.calls, [])
+            self.assertEqual(self.run_dirs(), [])
+        finally:
+            wi._RUN_LOCK.release()
+        self.assertFalse(wi.installation_running())
+
+    def test_lock_released_after_normal_and_failed_runs(self):
+        self.run_install(FakeWinget(installs=['Git.Git']), ['Git.Git'])
+        self.assertFalse(wi.installation_running())
+        self.run_install(FakeWinget(import_raises=OSError('x')), ['Git.Git'])
+        self.assertFalse(wi.installation_running())
+        self.run_install(FakeWinget(), ['Git.Git'], probe=_admin)
+        self.assertFalse(wi.installation_running())
+
+    def test_lock_kept_until_winget_really_ends_after_timeout(self):
+        import threading
+        finished = threading.Event()
+
+        def wait(timeout=None):
+            if timeout is not None:
+                raise subprocess.TimeoutExpired(['winget'], timeout)
+            finished.wait(5)
+            return 0
+
+        proc = mock.Mock()
+        proc.wait.side_effect = wait
+        fake = FakeWinget()
+
+        def runner(cmd):
+            if cmd[1] == 'import':
+                with mock.patch('subprocess.Popen', mock.Mock(return_value=proc)):
+                    return wi._default_runner(cmd)
+            return fake(cmd)
+
+        result = self.run_install(runner, ['Git.Git'])
+        self.assertTrue(result['timed_out'])
+        self.assertIn('ainda está trabalhando', result['message'])
+        self.assertTrue(wi.installation_running())
+        second = self.run_install(FakeWinget(), ['Git.Git'])
+        self.assertEqual(second['status'], 'recusado')
+        proc.kill.assert_not_called()
+        proc.terminate.assert_not_called()
+        finished.set()
+        import time
+        until = time.monotonic() + 5
+        while wi.installation_running() and time.monotonic() < until:
+            time.sleep(0.01)
+        self.assertFalse(wi.installation_running())
+
+
 class ReportTests(Base):
     def test_report_one_line_per_package_without_user_paths(self):
         fake = FakeWinget(before=['Git.Git'], installs=['Valve.Steam'],
@@ -389,6 +449,21 @@ class ExplainTests(unittest.TestCase):
         self.assertIn('instale sozinho pelo site oficial', admin)
         self.assertIn('aceite o aviso do Windows', admin)
 
+    def test_hash_success_line_is_not_a_hash_failure(self):
+        for success in ('Successfully verified installer hash',
+                        'Hash do instalador verificado com êxito'):
+            with self.subTest(success=success):
+                failed_1603 = (f'Found Git [Git.Git]\n{success}\nStarting package install...\n'
+                               'Installer failed with exit code: 1603')
+                text = wi.explain_failure('Git.Git', failed_1603)
+                self.assertEqual(text, wi.EXPLAIN_UNKNOWN)
+                self.assertNotIn('hash', text.casefold())
+                admin = (f'[Git.Git]\n{success}\nThis package requires administrator '
+                         'privileges. Access is denied.')
+                self.assertEqual(wi.explain_failure('Git.Git', admin), wi.EXPLAIN_ADMIN)
+                mismatch = f'[Git.Git]\n{success}\nError 0x8a150011'
+                self.assertEqual(wi.explain_failure('Git.Git', mismatch), wi.EXPLAIN_HASH)
+
     def test_unknown_failure(self):
         text = wi.explain_failure('Git.Git', '[Git.Git] something odd happened')
         self.assertIn('Não deu para confirmar', text)
@@ -412,6 +487,21 @@ class InstalledCheckTests(unittest.TestCase):
         self.assertFalse(wi.check_installed('Git.Git', lambda c: (1, 'Git  Git.Git  2.0'), 'winget'))
         self.assertFalse(wi.check_installed('Git.Git', lambda c: (0, 'nada aqui'), 'winget'))
         self.assertFalse(wi.check_installed('Git.Git', lambda c: (0, 'Git.GitLFS'), 'winget'))
+
+    def test_truncated_id_counts_only_with_evidence(self):
+        pid = 'Microsoft.VCRedist.2015+.x64'
+        table = 'Nome                 ID                 Versão\n---\nMicrosoft Visual C++  Microsoft.VCRedi\u2026  14.40'
+        self.assertTrue(wi.check_installed(pid, lambda c: (0, table), 'winget'))
+        # código diferente de 0, mensagem de "nenhum pacote", prefixo curto ou de outro ID: não
+        self.assertFalse(wi.check_installed(pid, lambda c: (1, table), 'winget'))
+        self.assertFalse(wi.check_installed(
+            pid, lambda c: (0, table + '\nNo installed package found matching input criteria.'), 'winget'))
+        self.assertFalse(wi.check_installed(
+            pid, lambda c: (0, 'Nenhum pacote instalado encontrado. Microsoft.VCRedi\u2026'), 'winget'))
+        self.assertFalse(wi.check_installed(pid, lambda c: (0, 'Micro\u2026  14.40'), 'winget'))
+        self.assertFalse(wi.check_installed(pid, lambda c: (0, 'Microsoft.Edge\u2026'), 'winget'))
+        self.assertFalse(wi.check_installed(pid, lambda c: (0, ''), 'winget'))
+        self.assertFalse(wi.check_installed(pid, lambda c: (0, 'Microsoft.VCRedi...'), 'winget'))
 
     def test_invalid_id_and_errors_are_not_installed(self):
         self.assertFalse(wi.check_installed('--x', lambda c: (0, '--x'), 'winget'))
@@ -519,6 +609,8 @@ class ConfirmWindowTests(Base):
         self.root = tk.Tk()
         self.root.withdraw()
         self.addCleanup(self.root.destroy)
+        # recolhe as variáveis do Tk na thread principal (não numa thread de trabalho)
+        self.addCleanup(gc.collect)
 
     def widgets(self, cls, widget):
         if isinstance(widget, cls):
@@ -535,6 +627,9 @@ class ConfirmWindowTests(Base):
         check = next(self.widgets(ttk.Checkbutton, win))
         self.assertIn('Entendi que estes programas serão baixados e instalados neste PC',
                       check.cget('text'))
+        labels = ' '.join(str(w.cget('text')) for w in self.widgets(ttk.Label, win))
+        self.assertIn('Alguns instaladores podem mostrar o aviso de administrador do Windows; '
+                      'você decide em cada um.', labels)
         check.invoke()
         self.assertFalse(install.instate(['disabled']))
         buttons['Cancelar'].invoke()
@@ -638,8 +733,15 @@ class ConfirmWindowTests(Base):
         dlg = wui.show_programs(self.root, self.backup, runner=FakeWinget(), state_dir=self.state,
                                 elevated_probe=_not_admin,
                                 ask_save=lambda: asked.append(True) or False)
-        self.assertTrue(self._pump(lambda: dlg.program_state['error'] is not None))
         buttons = {b.cget('text'): b for b in self.widgets(ttk.Button, dlg)}
+        # enquanto a lista está sendo lida, "Salvar lista agora" fica desligado
+        self.assertTrue(dlg.program_state['loading'])
+        self.assertTrue(buttons['Salvar lista agora'].instate(['disabled']))
+        buttons['Salvar lista agora'].invoke()
+        self.assertEqual(asked, [])
+        self.assertTrue(self._pump(lambda: dlg.program_state['error'] is not None))
+        self.assertFalse(dlg.program_state['loading'])
+        self.assertFalse(buttons['Salvar lista agora'].instate(['disabled']))
         self.assertEqual(buttons['Salvar lista agora'].winfo_manager(), 'pack')
         before = _snapshot(self.backup)
         buttons['Salvar lista agora'].invoke()

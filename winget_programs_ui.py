@@ -7,13 +7,14 @@ só pelo `winget_install.run_install`, depois de uma confirmação explícita
 """
 from __future__ import annotations
 
+import gc
 import tkinter as tk
 from tkinter import messagebox, ttk
 
 from elevation_guard import is_process_elevated
 from restore_jobs import Job
 from ui_timers import WindowTimers
-from winget_install import run_install
+from winget_install import BUSY_TEXT, installation_running, run_install
 from winget_programs import (CATEGORIES, default_selection, group_by_category, load_export,
                              save_export)
 
@@ -21,6 +22,8 @@ CHECKED, UNCHECKED, LOCKED = '[x]', '[ ]', '—'
 INSTALL_TEXT = 'Instalar marcados…'
 SAVE_NOW_TEXT = 'Salvar lista agora'
 CONFIRM_CHECK_TEXT = 'Entendi que estes programas serão baixados e instalados neste PC'
+UAC_TEXT = ('Alguns instaladores podem mostrar o aviso de administrador do Windows; '
+            'você decide em cada um.')
 WAIT_TEXT = 'Aguarde, a instalação continua. A janela poderá ser fechada quando ela terminar.'
 ADMIN_TEXT = ('O aplicativo está aberto como administrador, por isso a instalação está '
               'desligada. Feche e abra de novo pelo atalho normal para instalar.')
@@ -58,7 +61,8 @@ def build_confirm(parent, ids):
         'O Windows pode mostrar avisos de alguns instaladores. Programas que precisam de '
         'administrador podem falhar: o resultado explica o que fazer. Os programas já '
         'instalados não são atualizados nem removidos. A instalação pode demorar; não '
-        'desligue o computador.')).pack(anchor='w', pady=(0, 8))
+        'desligue o computador.')).pack(anchor='w', pady=(0, 4))
+    ttk.Label(frame, wraplength=520, text=UAC_TEXT).pack(anchor='w', pady=(0, 8))
     agreed = tk.BooleanVar(master=win, value=False)
     buttons = ttk.Frame(frame)
 
@@ -133,7 +137,7 @@ def show_programs(parent, backup_folder, *, runner=None, state_dir=None, elevate
     timers = WindowTimers(dlg)
     elevated = is_process_elevated(elevated_probe)
     state = {'packages': [], 'selected': set(), 'groups': {}, 'loaded': False, 'error': None,
-             'busy': False, 'elevated': elevated, 'result': None}
+             'busy': False, 'loading': False, 'elevated': elevated, 'result': None}
     dlg.program_state = state
 
     frame = ttk.Frame(dlg, padding=14)
@@ -179,9 +183,12 @@ def show_programs(parent, backup_folder, *, runner=None, state_dir=None, elevate
         idle = state['loaded'] and not state['busy']
         for button in mark_buttons:
             button.state(['!disabled'] if idle else ['disabled'])
-        can_install = idle and bool(state['selected']) and not state['elevated']
+        can_install = (idle and bool(state['selected']) and not state['elevated']
+                       and not installation_running())
         install_button.state(['!disabled'] if can_install else ['disabled'])
-        save_button.state(['disabled'] if state['busy'] else ['!disabled'])
+        # "Salvar lista agora" fica desligado enquanto a lista está sendo lida
+        can_save = not state['busy'] and not state['loading']
+        save_button.state(['!disabled'] if can_save else ['disabled'])
         close_button.state(['disabled'] if state['busy'] else ['!disabled'])
 
     def refresh_marks():
@@ -260,11 +267,18 @@ def show_programs(parent, backup_folder, *, runner=None, state_dir=None, elevate
     def install_selected():
         if state['busy'] or state['elevated'] or not state['selected']:
             return
+        if installation_running():
+            status.set(BUSY_TEXT)
+            update_buttons()
+            return
         packages = list(state['packages'])
         ids = [packages[i]['id'] for i in sorted(state['selected'])]
         if not (confirm or confirm_install)(dlg, ids):
             status.set('Instalação cancelada. Nada foi instalado.')
             return
+        # A janela de confirmação acabou de fechar: o lixo dela (variáveis do Tk)
+        # é recolhido aqui, na thread da tela, e não dentro da thread de trabalho.
+        gc.collect()
         state['busy'] = True
         update_buttons()
         status.set(f'Instalando {len(ids)} programa(s) com o winget… Isto pode demorar. '
@@ -285,7 +299,7 @@ def show_programs(parent, backup_folder, *, runner=None, state_dir=None, elevate
         wait_job(job, finished)
 
     def save_now():
-        if state['busy']:
+        if state['busy'] or state['loading']:
             return
         ask = ask_save or (lambda: messagebox.askyesno('Salvar lista agora', SAVE_NOW_QUESTION,
                                                        parent=dlg, default='no'))
@@ -348,13 +362,17 @@ def show_programs(parent, backup_folder, *, runner=None, state_dir=None, elevate
         status.set(f'{len(packages)} programa(s) na lista. Nada foi marcado automaticamente.')
 
     def start_loading():
+        if state['loading']:
+            return
         tree.delete(*tree.get_children(''))
-        state.update(packages=[], selected=set(), groups={}, loaded=False, error=None)
+        state.update(packages=[], selected=set(), groups={}, loaded=False, error=None,
+                     loading=True)
         counter.set('')
         update_buttons()
         job = Job(lambda cancelled, progress: load_export(backup_folder))
 
         def finished(kind, value):
+            state['loading'] = False
             if kind == 'done':
                 loaded(value)
             else:

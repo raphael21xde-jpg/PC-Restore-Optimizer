@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -58,6 +59,10 @@ FOLDER_ERROR_TEXT = ('Não foi possível criar a pasta de trabalho da instalaç�
 RUN_ERROR_TEXT = ('Não foi possível iniciar o winget. A conferência abaixo mostra o que está '
                   'instalado agora.')
 UNEXPECTED_TEXT = 'Não foi possível concluir a instalação por um erro inesperado.'
+BUSY_TEXT = ('Já existe uma instalação em andamento. Espere ela terminar antes de começar '
+             'outra. Nada foi instalado agora.')
+STILL_RUNNING_TEXT = ('O winget ainda está trabalhando em segundo plano; uma nova instalação só '
+                      'poderá ser feita quando ele terminar.')
 REPORT_ERROR_TEXT = 'Não foi possível gravar o relatório (sem permissão ou disco cheio).'
 
 EXPLAIN_HASH = ('O arquivo baixado não bateu com o esperado (hash diferente). Por segurança, '
@@ -71,9 +76,14 @@ EXPLAIN_AGREEMENT = ('O winget pediu para aceitar os termos de uso. Instale este
                      'sozinho pelo site oficial (ou pelo winget, aceitando os termos você mesmo).')
 EXPLAIN_UNKNOWN = 'Não deu para confirmar a instalação. Instale pelo site oficial do programa.'
 
-# Ordem importa: a primeira regra que combinar decide.
+# Ordem importa: a primeira regra que combinar decide. A regra de hash só casa
+# com mensagens de DIVERGÊNCIA: toda instalação que baixa algo escreve também
+# "Successfully verified installer hash" / "Hash do instalador verificado com
+# êxito", e isso não é erro.
 _EXPLANATIONS = (
-    (EXPLAIN_HASH, ('hash',)),
+    (EXPLAIN_HASH, ('hash does not match', 'hash mismatch', 'hash não corresponde',
+                    'hash nao corresponde', 'hash do instalador não corresponde',
+                    'não corresponde ao hash', 'hash diferente', '0x8a150011')),
     (EXPLAIN_NOT_FOUND, ('not found', 'no package found', 'não encontrado', 'nao encontrado',
                          'nenhum pacote encontrado', '0x8a150014')),
     (EXPLAIN_ADMIN, ('administrator', 'administrador', 'access denied', 'access is denied',
@@ -84,6 +94,39 @@ _EXPLANATIONS = (
 )
 
 _ID_CHARS = r'A-Za-z0-9._+-'
+NO_PACKAGE_TERMS = ('no installed package found', 'nenhum pacote instalado')
+TRUNCATED_PREFIX_MIN = 8  # um ID cortado com "…" só vale se mostrar pelo menos 8 letras
+
+# Só um `winget import` por vez. A trava fica presa até o processo do winget
+# terminar de fato (inclusive depois do tempo-limite, se ele ainda estiver vivo).
+_RUN_LOCK = threading.Lock()
+_handoff = {'proc': None}
+
+
+def installation_running():
+    """True enquanto uma instalação (ou um winget que passou do tempo) estiver rodando."""
+    return _RUN_LOCK.locked()
+
+
+def _keep_lock_until_finished(proc):
+    """Chamado só pelo runner padrão quando o tempo acaba e o winget segue vivo.
+
+    Só anota o processo; quem passa a trava para o vigia é o `run_install`, no
+    fim, para que a trava nunca seja solta duas vezes.
+    """
+    _handoff['proc'] = proc
+
+
+def _release_when_finished(proc):
+    def watch():
+        try:
+            proc.wait()
+        except Exception:
+            pass
+        finally:
+            _RUN_LOCK.release()
+
+    threading.Thread(target=watch, daemon=True).start()
 
 
 def _platform_is_windows():
@@ -216,6 +259,8 @@ def _default_runner(cmd):
                 code = proc.wait(timeout=IMPORT_TIMEOUT_SEC)
             except subprocess.TimeoutExpired:
                 code = None
+                if _RUN_LOCK.locked():
+                    _keep_lock_until_finished(proc)
         try:
             with open(log_path, 'rb') as log:
                 output = log.read(2 * 1024 * 1024).decode('utf-8', errors='replace')
@@ -228,13 +273,32 @@ def _default_runner(cmd):
     return result.returncode, ((result.stdout or '') + '\n' + (result.stderr or '')).strip()
 
 
+def _truncated_match(pid, output):
+    """O `winget list` corta IDs longos com "…" quando a saída é redirecionada.
+
+    Aceita só um pedaço que termina em "…", tem pelo menos 8 letras e é o
+    começo exato deste ID (sem diferenciar maiúsculas).
+    """
+    for match in re.finditer(rf'(?<![{_ID_CHARS}])([{_ID_CHARS}]+)\u2026', output):
+        prefix = match.group(1)
+        if len(prefix) >= TRUNCATED_PREFIX_MIN and pid.casefold().startswith(prefix.casefold()):
+            return True
+    return False
+
+
 def check_installed(pid, runner, executable='winget'):
-    """True só com código 0 e o ID exato na saída do `winget list`."""
+    """True só com evidência: código 0, sem "nenhum pacote instalado" e o ID na saída.
+
+    O ID pode aparecer inteiro ou cortado com "…" (começo exato do ID).
+    """
     try:
         code, output = runner(recovery_command('list', pid, executable))
     except Exception:
         return False
-    return code == 0 and bool(_id_pattern(pid).search(str(output or '')))
+    output = str(output or '')
+    if code != 0 or any(term in output.casefold() for term in NO_PACKAGE_TERMS):
+        return False
+    return bool(_id_pattern(pid).search(output)) or _truncated_match(pid, output)
 
 
 def _segment(pid, output, all_ids):
@@ -297,12 +361,26 @@ def _write_report(run_dir, results, *, timed_out, winget_code):
 
 def run_install(packages, selected_ids, *, runner=None, state_dir=None, elevated_probe=None,
                 executable=None):
-    """Instala os marcados e confere um por um. Nunca levanta exceção."""
+    """Instala os marcados e confere um por um. Nunca levanta exceção.
+
+    Só uma instalação por vez: se outra estiver rodando, recusa sem chamar o winget.
+    """
+    if not _RUN_LOCK.acquire(blocking=False):
+        return _result('recusado', BUSY_TEXT)
     try:
-        return _run_install(packages, selected_ids, runner or _default_runner, state_dir,
-                            elevated_probe, executable)
+        result = _run_install(packages, selected_ids, runner or _default_runner, state_dir,
+                              elevated_probe, executable)
     except Exception:
-        return _result('falhou', UNEXPECTED_TEXT)
+        result = _result('falhou', UNEXPECTED_TEXT)
+    finally:
+        proc, _handoff['proc'] = _handoff['proc'], None
+        if proc is None:
+            _RUN_LOCK.release()
+        else:
+            _release_when_finished(proc)
+    if proc is not None:
+        result['message'] = (result.get('message', '') + ' ' + STILL_RUNNING_TEXT).strip()
+    return result
 
 
 def _run_install(packages, selected_ids, runner, state_dir, elevated_probe, executable):

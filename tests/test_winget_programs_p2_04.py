@@ -3,6 +3,7 @@
 O winget é SEMPRE simulado: subprocess.run e subprocess.Popen são trocados por
 funções que falham se forem chamadas. Só pastas sintéticas em TemporaryDirectory.
 """
+import gc
 import hashlib
 import json
 import os
@@ -353,6 +354,8 @@ class ProgramsWindowTests(Base):
         self.root = tk.Tk()
         self.root.withdraw()
         self.addCleanup(self.root.destroy)
+        # recolhe as variáveis do Tk na thread principal (não numa thread de trabalho)
+        self.addCleanup(gc.collect)
 
     def widgets(self, cls, widget):
         if isinstance(widget, cls):
