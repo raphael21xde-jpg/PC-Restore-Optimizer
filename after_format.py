@@ -235,9 +235,16 @@ def backup_identity(manifest):
         fields = _identity_fields(manifest)
     except (OSError, ValueError, UnicodeDecodeError):
         return None
-    started = fields.get('started')
-    fingerprint = fields.get('plan_fingerprint')
-    folder = manifest.parent.name.casefold()
+    return identity_from(manifest.parent.name, fields)
+
+
+def identity_from(folder_name, doc):
+    """Identidade a partir de um manifesto já lido (dict); None se faltar algo."""
+    if not isinstance(doc, dict):
+        return None
+    started = doc.get('started')
+    fingerprint = doc.get('plan_fingerprint')
+    folder = str(folder_name).casefold()
     for value in (started, fingerprint):
         if not isinstance(value, str) or not value.strip() or len(value) > 200:
             return None
@@ -314,7 +321,7 @@ def validate_steps(steps):
 
 def _is_link(info):
     reparse = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
-    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, 'st_file_attributes', 0) & reparse)
+    return stat.S_ISLNK(info.st_mode) or bool((getattr(info, 'st_file_attributes', 0) or 0) & reparse)
 
 
 _ANY = object()

@@ -327,9 +327,13 @@ class App(tk.Tk):
         return label
 
     def open_recovery_center(self):
-        """P2-08: central de recuperação (só leitura); começa pela pasta dos backups."""
-        folder = Path(self.dest.get()) if self.dest.get() else None
-        return show_recovery_center(self, folder=folder if folder and folder.is_dir() else None)
+        """P2-08: central de recuperação (só leitura); começa pela pasta dos backups.
+
+        A pasta não é conferida aqui (na thread da tela): a busca, num Job,
+        já avisa se ela não existir.
+        """
+        destination = self.dest.get()
+        return show_recovery_center(self, folder=Path(destination) if destination else None)
 
     def open_after_format(self):
         """P2-11: assistente "Depois de formatar" (pede o manifest.json do backup)."""

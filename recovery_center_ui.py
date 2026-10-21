@@ -145,7 +145,8 @@ def show_recovery_center(app, *, folder=None, ask_folder=None, scanner=None, ver
         state['rows'] = []
         tree.delete(*tree.get_children(''))
         warning.set('')
-        status.set(f'Procurando backups em "{Path(folder).name or folder}"… (só leitura)')
+        # texto genérico: o nome da pasta escolhida pode ser o nome de usuário
+        status.set('Procurando backups na pasta escolhida… (só leitura)')
         update_buttons()
         job = Job(lambda cancelled, progress: run_scan(Path(folder), cancelled))
         state['job'] = job

@@ -17,13 +17,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import stat
 from datetime import datetime
 from pathlib import Path
 
-from after_format import backup_identity
+from after_format import identity_from
 from backup_core import human_size
-from backup_features import SCHEMAS, backup_labels, friendly_backup_name, verified_entries
+from backup_features import SCHEMAS, backup_labels, friendly_backup_name, safe_relative
 from selective_recovery import verify_complete_manifest
 
 MANIFEST_NAME = 'manifest.json'
@@ -46,6 +47,9 @@ REASON_ENTRIES = 'A lista de arquivos do backup tem caminhos ou SHA-256 inválid
 REASON_ERRORS = 'O backup terminou com erros; alguns arquivos não foram copiados.'
 REASON_COUNT = 'A quantidade de arquivos não bate com a planejada; o backup está incompleto.'
 REASON_SIZE = 'O tamanho total não bate com o planejado; o backup está incompleto.'
+REASON_OLD = ('Backup de uma versão antiga do aplicativo: ele não diz quantos arquivos deveria '
+              'ter, então a central não consegue confirmar que está completo. Por segurança, '
+              'restaurar por aqui fica desligado. Os arquivos continuam guardados.')
 REASON_COPIES = ('Há cópias diferentes deste mesmo backup em outras pastas. Confira qual é a '
                  'certa antes de restaurar.')
 CANCELLED_TEXT = 'A busca foi interrompida antes do fim.'
@@ -61,7 +65,7 @@ def _cancel_check(cancelled):
 
 def _is_link(info):
     reparse = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
-    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, 'st_file_attributes', 0) & reparse)
+    return stat.S_ISLNK(info.st_mode) or bool((getattr(info, 'st_file_attributes', 0) or 0) & reparse)
 
 
 def _safe_dir(path):
@@ -97,8 +101,8 @@ def find_backups(folder, *, max_entries=DEFAULT_MAX_ENTRIES, cancelled=None):
     result = {'manifests': [], 'truncated': False, 'cancelled': False, 'warnings': []}
     folder = Path(folder)
     if not _safe_dir(folder):
-        result['warnings'].append('A pasta escolhida não existe, não pôde ser aberta ou é um '
-                                  'atalho (link).')
+        result['warnings'].append('A pasta não existe, não pôde ser aberta ou é um atalho '
+                                  '(link). Clique em "Escolher pasta".')
         return result
     seen = [0]
     limit = max(0, int(max_entries))
@@ -150,6 +154,23 @@ def find_backups(folder, *, max_entries=DEFAULT_MAX_ENTRIES, cancelled=None):
     if result['cancelled']:
         result['warnings'].append(CANCELLED_TEXT)
     return result
+
+
+def _entries(doc):
+    """Arquivos verificados do manifesto já lido (mesmas regras de verified_entries)."""
+    entries = {}
+    for item in doc['files']:
+        if not isinstance(item, dict) or item.get('verified') is not True:
+            continue
+        rel = safe_relative(item.get('relative'))
+        sha = item.get('sha256', '')
+        if not isinstance(sha, str) or not re.fullmatch('[a-fA-F0-9]{64}', sha):
+            raise ValueError('SHA-256 ausente ou inválido no manifesto.')
+        key = rel.as_posix()
+        if key in entries:
+            raise ValueError('Arquivo duplicado no manifesto.')
+        entries[key] = item
+    return entries
 
 
 def _date_text(value):
@@ -215,7 +236,7 @@ def inspect_backup(manifest):
     row['status'] = status if isinstance(status, str) else ''
     row['status_text'] = STATUS_TEXT.get(status, 'Situação desconhecida')
     try:
-        entries = verified_entries(manifest)
+        entries = _entries(doc)  # o manifesto é lido uma vez só por inspeção
     except (OSError, ValueError, TypeError, AttributeError):
         row['reason'] = REASON_ENTRIES
         return row
@@ -228,7 +249,7 @@ def inspect_backup(manifest):
     row['bytes'] = total
     row['size_text'] = human_size(total)
     row['signature'] = _signature(entries)
-    identity = backup_identity(manifest)
+    identity = identity_from(manifest.parent.name, doc)
     if identity is not None:
         row['key'] = '|'.join((identity['folder'], identity['started'],
                                identity['plan_fingerprint']))
@@ -239,6 +260,8 @@ def inspect_backup(manifest):
                          'restaure só de um backup concluído.')
     elif doc.get('errors'):
         row['reason'] = REASON_ERRORS
+    elif doc.get('file_count_expected') is None or doc.get('bytes_expected') is None:
+        row['reason'] = REASON_OLD
     elif (not isinstance(expected_files, int) or expected_files < 1
           or len(entries) != expected_files or len(doc['files']) != expected_files):
         row['reason'] = REASON_COUNT
@@ -303,9 +326,11 @@ def verify_backup(manifest, cancelled=None):
     name = manifest.parent.name
     try:
         info = os.lstat(manifest)
-    except OSError:
+        refused = (_is_link(info) or not stat.S_ISREG(info.st_mode)
+                   or info.st_size > MANIFEST_LIMIT)
+    except Exception:
         return False, f'Não foi possível abrir o backup "{name}". Nada foi alterado.'
-    if _is_link(info) or not stat.S_ISREG(info.st_mode) or info.st_size > MANIFEST_LIMIT:
+    if refused:
         return False, (f'O manifest.json do backup "{name}" não é um arquivo comum ou é grande '
                        'demais; por segurança ele não é conferido.')
     try:

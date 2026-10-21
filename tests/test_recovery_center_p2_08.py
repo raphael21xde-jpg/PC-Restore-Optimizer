@@ -48,6 +48,14 @@ def _symlink(target, link, directory=False):
     return True
 
 
+class _FakeStat:
+    """lstat falso: arquivo comum pequeno, sem atributos de reparse."""
+    def __init__(self, attributes=0):
+        self.st_mode = 0o100644
+        self.st_size = 10
+        self.st_file_attributes = attributes
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(prefix='pcro-p208-')
@@ -190,6 +198,33 @@ class InspectTests(Base):
             self.skipTest('não foi possível criar link simbólico neste sistema')
         self.assert_refused(folder / 'manifest.json', rc.REASON_LINK)
 
+    def test_old_version_without_expected_count(self):
+        manifest = self.make_backup('um')
+        doc = json.loads(manifest.read_text(encoding='utf-8'))
+        del doc['file_count_expected']
+        manifest.write_text(json.dumps(doc, indent=2), encoding='utf-8')
+        row = self.assert_refused(manifest, rc.REASON_OLD)
+        self.assertIn('versão antiga', row['reason'])
+        self.assertEqual(row['files'], 2)
+
+    def test_manifest_read_once(self):
+        manifest = self.make_backup('um')
+        real_open = open
+        opened = []
+
+        def spy(path, *args, **kwargs):
+            if Path(path).name == 'manifest.json':
+                opened.append(path)
+            return real_open(path, *args, **kwargs)
+        with mock.patch('builtins.open', side_effect=spy), \
+                mock.patch.object(Path, 'read_text',
+                                  side_effect=AssertionError('não deve reler o manifesto')), \
+                mock.patch.object(Path, 'read_bytes',
+                                  side_effect=AssertionError('não deve reler o manifesto')):
+            row = rc.inspect_backup(manifest)
+        self.assertTrue(row['restorable'], row['reason'])
+        self.assertEqual(len(opened), 1)
+
     def test_too_big(self):
         manifest = self.make_backup('um')
         with mock.patch.object(rc, 'MANIFEST_LIMIT', 10):
@@ -274,7 +309,7 @@ class SafetyTests(Base):
             texts += [row['reason'], row['name'], row['folder']]
             texts.append(rc.verify_backup(fake)[1])
         error = OSError(2, 'Arquivo ausente', r'C:\Users\fulano\Backups\backup-1\C\save.dat')
-        info = os.stat_result((0o100644, 0, 0, 1, 0, 0, 10, 0, 0, 0))
+        info = _FakeStat()
         with mock.patch.object(rc.os, 'lstat', return_value=info), \
                 mock.patch.object(rc, 'verify_complete_manifest', side_effect=error):
             texts.append(rc.verify_backup(fake)[1])
@@ -286,6 +321,33 @@ class SafetyTests(Base):
         for text in texts:
             self.assertNotIn('fulano', text)
             self.assertNotIn('Users', text)
+
+    def test_none_file_attributes_does_not_break(self):
+        # no Windows, um stat_result incompleto pode trazer st_file_attributes=None
+        info = _FakeStat(attributes=None)
+        self.assertFalse(rc._is_link(info))
+        import after_format
+        self.assertFalse(after_format._is_link(info))
+        fake = Path('C:/Users/fulano/Backups/backup-1/manifest.json')
+        with mock.patch.object(rc.os, 'lstat', return_value=info), \
+                mock.patch.object(rc, 'verify_complete_manifest',
+                                  return_value={'files_verified': 1, 'bytes_verified': 10}):
+            ok, text = rc.verify_backup(fake)
+        self.assertTrue(ok, text)
+        with mock.patch.object(rc.os, 'lstat', return_value=info), \
+                mock.patch('builtins.open', side_effect=OSError('x')):
+            self.assertEqual(rc.inspect_backup(fake)['reason'], rc.REASON_UNREADABLE)
+
+    def test_lstat_odd_result_in_verify_is_handled(self):
+        class Odd:
+            st_mode = 0o100644
+            st_size = 10
+            st_file_attributes = 'estranho'
+        ok, text = None, None
+        with mock.patch.object(rc.os, 'lstat', return_value=Odd()):
+            ok, text = rc.verify_backup(Path('C:/Users/fulano/b/backup-1/manifest.json'))
+        self.assertFalse(ok)
+        self.assertNotIn('fulano', text)
 
     def test_module_never_writes(self):
         src = (ROOT / 'recovery_center.py').read_text(encoding='utf-8')
@@ -360,6 +422,19 @@ class WindowTests(unittest.TestCase):
         restore.assert_called_once_with(self.root, self.rows[0]['manifest'])
         self.assertEqual(tree.set(rows[1], 'restore'), 'Não')
         dlg.destroy()
+
+    def test_status_never_shows_chosen_folder_name(self):
+        started = threading.Event()
+
+        def scanner(folder, cancelled):
+            started.set()
+            cancelled.wait(5)
+            return {'rows': [], 'truncated': False, 'cancelled': True, 'warnings': []}
+        dlg = rcu.show_recovery_center(self.root, folder=Path('/tmp/fulano'), scanner=scanner)
+        self.assertTrue(started.wait(5))
+        self.assertNotIn('fulano', dlg.center_status.get())
+        dlg.destroy()
+        self.root.update()
 
     def test_one_window_only(self):
         dlg = self.open()

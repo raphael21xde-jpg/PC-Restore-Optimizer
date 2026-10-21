@@ -161,7 +161,7 @@ def _is_link_entry(entry):
         info = entry.stat(follow_symlinks=False)
     except OSError:
         return True  # na dúvida, não segue
-    return bool(getattr(info, 'st_file_attributes', 0) & _REPARSE)
+    return bool((getattr(info, 'st_file_attributes', 0) or 0) & _REPARSE)
 
 
 def _is_link_path(path):
@@ -174,7 +174,7 @@ def _is_link_path(path):
         info = os.lstat(path)
     except OSError:
         return False
-    return bool(getattr(info, 'st_file_attributes', 0) & _REPARSE)
+    return bool((getattr(info, 'st_file_attributes', 0) or 0) & _REPARSE)
 
 
 def pick_sample(origem, max_bytes=DEFAULT_MAX_BYTES, max_files=DEFAULT_MAX_FILES,
