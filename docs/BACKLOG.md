@@ -17,7 +17,7 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
 
 ---
 
-## Marco M1 — Restauração completa pelo app  ← ATUAL
+## Marco M1 — Restauração completa pelo app
 **Objetivo:** tudo o que foi feito à mão no PC do Raphael em 20/10 (restaurar, corrigir permissões, programas, launchers, navegador) passa a ser feito **pelo app**, com botões e prévia, sem Terminal.
 
 ### P2-01 · Restaurar no lugar original
@@ -160,10 +160,18 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   - a janela ganhou uma linha própria para os avisos do progresso (`after_format_progress_warning`), separada da linha de lembretes (`after_format_notice`), que "Abrir" continua limpando; a falha ao salvar também vai para essa linha própria, para não sumir no próximo "Abrir" (mesmo padrão da linha de aviso da janela de launchers do P2-05).
 
 ### FIX-P2-11-02 · Progresso do assistente: letra trocada e duas janelas
-- **Status:** `pronto` (ressalvas 1 e 4 da revisão da PR #72).
+- **Status:** `concluído` (branch `auto/FIX-P2-11-02-progresso-estavel`; ressalvas 1 e 4 da revisão da PR #72).
 - **Problema 1:** o arquivo de progresso usa o SHA-256 do caminho completo do manifesto; se a letra da unidade do backup mudar depois de formatar (ex.: `E:` vira `F:`), o assistente não acha o progresso salvo e começa do zero.
 - **Problema 2:** duas janelas do assistente abertas para o mesmo backup gravam o mesmo `.parcial`, e uma pode atrapalhar a outra.
 - **Aceite:** o progresso continua achado quando só a letra muda (chave estável do backup, sem depender da letra); duas janelas não disputam o mesmo `.parcial` (ex.: nome temporário único ou uma janela por backup); nada é apagado; testes com dados simulados.
+- **Escolhas de design (21/10/2026, a opção mais segura):**
+  - identidade do backup: `backup_identity(manifest)` lê só o nome da pasta do backup (em minúsculas) e os campos de topo `started` e `plan_fingerprint` do `manifest.json` (os nomes que o `backup_core` grava); manifesto até 8 MiB é lido inteiro; maior que isso (muitos arquivos), lê só o primeiro 1 MiB e procura esses dois campos no nível de topo (o `atomic_json` grava com `indent=2` e eles vêm antes de `files`); valor ausente, vazio ou com mais de 200 caracteres → sem identidade;
+  - chave estável = `sha256("v2|" + pasta + "|" + started + "|" + plan_fingerprint)[:12]`; arquivo `progresso-b-<chave>.json`, que não muda quando a letra da unidade muda; o arquivo grava junto o bloco `backup` (a identidade) e só é aceito se esse bloco for igual ao do backup aberto — senão fica intocado e o assistente passa para `-2`, `-3`…;
+  - sem identidade (manifesto ilegível ou antigo, sem esses campos): continua a chave antiga pelo caminho (`progresso-<chave do caminho>.json`), com o aviso "Não deu para identificar este backup…";
+  - compatibilidade: sem progresso novo, o arquivo antigo do P2-11 (`progresso-<chave do caminho>.json`) é lido só para leitura; o próximo "Feito"/"Pular" grava no arquivo novo; o antigo nunca é reescrito nem apagado;
+  - gravação: `.parcial` com nome único (`<arquivo>.parcial-<8 letras>`) criado com `os.open(O_CREAT|O_EXCL|O_WRONLY)` (nunca por cima de nada, nem de link), `fsync` e `os.replace` (até 20 tentativas se o Windows recusar a troca porque outra janela está trocando o mesmo arquivo); se falhar, o `.parcial` fica (nada é apagado); `.parcial` antigo de nome fixo é ignorado; recusa de gravar por cima de link mantida;
+  - uma janela por backup: `window_key(manifest)` (a chave estável, ou o caminho normalizado sem identidade); `app.after_format_dialogs = {chave: janela}`; abrir de novo o mesmo backup (mesmo por outra letra) traz a janela aberta para a frente (`lift()`), como a restauração; ao fechar, ela sai do dicionário; backups diferentes abrem janelas separadas;
+  - **limite conhecido:** um progresso antigo (P2-11, pelo caminho) cuja letra já mudou não é achado; ele fica intocado e o assistente começa do zero.
 
 ### ✅ Validação do Raphael — M1
 Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar M1"** (etiqueta `precisa-do-raphael`) com o passo a passo:
@@ -174,7 +182,7 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 
 ---
 
-## Marco M2 — Preservação para qualquer PC
+## Marco M2 — Preservação para qualquer PC  ← ATUAL
 ### P2-07 · Estabilidade da interface Tk — `pronto`
 - Eliminar `invalid command name`, `Tcl interpreter is leaked` e os prints soltos dos testes.
 - Precisa de ambiente com Tk para conferir; os agentes na nuvem (Linux sem Tk) pulam para o próximo item testável.
