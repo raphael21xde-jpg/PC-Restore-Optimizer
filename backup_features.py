@@ -112,8 +112,14 @@ def new_restore_folder(parent, prefix='TESTE-RESTAURACAO-v05-'):
     raise OSError('Não foi possível criar uma pasta de restauração nova.')
 
 
-def resume_information(folder, manifest_path):
-    """Read a v0.5.19 partial restore journal; never follow a journal-supplied target."""
+def read_restore_record(folder):
+    """Return (folder, data) of a restore folder created by this app (read only).
+
+    Shared by resume_information and the P2-01 "colocar no lugar original"
+    flow; each caller checks the status it accepts.
+    """
+    if is_reparse(folder):
+        raise ValueError('Escolha uma pasta de restauração criada por este aplicativo.')
     folder = Path(folder).resolve(strict=True)
     if not folder.is_dir() or not folder.name.startswith('TESTE-RESTAURACAO-v05-'):
         raise ValueError('Escolha uma pasta de restauração criada por este aplicativo.')
@@ -121,6 +127,14 @@ def resume_information(folder, manifest_path):
     if not journal_file.is_file() or is_reparse(journal_file):
         raise ValueError('Registro de restauração não encontrado ou inseguro.')
     data = json.loads(journal_file.read_text(encoding='utf-8'))
+    if not isinstance(data, dict):
+        raise ValueError('Registro de restauração não encontrado ou inseguro.')
+    return folder, data
+
+
+def resume_information(folder, manifest_path):
+    """Read a v0.5.19 partial restore journal; never follow a journal-supplied target."""
+    folder, data = read_restore_record(folder)
     manifest_path = Path(manifest_path).resolve(strict=True)
     if (data.get('engine_version') != '0.5.19' or
         data.get('manifest_path') != str(manifest_path) or
