@@ -50,12 +50,19 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   - pendente para uma fatia futura: `restore_legacy_opera` e `extract_to_staging` (`.opgx`) ainda não têm a trava dentro do motor.
 
 ### P2-03 · Caminhos longos (LongPathsEnabled)
-- **Status:** `pronto`.
+- **Status:** `concluído` (fatia única, 21/10/2026).
 - **Aceite:**
   - leitura (somente leitura) do registro;
   - a prévia de restauração conta os destinos com mais de 259 caracteres;
   - se a opção estiver desligada, mostra o aviso com o comando de administrador para ligar (o app **não** muda o registro sozinho);
   - testes com registro simulado.
+- **Escolhas de design (mais seguras):**
+  - módulo `long_paths.py` sem imports do projeto; lê `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled` só com `OpenKey(..., KEY_READ)` + `QueryValueEx`; nunca cria, grava ou apaga nada no registro;
+  - valor ausente conta como desligado; erro de permissão, tipo errado ou fora do Windows → "não deu para ler", e o app **avisa** como se estivesse desligado;
+  - o aviso **não bloqueia** a restauração nem a colocação (o motor não muda); sem botão para ligar: só o texto do comando `reg add ... /v LongPathsEnabled /t REG_DWORD /d 1 /f`, para rodar num Terminal de administrador e depois reiniciar;
+  - restaurar para pasta nova: conta o tamanho exato dentro da pasta nova (`TESTE-RESTAURACAO-v05-` + 8 caracteres) e mostra o aviso na pergunta de confirmação; colocar no lugar original: o registro é lido uma vez em segundo plano, junto com a prévia;
+  - sem destino longo, os textos existentes ficam iguais;
+  - `target_map` na tela e o cofre do navegador ficam fora desta fatia.
 
 ### P2-06 · Senhas de navegador em texto puro
 - **Status:** `pronto`.
