@@ -133,7 +133,7 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   - a janela não tem botão para abrir launcher ou pasta e não executa nada: tabela (launcher, pasta, nº de jogos, confiança), guia em texto só leitura ao clicar numa linha, "Pesquisar de novo", "Copiar caminho" (área de transferência) e "Fechar"; a busca roda num `Job` (thread) e volta ao Tk por `after`; o aviso de busca incompleta fica numa linha própria, que não some ao copiar um caminho.
 
 ### P2-11 · Assistente "Depois de formatar"
-- **Status:** `pronto` (as dependências P2-01 fatia 2, P2-04 e P2-05 estão `concluído`).
+- **Status:** `concluído` (fatia 1, branch `auto/P2-11-depois-de-formatar`).
 - **Aceite:** uma tela única, passo a passo, com 5 etapas:
   1. conferir discos e letras (somente leitura, com a orientação "trocar letra" se precisar);
   2. restaurar;
@@ -142,6 +142,15 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
   5. navegador e senhas.
 
   Cada etapa tem um "feito / pular", e o assistente salva o progresso.
+- **Escolhas de design (21/10/2026, a opção mais segura):**
+  - módulo novo `windows_drive.py` (sem imports do projeto, só lê o ambiente): `windows_drive(environ=None)` devolve a letra da unidade de `%SystemRoot%` (ou `%windir%`) só se ela for igual à de `%SystemDrive%` (sem diferenciar maiúsculas); faltando alguma ou divergindo, devolve `None` com o aviso "Não deu para confirmar qual é o disco do Windows";
+  - `game_launchers` passa a usar `windows_drive()`: se não der para confirmar no Windows, as bibliotecas recebem `on_system_drive=None` (nenhuma é tratada como fora do disco do Windows), a coluna Aviso mostra "Confira" e há um aviso geral na linha de avisos da janela; fora do Windows continua sem marcar nada e sem aviso;
+  - módulo novo `after_format.py` (sem Tk, só leitura nas unidades): `STEPS` com as 5 etapas; `check_drives(manifest, roots=None, usage=shutil.disk_usage, environ=None, drive_type=...)` lista as letras atuais com tipo (GetDriveTypeW, só leitura), tamanho, espaço livre e "Disco do Windows", e compara com as letras dos `source` de `verified_entries(manifest)`; letra do backup ausente agora → aviso e orientação "trocar letra" (Gerenciamento de Disco > botão direito > "Alterar letra de unidade e caminho"), feita à mão pela pessoa; o app nunca troca letra; se a lista de unidades falhar, devolve vazio com aviso e não acusa letra sumida;
+  - aviso de senhas: `password_alert(manifest)` usa `plaintext_passwords.scan_paths` nos caminhos do backup e mostra **só os nomes** dos arquivos (sem pastas, para não expor o nome de usuário);
+  - progresso: `%LOCALAPPDATA%\PC-Restore-Optimizer\depois-de-formatar\progresso-<12 primeiros do SHA-256 do caminho do manifesto>.json` (um por backup), com `schema` e só os valores `pendente`, `feito` e `pulado`; gravação atômica (`.parcial` + `os.replace`); arquivo estragado, maior que 64 KiB, com valor desconhecido ou que seja link fica **intocado**: o assistente avisa, começa do zero e grava em `-2`, `-3`… (até 50); `save_progress` recusa gravar por cima de link; um `.parcial` que sobrou é ignorado na leitura; nada é apagado;
+  - janela nova `after_format_ui.py` (`show_after_format(app, *, manifest=None, base=None, ask_manifest=None, checker=None)`): pede o `manifest.json`; cada etapa tem "Abrir", "Feito" e "Pular" (clicar de novo no mesmo botão volta a "pendente"); "Feito" é só marcação; "Abrir" só chama as janelas públicas que já existem — 1) conferência das unidades num `Job`, voltando ao Tk por `after`; 2) `show_restore(app, manifest)`; 3) `show_programs(dlg, pasta do backup)`; 4) `show_launchers(dlg)`; 5) `show_recovery(dlg)` com o aviso de senhas — sem passar `allow_elevated`/`allow_protected`; pular não bloqueia; abrir a etapa 2 com a 1 pendente mostra um lembrete; fechar a janela cancela o `Job`;
+  - `app.py`: só o botão "Depois de formatar" na Visão geral e o item no menu lateral (abre a janela; fica fora de `nav_buttons`, que continua com 8 páginas);
+  - textos das etapas sem mandar formatar, apagar ou desinstalar (teste confere).
 
 ### ✅ Validação do Raphael — M1
 Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar M1"** (etiqueta `precisa-do-raphael`) com o passo a passo:

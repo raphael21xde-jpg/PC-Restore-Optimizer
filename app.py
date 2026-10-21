@@ -22,6 +22,7 @@ from restore_ui import show_restore
 from restore_jobs import Job
 from app_recovery_ui import show_app_recovery
 from browser_recovery_ui import show_recovery
+from after_format_ui import show_after_format
 from browser_guard import (verify_encrypted_backup as verify_legacy_opera,
                            extract_to_staging as restore_legacy_opera)
 
@@ -227,6 +228,8 @@ class App(tk.Tk):
             self.tabs.add(page, text=label)
 
         build_overview(self)
+        ttk.Button(self.overview, text='Depois de formatar  →', style='Primary.TButton',
+                   command=self.open_after_format).pack(anchor='w', padx=16, pady=(0, 12))
         self._build_home()
         build_preservation(self)
         build_installation(self)
@@ -265,6 +268,7 @@ class App(tk.Tk):
         self._nav_entry('preservation', '✓', 'Preservação')
         self._nav_entry('installation', '↧', 'Instalar Windows')
         self._nav_entry('recovery', '↗', 'Recuperação')
+        self._nav_action('✚', 'Depois de formatar', self.open_after_format)
         self._nav_entry('optimization', '⚡', 'Otimização')
         self._nav_heading('SISTEMA E DIAGNÓSTICO')
         self._nav_entry('diagnostic', '◫', 'Diagnóstico')
@@ -302,6 +306,27 @@ class App(tk.Tk):
         label.bind('<space>',lambda event, name=target_name:self.navigate(getattr(self,name)))
         label.bind('<Enter>',lambda event, button=label:button.configure(bg=HOVER) if button.cget('fg')!=TEXT else None)
         label.bind('<Leave>',lambda event:self._page_changed())
+
+    def _nav_action(self, symbol, text, command):
+        # Item do menu que abre uma janela (não é uma página; fica fora de nav_buttons).
+        holder = tk.Frame(self.sidebar, bg=SIDEBAR)
+        holder.pack(fill='x', padx=10, pady=2)
+        tk.Frame(holder, bg=SIDEBAR, width=4).pack(side='left', fill='y')
+        label = tk.Label(holder, text=f'{symbol}    {text}', bg=SIDEBAR, fg=MUTED,
+                         anchor='w', padx=12, pady=11, cursor='hand2', takefocus=True,
+                         highlightbackground=SIDEBAR, highlightcolor=ACCENT, highlightthickness=1,
+                         font=('Segoe UI', 10))
+        label.pack(side='left', fill='x', expand=True)
+        for sequence in ('<Button-1>', '<Return>', '<space>'):
+            label.bind(sequence, lambda event: command())
+        label.bind('<Enter>', lambda event: label.configure(bg=HOVER))
+        label.bind('<Leave>', lambda event: label.configure(bg=SIDEBAR))
+        self.after_format_nav = label
+        return label
+
+    def open_after_format(self):
+        """P2-11: assistente "Depois de formatar" (pede o manifest.json do backup)."""
+        return show_after_format(self)
 
     def navigate(self, page):
         if page in (self.inventory, self.browsers):
