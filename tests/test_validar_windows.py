@@ -27,7 +27,8 @@ class ValidarWindowsTests(unittest.TestCase):
         self.env = mock.patch.dict(os.environ, {
             'GIT_AUTHOR_NAME': 'Teste', 'GIT_AUTHOR_EMAIL': 'teste@example.invalid',
             'GIT_COMMITTER_NAME': 'Teste', 'GIT_COMMITTER_EMAIL': 'teste@example.invalid',
-            'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'})
+            'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1',
+            'PCRO_VALIDACAO_LOCK': str(base / 'pcro-validacao.lock')})
         self.env.start()
         self.remote = base / 'remote.git'
         self.repo = base / 'repo'
@@ -110,6 +111,48 @@ class ValidarWindowsTests(unittest.TestCase):
         worktrees = subprocess.run(['git', 'worktree', 'list'], cwd=self.repo,
                                    capture_output=True, text=True, check=True).stdout
         self.assertNotIn('pcro-validacao', worktrees)
+
+    def test_skips_old_agent_branches_and_non_agent_prefixes(self):
+        run = lambda *a, **kw: subprocess.run(['git', *a], cwd=self.repo, check=True, capture_output=True, **kw)
+        run('switch', '-q', '-c', 'auto/velho', 'main')
+        (self.repo / 'v.txt').write_text('v')
+        run('add', '.')
+        old = dict(os.environ, GIT_COMMITTER_DATE='2026-01-01T00:00:00', GIT_AUTHOR_DATE='2026-01-01T00:00:00')
+        run('commit', '-q', '-m', 'velho', env=old)
+        run('push', '-q', 'origin', 'auto/velho')
+        run('switch', '-q', '-c', 'feature/antigo', 'main')
+        (self.repo / 'f.txt').write_text('f')
+        run('add', '.')
+        run('commit', '-q', '-m', 'feature')
+        run('push', '-q', 'origin', 'feature/antigo')
+        run('fetch', '-q', 'origin')
+        self.assertEqual(self.mod.pending_branches(), ['main', 'fix/exemplo'])
+
+    def test_second_run_is_skipped_while_lock_is_held(self):
+        lock = Path(os.environ['PCRO_VALIDACAO_LOCK'])
+        lock.write_text('outra rodada')
+        with mock.patch.object(self.mod, 'run_suite') as suite, \
+                mock.patch.object(self.mod, 'is_elevated', return_value=False):
+            self.assertEqual(self.mod.main([]), 0)
+            suite.assert_not_called()
+        self.assertTrue(lock.exists())  # a trava de outra rodada não é apagada
+
+    def test_each_branch_is_published_as_soon_as_it_finishes(self):
+        calls = []
+
+        def suite(wt):
+            calls.append(wt)
+            if len(calls) == 2:
+                raise KeyboardInterrupt  # rodada interrompida no 2º branch
+            return 0, 'Ran 1 test in 0.1s\nOK\n'
+        with mock.patch.object(self.mod, 'run_suite', side_effect=suite), \
+                mock.patch.object(self.mod, 'is_elevated', return_value=False):
+            with self.assertRaises(KeyboardInterrupt):
+                self.mod.main([])
+        files = subprocess.run(['git', 'ls-tree', '-r', '--name-only', 'validacao-windows'],
+                               cwd=self.remote, capture_output=True, text=True, check=True).stdout.split()
+        self.assertEqual(len([f for f in files if f.startswith('resultados/main/')]), 1)
+        self.assertFalse(Path(os.environ['PCRO_VALIDACAO_LOCK']).exists())
 
     def test_refuses_elevated_terminal(self):
         with mock.patch.object(self.mod, 'is_elevated', return_value=True), \

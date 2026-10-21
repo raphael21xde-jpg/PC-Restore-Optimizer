@@ -5,8 +5,8 @@ Uso (Terminal NORMAL, não o de administrador), na pasta do repositório:
     py -3 scripts\\validar_windows.py
 
 O que faz:
-1. `git fetch` e lista a `main` e os branches remotos que ainda não estão na
-   `main` (fix/, feature/, auto/, automacao/).
+1. `git fetch` e lista a `main` e os branches dos agentes (auto/, fix/) que
+   ainda não estão na `main` e tiveram commit nos últimos 3 dias.
 2. Para cada commit ainda não validado, cria uma cópia temporária (git
    worktree) e roda a suíte completa: `py -3 -m unittest discover -s tests`.
 3. Grava um resumo **sanitizado** (sem nome de usuário, e-mail ou tokens) no
@@ -35,8 +35,31 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 from test_reporter import result_summary, sanitize_for_public_comment  # noqa: E402
 
 RESULT_BRANCH = 'validacao-windows'
-PREFIXES = ('fix/', 'feature/', 'auto/', 'automacao/')
+PREFIXES = ('fix/', 'auto/')   # só os branches dos agentes
+MAX_AGE_DAYS = 3               # branch parado há mais tempo não é validado
 SUITE_TIMEOUT = 2 * 60 * 60
+LOCK_MAX_AGE = 4 * 60 * 60     # trava mais velha que isso é de uma rodada que morreu
+
+
+def lock_path() -> Path:
+    custom = os.environ.get('PCRO_VALIDACAO_LOCK')
+    if custom:
+        return Path(custom)
+    return Path(os.environ.get('LOCALAPPDATA') or tempfile.gettempdir()) / 'pcro-validacao.lock'
+
+
+def acquire_lock() -> Path | None:
+    """Só uma validação por vez: o Agendador dispara a cada 3 h e uma rodada pode demorar mais."""
+    path = lock_path()
+    try:
+        if path.exists() and (datetime.now().timestamp() - path.stat().st_mtime) > LOCK_MAX_AGE:
+            path.unlink()
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return None
+    with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+        fh.write(f'{os.getpid()} {datetime.now(timezone.utc).isoformat()}\n')
+    return path
 
 
 def git(*args, cwd=None, check=True):
@@ -65,7 +88,11 @@ def pending_branches() -> list[str]:
         if '->' in name or not name.startswith('origin/'):
             continue
         short = name[len('origin/'):]
-        if short.startswith(PREFIXES):
+        if not short.startswith(PREFIXES):
+            continue
+        age_days = (datetime.now(timezone.utc).timestamp()
+                    - int(git('log', '-1', '--format=%ct', name) or 0)) / 86400
+        if age_days <= MAX_AGE_DAYS:
             names.append(short)
     return ['main', *sorted(names)]
 
@@ -174,6 +201,30 @@ def main(argv=None) -> int:
         print('Rode num Terminal NORMAL (não de administrador). '
               'Como administrador, os testes de permissão dão resultado diferente do uso real.')
         return 2
+    lock = acquire_lock()
+    if lock is None:
+        print('Outra validação ainda está rodando; esta rodada foi pulada.')
+        return 0
+    try:
+        return _run(args)
+    finally:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def publish(results: Path, branch: str, sha: str, args) -> None:
+    """Envia o resultado de um branch assim que ele termina (não espera a rodada inteira)."""
+    git('add', '-A', cwd=results)
+    if not git('status', '--porcelain', cwd=results):
+        return
+    git('commit', '-q', '-m', f'test(windows): {branch} @ {sha[:12]} [skip ci]', cwd=results)
+    if not args.sem_enviar:
+        git('push', '-q', 'origin', f'HEAD:refs/heads/{RESULT_BRANCH}', cwd=results)
+
+
+def _run(args) -> int:
     git('fetch', 'origin', '--prune')
     cleanup_stale_worktrees()
     branches = pending_branches()
@@ -197,13 +248,10 @@ def main(argv=None) -> int:
             finally:
                 git('worktree', 'remove', '--force', str(wt), check=False)
             write_result(results, branch, sha, code, log)
+            publish(results, branch, sha, args)
             summary.append((branch, sha, f"{'PASSOU' if code == 0 else 'FALHOU'} · {result_summary(log).splitlines()[-1]}"))
             print(summary[-1][2], flush=True)
-        git('add', '-A', cwd=results)
-        if git('status', '--porcelain', cwd=results):
-            git('commit', '-q', '-m', 'test(windows): resultados da validação [skip ci]', cwd=results)
-            if not args.sem_enviar:
-                git('push', '-q', 'origin', f'HEAD:refs/heads/{RESULT_BRANCH}', cwd=results)
+        publish(results, 'README', 'inicial', args)  # só tem efeito na primeira vez (README)
     finally:
         git('worktree', 'remove', '--force', str(results), check=False)
         shutil.rmtree(base, ignore_errors=True)
