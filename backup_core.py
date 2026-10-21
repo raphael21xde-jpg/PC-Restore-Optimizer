@@ -19,6 +19,7 @@ import uuid
 from transfer_engine import choose_strategy, TransferMeter, ProgressLimiter, performance_report
 from backup_source_guard import open_verified_backup_source, sha256_verified_backup_source
 from safe_publication import file_version, publish_copy
+from elevation_guard import require_not_elevated
 
 CHUNK = 2 * 1024 * 1024
 REPARSE_FLAG = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
@@ -496,8 +497,13 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
     return folder, manifest
 
 
-def restore_test(manifest_file, destination_root, limit=50*1024**2):
-    """Restore one small verified file into a NEW folder on the backup drive."""
+def restore_test(manifest_file, destination_root, limit=50*1024**2, *,
+                 allow_elevated=False, elevation_probe=None):
+    """Restore one small verified file into a NEW folder on the backup drive.
+
+    P2-02: refused as administrator before reading the manifest or creating folders.
+    """
+    require_not_elevated(allow_elevated=allow_elevated, probe=elevation_probe)
     manifest_file = Path(manifest_file).resolve()
     data = json.loads(manifest_file.read_text(encoding='utf-8'))
     if data.get('schema') != 'pc-restore-backup-v0.4':

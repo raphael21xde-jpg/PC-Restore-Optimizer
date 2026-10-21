@@ -12,6 +12,7 @@ import time
 import uuid
 from transfer_engine import choose_strategy, TransferMeter, ProgressLimiter, performance_report
 from backup_core import atomic_json, is_reparse, sha256_file
+from elevation_guard import require_not_elevated
 from backup_source_guard import open_verified_backup_source
 from safe_publication import file_version, publish_copy, verify_published
 from backup_destination_guard import (
@@ -149,13 +150,18 @@ def resume_information(folder, manifest_path):
 
 def restore_selected(manifest_path, choices, destination_parent, max_total_bytes=None, *,
                      cancelled=None, progress=None, resume_from=None,
-                     strategy_inventory=None, test_fault_hook=None):
+                     strategy_inventory=None, test_fault_hook=None,
+                     allow_elevated=False, elevation_probe=None):
     """Restore verified files in an isolated folder; v0.5.19 resumes only its own journal.
 
     Verified destinations are rehashed when resuming; corrupt/uncertain files
     are recopied into fresh .partial files before atomic replace. Never writes
     to the backup itself or to the original source paths.
+
+    P2-02: refused as administrator before anything else (only the literal
+    ``allow_elevated=True`` releases it).
     """
+    require_not_elevated(allow_elevated=allow_elevated, probe=elevation_probe)
     if cancelled and cancelled.is_set():
         raise InterruptedError('Restauração cancelada antes de iniciar.')
     manifest_path = Path(manifest_path).resolve(strict=True)

@@ -20,6 +20,8 @@ import subprocess
 import tarfile
 import uuid
 
+from elevation_guard import require_not_elevated
+
 MAGIC = b'PCRO-BROWSER-1\0'
 HEADER_SIZE = len(MAGIC) + 16 + 12
 TAG_SIZE = 16
@@ -335,7 +337,9 @@ def verify_vault(package, phrase):
     return _decrypt_package(package,phrase)
 
 
-def restore_to_staging(package, destination, phrase):
+def restore_to_staging(package, destination, phrase, *, allow_elevated=False, elevation_probe=None):
+    # P2-02: refused as administrator before reading the vault or creating folders.
+    require_not_elevated(allow_elevated=allow_elevated, probe=elevation_probe)
     # Authenticate the ENTIRE archive before creating ANY restored files.
     items=verify_vault(package,phrase)
     destination=Path(destination).resolve(strict=True)
