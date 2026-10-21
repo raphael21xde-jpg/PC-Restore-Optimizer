@@ -109,10 +109,79 @@ class DetectionTests(Base):
         result = gl.detect_launchers([self.a])
         self.assertEqual(result['libraries'], [])
 
+    def test_depth_four_is_found_and_depth_five_is_not(self):
+        # profundidade = número de pastas entre a raiz da unidade e "steamapps", contando ela
+        four = self.a / '1' / '2' / '3' / 'steamapps'
+        _touch(four / 'libraryfolders.vdf')
+        five = self.b / '1' / '2' / '3' / '4' / 'steamapps'
+        _touch(five / 'libraryfolders.vdf')
+        libs = gl.detect_launchers([self.a, self.b])['libraries']
+        self.assertEqual([lib['path'] for lib in libs], [str(self.a / '1' / '2' / '3')])
+
     def test_depth_six_is_not_found(self):
         deep = self.a / '1' / '2' / '3' / '4' / '5' / '6' / 'steamapps'
         _touch(deep / 'libraryfolders.vdf')
         self.assertEqual(gl.detect_launchers([self.a])['libraries'], [])
+
+    def test_limit_is_per_drive_and_next_drive_is_still_searched(self):
+        c = self.base / 'C'
+        d = self.base / 'D'
+        for i in range(60):
+            (c / f'pasta{i:02d}').mkdir(parents=True)
+        _touch(d / 'SteamLibrary' / 'steamapps' / 'libraryfolders.vdf')
+        result = gl.detect_launchers([c, d], max_dirs=50)
+        self.assertTrue(result['truncated'])
+        self.assertEqual([lib['path'] for lib in result['libraries']],
+                         [str(d / 'SteamLibrary')])
+        self.assertTrue(any(str(c) in w for w in result['warnings']), result['warnings'])
+        self.assertFalse(any(str(d) in w for w in result['warnings']), result['warnings'])
+
+    def test_cancel_stops_and_reports_incomplete(self):
+        _touch(self.a / 'SteamLibrary' / 'steamapps' / 'libraryfolders.vdf')
+        seen = []
+
+        def cancelled():
+            seen.append(1)
+            return len(seen) > 1  # deixa olhar só a primeira pasta
+        result = gl.detect_launchers([self.a, self.b], cancelled=cancelled)
+        self.assertTrue(result['truncated'])
+        self.assertEqual(result['libraries'], [])
+        self.assertTrue(any('interrompida' in w for w in result['warnings']), result['warnings'])
+
+    def test_cancel_accepts_event(self):
+        import threading
+        event = threading.Event()
+        event.set()
+        _touch(self.a / 'steamapps' / 'libraryfolders.vdf')
+        result = gl.detect_launchers([self.a], cancelled=event)
+        self.assertTrue(result['truncated'])
+        self.assertEqual(result['libraries'], [])
+
+    def test_programdata_is_skipped(self):
+        (self.a / 'ProgramData' / 'Riot Games' / 'Metadata').mkdir(parents=True)
+        (self.a / 'ProgramData' / 'Rockstar Games' / 'X').mkdir(parents=True)
+        self.assertEqual(gl.detect_launchers([self.a])['libraries'], [])
+
+    def test_system_drive_is_marked(self):
+        self.build_all()
+        result = gl.detect_launchers([self.a, self.b], system_drive=str(self.a) + os.sep)
+        for lib in result['libraries']:
+            self.assertEqual(lib['on_system_drive'], lib['root'] == str(self.a), lib)
+        self.assertTrue(any(lib['on_system_drive'] for lib in result['libraries']))
+        self.assertIn('faça backup antes', gl.SYSTEM_DRIVE_WARNING)
+
+    def test_system_drive_default_outside_windows_is_false(self):
+        _touch(self.a / 'steamapps' / 'libraryfolders.vdf')
+        with mock.patch.object(gl, '_on_windows', return_value=False):
+            lib = gl.detect_launchers([self.a])['libraries'][0]
+        self.assertFalse(lib['on_system_drive'])
+
+    def test_system_drive_default_on_windows_uses_environment(self):
+        _touch(self.a / 'steamapps' / 'libraryfolders.vdf')
+        with mock.patch.object(gl, '_on_windows', return_value=True), \
+                mock.patch.dict(os.environ, {'SystemDrive': str(self.a)}):
+            lib = gl.detect_launchers([self.a])['libraries'][0]
+        self.assertTrue(lib['on_system_drive'])
 
     def test_max_dirs_truncates_with_warning(self):
         for i in range(20):
@@ -236,15 +305,15 @@ class WindowTests(unittest.TestCase):
     def test_window_lists_rows_and_shows_guide(self):
         fake = {'libraries': [
             {'launcher': gl.STEAM, 'path': r'D:\SteamLibrary', 'root': 'D:\\',
-             'games': ['A', 'B'], 'confidence': gl.HIGH},
+             'games': ['A', 'B'], 'confidence': gl.HIGH, 'on_system_drive': True},
             {'launcher': gl.EPIC, 'path': r'E:\Epic Games', 'root': 'E:\\',
-             'games': ['C'], 'confidence': gl.HIGH},
+             'games': ['C'], 'confidence': gl.HIGH, 'on_system_drive': False},
             {'launcher': gl.RIOT, 'path': r'E:\Riot Games', 'root': 'E:\\',
-             'games': ['V'], 'confidence': gl.PROBABLE}],
+             'games': ['V'], 'confidence': gl.PROBABLE, 'on_system_drive': False}],
             'truncated': True, 'warnings': ['limite']}
         calls = []
 
-        def scanner(roots):
+        def scanner(roots, cancelled=None):
             calls.append(roots)
             return fake
         dlg = show_launchers(self.root, roots=['X'], scanner=scanner)
@@ -257,6 +326,14 @@ class WindowTests(unittest.TestCase):
         self.root.update()
         text = next(self.widgets(tk.Text, dlg))
         self.assertIn('Adicionar unidade', text.get('1.0', 'end'))
+        self.assertIn(gl.SYSTEM_DRIVE_WARNING, text.get('1.0', 'end'))
+        self.assertEqual(tree.set(rows[0], 'warning'), 'Disco do Windows')
+        self.assertEqual(tree.set(rows[1], 'warning'), '')
+        tree.selection_set(rows[1])
+        self.root.update()
+        self.assertNotIn(gl.SYSTEM_DRIVE_WARNING, text.get('1.0', 'end'))
+        tree.selection_set(rows[0])
+        self.root.update()
         self.assertEqual(str(text.cget('state')), 'disabled')
         buttons = {b.cget('text'): b for b in self.widgets(ttk.Button, dlg)}
         for name in ('Pesquisar de novo', 'Copiar caminho', 'Fechar'):
@@ -268,6 +345,22 @@ class WindowTests(unittest.TestCase):
         self.wait(dlg)
         self.assertEqual(len(calls), 2)
         dlg.destroy()
+
+    def test_closing_window_cancels_search(self):
+        import threading
+        started = threading.Event()
+        seen = {}
+
+        def scanner(roots, cancelled=None):
+            seen['event'] = cancelled
+            started.set()
+            cancelled.wait(5)
+            return {'libraries': [], 'truncated': True, 'warnings': []}
+        dlg = show_launchers(self.root, roots=['X'], scanner=scanner)
+        self.assertTrue(started.wait(5))
+        dlg.destroy()
+        self.root.update()
+        self.assertTrue(seen['event'].is_set())
 
 
 if __name__ == '__main__':

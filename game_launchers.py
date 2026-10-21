@@ -29,10 +29,13 @@ PROBABLE = 'provável'
 MANIFEST_LIMIT = 64 * 1024
 # Pastas do sistema puladas na raiz de cada unidade (nunca guardam bibliotecas).
 SKIP_AT_ROOT = {name.casefold() for name in (
-    'Windows', 'Users', '$Recycle.Bin', 'System Volume Information', 'Recovery',
-    '$WinREAgent')}
+    'Windows', 'Users', 'ProgramData', '$Recycle.Bin', 'System Volume Information',
+    'Recovery', '$WinREAgent')}
 RIOT_SKIP = {'riot client'}
 ROCKSTAR_SKIP = {'launcher', 'social club'}
+SYSTEM_DRIVE_WARNING = (
+    'Está no disco do Windows: se você formatar este disco, esta pasta será apagada pelo '
+    'instalador — faça backup antes.')
 _NAME = re.compile(r'"name"\s+"([^"\r\n]*)"', re.IGNORECASE)
 
 LAUNCHER_GUIDES = {
@@ -115,41 +118,50 @@ def _default_roots(warnings):
 
 
 def _list(path):
-    """Entradas da pasta como (nome, caminho, é_pasta_segura, é_arquivo)."""
+    """Entradas da pasta como (nome, caminho, é_pasta, é_arquivo, tamanho).
+
+    Links simbólicos e pontos de reparse (junções) ficam de fora. No Windows,
+    DirEntry.stat(follow_symlinks=False) já traz st_file_attributes da própria
+    listagem (sem abrir o item), então a checagem de junção não custa uma
+    chamada a mais por entrada.
+    """
     out = []
     try:
         with os.scandir(path) as items:
             for item in items:
                 try:
-                    st = os.lstat(item.path)
+                    if item.is_symlink():
+                        continue
+                    st = item.stat(follow_symlinks=False)
                 except OSError:
                     continue
                 if stat.S_ISLNK(st.st_mode):
                     continue
-                reparse = bool(getattr(st, 'st_file_attributes', 0)
-                               & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400))
-                if reparse:
+                if getattr(st, 'st_file_attributes', 0) & _REPARSE:
                     continue
                 out.append((item.name, item.path, stat.S_ISDIR(st.st_mode),
-                            stat.S_ISREG(st.st_mode)))
+                            stat.S_ISREG(st.st_mode), st.st_size))
     except OSError:
         return None
     return out
 
 
+_REPARSE = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
+
+
 def _steam_games(steamapps_entries, budget):
     """Lê só o campo "name" dos appmanifest_*.acf (máx. 64 KiB cada)."""
     names = []
-    for name, path, _is_dir, is_file in sorted(steamapps_entries, key=lambda e: e[0].casefold()):
+    for name, path, _is_dir, is_file, size in sorted(steamapps_entries, key=lambda e: e[0].casefold()):
         if not is_file or not name.casefold().startswith('appmanifest_') \
                 or not name.casefold().endswith('.acf'):
             continue
         if budget[0] <= 0:
             break
+        if size > MANIFEST_LIMIT:
+            continue
+        budget[0] -= 1
         try:
-            if os.lstat(path).st_size > MANIFEST_LIMIT:
-                continue
-            budget[0] -= 1
             with open(path, 'rb') as handle:
                 data = handle.read(MANIFEST_LIMIT + 1)
         except OSError:
@@ -163,40 +175,73 @@ def _steam_games(steamapps_entries, budget):
 
 
 def _subfolders(entries, skip=()):
-    return sorted((name for name, _path, is_dir, _f in entries
+    return sorted((name for name, _path, is_dir, _f, _size in entries
                    if is_dir and name.casefold() not in skip), key=str.casefold)
 
 
-def _walk_dirs(root, *, max_depth, budget, on_dir):
-    """Largura, sem seguir links/junções. on_dir(path, entries) -> True para não descer."""
+def _cancel_check(cancelled):
+    if cancelled is None:
+        return lambda: False
+    if hasattr(cancelled, 'is_set'):
+        return cancelled.is_set
+    return cancelled
+
+
+def _walk_dirs(root, *, max_depth, max_dirs, on_dir, is_cancelled):
+    """Largura, sem seguir links/junções. on_dir(path, entries) -> True para não descer.
+
+    Devolve None se terminou, 'limite' se passou de max_dirs pastas nesta
+    unidade, 'cancelada' se o cancelamento foi pedido (checado a cada pasta).
+    """
     queue = deque([(root, 0)])
+    scanned = 0
     while queue:
-        if budget['dirs'] <= 0:
-            return True
+        if is_cancelled():
+            return 'cancelada'
+        if scanned >= max_dirs:
+            return 'limite'
         path, depth = queue.popleft()
         entries = _list(path)
-        budget['dirs'] -= 1
+        scanned += 1
         if entries is None:
             continue
         if on_dir(path, entries):
             continue
         if depth >= max_depth:
             continue
-        for name, child, is_dir, _is_file in sorted(entries, key=lambda e: e[0].casefold()):
+        for name, child, is_dir, _is_file, _size in sorted(entries, key=lambda e: e[0].casefold()):
             if not is_dir:
                 continue
             if depth == 0 and name.casefold() in SKIP_AT_ROOT:
                 continue
             queue.append((child, depth + 1))
-    return False
+    return None
 
 
-def detect_launchers(roots=None, *, max_depth=4, max_dirs=20000, max_manifests=300):
+def _drive_key(path):
+    return os.path.normcase(str(path)).rstrip('\\/')
+
+
+def _default_system_drive():
+    if not _on_windows():
+        return None
+    return os.environ.get('SystemDrive') or 'C:'
+
+
+def detect_launchers(roots=None, *, max_depth=4, max_dirs=20000, max_manifests=300,
+                     cancelled=None, system_drive=None):
     """Procura bibliotecas de jogos. Somente leitura; nunca executa nada.
 
     roots=None: no Windows usa as unidades locais (deep_discovery.local_drives);
-    fora do Windows devolve resultado vazio.
+    fora do Windows devolve resultado vazio. max_dirs vale POR unidade.
+    cancelled: threading.Event ou função sem argumentos; checado a cada pasta.
+    system_drive: unidade do Windows (padrão: %SystemDrive% no Windows); as
+    bibliotecas nela recebem on_system_drive=True.
     """
+    is_cancelled = _cancel_check(cancelled)
+    if system_drive is None:
+        system_drive = _default_system_drive()
+    system_key = _drive_key(system_drive) if system_drive else None
     result = _empty()
     if roots is None:
         roots = _default_roots(result['warnings'])
@@ -206,13 +251,17 @@ def detect_launchers(roots=None, *, max_depth=4, max_dirs=20000, max_manifests=3
         if key not in seen_roots:
             seen_roots.append(key)
     found = {}  # (launcher, caminho normalizado) -> biblioteca
-    budget = {'dirs': max(0, int(max_dirs))}
+    limit = max(0, int(max_dirs))
+    incomplete = []
+    interrupted = False
     manifests = [max(0, int(max_manifests))]
 
     def add(launcher, path, root, games, confidence):
         key = (launcher, os.path.normcase(str(path)))
         lib = found.setdefault(key, {'launcher': launcher, 'path': str(path), 'root': str(root),
-                                     'games': [], 'confidence': confidence})
+                                     'games': [], 'confidence': confidence,
+                                     'on_system_drive': bool(system_key) and
+                                     _drive_key(root) == system_key})
         lib['games'] = sorted(set(lib['games']) | set(games), key=str.casefold)
 
     for root in seen_roots:
@@ -223,7 +272,7 @@ def detect_launchers(roots=None, *, max_depth=4, max_dirs=20000, max_manifests=3
             base = os.path.basename(os.path.normpath(path))
             parent = os.path.dirname(os.path.normpath(path))
             name = base.casefold()
-            names = {n.casefold(): (is_dir, is_file) for n, _c, is_dir, is_file in entries}
+            names = {n.casefold(): (is_dir, is_file) for n, _c, is_dir, is_file, _s in entries}
             if name == 'steamapps' and (
                     names.get('libraryfolders.vdf', (False, False))[1] or any(
                         n.startswith('appmanifest_') and n.endswith('.acf') and f
@@ -250,14 +299,22 @@ def detect_launchers(roots=None, *, max_depth=4, max_dirs=20000, max_manifests=3
                 return True
             return False
 
-        if _walk_dirs(root, max_depth=max_depth, budget=budget, on_dir=on_dir):
-            result['truncated'] = True
+        outcome = _walk_dirs(root, max_depth=max_depth, max_dirs=limit, on_dir=on_dir,
+                             is_cancelled=is_cancelled)
+        if outcome == 'cancelada':
+            interrupted = True
             break
+        if outcome == 'limite':
+            incomplete.append(root)  # segue para a próxima unidade
 
-    if result['truncated']:
+    if incomplete:
+        result['truncated'] = True
         result['warnings'].append(
-            f'A busca parou depois de {max_dirs} pastas para não demorar demais. '
-            'Pode haver bibliotecas que não apareceram.')
+            f'A busca ficou incompleta em: {", ".join(incomplete)} (passou de {limit} pastas; '
+            'parou ali para não demorar demais). Pode haver bibliotecas que não apareceram.')
+    if interrupted:
+        result['truncated'] = True
+        result['warnings'].append('A busca foi interrompida antes do fim.')
     if manifests[0] <= 0:
         result['warnings'].append(
             'Há muitos jogos da Steam; nem todos os nomes foram listados.')

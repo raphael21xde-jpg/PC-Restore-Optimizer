@@ -10,7 +10,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from game_launchers import detect_launchers, guide_for
+from game_launchers import SYSTEM_DRIVE_WARNING, detect_launchers, guide_for
 from restore_jobs import Job
 from ui_timers import WindowTimers
 
@@ -25,13 +25,15 @@ EMPTY_TEXT = 'Nenhuma biblioteca de jogos foi encontrada nas unidades deste comp
 
 
 def show_launchers(parent, *, roots=None, scanner=None):
-    scan = scanner or (lambda chosen_roots: detect_launchers(chosen_roots))
+    # scanner(roots, cancelled) -> resultado de detect_launchers
+    scan = scanner or (lambda chosen_roots, cancelled: detect_launchers(
+        chosen_roots, cancelled=cancelled))
     dlg = tk.Toplevel(parent)
     dlg.title('Launchers de jogos')
     dlg.geometry('960x620')
     dlg.minsize(640, 440)
     timers = WindowTimers(dlg)
-    state = {'libraries': [], 'busy': False, 'result': None}
+    state = {'libraries': [], 'busy': False, 'result': None, 'job': None}
     dlg.launcher_state = state
 
     frame = ttk.Frame(dlg, padding=14)
@@ -49,16 +51,19 @@ def show_launchers(parent, *, roots=None, scanner=None):
 
     grid = ttk.Frame(frame)
     grid.pack(fill='both', expand=True)
-    tree = ttk.Treeview(grid, columns=('path', 'games', 'confidence'), show='tree headings',
+    tree = ttk.Treeview(grid, columns=('path', 'games', 'confidence', 'warning'),
+                        show='tree headings',
                         selectmode='browse', height=8)
     tree.heading('#0', text='Launcher')
     tree.heading('path', text='Pasta')
     tree.heading('games', text='Jogos')
     tree.heading('confidence', text='Confiança')
+    tree.heading('warning', text='Aviso')
     tree.column('#0', width=150, stretch=False)
-    tree.column('path', width=520, stretch=True)
+    tree.column('path', width=420, stretch=True)
     tree.column('games', width=70, anchor='center', stretch=False)
     tree.column('confidence', width=90, anchor='center', stretch=False)
+    tree.column('warning', width=130, anchor='center', stretch=False)
     bar = ttk.Scrollbar(grid, orient='vertical', command=tree.yview)
     tree.configure(yscrollcommand=bar.set)
     tree.grid(row=0, column=0, sticky='nsew')
@@ -90,6 +95,8 @@ def show_launchers(parent, *, roots=None, scanner=None):
         if lib is None:
             return
         text = guide_for(lib['launcher'], lib['path'])
+        if lib.get('on_system_drive'):
+            text = SYSTEM_DRIVE_WARNING + '\n\n' + text
         if lib['games']:
             text += '\n\nJogos encontrados: ' + ', '.join(lib['games'])
         if lib['confidence'] != 'alta':
@@ -117,7 +124,8 @@ def show_launchers(parent, *, roots=None, scanner=None):
         state['result'] = result
         for index, lib in enumerate(libraries):
             tree.insert('', 'end', iid=f'lib:{index}', text=lib['launcher'],
-                        values=(lib['path'], len(lib['games']), lib['confidence']))
+                        values=(lib['path'], len(lib['games']), lib['confidence'],
+                                'Disco do Windows' if lib.get('on_system_drive') else ''))
         text = (f'{len(libraries)} biblioteca(s) encontrada(s).' if libraries else EMPTY_TEXT)
         warnings = list(result.get('warnings', []))
         if result.get('truncated') and not warnings:
@@ -144,7 +152,8 @@ def show_launchers(parent, *, roots=None, scanner=None):
         show_guide('Selecione uma biblioteca na tabela para ver o passo a passo.')
         status.set('Procurando bibliotecas de jogos nas unidades… (só leitura)')
         update_buttons()
-        job = Job(lambda cancelled, progress: scan(roots))
+        job = Job(lambda cancelled, progress: scan(roots, cancelled))
+        state['job'] = job
 
         def finished(kind, value):
             state['busy'] = False
@@ -163,6 +172,13 @@ def show_launchers(parent, *, roots=None, scanner=None):
     again_button.pack(side='left')
     ttk.Button(tools, text='Copiar caminho', command=copy_path).pack(side='left', padx=(7, 0))
     ttk.Button(tools, text='Fechar', command=dlg.destroy).pack(side='right')
+
+    def on_destroy(event):
+        # fechar a janela pede para a busca parar (checado a cada pasta)
+        if event.widget is dlg and state['job'] is not None:
+            state['job'].cancelled.set()
+
+    dlg.bind('<Destroy>', on_destroy, add='+')
 
     search()
     return dlg
