@@ -17,7 +17,7 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
 
 ---
 
-## Marco M1 — Restauração completa pelo app  ← ATUAL
+## Marco M1 — Restauração completa pelo app
 **Objetivo:** tudo o que foi feito à mão no PC do Raphael em 20/10 (restaurar, corrigir permissões, programas, launchers, navegador) passa a ser feito **pelo app**, com botões e prévia, sem Terminal.
 
 ### P2-01 · Restaurar no lugar original
@@ -161,14 +161,26 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 
 ---
 
-## Marco M2 — Preservação para qualquer PC
+## Marco M2 — Preservação para qualquer PC  ← ATUAL
 ### P2-07 · Estabilidade da interface Tk — `pronto`
 - Eliminar `invalid command name`, `Tcl interpreter is leaked` e os prints soltos dos testes.
+- Precisa de ambiente com Tk para conferir; os agentes na nuvem (Linux sem Tk) pulam para o próximo item testável.
 ### P2-08 · Central de recuperação ligada ao app — `pronto` (depois do M1)
 - A central abre manifestos reais (somente leitura) e restaura pelo fluxo do P2-01.
-### P2-10 · Medição de cópia com hardware real (script) — `pronto`
+### P2-10 · Medição de cópia com hardware real (script)
+- **Status:** `concluído` (fatia 1, branch `auto/P2-10-medicao-copia`). Falta só o Raphael rodar 1 vez no PC, como pedido na validação do M2.
 - Script de benchmark que só lê a origem e só escreve numa pasta de teste, com relatório.
-- **Raphael:** rodar 1 vez no PC. Vai como pedido na validação do M2.
+- **Como rodar:** `py -3 scripts\medir_copia.py --origem <pasta> --destino <pasta-pai>` (opcionais: `--max-mib`, `--max-arquivos`, `--blocos 1,4,8`). Ctrl+C para parar.
+- **Escolhas de design (21/10/2026, a opção mais segura):**
+  - módulo novo `copy_bench.py` (sem Tk, sem imports do projeto, sem PowerShell e sem consulta de hardware): `pick_sample(origem, max_bytes, max_files, cancelled)`, `run_bench(origem, destino_pai, *, chunks=(1, 4, 8), max_bytes=1 GiB, max_files=5000, usage=shutil.disk_usage, clock=time.monotonic, cancelled=None)` e `bench_report(result) -> (texto, dados_json)`;
+  - a origem só é aberta com `"rb"`; a amostra usa `os.scandir` em ordem de nome, sem seguir links, junções nem outros reparse points (são pulados e contados); arquivo sozinho maior que o limite fica de fora; a amostra para no primeiro arquivo que passaria do limite (padrão 1 GiB / 5000 arquivos) e no máximo 200 mil itens listados;
+  - recusa (sem gravar nada): origem ou destino que é link/junção, destino dentro da origem (ou a mesma pasta), origem dentro do destino, bloco fora de 1–256 MiB, origem sem arquivos e espaço livre menor que **amostra × nº de tamanhos de bloco + 2 GiB** (cada tamanho de bloco grava uma cópia, porque nada é apagado entre as rodadas);
+  - só grava numa pasta nova `PCRO-MEDICAO-AAAAMMDD-HHMMSS` criada com `os.mkdir` (se existir, `-2`, `-3`… até 50), com uma subpasta `bloco-<N>MiB` por rodada; as cópias têm nome numérico (`00001.bin`), são abertas com `"xb"` (nunca por cima), gravadas como `.parcial`, com `fsync`, e renomeadas no fim; cada cópia é relida e conferida por SHA-256;
+  - um fluxo por vez (um arquivo de cada vez); mede leitura, escrita (com `fsync`) e conferência por tamanho de bloco; a sugestão escolhe o bloco com a maior velocidade "tudo junto" (leitura + escrita + conferência), diz o gargalo e estima o tempo para 120 GiB; o relatório avisa que a partir da 2ª rodada a leitura pode vir do cache;
+  - **nada é apagado**, nem a pasta de medição: o relatório informa o tamanho dela e diz que pode ser apagada à mão;
+  - `relatorio.txt` e `relatorio.json` ficam dentro da pasta de medição e não têm caminhos (só letra da unidade, quantidades, tamanhos e velocidades); o script também não repete caminhos nas mensagens de erro;
+  - Ctrl+C ou `cancelled` (Event ou função) param no próximo bloco: o arquivo pela metade fica `.parcial` e o relatório diz "interrompida"; cancelado antes de começar a copiar, nada é gravado;
+  - `scripts/medir_copia.py`: só `argparse` chamando `copy_bench`; código de saída 0 (concluída), 1 (interrompida) e 2 (recusada).
 ### P2-09 · Executor multi-disco real — `bloqueado`
 - Mexe nas travas de segurança (`copy_authorized` / `physical_independence_verified`). Só com pedido explícito do Raphael.
 
