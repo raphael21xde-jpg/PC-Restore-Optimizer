@@ -1,7 +1,8 @@
 """v0.5.19: grouped, lazy and persistent-selection backup restoration.
 
 Only this restoration dialog is changed. It uses existing verified manifest keys
-and delegates all disk operations to the unchanged restore_selected function.
+and delegates all disk operations to the unchanged restore_selected function,
+through guarded_restore_selected (P2-02), which refuses an elevated process.
 """
 from __future__ import annotations
 
@@ -11,15 +12,17 @@ import time
 from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
 
-from backup_features import verified_entries, restore_selected, resume_information
+from backup_features import verified_entries, resume_information
 from backup_core import human_size
 from transfer_engine import time_text, TransferMeter
 from restore_groups import PAGE_SIZE, build_restore_index, sorted_children
 from restore_jobs import Job
 from ui_timers import WindowTimers
+from restore_elevation import (ELEVATION_WARNING, ElevatedRestoreRefused,
+                                guarded_restore_selected, is_process_elevated)
 
 
-def show_restore(app, manifest, small=False):
+def show_restore(app, manifest, small=False, *, elevation_probe=None):
     if app.busy:
         messagebox.showinfo('Operação em andamento', 'Aguarde a operação atual terminar.')
         return
@@ -45,6 +48,10 @@ def show_restore(app, manifest, small=False):
 
     ttk.Label(frame, text='Restauração organizada — sem substituir arquivos originais',
               font=('Segoe UI', 13, 'bold')).pack(anchor='w')
+    if is_process_elevated(elevation_probe):
+        # P2-02: fixed warning; there is deliberately no "continue anyway" button.
+        ttk.Label(frame, text=ELEVATION_WARNING, wraplength=1080, foreground='#9a1c1c',
+                  font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(6, 2))
     ttk.Label(frame, text='Marque jogos, categorias, pastas ou arquivos. A seleção permanece ao pesquisar e navegar.',
               wraplength=1080).pack(anchor='w', pady=(5, 2))
     ttk.Label(frame, textvariable=status, wraplength=1080).pack(fill='x', pady=(5, 6))
@@ -296,7 +303,8 @@ def show_restore(app, manifest, small=False):
         progress_bar.configure(mode='determinate',maximum=100,value=0)
         set_busy(True)
         status.set('Preparando restauração…')
-        state['job']=Job(lambda cancelled,progress: restore_selected(manifest,chosen,destination,
+        state['job']=Job(lambda cancelled,progress: guarded_restore_selected(manifest,chosen,destination,
+                            elevation_probe=elevation_probe,
                             resume_from=resume_from,cancelled=cancelled,progress=progress))
         def done(result):
             path,count=result
@@ -307,8 +315,16 @@ def show_restore(app, manifest, small=False):
             messagebox.showinfo('Restauração aprovada',f'{count} arquivo(s) recuperados e verificados:\n{path}\n{detail}',parent=dlg)
         poll(done)
 
+    def refuse_if_elevated():
+        if is_process_elevated(elevation_probe):
+            messagebox.showerror('Restauração bloqueada', str(ElevatedRestoreRefused()), parent=dlg)
+            return True
+        return False
+
     def perform():
         if state['busy']:
+            return
+        if refuse_if_elevated():
             return
         chosen = sorted(state['selected'], key=str.casefold)
         if not chosen:
@@ -332,7 +348,9 @@ def show_restore(app, manifest, small=False):
     restore_button.pack(side='left')
 
     def resume_restore():
-        if state['busy'] or state['index'] is None: return
+        if state['busy']: return
+        if refuse_if_elevated(): return
+        if state['index'] is None: return
         folder=filedialog.askdirectory(parent=dlg,title='Selecione uma pasta TESTE-RESTAURACAO interrompida v0.5.19')
         if not folder: return
         try:
