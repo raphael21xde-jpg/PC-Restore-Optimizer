@@ -74,23 +74,42 @@ def slug(branch: str) -> str:
     return re.sub(r'[^A-Za-z0-9._-]+', '_', branch)
 
 
-def results_worktree(base: Path) -> Path:
-    """Worktree of the results branch (created as an orphan the first time)."""
+def cleanup_stale_worktrees() -> None:
+    """Remove worktrees left by an earlier run that crashed (temp pcro-validacao-*)."""
+    out = git('worktree', 'list', '--porcelain', check=False)
+    for line in out.splitlines():
+        if not line.startswith('worktree '):
+            continue
+        path = Path(line[len('worktree '):].strip())
+        if path.parent.name.startswith('pcro-validacao-'):
+            git('worktree', 'remove', '--force', str(path), check=False)
+            shutil.rmtree(path.parent, ignore_errors=True)
+    git('worktree', 'prune', check=False)
+
+
+def results_worktree(base: Path) -> tuple[Path, str | None]:
+    """Detached worktree of the results branch.
+
+    No local branch is checked out (git 2.5x refuses a branch that another,
+    possibly stale, worktree holds). Results are pushed with
+    HEAD:refs/heads/validacao-windows. Returns (path, temporary branch to
+    delete afterwards or None).
+    """
     path = base / 'resultados-wt'
     exists = git('ls-remote', '--heads', 'origin', RESULT_BRANCH)
     if exists:
-        git('fetch', 'origin', f'{RESULT_BRANCH}:refs/remotes/origin/{RESULT_BRANCH}')
+        git('fetch', 'origin', f'+refs/heads/{RESULT_BRANCH}:refs/remotes/origin/{RESULT_BRANCH}')
         git('worktree', 'add', '--detach', str(path), f'origin/{RESULT_BRANCH}')
-        git('checkout', '-B', RESULT_BRANCH, cwd=path)
-    else:
-        git('worktree', 'add', '--detach', str(path), 'origin/main')
-        git('checkout', '--orphan', RESULT_BRANCH, cwd=path)
-        git('rm', '-rf', '--quiet', '.', cwd=path)
-        (path / 'README.md').write_text(
-            '# Resultados da validação no Windows\n\n'
-            'Gerado por `scripts/validar_windows.py`. Não editar à mão.\n',
-            encoding='utf-8')
-    return path
+        return path, None
+    temp_branch = f'pcro-validacao-tmp-{base.name[-8:]}'
+    git('worktree', 'add', '--detach', str(path), 'origin/main')
+    git('checkout', '--orphan', temp_branch, cwd=path)
+    git('rm', '-rf', '--quiet', '.', cwd=path)
+    (path / 'README.md').write_text(
+        '# Resultados da validação no Windows\n\n'
+        'Gerado por `scripts/validar_windows.py`. Não editar à mão.\n',
+        encoding='utf-8')
+    return path, temp_branch
 
 
 def run_suite(worktree: Path) -> tuple[int, str]:
@@ -156,11 +175,14 @@ def main(argv=None) -> int:
               'Como administrador, os testes de permissão dão resultado diferente do uso real.')
         return 2
     git('fetch', 'origin', '--prune')
+    cleanup_stale_worktrees()
     branches = pending_branches()
     base = Path(tempfile.mkdtemp(prefix='pcro-validacao-'))
-    results = results_worktree(base)
+    results = base / 'resultados-wt'
+    temp_branch = None
     summary = []
     try:
+        results, temp_branch = results_worktree(base)
         for branch in branches:
             sha = git('rev-parse', f'origin/{branch}')
             done_file = results / 'resultados' / slug(branch) / f'{sha[:12]}.md'
@@ -181,11 +203,13 @@ def main(argv=None) -> int:
         if git('status', '--porcelain', cwd=results):
             git('commit', '-q', '-m', 'test(windows): resultados da validação [skip ci]', cwd=results)
             if not args.sem_enviar:
-                git('push', '-q', 'origin', f'HEAD:{RESULT_BRANCH}', cwd=results)
+                git('push', '-q', 'origin', f'HEAD:refs/heads/{RESULT_BRANCH}', cwd=results)
     finally:
         git('worktree', 'remove', '--force', str(results), check=False)
         shutil.rmtree(base, ignore_errors=True)
         git('worktree', 'prune', check=False)
+        if temp_branch:
+            git('branch', '-D', temp_branch, check=False)
     print('\nResumo:')
     for branch, sha, text in summary:
         print(f'  {branch:55} {sha[:8]}  {text}')
