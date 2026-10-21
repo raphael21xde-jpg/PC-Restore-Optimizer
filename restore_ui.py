@@ -23,6 +23,8 @@ from ui_timers import WindowTimers
 from restore_elevation import (ELEVATION_WARNING, ElevatedRestoreRefused,
                                 guarded_restore_selected, is_process_elevated)
 from restore_place import plan_placement
+from long_paths import LIMIT as LONG_LIMIT
+from long_paths import read_long_paths_enabled, staging_target_length, warning_text
 from restore_place_flow import (confirmation_text, friendly_report, run_placement,
                                 staging_info)
 
@@ -347,10 +349,13 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
         if not destination:
             return
         bytes_total = sum(state['index'].bytes_by_key[k] for k in chosen)
+        long_count = sum(1 for k in chosen if staging_target_length(destination, k) > LONG_LIMIT)
+        long_warning = warning_text(long_count, read_long_paths_enabled() if long_count else None)
         if not messagebox.askyesno('Confirmar restauração',
                 f'Restaurar {len(chosen):,} arquivo(s), total {human_size(bytes_total)}, '
                 f'em uma pasta NOVA dentro de:\n{destination}?\n\n'
-                'A pasta original de backup e os arquivos do sistema não serão alterados.', parent=dlg):
+                'A pasta original de backup e os arquivos do sistema não serão alterados.'
+                + (f'\n\n{long_warning}' if long_warning else ''), parent=dlg):
             return
         start_job(chosen,destination)
 
@@ -401,13 +406,18 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
         progress_bar.configure(mode='indeterminate')
         set_busy(True)
         status.set('Montando a prévia: conferindo o que já existe no lugar original…')
-        state['job'] = Job(lambda cancelled, progress: plan_placement(
-            info['manifest'], info['folder'], keys=info['keys']))
+        def build_plan(cancelled, progress):
+            # P2-03: o registro é lido uma vez, só leitura, junto com a prévia.
+            return (plan_placement(info['manifest'], info['folder'], keys=info['keys']),
+                    read_long_paths_enabled())
+        state['job'] = Job(build_plan)
 
-        def planned(plan):
+        def planned(result):
+            plan, long_paths_enabled = result
             allow = bool(include_protected.get())
             title = 'Retomar colocação' if resuming else 'Colocar no lugar original'
-            if not messagebox.askyesno(title, confirmation_text(plan, allow), parent=dlg):
+            if not messagebox.askyesno(title, confirmation_text(plan, allow, long_paths_enabled),
+                                       parent=dlg):
                 status.set('Colocação não iniciada. Nada foi alterado.')
                 return
             if allow and plan.counts()['precisa_admin']:

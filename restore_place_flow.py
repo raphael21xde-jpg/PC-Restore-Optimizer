@@ -23,6 +23,7 @@ from pathlib import Path
 
 from backup_core import is_reparse
 from backup_features import read_restore_record, verified_entries
+from long_paths import count_long, warning_text
 from restore_elevation import require_not_elevated
 from restore_place import place_files
 
@@ -88,18 +89,26 @@ def staging_info(folder, manifest):
             'has_journal': journal.is_file()}
 
 
-def preview_summary(plan):
-    """Contagens da prévia em português simples."""
+def preview_summary(plan, long_paths_enabled=None):
+    """Contagens da prévia em português simples.
+
+    P2-03: se algum destino passar de 259 caracteres, acrescenta a contagem e,
+    quando os caminhos longos estão desligados (ou não deu para ler), o aviso
+    com o comando para ligar. Sem destino longo, o texto não muda.
+    """
     counts = plan.counts()
     lines = [f'Prévia: {len(plan.items)} arquivo(s) conferido(s) nesta pasta.']
     lines += [text.format(n=counts[name]) for name, text in _PREVIEW_LINES if counts[name]]
+    warning = warning_text(count_long(item.target for item in plan.items), long_paths_enabled)
+    if warning:
+        lines.append(warning)
     return '\n'.join(lines)
 
 
-def confirmation_text(plan, allow_protected=False):
+def confirmation_text(plan, allow_protected=False, long_paths_enabled=None):
     """Texto da pergunta de confirmação, conforme a escolha das pastas do sistema."""
     counts = plan.counts()
-    parts = [preview_summary(plan), '']
+    parts = [preview_summary(plan, long_paths_enabled), '']
     protected = counts['precisa_admin']
     if protected and allow_protected is True:
         parts.append(f'Você escolheu incluir {protected} arquivo(s) de pastas do sistema. '
