@@ -15,7 +15,7 @@ from pathlib import Path
 from tkinter import filedialog, ttk
 
 from after_format import (DONE, PENDING, SKIPPED, STEPS, check_drives, load_progress,
-                          password_alert, save_progress)
+                          password_alert, progress_error_text, save_progress)
 from browser_recovery_ui import show_recovery
 from launcher_guide_ui import show_launchers
 from restore_jobs import Job
@@ -67,7 +67,12 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
     ttk.Label(frame, wraplength=950, text=INTRO_TEXT).pack(anchor='w', pady=(4, 2))
     ttk.Label(frame, wraplength=950,
               text=f'Backup escolhido: {manifest.parent.name}').pack(anchor='w', pady=(0, 4))
-    notice = tk.StringVar(master=dlg, value=' '.join(progress['warnings']))
+    # FIX-P2-11-01: aviso do progresso numa linha própria, que "Abrir" não apaga
+    progress_warning = tk.StringVar(master=dlg, value=' '.join(progress['warnings']))
+    dlg.after_format_progress_warning = progress_warning
+    ttk.Label(frame, textvariable=progress_warning, wraplength=950,
+              font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(0, 2))
+    notice = tk.StringVar(master=dlg, value='')
     dlg.after_format_notice = notice
     ttk.Label(frame, textvariable=notice, wraplength=950,
               font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(0, 6))
@@ -95,8 +100,7 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
         try:
             save_progress(state['path'], state['steps'])
         except (OSError, ValueError) as exc:
-            notice.set(f'Não deu para salvar o progresso: {exc} As marcações valem só até '
-                       'fechar a janela.')
+            progress_warning.set(progress_error_text(exc))
 
     for number, step in enumerate(STEPS, 1):
         row = ttk.Frame(steps_box, padding=(0, 4))
