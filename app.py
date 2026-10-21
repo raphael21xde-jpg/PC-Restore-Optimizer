@@ -42,6 +42,9 @@ from backup_core import atomic_json
 from transfer_engine import TransferMeter, time_text
 from workflow_ui import build_overview, build_preservation, build_installation
 from choice_migration import merge_preferences
+from plaintext_passwords import TITLE as PASSWORDS_TITLE, alert_lines as password_alert_lines
+from plaintext_passwords import find_password_exports, scan_paths as scan_password_paths
+from plaintext_passwords import user_folders
 
 APP_VERSION = "0.7.0-dev"
 
@@ -594,12 +597,35 @@ class App(tk.Tk):
         def worker():
             try:
                 plan=build_plan(choices,[f'{d}:\\' for d in DISKS])
-                self.after(0,lambda:self._preview_ready(plan))
+                # P2-06: só pelo nome, sem abrir os arquivos; nunca apaga nada.
+                try:
+                    passwords=find_password_exports(user_folders())
+                except Exception:
+                    passwords=None
+                self.after(0,lambda:self._preview_ready(plan,passwords))
             except Exception as exc:
                 self.after(0,lambda e=str(exc):self._error(e))
         threading.Thread(target=worker,daemon=True).start()
 
-    def _preview_ready(self,plan):
+    def _password_section(self,plan,passwords):
+        """P2-06: aviso de senhas exportadas sem proteção (não bloqueia a cópia)."""
+        found=list(getattr(passwords,'findings',[]) or [])
+        known={os.path.normcase(str(f)) for f in found}
+        # Também avisa sobre arquivos de senhas marcados em outras pastas da cópia.
+        found+=[p for p in scan_password_paths(task.source for task in plan.files)
+                if os.path.normcase(str(p)) not in known]
+        alert=password_alert_lines(found,getattr(passwords,'incomplete',False))
+        if not alert:return []
+        copied={os.path.normcase(str(task.source)) for task in plan.files}
+        going=[p for p in found if os.path.normcase(str(p)) in copied]
+        lines=['',PASSWORDS_TITLE+':']+['  '+x for x in alert]
+        if going:
+            lines.append(f'  ATENÇÃO: {len(going)} desses arquivos entram nesta cópia. '
+                         'O backup não é criptografado, então as senhas ficariam legíveis no disco de backup.')
+            lines += ['    → '+str(p) for p in going[:20]]
+        return lines
+
+    def _preview_ready(self,plan,passwords=None):
         self.busy=False;self.plan=plan
         selected=['C:']  # current Windows reinstall plan, not an executed format
         lines=['PLANO UNIFICADO DE PRESERVAÇÃO  •  nenhuma cópia realizada','',
@@ -622,6 +648,7 @@ class App(tk.Tk):
         descriptors=make_descriptors(self.catalog_items, plan.selected)
         lines += ['', 'IDENTIFICAÇÃO DO BACKUP:', self.backup_name.get().strip() or title_for(descriptors)]
         lines += list(dict.fromkeys(owner_text([r]) + ' | ' + r['root'] for r in descriptors))
+        lines += self._password_section(plan,passwords)
         issues=self._preflight(plan,quiet=True)
         if issues:lines+=['','BLOQUEIOS / ALERTAS:']+['  ! '+x for x in issues]
         awaiting_vault=sum(1 for bp in self.browser_keep_paths if not os.path.isfile(self.browser_vaults.get(bp,'')))
