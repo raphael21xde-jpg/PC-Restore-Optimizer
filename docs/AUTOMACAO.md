@@ -1,71 +1,68 @@
-# Automação do desenvolvimento (ciclo com agentes)
+# Automação do desenvolvimento — como a equipe de agentes trabalha
 
-**Objetivo:** o projeto anda sozinho todo dia. O Raphael só entra nas
-decisões marcadas no backlog, nos testes no hardware real e nas mudanças de
-governança. O merge das PRs verdes é feito pelo agente **integrador**
-(autorizado pelo Raphael em 21/10/2026).
+**Regra de ouro:** os agentes constroem o app sozinhos, todos os dias. O
+Raphael **não aprova nada no dia a dia**. Ele só é chamado, por notificação no
+celular e com o passo a passo, em quatro casos:
+1. **Validação de um marco:** um pedaço do app ficou pronto pra ele usar e dizer se está certo.
+2. **Algo que só o PC dele faz:** por exemplo, a validação no Windows parou há mais de 24 h.
+3. **Mexer nas travas de segurança:** formatar, apagar, executor multi-disco. Isso só acontece se ele pedir.
+4. **Um erro que os agentes não conseguiram resolver** em 2 ciclos seguidos.
 
-## Peças
+(Regras aprovadas pelo Raphael em 21/10/2026.)
 
-| Peça | Onde | Papel |
+## A equipe
+
+| Agente | Papel | Arquivo |
 |---|---|---|
-| Backlog | `docs/BACKLOG.md` | Lista ordenada de itens com critérios de aceite. É a fonte da verdade. |
-| Integrador | `.claude/agents/integrador.md` | Faz o merge das PRs que passaram nas 7 travas (Windows, testador, revisor, sem veto, sem decisão pendente, sem governança, sem conflito). |
-| Planejador | `.claude/agents/planejador.md` | Escolhe o próximo item `pronto` e escreve o plano. Não edita código. |
-| Desenvolvedor | `.claude/agents/desenvolvedor.md` | Implementa o plano com testes no branch `auto/<ID>-<slug>`. |
-| Testador | `.claude/agents/testador.md` | Roda a suíte completa no branch e na `main` e separa regressão de limitação do ambiente. |
-| Revisor | `.claude/agents/revisor.md` | Revisão independente contra as regras do `CLAUDE.md`. Pode bloquear. |
-| Validação Windows | `scripts/validar_windows.py` + `scripts/validar_windows_agendado.cmd` | O **Agendador de Tarefas do Windows**, no PC do Raphael, roda a suíte a cada 3 horas em **todos** os branches pendentes e publica os resultados no branch `validacao-windows`. O log fica em `%LOCALAPPDATA%\pcro-validacao.log`. |
-| Ciclo diário | tarefa agendada no claude.ai | Executa o roteiro abaixo uma vez por dia, numa sessão nova na nuvem. |
+| **Coordenador** | É o próprio ciclo agendado. Segue este roteiro, chama os outros agentes, escreve o resumo e chama o Raphael quando precisa | (prompt da tarefa agendada) |
+| **Planejador** | Gerente de produto: escolhe o próximo item do **marco atual** e divide em fatias que entregam algo usável | `.claude/agents/planejador.md` |
+| **Desenvolvedor** | Programa a fatia com testes, no branch `auto/<ID>-<slug>` | `.claude/agents/desenvolvedor.md` |
+| **Testador** | Roda a suíte completa no branch e na `main`. **Monitora** os resultados do Windows da `main` e transforma falhas em itens `FIX-...` | `.claude/agents/testador.md` |
+| **Revisor** | Revisão independente contra as regras de segurança. Pode bloquear | `.claude/agents/revisor.md` |
+| **Integrador** | Atualiza a PR com a `main`, confere as travas e faz o **merge** | `.claude/agents/integrador.md` |
 
-## Roteiro de cada ciclo
+**Fora do Claude:** o **Agendador de Tarefas do Windows**, no PC do Raphael, testa a `main` no Windows de verdade a cada 3 h e publica os resultados no branch `validacao-windows`. Ele roda sozinho, e o Raphael não precisa fazer nada.
 
-0. **Sincronizar.**
-   - `git fetch`.
-   - Ler as PRs abertas (`gh api .../pulls?state=open`), os comentários de revisão nelas e os resultados do branch `validacao-windows`.
-0.5. **Integrar.** O integrador confere as PRs abertas e faz o merge das que passaram nas 7 travas. As outras ganham um comentário com a trava que segurou.
-1. **Consertar antes de criar.** A prioridade é, em ordem:
-   1. Uma PR do ciclo com **falha na validação Windows** → o desenvolvedor corrige no mesmo branch.
-   2. Uma PR com **comentário do Raphael pedindo mudança** → o desenvolvedor atende no mesmo branch.
+## Roteiro de cada ciclo (02:48 e 14:48, horário de Brasília)
 
-   Novos commits entram na mesma PR, sempre sem `--force`.
-2. **Limite de fila.** Se já houver **3 PRs do ciclo** abertas (depois do passo 0.5), não comece item novo. Faça só o passo 1, ou nada, e avise no resumo.
-3. **Planejar.** O planejador escolhe o item e escreve o plano.
-4. **Desenvolver.** O desenvolvedor trabalha no branch `auto/<ID>-<slug>` a partir da `origin/main`.
-5. **Testar.** O testador roda a suíte completa no branch e na `main`. Se houver regressão, o desenvolvedor corrige (no máximo 2 rodadas). Se ainda falhar, a PR é aberta marcada como `[BLOQUEADA]`, com o diagnóstico.
-6. **Revisar.** O revisor faz a revisão independente. `BLOQUEAR` → o desenvolvedor corrige (no máximo 2 rodadas) e o revisor revê.
-7. **Entregar.**
-   - Abrir uma PR em **rascunho** pela API REST (`gh api repos/.../pulls -f draft=true`), com o título `<ID>: <título>`.
-   - O corpo da PR leva:
-     - o plano;
-     - os critérios de aceite, cada um com o teste que o cobre;
-     - o veredito do testador e do revisor;
-     - o aviso "falta validar no Windows".
-   - Commits com `[skip ci]`.
-8. **Resumo.** Uma mensagem curta: o que foi feito, o link da PR e o que espera o Raphael.
+1. **Olhar a saúde do projeto (testador).**
+   - Ler o resultado mais recente da `main` no branch `validacao-windows`.
+   - Se o Windows falhou: criar ou retomar um item `FIX-<data>-<assunto>`, que vira **prioridade máxima**.
+   - Se não chegou resultado novo há mais de 24 h: chamar o Raphael (caso 2).
+2. **Terminar o que está aberto (integrador + desenvolvedor).** Para cada PR aberta dos agentes:
+   - **pronta** (testador sem regressão + revisor aprovou, no commit atual) → o integrador faz o merge;
+   - **atrás da `main` ou com conflito** → o integrador faz `git merge origin/main` no branch (nunca rebase nem `--force`), roda a suíte de novo e faz o merge;
+   - **reprovada** → o desenvolvedor corrige, depois testador e revisor de novo.
+3. **Avançar (planejador → desenvolvedor → testador → revisor → integrador).**
+   - Ordem: os itens `FIX-...` primeiro, depois o primeiro `pronto` do marco atual.
+   - **Uma fatia por vez, até o merge.** Se sobrar tempo no ciclo, pegar a próxima.
+   - Uma escolha de design é resolvida com a opção **mais segura**, registrada na PR e no resumo, sem parar.
+4. **Marco pronto?** Se todos os itens do marco estiverem `concluído`, abrir a issue **"Validar M<n>"**, com a etiqueta `precisa-do-raphael` e o passo a passo do backlog, e chamar o Raphael (caso 1). Enquanto ele não responde, os agentes seguem para o próximo marco.
+5. **Resumo (vai para o celular).** A primeira linha é sempre uma destas:
+   - `🟢 Nada pra você.` + o que foi feito (merges e PRs), em até 5 linhas.
+   - `📱 PRECISA DE VOCÊ: <assunto>` + o link da issue + o passo a passo numerado (no máximo 6 passos, cada um com o comando exato ou o clique).
 
-## O que o ciclo NUNCA faz
-- Merge fora das 7 travas do integrador, `push --force`, apagar branches, disparar GitHub Actions.
-- Mexer nas travas de segurança ou pegar item `bloqueado`.
-- Tocar no PC real do Raphael, em discos reais ou em dados reais.
-- Mudar o `CLAUDE.md` ou o status de um item de outro jeito que não seja a PR do próprio item.
+## Travas do integrador (todas precisam passar)
+1. A PR é dos agentes (branch `auto/` ou `fix/`).
+2. Sem a etiqueta `nao-mergear`. O Raphael pode vetar qualquer coisa a qualquer hora com ela.
+3. O diff não toca em linhas com `copy_authorized`, `physical_independence_verified`, `ready_for_format`, `installation_authorized` ou `deletions_authorized`, nem em `CLAUDE.md`, `.claude/agents/`, `docs/AUTOMACAO.md` ou `scripts/validar_windows*`.
+4. O testador rodou a suíte completa **no commit atual** e não achou regressão.
+5. O revisor deu APROVAR ou APROVAR COM RESSALVAS **no commit atual**.
+6. A PR está atualizada com a `main` e sem conflito.
 
-## O que é do Raphael
-1. **Uma vez só:** ligar a validação automática no Windows (veja abaixo).
-2. **Decisões e testes no hardware real** marcados no backlog (`Raphael: ...`) ou numa PR ("Decisão para o Raphael", "Teste manual para o Raphael"). Responda com um comentário na PR ("aprovado" ou o que mudar).
-3. **Vetar** qualquer PR, quando quiser, com a etiqueta `nao-mergear`.
-4. **Governança:** PRs que mudam `CLAUDE.md`, agentes, este roteiro ou a validação.
+O merge é feito preso ao `sha` testado. O Windows confere **depois**, na `main`. Se quebrar, o próximo ciclo conserta primeiro (passo 1).
 
-### Ligar a validação automática no Windows (uma vez)
-Num Terminal **normal** (não de administrador):
-```
-schtasks /Create /TN "PCRO validacao Windows" /TR "C:\Users\rapha\PCRO-restaurar-app\scripts\validar_windows_agendado.cmd" /SC HOURLY /MO 3 /ST 08:54 /F
-```
-Para testar na hora: `schtasks /Run /TN "PCRO validacao Windows"`. O log fica em `%LOCALAPPDATA%\pcro-validacao.log`.
-Para desligar: `schtasks /Delete /TN "PCRO validacao Windows" /F`.
+## O que os agentes NUNCA fazem
+- `push --force`, rebase de branch publicado, apagar branches, disparar GitHub Actions.
+- Mexer nas travas de segurança ou pegar um item `bloqueado` por elas.
+- Tocar no PC do Raphael, em discos, backups ou dados reais. Testes só com `TemporaryDirectory`.
+- Mudar as regras (`CLAUDE.md`, agentes, este roteiro, a validação). Isso só acontece numa conversa com o Raphael.
+
+## Validação no Windows (PC do Raphael, já configurada)
+- Tarefa do Agendador **"PCRO validacao Windows"**, a cada 3 h, como usuário normal. Ela roda `scripts\validar_windows_agendado.cmd`, que atualiza a `main` e roda `scripts\validar_windows.py`.
+- O log fica em `%LOCALAPPDATA%\pcro-validacao.log`.
+- Pausar: `schtasks /Change /TN "PCRO validacao Windows" /DISABLE`. Voltar: `/ENABLE`.
 
 ## Limites conhecidos
-- A tarefa agendada do claude.ai **não tem terminal no PC** (só arquivos e navegador). Por isso a validação Windows usa o Agendador de Tarefas do próprio Windows, e não um agente do Claude.
-- A validação só roda com o PC ligado e com a sessão do Windows iniciada.
-- A nuvem roda Linux sem Tk: os testes de interface só rodam na validação Windows.
-- Recursos que dependem do Windows (ACL, registro, winget, WMI) são testados com simulação na nuvem. A prova real é a validação Windows e, quando o backlog pedir, o teste do Raphael no PC.
+- A tarefa agendada do claude.ai não tem terminal no PC. Por isso o Windows é testado pelo Agendador do próprio Windows, e só com o PC ligado.
+- A nuvem roda Linux sem Tk: os testes de interface rodam só na validação Windows, depois do merge.
