@@ -17,7 +17,7 @@ App desktop Windows (Python 3.13 + Tkinter): inventário de discos, seleção do
 
 ## Git e GitHub
 - Repositório: `raphael21xde-jpg/PC-Restore-Optimizer` (privado).
-- **Nunca fazer merge** na `main` sem aprovação explícita do Raphael. PRs nascem como **rascunho**.
+- Merge na `main`: só o Raphael **ou** o agente **integrador** (`.claude/agents/integrador.md`), e o integrador só quando as 7 travas dele estiverem verdes (autorizado pelo Raphael em 21/10/2026). Fora isso, **nunca fazer merge** sem aprovação explícita do Raphael. PRs nascem como **rascunho**. Mudanças de governança (`CLAUDE.md`, agentes, `docs/AUTOMACAO.md`, validação) e nas travas de segurança são sempre do Raphael.
 - Commits com `[skip ci]` no final da primeira linha. **Não** disparar GitHub Actions sem pedido.
 - Mensagens de commit em inglês, no formato `tipo(área): descrição`, como já é feito no histórico.
 - Não reescrever histórico publicado (sem `push --force`) e não apagar branches sem confirmação.
@@ -40,9 +40,9 @@ Ao terminar uma suíte de testes, uma etapa ou uma investigação, salve um rela
 A pasta `relatorios-claude/` fica **fora do git** (está no `.gitignore`). Esses relatórios são lidos pelo planejamento do projeto no claude.ai.
 
 ## Automação (ciclo com agentes)
-- O desenvolvimento roda num **ciclo diário** com quatro agentes (`.claude/agents/`: planejador, desenvolvedor, testador e revisor). O roteiro está em `docs/AUTOMACAO.md`, e a fila de trabalho em `docs/BACKLOG.md`.
-- O ciclo **só** entrega PRs em rascunho. Merge, decisões e testes no hardware real continuam sendo do Raphael.
-- A validação no Windows é feita pelo Raphael com `py -3 scripts\validar_windows.py`, num Terminal normal. Os resultados ficam no branch `validacao-windows`.
+- O desenvolvimento roda num **ciclo diário** com cinco agentes (`.claude/agents/`): integrador, planejador, desenvolvedor, testador e revisor. O roteiro está em `docs/AUTOMACAO.md`, e a fila de trabalho em `docs/BACKLOG.md`.
+- O ciclo entrega PRs em rascunho. O **integrador** faz o merge sozinho quando todas as travas estão verdes. Decisões, testes no hardware real e governança continuam sendo do Raphael.
+- A validação no Windows roda **sozinha** no PC do Raphael pelo Agendador de Tarefas do Windows (`scripts\validar_windows_agendado.cmd`, que chama `scripts\validar_windows.py`). Os resultados ficam no branch `validacao-windows`.
 
 ## Plano de entrega (resumo)
 - **Fase 0:** suíte completa com 0 falhas no Windows → uma PR única (rascunho) com o trabalho fora da `main` → o Raphael revisa e faz o merge.
