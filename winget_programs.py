@@ -1,10 +1,13 @@
-"""P2-04 (fatia 1): lista de programas do backup via `winget export` (só leitura).
+"""P2-04: lista de programas do backup via `winget export` (só leitura).
 
 O que este módulo faz:
-- monta o comando `winget export` (nunca `install` nem `import`);
+- monta o comando `winget export` (nunca `install` nem `import`: quem instala
+  é só o `winget_install.py`, depois da confirmação na tela);
 - grava a lista numa subpasta NOVA `programas-winget/` dentro da pasta do
-  backup, sem tocar no manifest.json nem nos arquivos copiados;
-- relê a lista conferindo o SHA-256 e organiza os pacotes por categoria.
+  backup (ou `programas-winget-2`, `-3`… quando a pessoa salva de novo), sem
+  tocar no manifest.json, nos arquivos copiados nem nas listas anteriores;
+- relê a lista válida mais nova conferindo o SHA-256 e organiza os pacotes
+  por categoria.
 
 Nada é instalado aqui. Nada é apagado: em falha, o arquivo `.parcial`
 fica onde está e é ignorado.
@@ -34,7 +37,13 @@ MAX_PACKAGES = 5000
 CATEGORIES = ('Runtimes', 'Launchers', 'Periféricos', 'Dia a dia', 'Dev', 'Outros')
 
 MISSING_TEXT = ('Este backup não tem a lista de programas. Ela é salva quando você '
-                'responde "Sim" à pergunta feita no fim de um backup concluído.')
+                'responde "Sim" à pergunta feita no fim de um backup concluído. Backups '
+                'anteriores a esta versão do aplicativo não têm a lista. Se você ainda não '
+                'formatou, use "Salvar lista agora". Se já formatou, reinstale os programas '
+                'pelo site oficial de cada um.')
+READ_ERROR_TEXT = ('Não foi possível ler a lista (arquivo em uso ou sem permissão). '
+                   'Os arquivos do backup não foram tocados.')
+MAX_SAVES = 99
 CHANGED_TEXT = ('A lista de programas foi alterada depois do backup e não será usada. '
                 'Os arquivos do backup não foram tocados.')
 TOO_BIG_TEXT = 'A lista de programas é grande demais para ser aberta com segurança.'
@@ -78,6 +87,10 @@ _PREFIXES = (
 _MSSTORE_ID = re.compile(r'[A-Za-z0-9]{12}')
 
 
+_SEPARATORS = re.compile(r'[._\-+]')
+SHORT_TERM_MAX = 5  # termos curtos (ex.: "sonar", "swarm") só valem como pedaço inteiro do ID
+
+
 def _peripheral_terms():
     try:
         from program_catalog import PERIPHERAL_TERMS
@@ -86,16 +99,28 @@ def _peripheral_terms():
     return tuple(t.casefold().replace(' ', '') for t in PERIPHERAL_TERMS)
 
 
+def _matches_peripheral(pid):
+    segments = {part for part in _SEPARATORS.split(pid) if part}
+    compact = _SEPARATORS.sub('', pid)
+    for term in _peripheral_terms():
+        if not term:
+            continue
+        if len(term) <= SHORT_TERM_MAX:
+            if term in segments:
+                return True
+        elif term in compact:
+            return True
+    return False
+
+
 def categorize(package_id_value):
     """Categoria de um ID de pacote; sem diferenciar maiúsculas. Resto → Outros."""
     pid = str(package_id_value or '').strip().casefold()
     if not pid:
         return 'Outros'
     for name, prefixes in _PREFIXES:
-        if name == 'Periféricos':
-            compact = re.sub(r'[._\-+]', '', pid)
-            if any(term and term in compact for term in _peripheral_terms()):
-                return name
+        if name == 'Periféricos' and _matches_peripheral(pid):
+            return name
         if pid.startswith(prefixes):
             return name
     return 'Outros'
@@ -140,20 +165,39 @@ def _check_backup_folder(folder):
     return None
 
 
-def save_export(backup_folder, *, runner=None, executable=None):
-    """Salva a lista de programas numa subpasta nova. Nunca levanta exceção."""
+def save_export(backup_folder, *, runner=None, executable=None, new_folder=False):
+    """Salva a lista de programas numa subpasta nova. Nunca levanta exceção.
+
+    Com ``new_folder=True`` ("Salvar lista agora"), se `programas-winget` já
+    existir, usa a próxima pasta livre `programas-winget-2`, `-3`… Nunca
+    sobrescreve nem apaga uma lista anterior.
+    """
     try:
-        return _save_export(Path(backup_folder), runner or _default_runner, executable)
+        return _save_export(Path(backup_folder), runner or _default_runner, executable,
+                            new_folder)
     except Exception:
         return _result('falhou', 'Não foi possível salvar a lista de programas. '
                                  'O backup continua válido.')
 
 
-def _save_export(folder, runner, executable):
+def _next_free_subfolder(folder):
+    for number in range(2, MAX_SAVES + 1):
+        candidate = folder / f'{SUBFOLDER}-{number}'
+        if not os.path.lexists(candidate):
+            return candidate
+    return None
+
+
+def _save_export(folder, runner, executable, new_folder=False):
     refusal = _check_backup_folder(folder)
     if refusal:
         return _result('recusado', refusal)
     sub = folder / SUBFOLDER
+    if new_folder and os.path.lexists(sub):
+        sub = _next_free_subfolder(folder)
+        if sub is None:
+            return _result('recusado', 'Este backup já tem listas de programas demais. '
+                                       'Nenhuma foi substituída.')
     if _is_link(sub):
         return _result('recusado', 'A pasta "programas-winget" deste backup é um atalho '
                                    '(link). Por segurança, nada foi gravado.')
@@ -256,9 +300,48 @@ def parse_export(data):
     return packages
 
 
+def _candidate_subfolders(folder):
+    """Pastas de lista, da mais nova (número mais alto) para a mais antiga."""
+    found = []
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        names = []
+    pattern = re.compile(re.escape(SUBFOLDER) + r'-(\d{1,3})')
+    for name in names:
+        match = pattern.fullmatch(name)
+        if match and 2 <= int(match.group(1)) <= MAX_SAVES:
+            found.append((int(match.group(1)), folder / name))
+    found.sort(reverse=True)
+    return [path for _, path in found] + [folder / SUBFOLDER]
+
+
 def load_export(backup_folder):
-    """Relê a lista salva conferindo o SHA-256. Levanta ValueError com texto simples."""
-    sub = Path(backup_folder) / SUBFOLDER
+    """Relê a lista válida mais nova conferindo o SHA-256.
+
+    Tenta `programas-winget-N` do número mais alto para o mais baixo e por fim
+    `programas-winget`; usa a primeira que estiver íntegra. Levanta ValueError
+    com texto simples (o da pasta mais nova) se nenhuma servir.
+    """
+    first_error = None
+    for sub in _candidate_subfolders(Path(backup_folder)):
+        try:
+            return _load_subfolder(sub)
+        except ValueError as exc:
+            # "falta a lista" só é mostrado se nenhuma pasta tiver um erro mais útil
+            if first_error is None and str(exc) != MISSING_TEXT:
+                first_error = exc
+    raise first_error if first_error is not None else ValueError(MISSING_TEXT)
+
+
+def _load_subfolder(sub):
+    try:
+        return _read_subfolder(sub)
+    except OSError:
+        raise ValueError(READ_ERROR_TEXT) from None
+
+
+def _read_subfolder(sub):
     if _is_link(sub):
         raise ValueError('A pasta "programas-winget" deste backup é um atalho (link) e não será lida.')
     final, info_path = sub / EXPORT_NAME, sub / INFO_NAME
@@ -266,12 +349,14 @@ def load_export(backup_folder):
         raise ValueError(MISSING_TEXT)
     if _is_link(final) or _is_link(info_path):
         raise ValueError(CHANGED_TEXT)
+    if info_path.stat().st_size > 64 * 1024:
+        raise ValueError(CHANGED_TEXT)
+    with open(info_path, 'rb') as handle:
+        info_raw = handle.read(64 * 1024 + 1)
     try:
-        if info_path.stat().st_size > 64 * 1024:
-            raise ValueError
-        info = json.loads(info_path.read_text(encoding='utf-8'))
+        info = json.loads(info_raw.decode('utf-8-sig'))
         expected = str(info.get('sha256') or '')
-    except (OSError, ValueError, AttributeError):
+    except (ValueError, UnicodeDecodeError, AttributeError):
         raise ValueError(CHANGED_TEXT) from None
     with open(final, 'rb') as handle:
         raw = handle.read(MAX_BYTES + 1)

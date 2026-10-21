@@ -322,6 +322,9 @@ class SourceWiringTests(unittest.TestCase):
         self.assertIn('show_programs(dlg, Path(manifest).parent)', ui)
 
     def test_modules_never_install_or_delete(self):
+        # Fatia 2: a instalação existe, mas só no winget_install.py (testado em
+        # test_winget_install_p2_04). Estes dois módulos continuam sem montar
+        # comando de instalação: a tela só chama winget_install.run_install.
         for name in ('winget_programs.py', 'winget_programs_ui.py'):
             source = (ROOT / name).read_text(encoding='utf-8')
             for forbidden in ("'install'", "'import'", '--accept-', 'unlink', 'rmtree', 'rmdir',
@@ -371,7 +374,8 @@ class ProgramsWindowTests(Base):
         buttons = {b.cget('text'): b for b in self.widgets(ttk.Button, dlg)}
         for text in ('Marcar categoria', 'Marcar tudo', 'Desmarcar tudo'):
             self.assertIn(text, buttons)
-        self.assertFalse(any('nstalar' in text for text in buttons))
+        # fatia 2: o botão de instalar existe, mas começa desligado (nada marcado)
+        self.assertTrue(buttons['Instalar marcados…'].instate(['disabled']))
         dev = roots[wp.CATEGORIES.index('Dev')]
         tree.focus(dev)
         buttons['Marcar categoria'].invoke()
