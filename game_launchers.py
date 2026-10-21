@@ -14,6 +14,7 @@ import re
 import stat
 from collections import deque
 from game_saves import _safe_directory
+from windows_drive import windows_drive
 
 STEAM = 'Steam'
 EPIC = 'Epic Games'
@@ -222,10 +223,25 @@ def _drive_key(path):
     return os.path.normcase(str(path)).rstrip('\\/')
 
 
-def _default_system_drive():
+UNKNOWN_SYSTEM_DRIVE_WARNING = (
+    'Não deu para confirmar qual é o disco do Windows, então nenhuma biblioteca foi '
+    'marcada como fora dele. Confira você mesmo em qual disco cada pasta está: o que '
+    'estiver no disco do Windows precisa de backup.')
+
+
+def _default_system_drive(warnings):
+    """(unidade, conhecida). Fora do Windows: (None, True), nada a marcar.
+
+    No Windows a letra vem de windows_drive (SystemRoot conferido com
+    SystemDrive). Se não der para confirmar: (None, False) e um aviso.
+    """
     if not _on_windows():
-        return None
-    return os.environ.get('SystemDrive') or 'C:'
+        return None, True
+    letter, _warning = windows_drive()
+    if letter is None:
+        warnings.append(UNKNOWN_SYSTEM_DRIVE_WARNING)
+        return None, False
+    return letter, True
 
 
 def detect_launchers(roots=None, *, max_depth=4, max_dirs=20000, max_manifests=300,
@@ -235,14 +251,17 @@ def detect_launchers(roots=None, *, max_depth=4, max_dirs=20000, max_manifests=3
     roots=None: no Windows usa as unidades locais (deep_discovery.local_drives);
     fora do Windows devolve resultado vazio. max_dirs vale POR unidade.
     cancelled: threading.Event ou função sem argumentos; checado a cada pasta.
-    system_drive: unidade do Windows (padrão: %SystemDrive% no Windows); as
-    bibliotecas nela recebem on_system_drive=True.
+    system_drive: unidade do Windows (padrão: windows_drive(), que confere
+    %SystemRoot% com %SystemDrive%); as bibliotecas nela recebem
+    on_system_drive=True. Se no Windows não der para confirmar a unidade, todas
+    recebem on_system_drive=None ("confira") e há um aviso em warnings.
     """
     is_cancelled = _cancel_check(cancelled)
-    if system_drive is None:
-        system_drive = _default_system_drive()
-    system_key = _drive_key(system_drive) if system_drive else None
     result = _empty()
+    known = True
+    if system_drive is None:
+        system_drive, known = _default_system_drive(result['warnings'])
+    system_key = _drive_key(system_drive) if system_drive else None
     if roots is None:
         roots = _default_roots(result['warnings'])
     seen_roots = []
@@ -260,8 +279,9 @@ def detect_launchers(roots=None, *, max_depth=4, max_dirs=20000, max_manifests=3
         key = (launcher, os.path.normcase(str(path)))
         lib = found.setdefault(key, {'launcher': launcher, 'path': str(path), 'root': str(root),
                                      'games': [], 'confidence': confidence,
-                                     'on_system_drive': bool(system_key) and
-                                     _drive_key(root) == system_key})
+                                     'on_system_drive': (bool(system_key) and
+                                                         _drive_key(root) == system_key)
+                                     if known else None})
         lib['games'] = sorted(set(lib['games']) | set(games), key=str.casefold)
 
     for root in seen_roots:

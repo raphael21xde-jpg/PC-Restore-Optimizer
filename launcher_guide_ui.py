@@ -10,7 +10,8 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from game_launchers import SYSTEM_DRIVE_WARNING, detect_launchers, guide_for
+from game_launchers import (SYSTEM_DRIVE_WARNING, UNKNOWN_SYSTEM_DRIVE_WARNING,
+                            detect_launchers, guide_for)
 from restore_jobs import Job
 from ui_timers import WindowTimers
 
@@ -22,6 +23,13 @@ INTRO_TEXT = (
     'formatada continuam lá e podem ser aproveitados.'
 )
 EMPTY_TEXT = 'Nenhuma biblioteca de jogos foi encontrada nas unidades deste computador.'
+
+
+def _drive_note(lib):
+    on_system = lib.get('on_system_drive', False)
+    if on_system is None:
+        return 'Confira'  # não deu para confirmar o disco do Windows
+    return 'Disco do Windows' if on_system else ''
 
 
 def show_launchers(parent, *, roots=None, scanner=None):
@@ -97,6 +105,8 @@ def show_launchers(parent, *, roots=None, scanner=None):
         text = guide_for(lib['launcher'], lib['path'])
         if lib.get('on_system_drive'):
             text = SYSTEM_DRIVE_WARNING + '\n\n' + text
+        elif lib.get('on_system_drive', False) is None:
+            text = UNKNOWN_SYSTEM_DRIVE_WARNING + '\n\n' + text
         if lib['games']:
             text += '\n\nJogos encontrados: ' + ', '.join(lib['games'])
         if lib['confidence'] != 'alta':
@@ -125,7 +135,7 @@ def show_launchers(parent, *, roots=None, scanner=None):
         for index, lib in enumerate(libraries):
             tree.insert('', 'end', iid=f'lib:{index}', text=lib['launcher'],
                         values=(lib['path'], len(lib['games']), lib['confidence'],
-                                'Disco do Windows' if lib.get('on_system_drive') else ''))
+                                _drive_note(lib)))
         text = (f'{len(libraries)} biblioteca(s) encontrada(s).' if libraries else EMPTY_TEXT)
         warnings = list(result.get('warnings', []))
         if result.get('truncated') and not warnings:

@@ -176,12 +176,14 @@ class DetectionTests(Base):
             lib = gl.detect_launchers([self.a])['libraries'][0]
         self.assertFalse(lib['on_system_drive'])
 
-    def test_system_drive_default_on_windows_uses_environment(self):
+    def test_system_drive_default_on_windows_uses_windows_drive(self):
+        # P2-11: a unidade padrão vem de windows_drive (SystemRoot conferido com SystemDrive)
         _touch(self.a / 'steamapps' / 'libraryfolders.vdf')
         with mock.patch.object(gl, '_on_windows', return_value=True), \
-                mock.patch.dict(os.environ, {'SystemDrive': str(self.a)}):
-            lib = gl.detect_launchers([self.a])['libraries'][0]
-        self.assertTrue(lib['on_system_drive'])
+                mock.patch.object(gl, 'windows_drive', return_value=(str(self.a), '')):
+            result = gl.detect_launchers([self.a])
+        self.assertTrue(result['libraries'][0]['on_system_drive'])
+        self.assertEqual(result['warnings'], [])
 
     def test_max_dirs_truncates_with_warning(self):
         for i in range(20):
