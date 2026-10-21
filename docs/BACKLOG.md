@@ -31,7 +31,7 @@ item, a própria PR do item muda o status dele para `concluído`.
   - testes só com `TemporaryDirectory`.
 
 ### P2-02 · Avisar e recusar restauração como administrador
-- **Status:** pronto · **Depende de:** — · **Raphael:** —
+- **Status:** concluído · **Depende de:** — · **Raphael:** —
 - **Aceite:**
   - a tela de restauração detecta processo elevado e mostra aviso claro;
   - o motor recusa, a menos que o chamador passe `allow_elevated=True` explicitamente;

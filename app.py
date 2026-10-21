@@ -29,7 +29,8 @@ from game_saves import find_game_saves, find_installed_games, associate_saves, p
 from program_catalog import discover_apps, find_desktop_shortcuts, catalog_summary
 from app_data import find_app_data, associate_app_data
 from backup_features import (friendly_backup_name, backup_labels, set_backup_label,
-                             verified_entries, restore_selected)
+                             verified_entries)
+from restore_elevation import guarded_restore_selected
 from diagnostics import disk_inventory, system_inventory, make_recommendations, save_report
 from backup_preflight_scenario_ui import show_backup_preflight_scenario
 from drive_safety_ui import show_drive_safety_dialog
@@ -1983,7 +1984,7 @@ class App(tk.Tk):
                 if not messagebox.askyesno('Confirmar restauração isolada',
                      f'{game.get("name")} — {len(chosen)} arquivo(s).\n\nCriar uma pasta NOVA e conferir SHA-256 sem substituir originais?',parent=dlg):
                     return
-                restored,count=restore_selected(manifest,chosen,target)
+                restored,count=guarded_restore_selected(manifest,chosen,target)
                 dlg.destroy()
                 messagebox.showinfo('Saves conferidos',f'{count} arquivo(s) de {game.get("name")} restaurados:\n{restored}\n\nNão foram aplicados automaticamente ao jogo.')
             except Exception as exc:
