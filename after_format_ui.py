@@ -7,6 +7,12 @@ conferido nem executado por ela. Pular não bloqueia nenhuma etapa.
 
 A conferência das unidades roda num Job (segundo plano, só leitura) e volta ao
 Tk por after. Fechar a janela cancela o Job.
+
+FIX-P2-11-03: "Feito"/"Pular" não gravam na thread do Tk. Pedem a um
+ProgressSaver (um por backup, em app.after_format_savers), que grava em
+segundo plano, sempre a última marcação. O erro volta ao Tk por timers.after.
+Fechar a janela não cancela a gravação pendente; reabrir o mesmo backup mostra
+as marcações ainda não gravadas.
 """
 from __future__ import annotations
 
@@ -14,8 +20,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
 
-from after_format import (DONE, PENDING, SKIPPED, STEPS, check_drives, load_progress,
-                          password_alert, progress_error_text, save_progress, window_key)
+from after_format import (DONE, PENDING, SKIPPED, STEPS, ProgressSaver, check_drives,
+                          load_progress, password_alert, window_key)
 from browser_recovery_ui import show_recovery
 from launcher_guide_ui import show_launchers
 from restore_jobs import Job
@@ -66,6 +72,24 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
     run_check = checker or (lambda chosen, cancelled: (check_drives(chosen),
                                                        password_alert(chosen)))
     progress = load_progress(manifest, base)
+    # FIX-P2-11-03: um gravador por backup; se o da janela anterior ainda tem
+    # marcações por gravar, elas valem mais que o arquivo (são mais novas).
+    savers = getattr(app, 'after_format_savers', None)
+    if not isinstance(savers, dict):
+        savers = app.after_format_savers = {}
+    saver = savers.get(key)
+    steps = dict(progress['steps'])
+    if saver is not None:
+        pending = saver.pending_steps()
+        if pending is not None:
+            steps = pending
+    if progress['path'] is None:
+        saver = None  # sem lugar seguro: as marcações valem só até fechar
+    elif saver is None or saver.path != Path(progress['path']):
+        # outro arquivo: o gravador antigo termina sozinho o que tinha (não há
+        # ordem a manter entre arquivos diferentes)
+        saver = ProgressSaver(progress['path'], progress.get('backup'))
+        savers[key] = saver
 
     dlg = tk.Toplevel(app)
     dlg.title(TITLE)
@@ -73,8 +97,9 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
     dlg.minsize(720, 520)
     dialogs[key] = dlg
     timers = WindowTimers(dlg)
-    state = {'steps': dict(progress['steps']), 'path': progress['path'], 'job': None,
-             'backup': progress.get('backup'), 'key': key,
+    state = {'steps': steps, 'path': progress['path'], 'job': None,
+             'backup': progress.get('backup'), 'key': key, 'saver': saver,
+             'polling': False,
              'busy': False, 'drives': None, 'passwords': '', 'manifest': manifest}
     dlg.after_format_state = state
 
@@ -113,12 +138,23 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
             value = PENDING
         state['steps'][step_id] = value
         refresh_step(step_id)
-        if state['path'] is None:
+        if state['path'] is None or state['saver'] is None:
             return
-        try:
-            save_progress(state['path'], state['steps'], state['backup'])
-        except (OSError, ValueError) as exc:
-            progress_warning.set(progress_error_text(exc))
+        state['saver'].request(state['steps'])  # grava em segundo plano
+        if not state['polling']:
+            state['polling'] = True
+            timers.after(150, watch_saver)
+
+    def watch_saver():
+        # lê "ocupado" antes do erro: se já terminou, o erro (se houve) já está lá
+        busy = state['saver'].busy()
+        error = state['saver'].poll_error()
+        if error:
+            progress_warning.set(error)
+        if busy:
+            timers.after(150, watch_saver)
+        else:
+            state['polling'] = False
 
     for number, step in enumerate(STEPS, 1):
         row = ttk.Frame(steps_box, padding=(0, 4))
@@ -254,7 +290,13 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
             del dialogs[key]
         if state['job'] is not None:
             state['job'].cancelled.set()
+        if state['saver'] is not None:
+            state['saver'].close()  # só avisa; a gravação pendente continua
 
     dlg.bind('<Destroy>', on_destroy, add='+')
+    if saver is not None and saver.busy():
+        # reaberta com gravação da janela anterior em curso: mostra o erro, se vier
+        state['polling'] = True
+        timers.after(150, watch_saver)
     run_drive_check()
     return dlg

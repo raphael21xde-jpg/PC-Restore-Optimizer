@@ -555,6 +555,174 @@ class ProgressTests(unittest.TestCase):
             self.assertNotIn(word, src)
 
 
+class ProgressSaverTests(unittest.TestCase):
+    """FIX-P2-11-03: gravação do progresso fora da thread da interface (sem Tk)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.path = self.tmp / 'progresso' / 'progresso.json'
+        self.steps = af._empty_steps()
+
+    def marks(self, **changes):
+        return dict(self.steps, **changes)
+
+    def held_save(self):
+        """save falso que espera um Event antes de cada gravação."""
+        import threading
+        release = threading.Event()
+        started = threading.Event()
+        calls = []
+
+        def save(path, steps, backup=None):
+            started.set()
+            self.assertTrue(release.wait(5))
+            calls.append((path, dict(steps), backup))
+            return steps
+        return save, release, started, calls
+
+    def test_latest_request_wins_and_writes_in_order(self):
+        save, release, started, calls = self.held_save()
+        saver = af.ProgressSaver(self.path, 'id-1', save=save)
+        first = self.marks(discos=af.DONE)
+        second = self.marks(discos=af.DONE, restaurar=af.SKIPPED)
+        third = self.marks(discos=af.PENDING, restaurar=af.SKIPPED, navegador=af.DONE)
+        saver.request(first)
+        self.assertTrue(started.wait(5))  # a 1ª gravação começou e está presa
+        saver.request(second)
+        saver.request(third)
+        release.set()
+        self.assertTrue(saver.join(5))
+        self.assertLessEqual(len(calls), 2)
+        self.assertEqual(calls[-1], (self.path, third, 'id-1'))
+        self.assertNotIn(second, [c[1] for c in calls])  # intermediário foi juntado
+        self.assertIsNone(saver.pending_steps())
+        self.assertIsNone(saver.poll_error())
+
+    def test_request_keeps_a_copy(self):
+        save, release, started, calls = self.held_save()
+        saver = af.ProgressSaver(self.path, None, save=save)
+        steps = self.marks(discos=af.DONE)
+        saver.request(steps)
+        steps['discos'] = af.SKIPPED  # a tela muda o dicionário depois do pedido
+        release.set()
+        self.assertTrue(saver.join(5))
+        self.assertEqual(calls[-1][1]['discos'], af.DONE)
+
+    def test_pending_steps_reflects_last_request(self):
+        save, release, started, calls = self.held_save()
+        saver = af.ProgressSaver(self.path, None, save=save)
+        self.assertIsNone(saver.pending_steps())
+        saver.request(self.marks(discos=af.DONE))
+        self.assertTrue(started.wait(5))
+        saver.request(self.marks(launchers=af.SKIPPED))
+        pending = saver.pending_steps()
+        self.assertEqual(pending, self.marks(launchers=af.SKIPPED))
+        pending['launchers'] = af.DONE  # cópia: não muda o que será gravado
+        self.assertEqual(saver.pending_steps()['launchers'], af.SKIPPED)
+        self.assertTrue(saver.busy())
+        release.set()
+        self.assertTrue(saver.join(5))
+        self.assertFalse(saver.busy())
+        self.assertIsNone(saver.pending_steps())
+
+    def test_close_does_not_cancel_pending_save(self):
+        save, release, started, calls = self.held_save()
+        saver = af.ProgressSaver(self.path, None, save=save)
+        saver.request(self.marks(discos=af.DONE))
+        self.assertTrue(started.wait(5))
+        saver.request(self.marks(discos=af.DONE, programas=af.DONE))
+        saver.close()  # a janela fechou com um pedido ainda na fila
+        self.assertTrue(saver.closed)
+        release.set()
+        self.assertTrue(saver.join(5))
+        self.assertEqual(calls[-1][1], self.marks(discos=af.DONE, programas=af.DONE))
+
+    def test_writer_thread_is_not_daemon(self):
+        save, release, started, calls = self.held_save()
+        saver = af.ProgressSaver(self.path, None, save=save)
+        saver.request(self.marks(discos=af.DONE))
+        self.assertTrue(started.wait(5))
+        try:
+            self.assertFalse(saver._thread.daemon)  # sair do app espera a gravação
+        finally:
+            release.set()
+            self.assertTrue(saver.join(5))
+
+    def test_save_error_becomes_text_without_path(self):
+        def save(path, steps, backup=None):
+            raise PermissionError(13, 'Acesso negado',
+                                  r'C:\Users\fulano\AppData\progresso.json.parcial-abc')
+        saver = af.ProgressSaver(self.path, None, save=save)
+        saver.request(self.marks(discos=af.DONE))
+        self.assertTrue(saver.join(5))
+        text = saver.poll_error()
+        self.assertTrue(text.startswith('Não deu para salvar o progresso'))
+        self.assertIn('PermissionError', text)
+        for word in ('fulano', 'Users', 'AppData', 'Acesso negado'):
+            self.assertNotIn(word, text)
+        self.assertIsNone(saver.poll_error())  # o aviso é entregue uma vez
+
+    def test_error_then_success_keeps_working(self):
+        results = [OSError('falhou'), None]
+        calls = []
+
+        def save(path, steps, backup=None):
+            outcome = results.pop(0)
+            if outcome is not None:
+                raise outcome
+            calls.append(dict(steps))
+        saver = af.ProgressSaver(self.path, None, save=save)
+        saver.request(self.marks(discos=af.DONE))
+        self.assertTrue(saver.join(5))
+        self.assertIsNotNone(saver.poll_error())
+        saver.request(self.marks(discos=af.SKIPPED))
+        self.assertTrue(saver.join(5))
+        self.assertEqual(calls, [self.marks(discos=af.SKIPPED)])
+
+    def test_real_save_in_background(self):
+        manifest = _backup(self.tmp / 'E')
+        loaded = af.load_progress(manifest, self.tmp / 'base')
+        saver = af.ProgressSaver(loaded['path'], loaded['backup'])
+        for value in (af.DONE, af.SKIPPED, af.DONE):
+            saver.request(dict(loaded['steps'], discos=value, launchers=af.SKIPPED))
+        saver.close()
+        self.assertTrue(saver.join(10))
+        self.assertIsNone(saver.poll_error())
+        again = af.load_progress(manifest, self.tmp / 'base')
+        self.assertEqual(again['steps']['discos'], af.DONE)
+        self.assertEqual(again['steps']['launchers'], af.SKIPPED)
+        self.assertEqual(again['path'], loaded['path'])
+
+    def test_refuses_link_in_background(self):
+        target = self.tmp / 'outro.json'
+        target.write_text('não mexer', encoding='utf-8')
+        self.path.parent.mkdir(parents=True)
+        try:
+            os.symlink(target, self.path)
+        except (OSError, NotImplementedError):
+            self.skipTest('Sem permissão para criar link simbólico')
+        saver = af.ProgressSaver(self.path, None)
+        saver.request(self.marks(discos=af.DONE))
+        self.assertTrue(saver.join(5))
+        self.assertIn('Não deu para salvar o progresso', saver.poll_error())
+        self.assertEqual(target.read_text(encoding='utf-8'), 'não mexer')
+        self.assertTrue(os.path.islink(self.path))
+
+    def test_ui_mark_does_not_save_directly(self):
+        src = (ROOT / 'after_format_ui.py').read_text(encoding='utf-8')
+        self.assertFalse('save_progress' in src, 'a tela não pode gravar direto')
+        start = src.index('    def mark(')
+        end = src.index('\n    def ', start + 1)
+        body = src[start:end]
+        self.assertIn('.request(', body)
+        self.assertIn('ProgressSaver', src)
+        self.assertIn('after_format_savers', src)
+        self.assertIn('poll_error()', src)
+        self.assertIn('pending_steps()', src)
+
+
 try:
     import tkinter as tk
     from tkinter import ttk
@@ -629,7 +797,9 @@ class WindowTests(unittest.TestCase):
         dlg = self.open()
         dlg.after_format_buttons['discos']['Feito'].invoke()
         dlg.after_format_buttons['launchers']['Pular'].invoke()
+        saver = self.root.after_format_savers[dlg.after_format_state['key']]
         dlg.destroy()
+        self.assertTrue(saver.join(5))  # fechar não cancelou a gravação
         dlg = self.open()
         self.assertEqual(dlg.after_format_status['discos'].get(), 'Feito')
         self.assertEqual(dlg.after_format_status['launchers'].get(), 'Pulado')
@@ -675,14 +845,46 @@ class WindowTests(unittest.TestCase):
     def test_save_failure_shown_without_full_path(self):
         dlg = self.open()
         error = PermissionError(13, 'negado', r'C:\Users\fulano\progresso.json.parcial')
-        with mock.patch.object(afu, 'save_progress', side_effect=error):
+        with mock.patch.object(af, 'save_progress', side_effect=error):
             dlg.after_format_buttons['discos']['Feito'].invoke()
+            # FIX-P2-11-03: a gravação é em segundo plano; o aviso chega pelo timer
+            until = time.monotonic() + 5
+            while ('Não deu' not in dlg.after_format_progress_warning.get()
+                   and time.monotonic() < until):
+                self.root.update()
+                time.sleep(0.02)
         with mock.patch.object(afu, 'show_programs'):
             dlg.after_format_buttons['programas']['Abrir'].invoke()
         warning = dlg.after_format_progress_warning.get()
         self.assertIn('Não deu para salvar o progresso', warning)
         self.assertNotIn('fulano', warning)
         dlg.destroy()
+
+    def test_reopen_prefers_marks_not_yet_saved(self):
+        # FIX-P2-11-03: reabrir enquanto a gravação ainda espera mostra a marcação nova
+        import threading
+        release = threading.Event()
+
+        def slow_save(path, steps, backup=None):
+            self.assertTrue(release.wait(5))
+            return af.save_progress(path, steps, backup)
+        dlg = self.open()
+        saver = self.root.after_format_savers[dlg.after_format_state['key']]
+        saver._save = slow_save
+        dlg.after_format_buttons['discos']['Feito'].invoke()
+        dlg.destroy()
+        self.root.update()
+        try:
+            self.assertTrue(saver.closed)
+            dlg = self.open()
+            self.assertIs(dlg.after_format_state['saver'], saver)
+            self.assertEqual(dlg.after_format_status['discos'].get(), 'Feito')
+        finally:
+            release.set()
+            self.assertTrue(saver.join(5))
+        dlg.destroy()
+        again = af.load_progress(self.manifest, self.base)
+        self.assertEqual(again['steps']['discos'], af.DONE)
 
     def test_skip_does_not_block(self):
         dlg = self.open()
