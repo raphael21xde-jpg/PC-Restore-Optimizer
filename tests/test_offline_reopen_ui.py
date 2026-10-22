@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from test_multi_source_recovery_center import _FixtureBase, descendants
 from multi_source_offline_reopen_ui import show_fixture_offline_reopen
+from tk_helpers import track_tk_root
 
 
 class OfflineReopenUiTests(_FixtureBase, unittest.TestCase):
@@ -20,7 +21,7 @@ class OfflineReopenUiTests(_FixtureBase, unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest(f'Tk display indisponível: {exc}')
         self.tk_root.withdraw()
-        self.addCleanup(self.tk_root.destroy)
+        track_tk_root(self, self.tk_root)
 
     def window(self, roots=()):
         dialog = show_fixture_offline_reopen(

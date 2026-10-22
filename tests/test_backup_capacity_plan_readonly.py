@@ -18,6 +18,7 @@ from backup_capacity_input import GIB, parse_estimated_backup_gib
 from drive_safety_report import inspect_fresh_drive_safety
 from drive_safety_export import safe_drive_report_json
 from drive_safety_ui import show_drive_safety_dialog
+from tk_helpers import close_tk_root
 
 
 def fixture(free=100 * GIB):
@@ -139,7 +140,7 @@ class CapacityInputUiTests(unittest.TestCase):
         # Finalize test-owned Tcl on main thread, not on a worker GC pass.
         self.assertIs(threading.current_thread(), threading.main_thread())
         try:
-            self.root.destroy()
+            close_tk_root(self.root)
         finally:
             self.root = None
             gc.collect()

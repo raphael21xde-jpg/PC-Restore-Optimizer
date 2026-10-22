@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from deep_discovery_ui import show_deep_discovery
+from tk_helpers import track_tk_root
 
 
 def descendants(widget):
@@ -18,7 +19,7 @@ class SelectedRootGuiTests(unittest.TestCase):
     def test_c_only_has_no_other_drive_tab_or_registry_record(self):
         parent = tk.Tk()
         parent.withdraw()
-        self.addCleanup(parent.destroy)
+        track_tk_root(self, parent)
         parent.dest = tk.StringVar(value='G:/backup')
         parent.catalog_items = {}
         parent.choices = {}

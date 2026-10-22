@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
+from tk_helpers import track_tk_root
 
 
 class TestBackupWindowUsability(unittest.TestCase):
@@ -21,6 +22,7 @@ class TestBackupWindowUsability(unittest.TestCase):
                 self.fail(f'Tk obrigatório: {exc}')
             self.skipTest(f'Sem display Tk: {exc}')
         app.withdraw()
+        track_tk_root(self, app)
         window = None
 
         def widgets(parent):

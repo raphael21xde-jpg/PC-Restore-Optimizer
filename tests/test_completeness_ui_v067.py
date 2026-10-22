@@ -6,12 +6,14 @@ from unittest import mock
 
 from app import App, APP_VERSION
 from completeness_audit_ui_v067 import show_completeness_audit
+from tk_helpers import close_tk_root, track_tk_root
 
 
 class CompletenessUI067Tests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.app = App()
+        track_tk_root(self, self.app)
         self.app.withdraw()
         self.app.local_state = Path(self.temp.name)/'prefs.json'
 
@@ -19,7 +21,7 @@ class CompletenessUI067Tests(unittest.TestCase):
         for popup in self.app.winfo_children():
             if popup.winfo_class() == 'Toplevel':
                 popup.destroy()
-        self.app.destroy()
+        close_tk_root(self.app)
         self.temp.cleanup()
 
     def _children(self, parent):

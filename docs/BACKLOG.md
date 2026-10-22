@@ -183,9 +183,18 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 ---
 
 ## Marco M2 — Preservação para qualquer PC  ← ATUAL
-### P2-07 · Estabilidade da interface Tk — `pronto`
+### P2-07 · Estabilidade da interface Tk
 - Eliminar `invalid command name`, `Tcl interpreter is leaked` e os prints soltos dos testes.
 - Precisa de ambiente com Tk para conferir; os agentes na nuvem (Linux sem Tk) pulam para o próximo item testável.
+- **Fatia 1 (só nos testes):** `concluído` (branch `auto/P2-07-estabilidade-tk`). **Confirmar na validação Windows; se as mensagens continuarem, nova fatia.**
+- **Escolhas de design (22/10/2026, a opção mais segura):**
+  - mexer **só nos testes**; o comportamento do app não mudou;
+  - ajudante comum `tests/tk_helpers.py` (não é um arquivo de teste e importa sem `tkinter`): `close_tk_root(root)` cancela **todos** os `after` pendentes do interpretador (`after info` + `after cancel` direto do Tcl, um por um; um erro num deles não para os outros) e depois chama `destroy()`; não usa `after_cancel` do tkinter, porque ele também apaga o comando (`deletecommand`), o que pode dar erro com a raiz já destruída e apagar comandos do próprio Tk (ajuste da revisão da PR #80); os comandos Python que sobram são apagados pelo `destroy()`; pode ser chamado de novo sem erro; `track_tk_root(self, root)` substitui `addCleanup(root.destroy)` (e o antigo `addCleanup(gc.collect)`, que rodava **antes** do `destroy` e com a raiz ainda presa no teste): no fim do teste fecha a raiz, espera até 1 s pelas threads criadas durante o teste, troca por `None` os atributos do teste que são objetos Tk e roda `gc.collect()` na thread principal;
+  - motivo das mensagens do log da `main` b0f669f: os `after` (`poll` e `warn_slow` de `completeness_audit_ui_v068`, `quit` de `test_audit_ui_hotfix_v0681`) ficam na fila de eventos da **thread** e disparam no teste seguinte que roda o laço do Tk, depois que o comando Python já foi apagado → `invalid command name`; os objetos Tk vivem em ciclos de referência e, sem um `gc.collect()` na thread principal, o coletor podia rodar numa thread de trabalho → `Variable.__del__ ... main thread is not in main loop` e `Tcl interpreter is leaked`;
+  - aplicado em todos os 41 módulos de teste que criam uma raiz Tk (`App()` ou `tk.Tk()`); onde o `tearDown` destruía a raiz antes de apagar a pasta temporária, ele agora chama `close_tk_root` no mesmo lugar (a ordem continua a mesma);
+  - prints soltos: `test_local_test_reporter` e `test_validar_windows` agora capturam a saída das ferramentas (`redirect_stdout`); os scripts não foram alterados;
+  - teste sem Tk: `tests/test_tk_helpers_p2_07.py` usa uma raiz falsa.
+- **Fatia 2 (no app):** `pronto`. `completeness_audit_ui_v068` agenda `poll` e `warn_slow` com `window.after` e eles ficam pendentes depois de fechar a janela; trocar por `WindowTimers` (`ui_timers.py`), que cancela os agendamentos da própria janela ao fechar. Testar com Tk (validação Windows).
 ### P2-08 · Central de recuperação ligada ao app
 - **Status:** `concluído` (fatia 1, branch `auto/P2-08-central-recuperacao`).
 - A central abre manifestos reais (somente leitura) e restaura pelo fluxo do P2-01.

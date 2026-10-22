@@ -11,6 +11,7 @@ from unittest.mock import patch
 from ui_timers import WindowTimers
 from deep_discovery_ui import show_deep_discovery
 from restore_ui import show_restore
+from tk_helpers import track_tk_root
 
 
 def descendants(widget):
@@ -26,7 +27,7 @@ class WindowCloseLifecycleTests(unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest(f'Tk display indisponivel: {exc}')
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
+        track_tk_root(self, self.root)
         self.root.busy = False
         self.errors = []
         self.root.tk.createcommand('bgerror', self.errors.append)

@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from drive_safety_ui import show_drive_safety_dialog
+from tk_helpers import track_tk_root
 
 
 def children(widget):
@@ -42,7 +43,7 @@ class DriveSafetyUiTests(unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest(f'Tk indisponível: {exc}')
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
+        track_tk_root(self, self.root)
 
     def open_dialog(self):
         dialog = show_drive_safety_dialog(

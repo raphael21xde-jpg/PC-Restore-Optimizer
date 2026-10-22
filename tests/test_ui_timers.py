@@ -3,6 +3,7 @@ import tkinter as tk
 import unittest
 
 from ui_timers import WindowTimers
+from tk_helpers import track_tk_root
 
 
 class WindowTimerTests(unittest.TestCase):
@@ -12,7 +13,7 @@ class WindowTimerTests(unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest(str(exc))
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
+        track_tk_root(self, self.root)
         self.errors = []
         self.root.tk.createcommand('bgerror', self.errors.append)
 

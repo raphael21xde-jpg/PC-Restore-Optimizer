@@ -11,6 +11,7 @@ from game_links import infer_links
 from scan_gaps import report_by_drive
 from app import App
 from workflow_ui import show_scan_gaps
+from tk_helpers import track_tk_root
 
 
 def children(widget):
@@ -107,7 +108,7 @@ class GUIAuditTests(TestCase):
     def setUp(self):
         with patch.object(App, 'refresh_catalog', lambda self:None):
             self.app=App()
-        self.addCleanup(self.app.destroy)
+        track_tk_root(self, self.app)
         self.app.catalog_items={'g': dict(name='God of War Ragnarök',kind='game',
                                      install_location='D:/SteamLibrary/GOW',paths=[],possible_paths=[])}
         self.app.catalog_choices={'g':'keep'}
@@ -144,7 +145,7 @@ class ImportOldInventoryTests(TestCase):
         from deep_discovery_ui import show_deep_discovery
         with patch.object(App, 'refresh_catalog', lambda self: None):
             app=App()
-        self.addCleanup(app.destroy)
+        track_tk_root(self, app)
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp)/'deteccao-detalhada-v063.json'
             path.write_text(json.dumps({

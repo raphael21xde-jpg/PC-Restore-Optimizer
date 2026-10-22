@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from selective_backup_ui import show_selective_backup
+from tk_helpers import track_tk_root
 
 
 def widgets(parent):
@@ -27,6 +28,7 @@ class TestPaginatedInventoryGUI(unittest.TestCase):
                 self.fail(f"Tk display required: {exc}")
             self.skipTest(f"No display: {exc}")
         app.withdraw()
+        track_tk_root(self, app)
         window = None
         try:
             with tempfile.TemporaryDirectory(prefix="PCRO-UI-PAGE-") as tmp:

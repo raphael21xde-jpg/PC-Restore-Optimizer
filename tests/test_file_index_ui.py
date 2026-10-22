@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from file_index_ui import show_file_index, format_index_row
+from tk_helpers import track_tk_root
 
 
 def walk(widget):
@@ -28,6 +29,7 @@ class TestFileIndexUI(unittest.TestCase):
                 self.fail(f"Tk required for UI validation: {exc}")
             self.skipTest(f"Display unavailable: {exc}")
         app.withdraw()
+        track_tk_root(self, app)
         win = None
         with tempfile.TemporaryDirectory(prefix="PCRO-INDEX-UI-") as tmp:
             try:
@@ -93,6 +95,7 @@ class TestFileIndexUI(unittest.TestCase):
                 self.fail(f"Tk required: {err}")
             self.skipTest(str(err))
         app.withdraw()
+        track_tk_root(self, app)
         win = None
         with tempfile.TemporaryDirectory(prefix="PCRO-VOL-UI-") as tmp:
             try:

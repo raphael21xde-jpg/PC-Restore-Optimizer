@@ -24,6 +24,7 @@ from restore_elevation import (
     ELEVATION_WARNING, ElevatedRestoreRefused, guarded_restore_selected,
     is_process_elevated, require_not_elevated,
 )
+from tk_helpers import close_tk_root, track_tk_root
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -260,11 +261,12 @@ except ImportError:  # the Linux container has no tkinter
 class ElevatedRestoreWindowTests(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()
+        track_tk_root(self, self.root)
         self.root.busy = False
         self.root.update()
 
     def tearDown(self):
-        self.root.destroy()
+        close_tk_root(self.root)
 
     def find(self, cls, widget=None):
         widget = widget or self.root

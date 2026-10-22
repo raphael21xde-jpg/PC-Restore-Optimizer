@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from stutter_analysis import analyze_file,parse_frames,analyze_frames,analyze_sampled_fps_session,correlate_with_session
+from tk_helpers import track_tk_root
 
 
 class StutterAnalysisTests(unittest.TestCase):
@@ -89,6 +90,7 @@ class StutterAnalysisTests(unittest.TestCase):
         try:
             from app import App
             with patch('app.App.refresh_catalog',lambda self:None):root=App()
+            track_tk_root(self, root)
         except Exception as exc:
             import tkinter as tk
             if isinstance(exc,tk.TclError):self.skipTest('Sem interface X11')

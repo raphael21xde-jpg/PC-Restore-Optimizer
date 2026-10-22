@@ -15,6 +15,7 @@ from test_multi_source_recovery_center import _FixtureBase, descendants
 from multi_source_fixture_restore import recover_from_fixture_copies
 from backup_features import safe_relative
 from multi_source_recovery_center_ui import show_fixture_recovery_center
+from tk_helpers import track_tk_root
 
 
 class RecoveryCenterConfirmedFlowTests(_FixtureBase, unittest.TestCase):
@@ -25,7 +26,7 @@ class RecoveryCenterConfirmedFlowTests(_FixtureBase, unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest(f'Tk display indisponível: {exc}')
         self.tk_root.withdraw()
-        self.addCleanup(self.tk_root.destroy)
+        track_tk_root(self, self.tk_root)
         self.content_hashes = {
             self.first.name: hashlib.sha256(self.first.read_bytes()).hexdigest(),
             self.second.name: hashlib.sha256(self.second.read_bytes()).hexdigest(),

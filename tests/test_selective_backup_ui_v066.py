@@ -4,6 +4,7 @@ from tkinter import ttk
 from unittest import TestCase
 from unittest.mock import patch
 from app import App
+from tk_helpers import track_tk_root
 
 
 def widgets(parent):
@@ -16,7 +17,7 @@ class SelectiveBackupScreen066(TestCase):
     def setUp(self):
         with patch.object(App, 'refresh_catalog', lambda self: None):
             self.app = App()
-        self.addCleanup(self.app.destroy)
+        track_tk_root(self, self.app)
         self.path = r'C:\Users\R\Saved Games\God of War Ragnarök'
         self.app.choices = {self.path: 'keep'}
         self.app.catalog_items = {'g': {'name': 'God of War Ragnarök', 'kind': 'game',

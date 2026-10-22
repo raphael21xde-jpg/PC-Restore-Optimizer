@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from deep_discovery_ui import show_deep_discovery
 from volume_paths import volume_of
+from tk_helpers import track_tk_root
 
 
 def descendants(widget):
@@ -32,7 +33,7 @@ class SequentialScanGUI(unittest.TestCase):
     def test_scanning_d_after_c_does_not_erase_c(self):
         root = tk.Tk()
         root.withdraw()
-        self.addCleanup(root.destroy)
+        track_tk_root(self, root)
         root.dest = tk.StringVar(value='G:/backup')
         root.catalog_items = {}
         root.choices = {'C:/Save/previous': 'keep', 'D:/Save/new': 'keep'}
@@ -103,7 +104,7 @@ class CatalogPreservationGUI(unittest.TestCase):
         from app import App
         with patch('app.App.refresh_catalog', lambda app: None):
             root=App()
-        self.addCleanup(root.destroy)
+        track_tk_root(self, root)
         with tempfile.TemporaryDirectory() as folder:
             root.local_state = Path(folder) / 'choices.json'
             root._catalog_app('app:nba2026','NBA 2026','Aplicativo','Registro')

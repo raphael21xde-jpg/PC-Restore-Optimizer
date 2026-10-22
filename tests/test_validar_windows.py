@@ -1,5 +1,7 @@
 """scripts/validar_windows.py against a throwaway local git remote (synthetic only)."""
+import contextlib
 import importlib.util
+import io
 import os
 from pathlib import Path
 import shutil
@@ -22,6 +24,8 @@ def load_module():
 @unittest.skipUnless(GIT, 'git não instalado')
 class ValidarWindowsTests(unittest.TestCase):
     def setUp(self):
+        # P2-07: the script prints its progress; keep the test run output clean.
+        self.enterContext(contextlib.redirect_stdout(io.StringIO()))
         self.tmp = tempfile.TemporaryDirectory()
         base = Path(self.tmp.name)
         self.env = mock.patch.dict(os.environ, {

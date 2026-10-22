@@ -5,6 +5,7 @@ import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from tk_helpers import close_tk_root, track_tk_root
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 try:
@@ -21,12 +22,13 @@ NO_DISPLAY = tk is None or (sys.platform != 'win32' and not os.environ.get('DISP
 class GroupedRestoreWindowTests(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()
+        track_tk_root(self, self.root)
         self.root.busy = False
         self.root.geometry('1000x700')
         self.root.update()
 
     def tearDown(self):
-        self.root.destroy()
+        close_tk_root(self.root)
 
     def find(self, cls, widget=None):
         widget=widget or self.root

@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import after_format as af
 import game_launchers as gl
 from windows_drive import WARNING as DRIVE_WARNING, windows_drive
+from tk_helpers import track_tk_root
 
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN = ('formate', 'formatar o', 'apague', 'apagar', 'exclua', 'excluir',
@@ -829,8 +830,7 @@ class WindowTests(unittest.TestCase):
         self.root = tk.Tk()
         self.root.withdraw()
         self.root.busy = False
-        self.addCleanup(self.root.destroy)
-        self.addCleanup(gc.collect)
+        track_tk_root(self, self.root)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name)

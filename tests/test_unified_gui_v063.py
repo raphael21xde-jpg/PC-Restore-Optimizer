@@ -10,6 +10,7 @@ from pathlib import Path
 from app import App
 from scan_sessions import cache_from_saved, merge_cache
 from volume_paths import volume_of
+from tk_helpers import track_tk_root
 
 
 def widgets(widget):
@@ -34,7 +35,7 @@ class UnifiedGUI(TestCase):
     def test_d_game_selected_in_my_computer_shows_up_in_preservation_and_is_persisted(self):
         with patch.object(App, 'refresh_catalog', lambda self:None):
             app=App()
-        self.addCleanup(app.destroy)
+        track_tk_root(self, app)
         with tempfile.TemporaryDirectory() as temp:
             app.local_state=Path(temp)/'preferences.json'
             r=fake_report()

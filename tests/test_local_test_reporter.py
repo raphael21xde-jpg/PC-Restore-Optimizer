@@ -2,7 +2,9 @@
 
 These tests never invoke GitHub or upload real log content.
 """
+import contextlib
 import importlib.util
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -16,6 +18,10 @@ SPEC.loader.exec_module(reporter)
 
 
 class LocalTestReporterTests(unittest.TestCase):
+    def setUp(self):
+        # P2-07: the tool prints progress; keep the test run output clean.
+        self.enterContext(contextlib.redirect_stdout(io.StringIO()))
+
     def test_sensitive_windows_user_path_and_email_are_redacted(self):
         value = ("C:\\Users\\someone\\AppData\\Local\\Temp "
                  "alice@example.org ghp_abcdefghijklmnopqrstuvwxyz123456 "

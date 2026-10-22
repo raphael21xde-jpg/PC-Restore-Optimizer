@@ -17,6 +17,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import winget_programs as wp
+from tk_helpers import track_tk_root
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -353,9 +354,7 @@ class ProgramsWindowTests(Base):
         self.save(_export_doc(['Git.Git', 'Python.Python.3.13', 'Valve.Steam', 'ppy.osu'], ['9NBLGGH4NNS1']))
         self.root = tk.Tk()
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
-        # recolhe as variáveis do Tk na thread principal (não numa thread de trabalho)
-        self.addCleanup(gc.collect)
+        track_tk_root(self, self.root)
 
     def widgets(self, cls, widget):
         if isinstance(widget, cls):

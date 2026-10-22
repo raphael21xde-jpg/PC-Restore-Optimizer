@@ -6,12 +6,14 @@ from unittest import mock
 
 from app import App
 from completeness_audit_ui_v068 import show_completeness_audit
+from tk_helpers import close_tk_root, track_tk_root
 
 
 class AuditUIHotfix0681Tests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.app = App()
+        track_tk_root(self, self.app)
         self.app.withdraw()
         self.app.local_state = Path(self.tmp.name) / 'preferences.json'
 
@@ -19,7 +21,7 @@ class AuditUIHotfix0681Tests(unittest.TestCase):
         for child in self.app.winfo_children():
             if child.winfo_class() == 'Toplevel':
                 child.destroy()
-        self.app.destroy()
+        close_tk_root(self.app)
         self.tmp.cleanup()
 
     @staticmethod
