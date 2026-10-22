@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import optimization_monitor as om
+from tk_helpers import track_tk_root
 
 LOG='''00,2026-10-15 20:00:00,Hardware monitoring log v1.6
 01,2026-10-15 20:00:00,NVIDIA GeForce RTX 5070
@@ -103,6 +104,7 @@ class MonitorSessionFlow(unittest.TestCase):
         try:
             with patch('app.App.refresh_catalog',lambda self:None):
                 root=App()
+                track_tk_root(self, root)
         except tk.TclError:
             self.skipTest('Sem servidor gráfico');return
         try:
@@ -132,6 +134,7 @@ class MonitorSessionFlow(unittest.TestCase):
             with patch('app.App.refresh_catalog',lambda self:None),\
                  patch('optimization_monitor.poll_nvidia') as poll:
                 root=App()
+                track_tk_root(self, root)
                 root.update_idletasks()
                 self.assertFalse(root.optimizer_panel.mon_running)
                 self.assertIsNone(root.optimizer_panel.mon_session)

@@ -11,6 +11,7 @@ from drive_hardware_evidence import summarize_hardware_evidence
 from drive_safety_export import safe_drive_report_json
 from drive_safety_report import inspect_fresh_drive_safety
 from drive_safety_ui import show_drive_safety_dialog
+from tk_helpers import track_tk_root
 
 
 def fixture():
@@ -159,7 +160,7 @@ class PhysicalEvidenceUiTests(unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest('Tk indisponível: ' + str(exc))
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
+        track_tk_root(self, self.root)
 
     def test_ui_displays_wmi_and_spaces_safely_after_explicit_click(self):
         report = inspect()

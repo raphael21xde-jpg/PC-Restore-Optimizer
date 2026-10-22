@@ -15,6 +15,7 @@ from backup_capacity_input import GIB, parse_estimated_backup_gib
 from preview_plan_capacity import reviewed_preview_capacity
 from drive_safety_ui import show_drive_safety_dialog
 from drive_safety_report import inspect_fresh_drive_safety
+from tk_helpers import close_tk_root
 
 
 def file_task(drive, name, size):
@@ -186,7 +187,7 @@ class PreviewPlanCapacityUiTests(unittest.TestCase):
 
     def cleanup(self):
         if self.root is not None:
-            self.root.destroy()
+            close_tk_root(self.root)
             self.root = None
             gc.collect()
 

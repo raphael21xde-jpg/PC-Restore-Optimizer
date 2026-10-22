@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from multi_source_offline_reopen_ui import show_fixture_offline_reopen
 from test_multi_source_recovery_center import _FixtureBase, descendants
+from tk_helpers import track_tk_root
 
 
 class OfflineCompleteRecoveryE2ETests(_FixtureBase, unittest.TestCase):
@@ -29,7 +30,7 @@ class OfflineCompleteRecoveryE2ETests(_FixtureBase, unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest(f'Interface Tk indisponível: {exc}')
         self.root_window.withdraw()
-        self.addCleanup(self.root_window.destroy)
+        track_tk_root(self, self.root_window)
 
     def wait_until(self, predicate, *, timeout=8):
         until = time.monotonic() + timeout

@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 from workflow_ui import build_preservation
 from app import App
 from backup_core import Plan
+from tk_helpers import track_tk_root
 
 
 def descend(widget):
@@ -29,7 +30,7 @@ class PreservationRemoveChoiceUITests(unittest.TestCase):
             if os.environ.get("PCRO_REQUIRE_TK") == "1":
                 self.fail(f"Janela Tk obrigatória: {exc}")
             self.skipTest(f"Tela indisponível: {exc}")
-        self.addCleanup(self.app.destroy)
+        track_tk_root(self, self.app)
         self.app.withdraw()
         self.app.preservation = ttk.Frame(self.app)
         self.app.preservation.pack()

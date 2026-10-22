@@ -10,6 +10,7 @@ from preservation_audit import build_audit
 from preservation_preflight import prepare_c_preflight
 from inventory_import import read_inventory, explain_document
 from workflow_ui import show_c_preflight
+from tk_helpers import track_tk_root
 
 
 def descendants(widget):
@@ -99,7 +100,7 @@ class Repair065(TestCase):
     def test_live_ui_has_read_only_check_and_new_link(self):
         with patch.object(App,'refresh_catalog',lambda self:None):
             app=App()
-        self.addCleanup(app.destroy)
+        track_tk_root(self, app)
         key='deep:forza'
         path=r'C:\Users\R\Forza'
         app.catalog_items={key:dict(kind='app',name='Forza',install_location='D:/Games/Forza',paths=[path])}

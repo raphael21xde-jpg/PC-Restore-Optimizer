@@ -4,6 +4,7 @@ Run with a graphical display (e.g. xvfb-run on Linux); skips gracefully headless
 """
 import tkinter as tk
 from unittest import TestCase, mock
+from tk_helpers import track_tk_root
 
 
 class CatalogRenderTest(TestCase):
@@ -18,6 +19,7 @@ class CatalogRenderTest(TestCase):
         from app import App
         with mock.patch.object(App, 'refresh_catalog', lambda self: None):
             app = App()
+            track_tk_root(self, app)
         try:
             app.geometry('1300x850')
             app.navigate(app.catalog)

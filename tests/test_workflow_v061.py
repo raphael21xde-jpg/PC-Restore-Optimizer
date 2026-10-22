@@ -8,6 +8,7 @@ from scan_scope import in_scope, filter_report
 from deep_discovery import scan
 from preservation_plan import classify_choices
 from game_links import infer_links
+from tk_helpers import track_tk_root
 
 
 class RootSelectionTests(unittest.TestCase):
@@ -99,7 +100,7 @@ class NavigationTests(unittest.TestCase):
                 root = App()
         except tk.TclError:
             self.skipTest('display unavailable')
-        self.addCleanup(root.destroy)
+        track_tk_root(self, root)
         self.assertEqual(len(root.nav_buttons), 8)
         self.assertEqual(root.tabs.select(), str(root.overview))
         root.navigate(root.installation)

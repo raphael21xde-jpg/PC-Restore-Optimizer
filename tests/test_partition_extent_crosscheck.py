@@ -11,6 +11,7 @@ from partition_extent_crosscheck import crosscheck_partitions
 from drive_safety_report import inspect_fresh_drive_safety
 from drive_safety_export import safe_drive_report_json
 from drive_safety_ui import show_drive_safety_dialog
+from tk_helpers import track_tk_root
 
 
 def snapshot():
@@ -168,7 +169,7 @@ class PartitionExtentCrosscheckUiTests(unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest('Tk indisponível: ' + str(exc))
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
+        track_tk_root(self, self.root)
 
     def test_readonly_ui_displays_disagreement_without_exposing_private_identifiers(self):
         doc = snapshot()

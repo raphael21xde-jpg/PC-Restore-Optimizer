@@ -22,6 +22,7 @@ import recovery_center as rc
 from backup_features import LABEL_FILE
 from multi_source_plan import prepare_multi_source_preview
 from transfer_engine import choose_strategy
+from tk_helpers import track_tk_root
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -389,8 +390,7 @@ class WindowTests(unittest.TestCase):
         self.root = tk.Tk()
         self.root.withdraw()
         self.root.busy = False
-        self.addCleanup(self.root.destroy)
-        self.addCleanup(gc.collect)
+        track_tk_root(self, self.root)
         self.rows = [_row('backup-bom', True), _row('backup-ruim', False)]
 
     def open(self):

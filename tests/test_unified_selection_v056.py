@@ -4,6 +4,7 @@ import tempfile
 import tkinter as tk
 from pathlib import Path
 from unittest import TestCase, mock
+from tk_helpers import track_tk_root
 
 
 class UnifiedSelectionTests(TestCase):
@@ -22,7 +23,7 @@ class UnifiedSelectionTests(TestCase):
             with mock.patch.object(App, '_restore_choices', lambda self: None):
                 self.app=App()
         self.app.local_state=Path(self.temp.name)/'preferences.json'
-        self.addCleanup(self.app.destroy)
+        track_tk_root(self, self.app)
         self.app.update()
 
     def test_one_main_selection_page_and_four_categories(self):

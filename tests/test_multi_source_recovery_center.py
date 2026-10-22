@@ -16,6 +16,7 @@ from multi_source_targets import preview_multi_source_targets
 from multi_source_recovery_center import inspect_fixture_recovery
 from multi_source_recovery_center_ui import show_fixture_recovery_center
 from transfer_engine import choose_strategy
+from tk_helpers import track_tk_root
 
 
 def descendants(widget):
@@ -165,7 +166,7 @@ class RecoveryCenterTkTests(_FixtureBase, unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest(f'Tk display indisponível: {exc}')
         self.tk_root.withdraw()
-        self.addCleanup(self.tk_root.destroy)
+        track_tk_root(self, self.tk_root)
 
     def make_window(self):
         dlg = show_fixture_recovery_center(

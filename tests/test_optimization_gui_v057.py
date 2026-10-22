@@ -3,6 +3,7 @@ import tempfile
 import unittest
 import tkinter as tk
 from unittest.mock import patch
+from tk_helpers import track_tk_root
 
 
 class OptimizationGUIV057Tests(unittest.TestCase):
@@ -16,6 +17,7 @@ class OptimizationGUIV057Tests(unittest.TestCase):
         try:
             with patch('app.App.refresh_catalog', lambda self: None):
                 root=App()
+                track_tk_root(self, root)
         except tk.TclError:
             self.skipTest('Sem servidor gráfico')
         try:
@@ -42,6 +44,7 @@ class OptimizationGUIV057Tests(unittest.TestCase):
         try:
             with patch('optimization_engine._run') as command, patch('app.App.refresh_catalog', lambda self: None):
                 root=App()
+                track_tk_root(self, root)
                 root.update_idletasks()
                 command.assert_not_called()
         except tk.TclError:

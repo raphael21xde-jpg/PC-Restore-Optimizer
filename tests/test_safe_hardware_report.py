@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from drive_safety_export import safe_drive_report_json, sanitized_drive_report
 from drive_safety_ui import show_drive_safety_dialog
+from tk_helpers import track_tk_root
 
 
 def fixture_report():
@@ -229,7 +230,7 @@ class SafeHardwareReportUiTests(unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest(f'Tk indisponível: {exc}')
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
+        track_tk_root(self, self.root)
 
     def make_dialog(self):
         dlg = show_drive_safety_dialog(

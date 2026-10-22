@@ -14,6 +14,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import game_launchers as gl
+from tk_helpers import track_tk_root
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -288,8 +289,7 @@ class WindowTests(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
-        self.addCleanup(gc.collect)
+        track_tk_root(self, self.root)
 
     def widgets(self, cls, widget):
         if isinstance(widget, cls):

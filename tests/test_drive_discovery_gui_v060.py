@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from deep_discovery_ui import show_deep_discovery
+from tk_helpers import track_tk_root
 
 
 def record(path):
@@ -15,7 +16,7 @@ class DriveDiscoveryGUITests(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
+        track_tk_root(self, self.root)
         self.root.choices = {}
         self.root.dest = tk.StringVar(value='G:\\Backup')
         self.root.catalog_items = {}

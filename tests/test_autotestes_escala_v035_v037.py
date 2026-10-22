@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from autotestes_escala import (run_gigabyte_autotest, run_abrupt_exit_autotest,
                                run_responsiveness_autotest, preflight, launch, GIB)
+from tk_helpers import track_tk_root
 
 
 class TestEscala(unittest.TestCase):
@@ -109,6 +110,7 @@ class TestTkResponsiveness(unittest.TestCase):
                 self.fail(f'Tk obrigatório nesta etapa: {exc}')
             self.skipTest(f'No display: {exc}')
         app.withdraw()
+        track_tk_root(self, app)
         window = None
         def widgets(parent):
             for widget in parent.winfo_children():
