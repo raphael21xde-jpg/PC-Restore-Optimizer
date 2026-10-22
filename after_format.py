@@ -511,7 +511,7 @@ class ProgressSaver:
         self._idle = threading.Condition(self._lock)
         self._wanted = None    # pedido mais recente ainda não começado
         self._writing = None   # pedido sendo gravado agora
-        self._error = None     # texto do último erro, entregue uma vez
+        self._error = None     # erro da última gravação terminada (None se deu certo)
         self._thread = None
         self.closed = False
 
@@ -545,14 +545,15 @@ class ProgressSaver:
                 error = progress_error_text(exc)
             with self._lock:
                 self._writing = None
-                if error is not None:
-                    self._error = error
+                self._error = error  # gravação que deu certo limpa o erro anterior
 
     def poll_error(self):
-        """Texto do último erro de gravação (sem caminho completo) ou None."""
+        """Erro da última gravação terminada (texto sem caminho completo) ou None.
+
+        Não é consumido: vale até uma gravação posterior dar certo.
+        """
         with self._lock:
-            error, self._error = self._error, None
-            return error
+            return self._error
 
     def pending_steps(self):
         """Cópia das marcações pedidas que ainda não foram gravadas, ou None."""
@@ -580,3 +581,24 @@ class ProgressSaver:
                     return False
                 self._idle.wait(left)
             return True
+
+
+def progress_warning_text(base, error):
+    """Linha de aviso do progresso: o erro da última gravação ou, se ela deu
+    certo, os avisos de quando a janela abriu (revisão da PR #79)."""
+    return error if error else base
+
+
+def load_with_pending(manifest, base=None, saver=None, *, load=None):
+    """Progresso para abrir a janela, preferindo o que ainda não foi gravado.
+
+    Lê saver.pending_steps() ANTES do arquivo: se a gravação terminar entre as
+    duas leituras, o arquivo já tem o pendente, e a marcação nova nunca é
+    trocada pela antiga (revisão da PR #79).
+    """
+    load = load_progress if load is None else load
+    pending = saver.pending_steps() if saver is not None else None
+    progress = load(manifest, base)
+    if pending is not None:
+        progress = dict(progress, steps=pending)
+    return progress

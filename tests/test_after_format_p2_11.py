@@ -662,7 +662,7 @@ class ProgressSaverTests(unittest.TestCase):
         self.assertIn('PermissionError', text)
         for word in ('fulano', 'Users', 'AppData', 'Acesso negado'):
             self.assertNotIn(word, text)
-        self.assertIsNone(saver.poll_error())  # o aviso é entregue uma vez
+        self.assertEqual(saver.poll_error(), text)  # vale até uma gravação dar certo
 
     def test_error_then_success_keeps_working(self):
         results = [OSError('falhou'), None]
@@ -680,6 +680,70 @@ class ProgressSaverTests(unittest.TestCase):
         saver.request(self.marks(discos=af.SKIPPED))
         self.assertTrue(saver.join(5))
         self.assertEqual(calls, [self.marks(discos=af.SKIPPED)])
+        # revisão da PR #79: tudo salvo, então nada de "Não deu para salvar"
+        self.assertIsNone(saver.poll_error())
+
+    def test_success_clears_error_even_if_never_polled(self):
+        results = [OSError('falhou'), None]
+
+        def save(path, steps, backup=None):
+            outcome = results.pop(0)
+            if outcome is not None:
+                raise outcome
+        saver = af.ProgressSaver(self.path, None, save=save)
+        saver.request(self.marks(discos=af.DONE))
+        self.assertTrue(saver.join(5))
+        saver.request(self.marks(discos=af.SKIPPED))
+        self.assertTrue(saver.join(5))
+        self.assertIsNone(saver.poll_error())
+
+    def test_warning_line_after_save(self):
+        base = 'O arquivo de progresso antigo não pôde ser usado.'
+        error = af.progress_error_text(OSError('x'))
+        self.assertEqual(af.progress_warning_text(base, error), error)
+        self.assertEqual(af.progress_warning_text(base, None), base)  # aviso limpo
+        self.assertEqual(af.progress_warning_text('', None), '')
+
+    def test_reopen_reads_pending_before_file(self):
+        # revisão da PR #79: se a gravação termina entre ler o pendente e ler o
+        # arquivo, a janela reaberta ainda mostra a marcação nova
+        save, release, started, calls = self.held_save()
+        manifest = _backup(self.tmp / 'E')
+        base = self.tmp / 'base'
+        first = af.load_progress(manifest, base)
+        af.save_progress(first['path'], first['steps'], first['backup'])
+        saver = af.ProgressSaver(first['path'], first['backup'])
+        saver._save = lambda p, st, b=None: (release.wait(5), af.save_progress(p, st, b))
+        newer = dict(first['steps'], discos=af.DONE)
+        saver.request(newer)
+        order = []
+
+        def load(chosen, chosen_base):
+            order.append('arquivo')
+            release.set()  # a gravação termina bem aqui, no meio da reabertura
+            self.assertTrue(saver.join(5))
+            return af.load_progress(chosen, chosen_base)
+        real_pending = saver.pending_steps
+
+        def pending():
+            order.append('pendente')
+            return real_pending()
+        saver.pending_steps = pending
+        progress = af.load_with_pending(manifest, base, saver, load=load)
+        self.assertEqual(order, ['pendente', 'arquivo'])
+        self.assertEqual(progress['steps'], newer)
+        self.assertEqual(progress['path'], first['path'])
+
+    def test_reopen_without_pending_uses_file(self):
+        manifest = _backup(self.tmp / 'E')
+        base = self.tmp / 'base'
+        first = af.load_progress(manifest, base)
+        af.save_progress(first['path'], dict(first['steps'], launchers=af.SKIPPED),
+                         first['backup'])
+        saver = af.ProgressSaver(first['path'], first['backup'])
+        for chosen in (saver, None):
+            progress = af.load_with_pending(manifest, base, chosen)
+            self.assertEqual(progress['steps']['launchers'], af.SKIPPED)
 
     def test_real_save_in_background(self):
         manifest = _backup(self.tmp / 'E')
@@ -720,7 +784,11 @@ class ProgressSaverTests(unittest.TestCase):
         self.assertIn('ProgressSaver', src)
         self.assertIn('after_format_savers', src)
         self.assertIn('poll_error()', src)
-        self.assertIn('pending_steps()', src)
+        self.assertIn('load_with_pending(', src)
+        self.assertNotIn('load_progress(', src)  # o pendente é lido antes do arquivo
+        start = src.index('    def watch_saver(')
+        end = src.index('\n    for number', start)
+        self.assertIn('progress_warning_text(', src[start:end])
 
 
 try:
