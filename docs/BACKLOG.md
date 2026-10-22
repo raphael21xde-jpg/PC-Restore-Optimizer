@@ -213,9 +213,17 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
   - a grafia mostrada é a que foi passada (ou devolvida por `local_drives()`), sem consultar o disco para descobrir a grafia "verdadeira".
 
 ### FIX-P2-11-03 · Salvar o progresso do assistente fora da thread da interface
-- **Status:** `pronto` (ressalva 1 da revisão da PR #76).
+- **Status:** `concluído` (fatia 1, branch `auto/FIX-P2-11-03-progresso-em-segundo-plano`; ressalva 1 da revisão da PR #76).
 - **Problema:** `save_progress` pode esperar até ~2 s tentando trocar o arquivo (espera crescente no Windows) e hoje roda na thread do Tk, então a janela pode congelar nesse tempo.
 - **Aceite:** "Feito"/"Pular" gravam o progresso num `Job` (voltando ao Tk por `WindowTimers.after`), sem gravações fora de ordem (a última marcação vence); fechar a janela não perde a última marcação já pedida; testes com dados simulados.
+- **Escolhas de design (22/10/2026, a opção mais segura):**
+  - em vez de um `Job` por clique, um gravador `ProgressSaver(path, backup, *, save=None)` em `after_format.py` (sem Tk) com **uma única thread de gravação (não-daemon)** por backup: `request(steps)` guarda uma cópia do pedido mais recente e volta na hora; a thread grava sempre o último pedido e junta os intermediários, então nunca há gravação fora de ordem e a última marcação vence; a thread termina quando não há nada a gravar e é recriada no próximo pedido (nunca duas ao mesmo tempo);
+  - a gravação continua sendo o `save_progress` de antes (`.parcial` único com `O_EXCL`, `fsync`, `os.replace` com espera, recusa de link); o erro vira o texto fixo de `progress_error_text` (sem caminho completo), lido pela tela com `poll_error()` num `WindowTimers.after(150, ...)` e mostrado na linha `after_format_progress_warning`; a thread de gravação nunca toca no Tk;
+  - `close()` só avisa que a janela fechou: **não cancela** a gravação pendente (por ser não-daemon, sair do app também espera essa gravação);
+  - revisão da PR #79: `poll_error()` não é mais consumido; diz o erro da **última gravação terminada** e uma gravação posterior que dá certo o limpa. A tela monta a linha de aviso com `progress_warning_text(avisos_da_abertura, erro)`, então volta ao normal quando tudo foi salvo (nunca diz "Não deu para salvar" com tudo salvo);
+  - revisão da PR #79: ao reabrir, `load_with_pending(manifest, base, saver)` lê `pending_steps()` **antes** do arquivo; se a gravação terminar entre as duas leituras, o arquivo já tem o pendente e a marcação nova não é trocada pela antiga;
+  - o gravador fica em `app.after_format_savers[chave]` (a mesma chave de `window_key`); ao reabrir o mesmo backup, as marcações ainda não gravadas (`pending_steps()`) valem mais que as lidas do arquivo, e a janela nova usa o mesmo gravador (nunca dois gravando o mesmo arquivo); se a gravação falhar, vale o que está no arquivo;
+  - nada é apagado.
 ### P2-10 · Medição de cópia com hardware real (script)
 - **Status:** `concluído` (fatia 1, branch `auto/P2-10-medicao-copia`). Falta só o Raphael rodar 1 vez no PC, como pedido na validação do M2.
 - Script de benchmark que só lê a origem e só escreve numa pasta de teste, com relatório.

@@ -14,6 +14,8 @@ Regras de segurança:
   zero num arquivo novo (-2, -3...).
 - FIX-P2-11-02: o progresso é ligado ao backup (nome da pasta, started e
   plan_fingerprint do manifest.json), não à letra da unidade.
+- FIX-P2-11-03: a tela não grava direto; pede a um ProgressSaver, que grava
+  numa thread própria (a troca do arquivo pode esperar até ~2 s no Windows).
 """
 from __future__ import annotations
 
@@ -24,6 +26,7 @@ import os
 import re
 import shutil
 import stat
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -484,3 +487,118 @@ def save_progress(path, steps, backup=None):
         os.close(handle)
     _replace_with_retry(partial, path)
     return clean
+
+
+class ProgressSaver:
+    """Grava o progresso de um backup fora da thread da interface (FIX-P2-11-03).
+
+    Uma única thread de gravação (não-daemon) por gravador. Ela grava sempre o
+    pedido mais recente: pedidos feitos enquanto uma gravação está em curso são
+    juntados e só o último é gravado depois. Assim nunca há gravação fora de
+    ordem e a última marcação vence. A thread termina quando não há mais nada
+    a gravar e volta a ser criada no próximo pedido (nunca há duas ao mesmo
+    tempo). Por não ser daemon, sair do aplicativo espera a gravação pendente.
+
+    Nada aqui toca no Tk: a tela lê poll_error() pelo seu próprio timer.
+    save(path, steps, backup) é save_progress (trocável nos testes).
+    """
+
+    def __init__(self, path, backup=None, *, save=None):
+        self.path = Path(path)
+        self.backup = backup
+        self._save = save
+        self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        self._wanted = None    # pedido mais recente ainda não começado
+        self._writing = None   # pedido sendo gravado agora
+        self._error = None     # erro da última gravação terminada (None se deu certo)
+        self._thread = None
+        self.closed = False
+
+    def request(self, steps):
+        """Pede para gravar uma cópia destas marcações. Volta na hora."""
+        copy = dict(steps)
+        with self._lock:
+            self._wanted = copy
+            self.closed = False  # a mesma janela (ou a reaberta) voltou a pedir
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._run, name='pcro-progresso',
+                                                daemon=False)
+                self._thread.start()
+
+    def _run(self):
+        save = self._save if self._save is not None else save_progress
+        while True:
+            with self._lock:
+                steps = self._wanted
+                if steps is None:
+                    self._writing = None
+                    self._thread = None
+                    self._idle.notify_all()
+                    return
+                self._wanted = None
+                self._writing = steps
+            try:
+                save(self.path, steps, self.backup)
+                error = None
+            except Exception as exc:  # noqa: BLE001 - qualquer falha vira aviso fixo
+                error = progress_error_text(exc)
+            with self._lock:
+                self._writing = None
+                self._error = error  # gravação que deu certo limpa o erro anterior
+
+    def poll_error(self):
+        """Erro da última gravação terminada (texto sem caminho completo) ou None.
+
+        Não é consumido: vale até uma gravação posterior dar certo.
+        """
+        with self._lock:
+            return self._error
+
+    def pending_steps(self):
+        """Cópia das marcações pedidas que ainda não foram gravadas, ou None."""
+        with self._lock:
+            steps = self._wanted if self._wanted is not None else self._writing
+            return None if steps is None else dict(steps)
+
+    def busy(self):
+        """True enquanto há pedido esperando ou gravação em curso."""
+        with self._lock:
+            return self._thread is not None
+
+    def close(self):
+        """A janela fechou: não virão mais pedidos dela. Não cancela nada."""
+        with self._lock:
+            self.closed = True
+
+    def join(self, timeout=None):
+        """Espera terminar o que foi pedido. True se terminou dentro do tempo."""
+        deadline = None if timeout is None else time.monotonic() + timeout
+        with self._lock:
+            while self._thread is not None:
+                left = None if deadline is None else deadline - time.monotonic()
+                if left is not None and left <= 0:
+                    return False
+                self._idle.wait(left)
+            return True
+
+
+def progress_warning_text(base, error):
+    """Linha de aviso do progresso: o erro da última gravação ou, se ela deu
+    certo, os avisos de quando a janela abriu (revisão da PR #79)."""
+    return error if error else base
+
+
+def load_with_pending(manifest, base=None, saver=None, *, load=None):
+    """Progresso para abrir a janela, preferindo o que ainda não foi gravado.
+
+    Lê saver.pending_steps() ANTES do arquivo: se a gravação terminar entre as
+    duas leituras, o arquivo já tem o pendente, e a marcação nova nunca é
+    trocada pela antiga (revisão da PR #79).
+    """
+    load = load_progress if load is None else load
+    pending = saver.pending_steps() if saver is not None else None
+    progress = load(manifest, base)
+    if pending is not None:
+        progress = dict(progress, steps=pending)
+    return progress
