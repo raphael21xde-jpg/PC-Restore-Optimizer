@@ -219,6 +219,11 @@ def _walk_dirs(root, *, max_depth, max_dirs, on_dir, is_cancelled):
     return None
 
 
+def _case_key(path):
+    """Chave só para comparar caminhos (no Windows ignora maiúsculas). Nunca é mostrada."""
+    return os.path.normcase(os.path.abspath(str(path)))
+
+
 def _drive_key(path):
     return os.path.normcase(str(path)).rstrip('\\/')
 
@@ -264,19 +269,23 @@ def detect_launchers(roots=None, *, max_depth=4, max_dirs=20000, max_manifests=3
     system_key = _drive_key(system_drive) if system_drive else None
     if roots is None:
         roots = _default_roots(result['warnings'])
-    seen_roots = []
+    # A chave (_case_key) só serve para comparar; a busca e o que aparece usam a
+    # grafia original. Mesma unidade escrita de dois jeitos é buscada uma vez só.
+    seen_roots = []  # (chave, raiz com a grafia original)
+    seen_keys = set()
     for root in roots:
-        key = os.path.normcase(os.path.abspath(str(root)))
-        if key not in seen_roots:
-            seen_roots.append(key)
-    found = {}  # (launcher, caminho normalizado) -> biblioteca
+        key = _case_key(root)
+        if key not in seen_keys:
+            seen_keys.add(key)
+            seen_roots.append((key, os.path.abspath(str(root))))
+    found = {}  # (launcher, chave do caminho) -> biblioteca; vale a primeira grafia
     limit = max(0, int(max_dirs))
     incomplete = []
     interrupted = False
     manifests = [max(0, int(max_manifests))]
 
     def add(launcher, path, root, games, confidence):
-        key = (launcher, os.path.normcase(str(path)))
+        key = (launcher, _case_key(path))
         lib = found.setdefault(key, {'launcher': launcher, 'path': str(path), 'root': str(root),
                                      'games': [], 'confidence': confidence,
                                      'on_system_drive': (bool(system_key) and
@@ -284,7 +293,7 @@ def detect_launchers(roots=None, *, max_depth=4, max_dirs=20000, max_manifests=3
                                      if known else None})
         lib['games'] = sorted(set(lib['games']) | set(games), key=str.casefold)
 
-    for root in seen_roots:
+    for _key, root in seen_roots:
         if not _safe_directory(root):
             continue
 

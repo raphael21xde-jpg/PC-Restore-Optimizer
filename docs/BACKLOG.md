@@ -203,6 +203,15 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
     - manifesto de versão antiga, sem `file_count_expected` ou `bytes_expected`: motivo calmo "Backup de uma versão antiga do aplicativo…" e `restorable=False` (a opção mais segura: sem a contagem planejada não dá para confirmar que está completo; os arquivos continuam guardados);
     - `app.py` não confere mais se a pasta de destino existe na thread da tela: passa o caminho para a central, e a busca (num `Job`) avisa se ela não existir.
 
+### FIX-20261022-launchers-caminho-minusculo · Caminhos dos launchers com a grafia original
+- **Status:** `concluído` (branch `auto/FIX-20261022-launchers-caminho-minusculo`).
+- **Problema:** a validação Windows da `main` falhou (4 FAIL em `tests/test_game_launchers_p2_05.py`, `DetectionTests`, desde a PR #71): no Windows os caminhos das bibliotecas saíam em minúsculas (`...\appdata\local\temp\...\a\SteamLibrary`), porque `detect_launchers` usava `os.path.normcase(os.path.abspath(root))` como raiz da busca.
+- **Aceite:** `path`, `root` e o aviso "incompleta em:" mostram a grafia original; a mesma unidade escrita de dois jeitos é buscada uma vez só e a biblioteca não aparece duplicada; `on_system_drive` continua certo; testes em `tests/test_game_launchers_fix_caminho.py` simulam o Windows trocando `_case_key` por uma versão em minúsculas (pastas sintéticas em `TemporaryDirectory`).
+- **Escolhas de design (22/10/2026, a opção mais segura):**
+  - função nova `_case_key(path)` = `normcase(abspath(path))`, ponto único de normalização, usada **só para comparar**; `seen_roots` guarda (chave, raiz original) e a busca usa `os.path.abspath(raiz)` sem `normcase`; `add()` deduplica por (launcher, `_case_key(path)`) e fica a primeira grafia achada;
+  - `_drive_key` continua com `normcase` (só comparação, nunca mostrado);
+  - a grafia mostrada é a que foi passada (ou devolvida por `local_drives()`), sem consultar o disco para descobrir a grafia "verdadeira".
+
 ### FIX-P2-11-03 · Salvar o progresso do assistente fora da thread da interface
 - **Status:** `pronto` (ressalva 1 da revisão da PR #76).
 - **Problema:** `save_progress` pode esperar até ~2 s tentando trocar o arquivo (espera crescente no Windows) e hoje roda na thread do Tk, então a janela pode congelar nesse tempo.
