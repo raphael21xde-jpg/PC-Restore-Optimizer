@@ -38,18 +38,18 @@ def cancel_pending_afters(root):
     """
     try:
         pending = root.tk.splitlist(root.tk.call('after', 'info'))
-    except _TCL_ERRORS:
+    except Exception:  # noqa: BLE001 - clean-up must never fail a test
         return 0
     cancelled = 0
     for after_id in pending:
+        # Plain Tcl ``after cancel`` only: ``root.after_cancel`` also runs
+        # ``deletecommand``, which can raise (AttributeError/TclError) on a
+        # destroyed root and could delete commands Tk itself scheduled.
+        # The Python commands left behind are removed by ``destroy()``.
         try:
-            # Also deletes the Python command behind the callback.
-            root.after_cancel(after_id)
-        except _TCL_ERRORS:
-            try:
-                root.tk.call('after', 'cancel', after_id)
-            except _TCL_ERRORS:
-                continue
+            root.tk.call('after', 'cancel', after_id)
+        except Exception:  # noqa: BLE001
+            continue
         cancelled += 1
     return cancelled
 

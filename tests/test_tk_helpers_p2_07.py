@@ -53,8 +53,22 @@ class TkHelpersTests(unittest.TestCase):
         root = FakeRoot()
         self.assertEqual(tk_helpers.close_tk_root(root), 3)
         self.assertEqual(root.tk.pending, [])
-        self.assertEqual(root.events, [('cancel', 'after#1'), ('cancel', 'after#2'),
-                                       ('cancel', 'after#3'), ('destroy',)])
+        cancels = [c for c in root.tk.calls if c[:2] == ('after', 'cancel')]
+        self.assertEqual(cancels, [('after', 'cancel', 'after#1'), ('after', 'cancel', 'after#2'),
+                                   ('after', 'cancel', 'after#3')])
+        self.assertEqual(root.events, [('destroy',)])
+
+    def test_never_uses_after_cancel_so_tk_commands_are_not_deleted(self):
+        # after_cancel() also runs deletecommand, which may raise
+        # (AttributeError/TclError) on a destroyed root or delete Tk's own commands.
+        root = FakeRoot()
+        root.after_cancel = mock.Mock(side_effect=AttributeError('no _tclCommands'))
+        root.deletecommand = mock.Mock()
+        self.assertEqual(tk_helpers.close_tk_root(root), 3)
+        root.after_cancel.assert_not_called()
+        root.deletecommand.assert_not_called()
+        self.assertEqual(root.tk.pending, [])
+        self.assertTrue(root.destroyed)
 
     def test_second_close_is_harmless(self):
         root = FakeRoot()
@@ -62,11 +76,17 @@ class TkHelpersTests(unittest.TestCase):
         self.assertEqual(tk_helpers.close_tk_root(root), 0)
         self.assertEqual(tk_helpers.close_tk_root(None), 0)
 
-    def test_falls_back_to_tcl_cancel_when_after_cancel_fails(self):
-        root = FakeRoot(('after#9',))
-        root.after_cancel = mock.Mock(side_effect=RuntimeError('command gone'))
+    def test_one_failing_cancel_does_not_stop_the_others(self):
+        root = FakeRoot(('after#1', 'after#2'))
+        real_call = root.tk.call
+
+        def call(*args):
+            if args == ('after', 'cancel', 'after#1'):
+                raise AttributeError('broken')
+            return real_call(*args)
+        root.tk.call = call
         self.assertEqual(tk_helpers.cancel_pending_afters(root), 1)
-        self.assertEqual(root.tk.pending, [])
+        self.assertEqual(root.tk.pending, ['after#1'])
 
     def test_unreadable_after_list_still_destroys(self):
         root = FakeRoot()
