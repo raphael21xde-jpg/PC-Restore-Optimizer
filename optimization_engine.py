@@ -15,6 +15,8 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 
+from hardware_profile import build_profile
+
 GUID_PATTERN = re.compile(r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b')
 BALANCED_GUID = '381b4222-f694-41f0-9685-ff5bb260df2e'
 
@@ -88,6 +90,7 @@ def inspect_pc():
               'windows': os.name == 'nt', 'hardware': {}, 'power': {}, 'checks': [], 'errors': []}
     if os.name != 'nt':
         result['errors'].append('Faça o diagnóstico no Windows em que pretende otimizar.')
+        result['profile'] = build_profile(result['hardware'])
         return result
     queries = {
         'cpu': 'Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | ConvertTo-Json -Depth 3',
@@ -127,6 +130,7 @@ def inspect_pc():
     ])
     result['unmeasured'] = ['temperatura CPU/GPU (disponível separadamente no monitoramento em tempo real se os sensores responderem)', 'consumo neste relatório estático', 'estabilidade de memória',
                             'versões compatíveis de perfis BIOS', 'FPS de jogo', 'latência DWM']
+    result['profile'] = build_profile(result['hardware'])
     return result
 
 

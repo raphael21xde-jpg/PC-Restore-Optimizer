@@ -18,6 +18,7 @@ from tkinter import filedialog, messagebox, ttk
 from optimization_engine import (inspect_pc, available_power_plans, active_power_guid,
                                  safe_change_power_plan, revert_power_plan, export_snapshot,
                                  OptimizationError)
+from hardware_profile import profile_lines
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
 from stutter_deep import study_csv, study_text
@@ -181,7 +182,7 @@ class OptimizationPanel(tk.Frame):
     def _build_diagnostics(self, parent):
         area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
         self._paragraph(area,'Etapa 1: conhecer o seu computador',
-                        'Consulta somente leitura: Windows, CPU, GPU e driver, RAM, placa-mãe, versão da BIOS e planos de energia. '
+                        'Consulta somente leitura: Windows, CPU, GPU e driver, RAM, placa-mãe, versão da BIOS e planos de energia, e inclui um perfil do PC. '
                         'Temperaturas e utilização são medidas na próxima aba, usando sensores disponíveis; não confirma XMP/EXPO ativo.')
         actions=tk.Frame(area,bg=BG);actions.pack(fill='x',pady=(3,5))
         self.btn_scan=ttk.Button(actions,text='Analisar este PC',style='Primary.TButton',command=self.scan)
@@ -845,8 +846,9 @@ class OptimizationPanel(tk.Frame):
         for ram in (hw.get('ram') if isinstance(hw.get('ram'),list) else ([hw['ram']] if hw.get('ram') else [])):
             lines.append('  '+str(round((ram.get('Capacity') or 0)/1024**3,1))+' GiB | '+str(ram.get('ConfiguredClockSpeed','?'))+' MT/s (configurado)')
         plans=report.get('power',{})
-        lines.extend(['','Plano de energia: '+str(plans.get('active_guid') or 'indisponível'),
-                      '','OBSERVAÇÕES:'])
+        lines.extend(['','Plano de energia: '+str(plans.get('active_guid') or 'indisponível'),''])
+        lines.extend(profile_lines(report.get('profile') or {}))
+        lines.append('OBSERVAÇÕES:')
         lines.extend('  • '+str(p['message']) for p in report.get('checks',[]))
         if report.get('errors'):
             lines.extend(['','CONSULTAS INCOMPLETAS:']+['  • '+e for e in report['errors']])
