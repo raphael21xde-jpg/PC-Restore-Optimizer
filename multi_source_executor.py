@@ -1,4 +1,4 @@
-"""P2-09 fatia 1: protected multi-disk backup executor (sandbox only).
+"""P2-09 fatias 1 e 2b: protected multi-disk backup executor (sandbox only).
 
 The executor reuses the verified copy engine (backup_core.copy_backup) and the
 read-only multi-source guards. In this slice it refuses to run without an
@@ -6,8 +6,13 @@ explicit test_root, and the app does not call it. It never formats, never
 touches EFI/BCD, never erases anything and only ever READS the sources: each
 destination receives its own backup folder and manifest, verified by SHA-256.
 
-This module does not read or write any safety lock. A verified copy here is
-not proof of physical independence and does not authorize anything else.
+Slice 2b: before the first destination and again before each following
+one, a NEW disk inventory (from the required ``disk_collector``) must prove,
+through ``physical_independence.verify_physical_independence``, that every
+destination is on another physical disk than the sources. Doubt, error or
+same disk means no write. The executor only reads that answer; it never
+writes any safety lock and never accepts a ready-made answer from outside.
+It does not authorize formatting or installing anything.
 """
 from __future__ import annotations
 
@@ -17,6 +22,7 @@ from pathlib import Path
 import backup_core
 from multi_backup_destinations import _under
 from multi_source_recheck import recheck_multi_source_preview
+from physical_independence import READ_ONLY_NOTE, verify_physical_independence
 from selective_recovery import (_any_reparse_ancestor, validate_target,
                                 verify_complete_manifest)
 
@@ -38,7 +44,12 @@ PROBLEMS = {
                               'a cópia foi gravada, mas não foi conferida. Ela '
                               'pode ser conferida de novo.'),
     'falha': 'Não foi possível gravar neste destino.',
+    'discos': ('Não deu para confirmar que os destinos ficam em outro disco, '
+               'separado da origem. Nada foi gravado neste destino.'),
 }
+REFUSED_DISKS = ('Cópia recusada: não deu para confirmar que os destinos '
+                 'ficam em outro disco, separado da origem. Nada foi gravado.')
+NO_DISK_CHECK = 'A conferência dos discos não foi feita.'
 
 
 def _sandbox(test_root):
@@ -75,7 +86,10 @@ def _inside(value, sandbox):
 
 
 def _check(plan, target_preview, sandbox, volume_lookup, usage, resume_manifests):
-    """Validate everything without writing; return (sources, rows, resume map)."""
+    """Validate everything without writing.
+
+    Returns (sources, rows, resume map, source volumes from the recheck).
+    """
     files = getattr(plan, 'files', None)
     if not files or getattr(plan, 'warnings', None):
         raise ValueError('Plano de origem ausente ou incompleto.')
@@ -143,15 +157,25 @@ def _check(plan, target_preview, sandbox, volume_lookup, usage, resume_manifests
         rows.append({'number': number, 'path': str(folder),
                      'volume': observed['volume'], 'free_bytes': observed['free_bytes']})
 
-    return sources, rows, resume
+    return sources, rows, resume, fresh['source_volumes']
+
+
+def _disk_check(source_volumes, rows, disk_collector):
+    """Fresh physical-disk check: always a new inventory, never a cached one."""
+    check = verify_physical_independence(
+        source_volumes, [row['volume'] for row in rows],
+        collector=disk_collector)
+    summary = {'veredito': check['veredito'], 'texto': check['texto']}
+    return check['physical_independence_verified'] is True, summary
 
 
 def preview_execution(plan, target_preview, *, test_root, volume_lookup, usage,
-                      resume_manifests=None):
+                      disk_collector, resume_manifests=None):
     """Show what would be copied, writing nothing at all."""
     sandbox = _sandbox(test_root)
-    sources, rows, resume = _check(plan, target_preview, sandbox,
-                                   volume_lookup, usage, resume_manifests)
+    sources, rows, resume, source_volumes = _check(
+        plan, target_preview, sandbox, volume_lookup, usage, resume_manifests)
+    _, summary = _disk_check(source_volumes, rows, disk_collector)
     return {
         'schema': PREVIEW_SCHEMA,
         'sources': sorted({str(p.parent) for p in sources}),
@@ -160,6 +184,7 @@ def preview_execution(plan, target_preview, *, test_root, volume_lookup, usage,
         'bytes_per_copy': plan.total,
         'copies': len(rows),
         'bytes_total': plan.total * len(rows),
+        'physical_check': summary,
     }
 
 
@@ -170,15 +195,20 @@ def _row(base, status, *, manifest=None, files=0, size=0, problem=None):
 
 
 def run_protected_copy(plan, target_preview, *, test_root, volume_lookup, usage,
-                       cancelled=None, resume_manifests=None, progress=None):
+                       disk_collector, cancelled=None, resume_manifests=None,
+                       progress=None):
     """Copy the plan to every destination, one verified manifest each.
 
     Everything is rechecked before the first write and again before each
-    destination. Stops at the first problem. Sources are only read.
+    destination, including a new physical-disk check. Stops at the first
+    problem. Sources are only read.
     """
     sandbox = _sandbox(test_root)
-    _, rows, resume = _check(plan, target_preview, sandbox, volume_lookup,
-                             usage, resume_manifests)
+    _, rows, resume, source_volumes = _check(
+        plan, target_preview, sandbox, volume_lookup, usage, resume_manifests)
+    independent, summary = _disk_check(source_volumes, rows, disk_collector)
+    if not independent:
+        raise ValueError(REFUSED_DISKS + '\n' + summary['texto'])
     results = []
     reason = None
     for base in rows:
@@ -188,10 +218,16 @@ def run_protected_copy(plan, target_preview, *, test_root, volume_lookup, usage,
             break
         if base['number'] > 1:
             try:
-                recheck_multi_source_preview(
+                fresh = recheck_multi_source_preview(
                     plan, target_preview, volume_lookup=volume_lookup, usage=usage)
             except (OSError, ValueError):
                 reason = PROBLEMS['revalidacao']
+                results.append(_row(base, 'nao_iniciado', problem=reason))
+                break
+            independent, summary = _disk_check(
+                fresh['source_volumes'], rows, disk_collector)
+            if not independent:
+                reason = PROBLEMS['discos']
                 results.append(_row(base, 'nao_iniciado', problem=reason))
                 break
 
@@ -246,7 +282,7 @@ def run_protected_copy(plan, target_preview, *, test_root, volume_lookup, usage,
     return {'schema': RESULT_SCHEMA, 'status': status, 'reason': reason,
             'copies_requested': len(rows), 'copies_verified': verified,
             'files_per_copy': plan.count, 'bytes_per_copy': plan.total,
-            'destinations': results}
+            'destinations': results, 'physical_check': summary}
 
 
 STATUS_TEXT = {
@@ -289,6 +325,15 @@ def format_report_pt(result):
     lines += ['',
               'Segurança: nenhum arquivo da origem foi gravado ou apagado; '
               'a origem só foi lida.',
-              'Cada destino tem a sua própria lista de arquivos (manifesto). '
-              'Isto não prova que os discos são fisicamente separados.']
+              'Cada destino tem a sua própria lista de arquivos (manifesto).',
+              '',
+              'Conferência dos discos (a última feita antes de gravar):']
+    check = result.get('physical_check')
+    texto = check.get('texto') if isinstance(check, dict) else None
+    if isinstance(texto, str) and texto.strip():
+        # The judge's closing line says nothing was copied; here it would
+        # contradict the copy report, so it is left out.
+        lines += [line for line in texto.splitlines() if line != READ_ONLY_NOTE]
+    else:
+        lines.append(NO_DISK_CHECK)
     return '\n'.join(lines)
