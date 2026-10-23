@@ -332,6 +332,18 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 ### P3-06 · BIOS: só orientação — `pronto` (depois de P3-01)
 - Verifica XMP/EXPO, Resizable BAR e versão da BIOS, só lendo.
 - Mostra o passo a passo por fabricante. **Nunca altera.**
+### P3-07 · Check-up de segurança (somente leitura) — `pronto` (depois de P3-01)
+- **Pedido do Raphael em 23/10/2026.** Procura sinais de minerador escondido e de programas suspeitos. **Não é antivírus:** o app nunca apaga, nunca encerra processos, nunca muda o Defender e nunca coloca nada em quarentena. Se achar algo, explica e recomenda a "Verificação offline" do Defender e uma segunda opinião (Malwarebytes, só do site oficial).
+- **O que olha (só leitura):**
+  - programas que abrem com o Windows (chaves `Run`/`RunOnce` e pastas de Inicialização);
+  - tarefas agendadas que não são da Microsoft;
+  - processos com o caminho de onde rodam (nome de sistema, como `svchost.exe`, rodando fora de `System32` = suspeito; executável em pasta temporária ou `AppData` = atenção);
+  - situação do Defender: proteção em tempo real ligada e **exclusões** (malware costuma se excluir); se ler as exclusões exigir administrador, dizer que não foi possível conferir, sem pedir elevação;
+  - uso de CPU e GPU com o PC parado, medido por alguns minutos (uso alto sem nenhum programa aberto = atenção);
+  - conexões de rede para portas típicas de mineração (3333, 4444, 5555, 7777, 14444, `stratum`).
+- **Resultado:** cada item como **OK / atenção / suspeito**, com o motivo em português simples e o que fazer. Nada é marcado como "vírus" com certeza.
+- **Aceite:** módulo sem Tk com funções puras que recebem os dados já lidos (testes 100% com dados simulados, nenhum comando real nos testes); consulta real só depois de o usuário confirmar na tela; relatório sem nome de usuário nem caminhos pessoais (pasta do usuário vira `%USERPROFILE%`); botão na aba de otimização.
+- **Escolha de design já feita (a mais segura):** em dúvida, o item fica "atenção", nunca "OK"; e o app nunca oferece botão de remover.
 ### P3-02 · Medição antes e depois — `pronto` (depois de P3-01)
 ### P3-04 · Ajustes nível seguro (1 clique) — `pronto` (depois de P3-01 e P3-03)
 - Só ajustes da lista segura do `CLAUDE.md`, cada um com aplicar e desfazer.
@@ -339,7 +351,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 ### P3-05 · Ajustes avançados (com confirmação) — `pronto` (depois de P3-04)
 
 ### ✅ Validação do Raphael — M3
-Issue "Validar M3": medir, aplicar os ajustes seguros, medir de novo e desfazer tudo, no PC dele.
+Issue "Validar M3": rodar o check-up de segurança, medir, aplicar os ajustes seguros, medir de novo e desfazer tudo, no PC dele.
 
 ---
 
