@@ -182,7 +182,7 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 
 ---
 
-## Marco M2 — Preservação para qualquer PC
+## Marco M2 — Preservação para qualquer PC  ← ATUAL (P2-09 desbloqueado em 23/10; P3-01 fatia 1 já feita)
 ### P2-07 · Estabilidade da interface Tk
 - Eliminar `invalid command name`, `Tcl interpreter is leaked` e os prints soltos dos testes.
 - Precisa de ambiente com Tk para conferir; os agentes na nuvem (Linux sem Tk) pulam para o próximo item testável.
@@ -256,15 +256,21 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
   - se algo falha depois de criada a pasta de medição (subpasta da rodada → relatório "interrompida" com o motivo; relatório que não grava → `BenchStopped` com o nome da pasta), o script diz "MEDIÇÃO INTERROMPIDA" e que a pasta ficou e pode ser apagada à mão, sem mostrar caminho; "MEDIÇÃO NÃO FEITA" só aparece nas recusas, quando nada foi gravado;
   - o relatório diz "nenhum arquivo da origem foi gravado ou apagado" (ler pode atualizar a data de último acesso, que é só metadado);
   - `scripts/medir_copia.py`: só `argparse` chamando `copy_bench`; código de saída 0 (concluída), 1 (interrompida) e 2 (recusada ou erro do sistema).
-### P2-09 · Executor multi-disco real — `bloqueado`
-- Mexe nas travas de segurança (`copy_authorized` / `physical_independence_verified`). Só com pedido explícito do Raphael.
+### P2-09 · Executor multi-disco real — `pronto` (fatia 1)
+- **Desbloqueado pelo Raphael em 23/10/2026**, por pedido explícito numa conversa ("pode começar o P2-09"). Mexe nas travas de segurança (`copy_authorized` / `physical_independence_verified`), por isso vai em 3 fatias, cada uma com testador, revisor e validação Windows.
+- Base que já existe: `multi_source_fixture_runner.py` (só roda dentro de `test_root`), `multi_source_plan.py`, `multi_source_recheck.py`, `multi_source_targets.py` e `drive_safety_report.py`. Não recomeçar o motor de backup.
+- O que **nunca** muda, em nenhuma fatia: `deletions_authorized`, `ready_for_format` e `installation_authorized` continuam `False`. "Não copiar" nunca significa apagar. A origem só é lida.
+- **Fatia 1 (executor protegido, só em teste):** `pronto`. Executor de produção num módulo novo, chamado pelo app só depois das duas travas; nesta fatia ele roda **só** em pastas sintéticas de `TemporaryDirectory`, e o app continua sem chamá-lo. Escopo explícito de origem e destino, recusa de junction/link/reparse em qualquer ancestral, destino nunca dentro da origem (nem o contrário), prévia, cancelamento, retomada, conferência SHA-256 de cada arquivo e relatório em português simples. **O diff não pode tocar em linhas com as travas** (o integrador recusa).
+- **Fatia 2 (prova do disco físico, somente leitura):** `bloqueado` até a fatia 1 estar `concluído`. Descobrir, só lendo, o disco físico por trás de cada letra (número do disco e extents); `physical_independence_verified` só vira `True` quando origem e destino estão em discos físicos diferentes, e qualquer dúvida ou falha do coletor deixa `False`. Testes com dados simulados; a consulta real roda só na validação Windows, com aviso antes. Como toca na linha da trava, **o merge é do Raphael** (issue `precisa-do-raphael`).
+- **Fatia 3 (cópia real com confirmação):** `bloqueado` até a fatia 2 estar `concluído`. Tela com a prévia completa e o botão de confirmar; `copy_authorized` só vira `True` depois do clique do usuário e vale só para **copiar**. **O merge é do Raphael.** Depois, validação: copiar uma pasta de teste do C: para outro disco físico e conferir o relatório.
 
 ### ✅ Validação do Raphael — M2
 Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um backup real (somente leitura).
+- A issue "Validar M2" pode ser aberta já, para o que está pronto (benchmark e central). O P2-09 ganha uma validação própria no fim da fatia 3.
 
 ---
 
-## Marco M3 — Otimização universal (carro-chefe)  ← ATUAL
+## Marco M3 — Otimização universal (carro-chefe)
 ### P3-01 · Perfil de hardware (somente leitura) — `pronto` (fatia 1 concluída)
 - CPU, GPU, RAM (velocidade e dual channel), discos, notebook ou desktop, Windows.
 - Classificação em básico / intermediário / gamer / alto desempenho / notebook.
