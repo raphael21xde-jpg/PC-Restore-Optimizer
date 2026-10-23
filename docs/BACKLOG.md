@@ -297,11 +297,12 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 - SCSI/SAS continuam aceitos (segue a especificação), mas discos virtuais de Hyper-V/VMware podem aparecer como SCSI/SAS: limitação registrada no módulo, **a rever na fatia 2b**.
 
 ### FIX-P2-08-01 · Central: motivo cortado na tabela
-- **Status:** `pronto` (achado na validação do M2 no PC do Raphael, 23/10/2026).
+- **Status:** `concluído` (branch `auto/FIX-P2-08-01-motivo-completo`; achado na validação do M2 no PC do Raphael, 23/10/2026).
 - Na janela "Central de recuperação", a coluna do motivo fica cortada à direita e o usuário precisa rolar a tabela para ler por que um backup não pode ser restaurado.
 - Pronto quando: ao selecionar uma linha, o motivo completo aparece num texto abaixo da tabela (com quebra de linha), sem rolagem lateral; a coluna continua existindo. Só leitura, sem mudar regras de "pode restaurar".
 - Sem linha selecionada, o espaço mostra "Nenhum backup selecionado".
 - Teste: a função que monta o texto do motivo (sem Tk) devolve o texto completo, sem caminhos.
+- Escolhas de design (feitas): o texto (`recovery_center.reason_detail_text`) usa só "pode restaurar" e o motivo, **sem o nome da pasta** (ele pode ter o nome de usuário); é um rótulo só de leitura (`ttk.Label`), não um campo editável; a quebra de linha acompanha a largura da janela (mínimo de 200 px); a coluna "Motivo" da tabela foi mantida. Testes em `tests/test_recovery_center_fix_p2_08_01.py`.
 
 ### P2-08 · Fatia 2 — Restaurar só os arquivos conferidos de um backup com poucos erros
 - **Status:** `pronto` (pedido do Raphael na validação do M2, 23/10/2026). **Fazer antes da fatia 2b do P2-09 e antes do M3.**
