@@ -13,12 +13,17 @@ Verdicts, from worst to best (the overall verdict is the worst one found):
 
 Rules for 'independentes' (all of them, for every source and destination):
     * extent_status == 'observed_logical_only' with exactly one disk number;
-    * partition_crosscheck in ('logical_match', 'limited_match');
-    * destination status is not 'blocked';
+    * partition_crosscheck == 'logical_match' ('limited_match' -> 'duvida');
+    * destination status == 'requires_review' (missing, unknown or
+      'blocked' -> 'duvida');
+    * boot_related_logical_disks is a non-empty list (a Windows in use
+      always has a boot disk, so an empty list is not proof);
     * destination disks contain no source disk and no boot/system/EFI disk;
     * every disk involved appears once in Get-Disk with a BusType in
       NVMe, SATA, ATA, SAS, SCSI or USB (Spaces, RAID, iSCSI, virtual,
       numeric codes, empty or unknown -> 'duvida').
+      Known limitation: Hyper-V/VMware virtual disks may show up as SCSI or
+      SAS; to be reviewed in P2-09 slice 2b.
 
 Malformed input never raises: it becomes 'duvida'. The output carries only
 drive letters, verdicts and short Portuguese reasons (no serial numbers,
@@ -35,8 +40,10 @@ DOUBT = 'duvida'
 # Worst first: anything that is not 'independentes' prevents that verdict.
 SEVERITY = {INDEPENDENT: 0, DOUBT: 1, SAME_DISK: 2}
 
+# Limitation: virtual disks (Hyper-V/VMware) may report SCSI/SAS; review in 2b.
 ACCEPTED_BUS_TYPES = frozenset({'nvme', 'sata', 'ata', 'sas', 'scsi', 'usb'})
-ACCEPTED_CROSSCHECK = frozenset({'logical_match', 'limited_match'})
+ACCEPTED_CROSSCHECK = frozenset({'logical_match'})
+ACCEPTED_TARGET_STATUS = 'requires_review'
 MAX_DISK_NUMBER = 65536
 MAX_ENTRIES = 64
 
@@ -53,6 +60,10 @@ MSG_DEST_BAD = ('Não foi possível confirmar em qual disco fica o destino '
                 '{unidade}.')
 MSG_DEST_BLOCKED = ('O destino {unidade} foi barrado pela conferência de '
                     'segurança dos discos.')
+MSG_DEST_STATUS = ('A conferência de segurança dos discos não informou se o '
+                   'destino {unidade} pode ser usado.')
+MSG_BOOT_UNKNOWN = ('Não foi possível saber em qual disco o Windows inicia. '
+                    'Por segurança, nada foi considerado separado.')
 MSG_CROSS = ('As informações do Windows sobre o disco do destino {unidade} '
              'não batem ou estão incompletas.')
 MSG_BUS = ('O tipo de ligação do disco do destino {unidade} não foi '
@@ -161,6 +172,8 @@ def _judge(safety_report, disks):
     source_problem = None
     if not sources_ok or boot is None:
         source_problem = MSG_SOURCE_BAD if boot is not None else MSG_REPORT_BAD
+    elif not boot:
+        source_problem = MSG_BOOT_UNKNOWN
     elif any(not _mapping_ok(item) for item in valid_sources):
         source_problem = MSG_SOURCE_BAD
     elif any(not _bus_ok(n, disks) for item in valid_sources
@@ -188,6 +201,8 @@ def _judge(safety_report, disks):
             verdict, reason = DOUBT, source_problem
         elif entry['status'] == 'blocked':
             verdict, reason = DOUBT, MSG_DEST_BLOCKED
+        elif entry['status'] != ACCEPTED_TARGET_STATUS:
+            verdict, reason = DOUBT, MSG_DEST_STATUS
         elif (entry['extent_status'] != 'observed_logical_only' or
               len(entry['numbers']) != 1):
             verdict, reason = DOUBT, MSG_DEST_BAD
