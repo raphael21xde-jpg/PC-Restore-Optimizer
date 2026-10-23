@@ -61,10 +61,11 @@ class IndependentTests(unittest.TestCase):
              'motivo': result['destinos'][0]['motivo']}])
         self.assertTrue(result['motivos'])
 
-    def test_limited_match_and_other_accepted_buses(self):
+    def test_other_accepted_buses(self):
+        # SCSI/SAS stay accepted (spec); virtual disks of Hyper-V/VMware may
+        # show up as SCSI/SAS: limitation to review in slice 2b.
         for bus in ('ATA', 'SAS', 'SCSI', 'USB', ' sata '):
             data = good_report()
-            data['destinations'][0]['partition_crosscheck'] = 'limited_match'
             disks = [disk(0, 'NVMe'), disk(1, bus)]
             with self.subTest(bus=bus):
                 self.assertEqual(
@@ -123,7 +124,7 @@ class DoubtTests(unittest.TestCase):
         self.assertDoubt(data)
 
     def test_crosscheck_not_matching(self):
-        for cross in ('conflict', 'inconclusive', 'unavailable',
+        for cross in ('limited_match', 'conflict', 'inconclusive', 'unavailable',
                       'extent_only', 'partition_only'):
             with self.subTest(target=cross):
                 data = good_report()
@@ -138,6 +139,24 @@ class DoubtTests(unittest.TestCase):
         data = good_report()
         data['destinations'][0]['status'] = 'blocked'
         self.assertDoubt(data)
+
+    def test_missing_or_unknown_target_status(self):
+        data = good_report()
+        del data['destinations'][0]['status']
+        self.assertDoubt(data)
+        for status in ('xyz', '', None, 'REQUIRES_REVIEW', 1):
+            with self.subTest(status=status):
+                data = good_report()
+                data['destinations'][0]['status'] = status
+                self.assertDoubt(data)
+
+    def test_empty_boot_list_is_doubt(self):
+        data = report([volume('D:', [1])],
+                      [volume('C:', [0], status='requires_review')], boot=[])
+        result = self.assertDoubt(data)
+        self.assertEqual(result['destinos'][0]['veredito'], 'duvida')
+        text = pdc.format_verdict_pt(result)
+        self.assertNotIn('\\', text)
 
     def test_target_on_boot_disk_that_is_not_source(self):
         data = report([volume('D:', [2])], [volume('E:', [0])], boot=[0])
@@ -170,7 +189,9 @@ class DoubtTests(unittest.TestCase):
 class WorstVerdictTests(unittest.TestCase):
     def test_one_good_one_doubtful(self):
         data = report([volume('C:', [0])],
-                      [volume('E:', [1]), volume('F:', [2], cross='conflict')])
+                      [volume('E:', [1], status='requires_review'),
+                       volume('F:', [2], cross='conflict',
+                              status='requires_review')])
         result = pdc.judge_physical_disks(data, GOOD_DISKS)
         self.assertEqual(result['veredito'], 'duvida')
         self.assertEqual([x['veredito'] for x in result['destinos']],

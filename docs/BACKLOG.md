@@ -289,6 +289,13 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 - A área de teste não pode ser a raiz de uma unidade e precisa ficar estritamente dentro da pasta temporária do sistema (escolha mais segura).
 - Plano sem a lista de pastas escolhidas recusa com mensagem em português, sem erro interno.
 
+### FIX-P2-09-02 · Ressalvas da revisão do avaliador (PR #87)
+- **Status:** `concluído` (branch `auto/FIX-P2-09-02-avaliador-ressalvas`).
+- Lista de discos de inicialização vazia agora dá `duvida`: num Windows em uso sempre há disco de inicialização, então a ausência não é prova.
+- Status do destino: só `requires_review` é aceito; status ausente, desconhecido ou `blocked` dá `duvida` (escolha mais segura).
+- Conferência com as partições: só `logical_match` é aceito; `limited_match` passa a dar `duvida` (igual ao `partition_extent_crosscheck.py`).
+- SCSI/SAS continuam aceitos (segue a especificação), mas discos virtuais de Hyper-V/VMware podem aparecer como SCSI/SAS: limitação registrada no módulo, **a rever na fatia 2b**.
+
 ### ✅ Validação do Raphael — M2
 Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um backup real (somente leitura).
 - A issue "Validar M2" pode ser aberta já, para o que está pronto (benchmark e central). O P2-09 ganha uma validação própria no fim da fatia 3.
