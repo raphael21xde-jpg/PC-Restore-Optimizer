@@ -62,9 +62,8 @@ class IndependentTests(unittest.TestCase):
         self.assertTrue(result['motivos'])
 
     def test_other_accepted_buses(self):
-        # SCSI/SAS stay accepted (spec); virtual disks of Hyper-V/VMware may
-        # show up as SCSI/SAS: limitation to review in slice 2b.
-        for bus in ('ATA', 'SAS', 'SCSI', 'USB', ' sata '):
+        # Slice 2b: SCSI/SAS are no longer accepted (see DoubtTests).
+        for bus in ('ATA', 'USB', ' sata ', 'nvme'):
             data = good_report()
             disks = [disk(0, 'NVMe'), disk(1, bus)]
             with self.subTest(bus=bus):
@@ -170,6 +169,43 @@ class DoubtTests(unittest.TestCase):
                 self.assertDoubt(good_report(), [disk(0, 'NVMe'), disk(1, bus)])
             with self.subTest(source=bus):
                 self.assertDoubt(good_report(), [disk(0, bus), disk(1, 'SATA')])
+
+    def test_scsi_and_sas_are_doubt(self):
+        # Hyper-V/VMware virtual disks show up as SCSI/SAS (slice 2b).
+        for bus in ('SCSI', 'SAS', ' scsi ', 'sas'):
+            with self.subTest(target=bus):
+                result = self.assertDoubt(
+                    good_report(), [disk(0, 'NVMe'), disk(1, bus)])
+                self.assertEqual(result['destinos'][0]['veredito'], 'duvida')
+            with self.subTest(source=bus):
+                self.assertDoubt(good_report(), [disk(0, bus), disk(1, 'SATA')])
+
+    def test_virtual_looking_name_is_doubt_on_any_bus(self):
+        names = ('Virtual Disk', 'VMware Virtual NVMe Disk', 'VBOX HARDDISK',
+                 'QEMU HARDDISK', 'Msft Virtual Disk', 'MSFT XYZ', 'meu VIRTUAL')
+        for name in names:
+            for bus in ('NVMe', 'SATA', 'USB'):
+                virtual = dict(disk(1, bus), FriendlyName=name)
+                with self.subTest(target=name, bus=bus):
+                    result = self.assertDoubt(
+                        good_report(), [disk(0, 'NVMe'), virtual])
+                    text = pdc.format_verdict_pt(result)
+                    self.assertNotIn(name, text)
+                    self.assertNotIn(name, json.dumps(result, ensure_ascii=False))
+                with self.subTest(source=name, bus=bus):
+                    self.assertDoubt(
+                        good_report(),
+                        [dict(disk(0, bus), FriendlyName=name), disk(1, 'SATA')])
+
+    def test_missing_or_non_text_name_is_doubt(self):
+        for name in (None, 5, ['x']):
+            row = disk(1, 'SATA')
+            row['FriendlyName'] = name
+            with self.subTest(name=name):
+                self.assertDoubt(good_report(), [disk(0, 'NVMe'), row])
+        row = disk(1, 'SATA')
+        del row['FriendlyName']
+        self.assertDoubt(good_report(), [disk(0, 'NVMe'), row])
 
     def test_disk_missing_or_duplicated_in_get_disk(self):
         self.assertDoubt(good_report(), [disk(0, 'NVMe')])
@@ -321,6 +357,8 @@ class SourceCodeTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
 
     def test_not_imported_by_app_ui_or_executor(self):
+        # Slice 2b: only the bridge (physical_independence.py) uses the
+        # judge; the executor reaches it through the bridge, never directly.
         files = [ROOT / 'app.py', ROOT / 'multi_source_executor.py']
         files += sorted(ROOT.glob('*_ui.py'))
         pattern = re.compile(r'\bphysical_disk_check\b')
@@ -328,6 +366,17 @@ class SourceCodeTests(unittest.TestCase):
             with self.subTest(file=path.name):
                 text = path.read_text(encoding='utf-8')
                 self.assertIsNone(pattern.search(text))
+
+    def test_bridge_only_in_executor_never_in_app_or_screens(self):
+        bridge = re.compile(r'\bphysical_independence\b(?!_verified)')
+        files = [ROOT / 'app.py', *sorted(ROOT.glob('*_ui.py'))]
+        self.assertGreater(len(files), 1)
+        for path in files:
+            with self.subTest(file=path.name):
+                self.assertIsNone(
+                    bridge.search(path.read_text(encoding='utf-8')))
+        executor = (ROOT / 'multi_source_executor.py').read_text(encoding='utf-8')
+        self.assertRegex(executor, r'from physical_independence import')
 
 
 if __name__ == '__main__':

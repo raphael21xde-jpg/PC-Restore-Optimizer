@@ -20,10 +20,12 @@ Rules for 'independentes' (all of them, for every source and destination):
       always has a boot disk, so an empty list is not proof);
     * destination disks contain no source disk and no boot/system/EFI disk;
     * every disk involved appears once in Get-Disk with a BusType in
-      NVMe, SATA, ATA, SAS, SCSI or USB (Spaces, RAID, iSCSI, virtual,
-      numeric codes, empty or unknown -> 'duvida').
-      Known limitation: Hyper-V/VMware virtual disks may show up as SCSI or
-      SAS; to be reviewed in P2-09 slice 2b.
+      NVMe, SATA, ATA or USB (SCSI, SAS, Spaces, RAID, iSCSI, virtual,
+      numeric codes, empty or unknown -> 'duvida'). SCSI and SAS are not
+      accepted because Hyper-V/VMware virtual disks show up as SCSI/SAS;
+    * the disk's FriendlyName is a text without "virtual", "vmware",
+      "vbox", "qemu" or "msft" (any case); a virtual-looking or missing
+      name -> 'duvida' on any bus. The model name is never shown.
 
 Malformed input never raises: it becomes 'duvida'. The output carries only
 drive letters, verdicts and short Portuguese reasons (no serial numbers,
@@ -40,8 +42,10 @@ DOUBT = 'duvida'
 # Worst first: anything that is not 'independentes' prevents that verdict.
 SEVERITY = {INDEPENDENT: 0, DOUBT: 1, SAME_DISK: 2}
 
-# Limitation: virtual disks (Hyper-V/VMware) may report SCSI/SAS; review in 2b.
-ACCEPTED_BUS_TYPES = frozenset({'nvme', 'sata', 'ata', 'sas', 'scsi', 'usb'})
+# SCSI/SAS are left out on purpose: virtual disks (Hyper-V/VMware) report
+# them, so they become 'duvida' (safest choice, P2-09 slice 2b).
+ACCEPTED_BUS_TYPES = frozenset({'nvme', 'sata', 'ata', 'usb'})
+VIRTUAL_NAME_MARKERS = ('virtual', 'vmware', 'vbox', 'qemu', 'msft')
 ACCEPTED_CROSSCHECK = frozenset({'logical_match'})
 ACCEPTED_TARGET_STATUS = 'requires_review'
 MAX_DISK_NUMBER = 65536
@@ -66,16 +70,19 @@ MSG_BOOT_UNKNOWN = ('Não foi possível saber em qual disco o Windows inicia. '
                     'Por segurança, nada foi considerado separado.')
 MSG_CROSS = ('As informações do Windows sobre o disco do destino {unidade} '
              'não batem ou estão incompletas.')
-MSG_BUS = ('O tipo de ligação do disco do destino {unidade} não foi '
-           'reconhecido (por exemplo RAID, disco virtual ou desconhecido).')
+MSG_BUS = ('Não deu para confirmar que o disco do destino {unidade} é um '
+           'disco físico comum (por exemplo RAID, disco virtual, disco de '
+           'servidor ou tipo desconhecido).')
 MSG_SOURCE_BAD = ('Não foi possível confirmar em qual disco fica uma das '
                   'unidades de origem.')
-MSG_SOURCE_BUS = ('O tipo de ligação do disco de uma das unidades de origem '
-                  'não foi reconhecido (por exemplo RAID, disco virtual ou '
-                  'desconhecido).')
+MSG_SOURCE_BUS = ('Não deu para confirmar que o disco de uma das unidades '
+                  'de origem é um disco físico comum (por exemplo RAID, disco '
+                  'virtual, disco de servidor ou tipo desconhecido).')
 MSG_REPORT_BAD = ('A conferência dos discos está incompleta ou em formato '
                   'inesperado. Por segurança, nada foi considerado separado.')
 MSG_NO_TARGET = 'Nenhum destino foi informado.'
+MSG_READ_ONLY = ('Esta conferência só lê informações; nada foi copiado, '
+                 'apagado ou alterado.')
 MSG_ALL_OK = ('Todos os destinos ficam em discos diferentes dos discos de '
               'origem.')
 
@@ -129,14 +136,19 @@ def _read_volume(item):
 
 
 def _bus_ok(number, disks):
-    """True only when the disk appears exactly once with an accepted BusType."""
+    """True only when the disk appears exactly once with an accepted BusType
+    and a FriendlyName that does not look like a virtual disk."""
     rows = [row for row in disks
             if isinstance(row, dict) and row.get('Number') == number
             and _valid_number(row.get('Number'))]
     if len(rows) != 1:
         return False
     bus = rows[0].get('BusType')
-    if not isinstance(bus, str):
+    name = rows[0].get('FriendlyName')
+    if not isinstance(bus, str) or not isinstance(name, str):
+        return False
+    folded = name.casefold()
+    if any(marker in folded for marker in VIRTUAL_NAME_MARKERS):
         return False
     return bus.strip().casefold() in ACCEPTED_BUS_TYPES
 
@@ -273,6 +285,5 @@ def format_verdict_pt(result):
     if result['veredito'] != INDEPENDENT:
         lines.append('Por segurança, escolha um destino em outro disco ou '
                      'confira os discos antes de copiar.')
-    lines.append('Esta conferência só lê informações; nada foi copiado, '
-                 'apagado ou alterado.')
+    lines.append(MSG_READ_ONLY)
     return '\n'.join(lines)

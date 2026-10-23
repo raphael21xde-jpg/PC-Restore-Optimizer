@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
 import threading
 import unittest
@@ -20,6 +21,9 @@ from multi_source_plan import prepare_multi_source_preview
 from multi_source_targets import preview_multi_source_targets
 from selective_recovery import verify_complete_manifest
 from transfer_engine import choose_strategy
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fake_disks_p2_09 import CountingCollector  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -87,8 +91,10 @@ class ProtectedExecutorTests(unittest.TestCase):
             usage=self.usage, volume_lookup=self.volume)
 
     def kwargs(self, **extra):
+        # Slice 2b: a fake inventory where A:/B: and T:/U: are on separate
+        # disks ("independentes"); no real disk is ever queried.
         values = dict(test_root=str(self.sandbox), volume_lookup=self.volume,
-                      usage=self.usage)
+                      usage=self.usage, disk_collector=CountingCollector())
         values.update(extra)
         return values
 
@@ -351,7 +357,8 @@ class ProtectedExecutorTests(unittest.TestCase):
         result = executor.run_protected_copy(self.plan, self.preview(), **self.kwargs())
         self.assertEqual(set(result), {
             'schema', 'status', 'reason', 'copies_requested', 'copies_verified',
-            'files_per_copy', 'bytes_per_copy', 'destinations'})
+            'files_per_copy', 'bytes_per_copy', 'destinations', 'physical_check'})
+        self.assertEqual(set(result['physical_check']), {'veredito', 'texto'})
         for row in result['destinations']:
             self.assertEqual(set(row), {
                 'number', 'path', 'volume', 'status', 'manifest',
