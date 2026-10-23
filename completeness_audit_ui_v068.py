@@ -19,6 +19,7 @@ from scan_sessions import merge_cache
 from backup_core import norm
 from drive_catalog import safe_to_mark
 from volume_paths import volume_of
+from ui_timers import WindowTimers
 import os
 import ntpath
 
@@ -42,6 +43,8 @@ def format_index_readiness_note(preview, ignored_count, *, applied=False):
 
 def show_completeness_audit(app, plan, *, history_manifest=None):
     window = tk.Toplevel(app)
+    # The window owns its timers: closing it cancels poll/warn_slow (P2-07).
+    timers = WindowTimers(window)
     window.title('v0.6.9 • Auditoria inteligente e discos / EFI')
     window.geometry('1210x790')
     window.minsize(870, 590)
@@ -315,12 +318,12 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
         try:
             kind, report, error = results_queue.get_nowait()
         except Empty:
-            window.after(150, poll)
+            timers.after(150, poll)
             return
         # An asynchronous response may arrive after the user switched folders or
         # cancelled a review. Ignore it instead of overwriting the current view.
         if kind == 'review' and report['request_id'] != view_state['request_id']:
-            window.after(150, poll)
+            timers.after(150, poll)
             return
         if kind == 'index':
             index_load_button.configure(state='normal')
@@ -385,7 +388,7 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
         # the queue was empty. The old code stopped after the initial audit,
         # leaving later folder previews visibly stuck forever.
         if window.winfo_exists():
-            window.after(150, poll)
+            timers.after(150, poll)
 
     def launch_audit():
         status.set('Atualizando auditoria e consultando discos (somente leitura)...')
@@ -426,7 +429,7 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
                 review_status.set('A consulta está demorando mais que o esperado. '
                                   'Você pode cancelar a visualização e tentar uma subpasta menor. '
                                   'Nenhum arquivo foi modificado.')
-        window.after(15000, warn_slow)
+        timers.after(15000, warn_slow)
 
     def cancel_review():
         # Abandons the request in the UI. An OS directory call already in flight
@@ -654,5 +657,5 @@ def show_completeness_audit(app, plan, *, history_manifest=None):
     ttk.Button(review_controls, text='Não preservar (não exclui)',
                command=lambda: mark_child(choice='skip')).pack(side='left', padx=4)
     launch_audit()
-    window.after(150, poll)
+    timers.after(150, poll)
     return window

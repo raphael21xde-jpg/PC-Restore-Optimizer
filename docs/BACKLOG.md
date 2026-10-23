@@ -194,7 +194,13 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
   - aplicado em todos os 41 módulos de teste que criam uma raiz Tk (`App()` ou `tk.Tk()`); onde o `tearDown` destruía a raiz antes de apagar a pasta temporária, ele agora chama `close_tk_root` no mesmo lugar (a ordem continua a mesma);
   - prints soltos: `test_local_test_reporter` e `test_validar_windows` agora capturam a saída das ferramentas (`redirect_stdout`); os scripts não foram alterados;
   - teste sem Tk: `tests/test_tk_helpers_p2_07.py` usa uma raiz falsa.
-- **Fatia 2 (no app):** `pronto`. `completeness_audit_ui_v068` agenda `poll` e `warn_slow` com `window.after` e eles ficam pendentes depois de fechar a janela; trocar por `WindowTimers` (`ui_timers.py`), que cancela os agendamentos da própria janela ao fechar. Testar com Tk (validação Windows).
+- **Fatia 2 (no app):** `concluído` (branch `auto/P2-07-timers-auditoria`). Confirmar na validação Windows. `completeness_audit_ui_v068` agenda `poll` e `warn_slow` com `window.after` e eles ficam pendentes depois de fechar a janela; trocar por `WindowTimers` (`ui_timers.py`), que cancela os agendamentos da própria janela ao fechar. Testar com Tk (validação Windows).
+- **Escolhas de design da fatia 2 (23/10/2026, a opção mais segura):**
+  - reaproveitar `WindowTimers` (`ui_timers.py`) **sem alterar**; `timers = WindowTimers(window)` logo depois de criar a janela e as 5 chamadas (4 de `poll`, 1 de `warn_slow`) passam a usar `timers.after`; textos, fila, threads e lógica não mudaram;
+  - não parar threads que já estão consultando uma pasta: a resposta que chegar depois de fechar a janela é descartada (ninguém mais lê a fila);
+  - manter a conferência `winfo_exists()` dentro de `warn_slow` (proteção dupla);
+  - teste `tests/test_audit_timers_p2_07.py`: parte sem Tk lê o código com `ast` (roda no Linux); parte com Tk abre a janela com o leitor de discos e o relatório simulados, arma `warn_slow`, fecha a janela e confere que nenhum agendamento dela sobra nem dispara;
+  - a prova final com Tk fica para a validação Windows.
 ### P2-08 · Central de recuperação ligada ao app
 - **Status:** `concluído` (fatia 1, branch `auto/P2-08-central-recuperacao`).
 - A central abre manifestos reais (somente leitura) e restaura pelo fluxo do P2-01.
