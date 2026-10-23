@@ -40,9 +40,12 @@ Ao terminar uma suíte de testes, uma etapa ou uma investigação, salve um rela
 A pasta `relatorios-claude/` fica **fora do git** (está no `.gitignore`). Esses relatórios são lidos pelo planejamento do projeto no claude.ai.
 
 ## Automação (ciclo com agentes)
-- A equipe (coordenador, planejador, desenvolvedor, testador, revisor e integrador) constrói o app sozinha, duas vezes por dia, seguindo `docs/AUTOMACAO.md` e os **marcos** de `docs/BACKLOG.md`.
-- O Raphael **não aprova nada no dia a dia**. Ele só é chamado (notificação no celular + issue `precisa-do-raphael` com o passo a passo) para validar um marco, para algo que só o PC dele faz, para as travas de segurança ou para um erro que os agentes não resolveram em 2 ciclos.
-- Escolhas de design: os agentes escolhem a opção **mais segura**, registram e seguem.
+- A equipe (coordenador, planejador, desenvolvedor, testador, revisor e integrador) constrói o app sozinha, uma vez por dia (02:48), seguindo `docs/AUTOMACAO.md` e os **marcos** de `docs/BACKLOG.md`.
+- Correções (`FIX-...`) e itens que já estão no backlog andam sem o Raphael. **Funcionalidade nova** (fora do backlog, ou que toca dados ou discos reais) passa por dois gates dele antes de qualquer código: `intent` (problema, o que muda, perguntas do Grill) e `fatiamento`.
+- Ele também é chamado para validar um marco, para algo que só o PC dele faz, para as travas de segurança ou para um erro que os agentes não resolveram em 2 ciclos.
+- **Todas as decisões dele são feitas no PCRO Monitor** (seção "Precisa de você": Aprovar / Ajustar / Descartar), com notificação no celular. A issue `precisa-do-raphael` fica só como registro. Os agentes nunca gravam uma decisão.
+- Escolhas de design dentro de um item do backlog: os agentes escolhem a opção **mais segura**, registram e seguem.
+- O revisor confere o diff contra `docs/REGRAS.md` (erro vira regra) e **aponta**; quem corrige é o desenvolvedor. Nenhum agente aprova o próprio código.
 - O Windows é testado na `main` pelo Agendador de Tarefas do PC do Raphael, a cada 3 h (branch `validacao-windows`). Se falhar, a correção vira prioridade máxima no ciclo seguinte.
 
 ## Plano de entrega (resumo)

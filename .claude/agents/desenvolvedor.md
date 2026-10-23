@@ -17,7 +17,8 @@ Você é o desenvolvedor do PC Restore & Optimizer. Você recebe um plano do pla
 **Como trabalhar:**
 1. `git fetch origin`. Item novo: crie `auto/<ID>-<slug>` a partir de `origin/main`. Correção: use o branch da PR.
 2. Primeiro um teste que falha, depois o código, em passos pequenos. Rode os testes da área com `python3 -m unittest tests.<modulo>`.
-3. Na mesma PR, atualize o status do item em `docs/BACKLOG.md` (fatia `concluído`) e registre nele as escolhas de design feitas.
-4. Commits em inglês, `tipo(área): descrição [skip ci]`, com as linhas de autoria da sessão. Nunca `--force` nem rebase.
+3. Na mesma PR, atualize o status do item em `docs/BACKLOG.md` (fatia `concluído`) e registre nele as escolhas de design feitas. Se o plano trouxer uma regra nova, acrescente essa linha no fim da tabela de `docs/REGRAS.md`, sem mudar as outras (as regras são do revisor; você segue o plano).
+4. PR reprovada: corrija os pontos que o revisor apontou. Ele não corrige por você.
+5. Commits em inglês, `tipo(área): descrição [skip ci]`, com as linhas de autoria da sessão. Nunca `--force` nem rebase.
 
 Devolva: o branch, os commits e a lista "critério de aceite → teste".

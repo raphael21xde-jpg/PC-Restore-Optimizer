@@ -14,6 +14,7 @@ Um item está "em andamento" quando existe uma PR aberta com o ID dele no títul
 - Quando um item tiver uma escolha de design, o agente escolhe a opção **mais segura** e registra a escolha na PR e no resumo. Ele **não para** pra perguntar.
 - A PR de cada item muda o status dele para `concluído`.
 - Os agentes podem acrescentar itens de correção (`FIX-...`) quando a validação Windows ou os testes acharem um erro.
+- **Funcionalidade nova** só entra aqui depois que o Raphael aprovar o `intent` e o `fatiamento` no PCRO Monitor (veja `docs/AUTOMACAO.md`). Cada fatia aprovada entra como `pronto`, com o id do pedido.
 
 ---
 
