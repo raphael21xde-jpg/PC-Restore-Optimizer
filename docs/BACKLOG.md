@@ -300,6 +300,7 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 - **Status:** `pronto` (achado na validação do M2 no PC do Raphael, 23/10/2026).
 - Na janela "Central de recuperação", a coluna do motivo fica cortada à direita e o usuário precisa rolar a tabela para ler por que um backup não pode ser restaurado.
 - Pronto quando: ao selecionar uma linha, o motivo completo aparece num texto abaixo da tabela (com quebra de linha), sem rolagem lateral; a coluna continua existindo. Só leitura, sem mudar regras de "pode restaurar".
+- Sem linha selecionada, o espaço mostra "Nenhum backup selecionado".
 - Teste: a função que monta o texto do motivo (sem Tk) devolve o texto completo, sem caminhos.
 
 ### P2-08 · Fatia 2 — Restaurar só os arquivos conferidos de um backup com poucos erros
@@ -307,7 +308,15 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 - Problema: os backups reais de 20/10 tiveram 1 e 23 arquivos com erro (arquivo removido pelo Defender, arquivos travados por programas abertos). Por isso a Central marca todos como "Pode restaurar: Não", mesmo com 99,99% conferido, e o usuário fica sem saída pelo app.
 - Pronto quando: a Central mostra, para um backup parcial, quantos arquivos foram conferidos e quantos falharam; um botão "Restaurar só os conferidos…" pede uma confirmação separada que diz quantos arquivos ficam de fora e leva ao fluxo de restauração já existente, **sempre numa pasta nova** (não oferece "Colocar no lugar original" nesse caso).
 - Regras de segurança (as mais seguras): só entram arquivos com `verified: true` e SHA-256 no manifesto, e cada um é conferido de novo ao restaurar; backup sem lista de arquivos legível, com manifesto inválido ou com cópias diferentes continua recusado; nada é apagado nem sobrescrito; o relatório diz em português quantos arquivos ficaram de fora e por quê, sem caminhos com nome de usuário.
-- Testes com backups sintéticos em `TemporaryDirectory` (backup parcial com 1 arquivo faltando → restaura só os outros; manifesto inválido → recusa).
+- A exceção vale **só** para o botão "Restaurar só os conferidos…": a coluna "Pode restaurar?" e o botão "Restaurar…" continuam com a regra de hoje.
+- Fica de fora (escolha mais segura): arquivo `verified: true` sem SHA-256; manifesto antigo sem `verified` por arquivo → a restauração parcial é recusada inteira.
+- Testes com backups sintéticos em `TemporaryDirectory`, um para cada regra:
+  - backup parcial com 1 arquivo faltando → restaura só os outros;
+  - a confirmação diz quantos arquivos ficam de fora;
+  - o fluxo parcial não oferece "Colocar no lugar original";
+  - manifesto inválido, manifesto antigo ou "cópias diferentes" → recusa;
+  - arquivo alterado depois do backup (SHA-256 diferente) nunca é restaurado;
+  - o relatório não leva caminhos com nome de usuário.
 
 ### ✅ Validação do Raphael — M2
 Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um backup real (somente leitura).
