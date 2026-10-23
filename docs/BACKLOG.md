@@ -273,6 +273,14 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 - **Fatia 2 (prova do disco físico, somente leitura):** `bloqueado` até a fatia 1 estar `concluído`. Descobrir, só lendo, o disco físico por trás de cada letra (número do disco e extents); `physical_independence_verified` só vira `True` quando origem e destino estão em discos físicos diferentes, e qualquer dúvida ou falha do coletor deixa `False`. Testes com dados simulados; a consulta real roda só na validação Windows, com aviso antes. Como toca na linha da trava, **o merge é do Raphael** (issue `precisa-do-raphael`).
 - **Fatia 3 (cópia real com confirmação):** `bloqueado` até a fatia 2 estar `concluído`. Tela com a prévia completa e o botão de confirmar; `copy_authorized` só vira `True` depois do clique do usuário e vale só para **copiar**. **O merge é do Raphael.** Depois, validação: copiar uma pasta de teste do C: para outro disco físico e conferir o relatório.
 
+### FIX-P2-09-01 · Ressalvas da revisão do executor (PR #85)
+- **Status:** `concluído` (branch `auto/FIX-P2-09-01-executor-ressalvas`).
+- Cancelar durante a conferência deixa o destino `cancelado` ("conferência cancelada ... pode ser conferida de novo"), nunca "arquivo diferente" nem "pode ser retomado" (o manifesto já está concluído e não se retoma).
+- Revalidação antes do 2º destino em diante trata também erro de disco (ex.: desconectado): para, o destino fica `nao_iniciado` e o motivo é genérico ("a origem ou o destino mudou desde a prévia, ou um disco ficou inacessível").
+- Novo teste: origem muda depois do destino 1 conferido → destino 2 `nao_iniciado` com motivo, nada gravado nele.
+- A área de teste não pode ser a raiz de uma unidade e precisa ficar estritamente dentro da pasta temporária do sistema (escolha mais segura).
+- Plano sem a lista de pastas escolhidas recusa com mensagem em português, sem erro interno.
+
 ### ✅ Validação do Raphael — M2
 Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um backup real (somente leitura).
 - A issue "Validar M2" pode ser aberta já, para o que está pronto (benchmark e central). O P2-09 ganha uma validação própria no fim da fatia 3.

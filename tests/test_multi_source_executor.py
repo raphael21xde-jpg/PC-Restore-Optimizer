@@ -357,6 +357,142 @@ class ProtectedExecutorTests(unittest.TestCase):
                 'number', 'path', 'volume', 'status', 'manifest',
                 'files_verified', 'bytes_verified', 'problem'})
 
+    # --- FIX-P2-09-01: review notes of PR #85 ----------------------------
+    def assert_cancelled_during_check(self, result):
+        first, second = result['destinations']
+        self.assertEqual(first['status'], 'cancelado')
+        self.assertIsNotNone(first['manifest'])
+        self.assertIn('conferência cancelada', first['problem'])
+        self.assertIn('conferida de novo', first['problem'])
+        self.assertNotIn('retomada', first['problem'])
+        self.assertEqual(result['reason'], first['problem'])
+        self.assertEqual(result['copies_verified'], 0)
+        self.assertEqual(result['status'], 'nao_verificado')
+        self.assertEqual(second['status'], 'nao_iniciado')
+        self.assertEqual(self.tree(self.target_u), [])
+        text = executor.format_report_pt(result)
+        self.assertIn('conferência cancelada', text)
+        self.assertNotIn('pode ser retomad', text)
+        line = next(item for item in text.splitlines() if item.startswith('- Destino 1'))
+        self.assertNotIn('nada foi gravado', line)
+        self.assertIn('não conferid', line)
+        self.assertEqual(self.source_state(), self.snapshot)
+
+    def test_fix1_cancel_before_check_starts_is_cancelled_not_resumable(self):
+        cancelled = threading.Event()
+        original = executor.verify_complete_manifest
+
+        def cancel_then_verify(*args, **kwargs):
+            cancelled.set()  # verifier raises InterruptedError on its own
+            return original(*args, **kwargs)
+
+        with patch.object(executor, 'verify_complete_manifest', cancel_then_verify):
+            result = executor.run_protected_copy(
+                self.plan, self.preview(), **self.kwargs(cancelled=cancelled))
+        self.assert_cancelled_during_check(result)
+
+    def test_fix1_cancel_while_hashing_is_cancelled_not_mismatch(self):
+        cancelled = threading.Event()
+        import selective_recovery
+
+        def cancel_while_hashing(*args, **kwargs):
+            cancelled.set()
+            raise InterruptedError('synthetic cancel while hashing')
+
+        # The verifier turns this into OSError ("arquivo ausente ou diferente").
+        with patch.object(selective_recovery, 'verify_committed_backup_file',
+                          cancel_while_hashing):
+            result = executor.run_protected_copy(
+                self.plan, self.preview(), **self.kwargs(cancelled=cancelled))
+        self.assert_cancelled_during_check(result)
+        self.assertNotIn('ausente ou diferente', result['reason'])
+
+    def recheck_failing_on_second_call(self, error):
+        original = executor.recheck_multi_source_preview
+        calls = [0]
+
+        def recheck(*args, **kwargs):
+            calls[0] += 1
+            if calls[0] == 2:
+                raise error
+            return original(*args, **kwargs)
+
+        return recheck
+
+    def assert_stopped_before_second(self, result):
+        self.assertEqual(result['status'], 'parcial')
+        self.assertEqual(result['copies_verified'], 1)
+        first, second = result['destinations']
+        self.assertEqual(first['status'], 'verificado')
+        self.assertEqual(second['status'], 'nao_iniciado')
+        self.assertIn('desde a prévia', second['problem'])
+        self.assertEqual(result['reason'], second['problem'])
+        self.assertEqual(self.tree(self.target_u), [])
+        text = executor.format_report_pt(result)
+        self.assertIn('Motivo da parada', text)
+        self.assertIn('Destino 2', text)
+
+    def test_fix2_disk_unavailable_before_second_destination(self):
+        recheck = self.recheck_failing_on_second_call(OSError('disco desconectado'))
+        with patch.object(executor, 'recheck_multi_source_preview', recheck):
+            result = executor.run_protected_copy(
+                self.plan, self.preview(), **self.kwargs())
+        self.assert_stopped_before_second(result)
+        self.assertNotIn('A origem mudou', result['reason'])
+
+    def test_fix2_generic_reason_for_any_recheck_value_error(self):
+        recheck = self.recheck_failing_on_second_call(
+            ValueError('Diagnóstico de discos alterado; refaça a prévia.'))
+        with patch.object(executor, 'recheck_multi_source_preview', recheck):
+            result = executor.run_protected_copy(
+                self.plan, self.preview(), **self.kwargs())
+        self.assert_stopped_before_second(result)
+        self.assertNotIn('A origem mudou', result['reason'])
+
+    def test_fix3_source_changes_after_first_destination_verified(self):
+        original = executor.verify_complete_manifest
+
+        def verify_then_change_source(*args, **kwargs):
+            outcome = original(*args, **kwargs)
+            self.second.write_bytes(b'changed-between-destinations')
+            return outcome
+
+        with patch.object(executor, 'verify_complete_manifest',
+                          verify_then_change_source):
+            result = executor.run_protected_copy(
+                self.plan, self.preview(), **self.kwargs())
+        self.assert_stopped_before_second(result)
+
+    def test_fix4_test_root_must_be_inside_system_temp_folder(self):
+        preview = self.preview()
+        drive_root = Path(os.path.abspath(os.sep))
+        before = self.tree(self.root)
+        for bad in (str(drive_root), tempfile.gettempdir()):
+            with self.subTest(test_root=bad):
+                with self.assertRaisesRegex(ValueError, 'área de teste'):
+                    executor.run_protected_copy(
+                        self.plan, preview, **self.kwargs(test_root=bad))
+        # A folder outside the system temp folder is refused: point the temp
+        # folder to a sibling so the sandbox is outside it.
+        fake_temp = self.root / 'fake-temp'
+        fake_temp.mkdir()
+        with patch.object(executor.tempfile, 'gettempdir', lambda: str(fake_temp)):
+            for call in (executor.preview_execution, executor.run_protected_copy):
+                with self.subTest(call=call.__name__):
+                    with self.assertRaisesRegex(ValueError, 'pasta temporária'):
+                        call(self.plan, preview, **self.kwargs())
+        self.assertEqual(self.tree(self.root), sorted(before + ['fake-temp']))
+        self.assert_targets_empty()
+
+    def test_fix5_plan_without_selected_is_a_portuguese_value_error(self):
+        broken = SimpleNamespace(files=self.plan.files, warnings=[],
+                                 count=self.plan.count, total=self.plan.total)
+        for plan in (broken, SimpleNamespace(**dict(vars(broken), selected=None))):
+            with self.subTest(selected=getattr(plan, 'selected', 'ausente')):
+                with self.assertRaisesRegex(ValueError, 'Plano de origem'):
+                    executor.preview_execution(plan, self.preview(), **self.kwargs())
+        self.assert_targets_empty()
+
     # --- 13 --------------------------------------------------------------
     def test_13_app_and_screens_do_not_import_executor(self):
         files = [ROOT / 'app.py', *sorted(ROOT.glob('*_ui.py'))]

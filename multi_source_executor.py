@@ -11,6 +11,7 @@ not proof of physical independence and does not authorize anything else.
 """
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 import backup_core
@@ -31,7 +32,11 @@ PROBLEMS = {
     'interrompido': 'A cópia foi interrompida antes do fim. Ela pode ser retomada.',
     'incompleto': 'A cópia terminou com arquivos faltando ou com erro.',
     'nao_verificado': 'A conferência SHA-256 encontrou arquivo ausente ou diferente.',
-    'origem_mudou': 'A origem mudou durante o processo. Faça uma nova prévia.',
+    'revalidacao': ('A origem ou o destino mudou desde a prévia, ou um disco '
+                    'ficou inacessível. Faça uma nova prévia.'),
+    'conferencia_cancelada': ('Destino com conferência cancelada antes do fim: '
+                              'a cópia foi gravada, mas não foi conferida. Ela '
+                              'pode ser conferida de novo.'),
     'falha': 'Não foi possível gravar neste destino.',
 }
 
@@ -42,10 +47,19 @@ def _sandbox(test_root):
     raw = Path(test_root)
     if not raw.is_absolute():
         raise ValueError('A área de teste precisa ser um caminho absoluto.')
+    if raw == Path(raw.anchor):
+        raise ValueError('A área de teste não pode ser a raiz de uma unidade.')
     _any_reparse_ancestor(raw)
     sandbox = raw.resolve(strict=True)
     if not sandbox.is_dir():
         raise ValueError('Área de teste inválida.')
+    if sandbox == Path(sandbox.anchor):
+        raise ValueError('A área de teste não pode ser a raiz de uma unidade.')
+    # Safest choice: only a folder strictly inside the system temp folder.
+    temp = Path(tempfile.gettempdir()).resolve()
+    if temp not in sandbox.parents:
+        raise ValueError('A área de teste precisa ficar dentro da pasta '
+                         'temporária do sistema.')
     return sandbox
 
 
@@ -71,13 +85,17 @@ def _check(plan, target_preview, sandbox, volume_lookup, usage, resume_manifests
     if not isinstance(requested, list) or not 1 <= len(requested) <= 8:
         raise ValueError('Informe entre um e oito destinos.')
 
+    selected = getattr(plan, 'selected', None)
+    if (not isinstance(selected, (list, tuple)) or not selected
+            or not all(isinstance(item, str) for item in selected)):
+        raise ValueError('Plano de origem sem as pastas escolhidas.')
     sources = []
     for task in files:
         sources.append(_inside(task.source, sandbox))
     # Folders that hold sources: a destination may not be inside them, and
     # they may not be inside a destination.
     protected = sorted({str(p.parent) for p in sources} |
-                       {str(_inside(item, sandbox)) for item in plan.selected})
+                       {str(_inside(item, sandbox)) for item in selected})
 
     folders = []
     for row in requested:
@@ -172,8 +190,8 @@ def run_protected_copy(plan, target_preview, *, test_root, volume_lookup, usage,
             try:
                 recheck_multi_source_preview(
                     plan, target_preview, volume_lookup=volume_lookup, usage=usage)
-            except ValueError:
-                reason = PROBLEMS['origem_mudou']
+            except (OSError, ValueError):
+                reason = PROBLEMS['revalidacao']
                 results.append(_row(base, 'nao_iniciado', problem=reason))
                 break
 
@@ -198,12 +216,15 @@ def run_protected_copy(plan, target_preview, *, test_root, volume_lookup, usage,
             break
         try:
             checked = verify_complete_manifest(manifest_path, cancelled=cancelled)
-        except InterruptedError:
-            reason = PROBLEMS['interrompido']
-            results.append(_row(base, 'interrompido', manifest=manifest_path,
-                                problem=reason))
-            break
         except (OSError, ValueError):
+            # The verifier turns a cancel while hashing into OSError, and the
+            # manifest is already 'concluido', so the copy cannot be resumed:
+            # a cancel here is reported as such, never as a mismatch.
+            if cancelled is not None and cancelled.is_set():
+                reason = PROBLEMS['conferencia_cancelada']
+                results.append(_row(base, 'cancelado', manifest=manifest_path,
+                                    problem=reason))
+                break
             reason = PROBLEMS['nao_verificado']
             results.append(_row(base, 'nao_verificado', manifest=manifest_path,
                                 problem=reason))
@@ -237,6 +258,8 @@ STATUS_TEXT = {
     'cancelado': 'cancelado, nada foi gravado aqui',
     'nao_iniciado': 'não iniciado, nada foi gravado aqui',
 }
+CHECK_CANCELLED_TEXT = ('conferência cancelada: a cópia foi gravada, mas não '
+                        'conferida; ela pode ser conferida de novo')
 
 
 def format_report_pt(result):
@@ -259,8 +282,10 @@ def format_report_pt(result):
         label = f'Destino {row.get("number")}'
         if isinstance(volume, str) and len(volume) == 2 and volume[1] == ':':
             label += f' (unidade {volume})'
-        lines.append(f'- {label}: '
-                     f'{STATUS_TEXT.get(row.get("status"), "não verificado")}.')
+        text = STATUS_TEXT.get(row.get('status'), 'não verificado')
+        if row.get('status') == 'cancelado' and row.get('manifest'):
+            text = CHECK_CANCELLED_TEXT
+        lines.append(f'- {label}: {text}.')
     lines += ['',
               'Segurança: nenhum arquivo da origem foi gravado ou apagado; '
               'a origem só foi lida.',
