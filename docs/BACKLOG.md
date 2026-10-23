@@ -305,7 +305,7 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 - Escolhas de design (feitas): o texto (`recovery_center.reason_detail_text`) usa só "pode restaurar" e o motivo, **sem o nome da pasta** (ele pode ter o nome de usuário); é um rótulo só de leitura (`ttk.Label`), não um campo editável; a quebra de linha acompanha a largura da janela (mínimo de 200 px); a coluna "Motivo" da tabela foi mantida. Testes em `tests/test_recovery_center_fix_p2_08_01.py`.
 
 ### P2-08 · Fatia 2 — Restaurar só os arquivos conferidos de um backup com poucos erros
-- **Status:** `pronto` (pedido do Raphael na validação do M2, 23/10/2026). **Fazer antes da fatia 2b do P2-09 e antes do M3.**
+- **Status:** `concluído` (branch `auto/P2-08-restaurar-conferidos`; pedido do Raphael na validação do M2, 23/10/2026).
 - Problema: os backups reais de 20/10 tiveram 1 e 23 arquivos com erro (arquivo removido pelo Defender, arquivos travados por programas abertos). Por isso a Central marca todos como "Pode restaurar: Não", mesmo com 99,99% conferido, e o usuário fica sem saída pelo app.
 - Pronto quando: a Central mostra, para um backup parcial, quantos arquivos foram conferidos e quantos falharam; um botão "Restaurar só os conferidos…" pede uma confirmação separada que diz quantos arquivos ficam de fora e leva ao fluxo de restauração já existente, **sempre numa pasta nova** (não oferece "Colocar no lugar original" nesse caso).
 - Regras de segurança (as mais seguras): só entram arquivos com `verified: true` e SHA-256 no manifesto, e cada um é conferido de novo ao restaurar; backup sem lista de arquivos legível, com manifesto inválido ou com cópias diferentes continua recusado; nada é apagado nem sobrescrito; o relatório diz em português quantos arquivos ficaram de fora e por quê, sem caminhos com nome de usuário.
@@ -318,6 +318,17 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
   - manifesto inválido, manifesto antigo ou "cópias diferentes" → recusa;
   - arquivo alterado depois do backup (SHA-256 diferente) nunca é restaurado;
   - o relatório não leva caminhos com nome de usuário.
+- **Escolhas de design (23/10/2026, a opção mais segura):**
+  - o motor de restauração **não mudou**: `restore_selected` já usa só os `verified: true` com SHA-256 válido, confere o SHA-256 na leitura, no `.partial` e depois de publicar, grava sempre numa pasta nova (`new_restore_folder`) e recusa destino ocupado;
+  - `recovery_center.partial_restore_info(doc, entradas)` → (liberado, conferidos, falharam, motivo): libera **só** `status == 'parcial_com_erros'` (backup interrompido ou em andamento deve ser terminado/retomado, não restaurado pela metade); exige `file_count_expected` e `bytes_expected` inteiros; todo item da lista precisa ter `verified` (faltou em um → manifesto antigo, recusa inteira); `verified: true` sem SHA-256 válido → recusa; precisa de 1 ≤ conferidos < esperados e tamanho somado ≤ `bytes_expected`; falharam = esperados − conferidos;
+  - `inspect_backup` ganhou `verified_files`, `failed_files`, `partial_ok` e `partial_reason`, **sem mudar** `restorable` nem `reason` (a coluna "Pode restaurar?" e o botão "Restaurar…" seguem a regra da fatia 1); toda recusa que já existia (link, JSON estragado, schema, caminhos/SHA-256 inválidos) também deixa `partial_ok=False`; `group_copies` com "cópias diferentes" também desliga o parcial;
+  - a lista `errors` do manifesto (que tem caminhos com nome de usuário) **nunca é mostrada**: a tela só diz quantos falharam;
+  - confirmação em **dois passos**: o botão "Restaurar só os conferidos…" pede uma confirmação separada (`partial_confirmation_text`: quantos entram, quantos ficam de fora e por quê, "sempre numa pasta NOVA", "conferido de novo pelo SHA-256", "nada é apagado nem sobrescrito") e depois a janela de restauração pede a confirmação normal da pasta de destino;
+  - a janela abre com `show_restore(..., only_verified=True)`, que **relê o manifesto** ao abrir (`load_partial_keys`/`load_partial_info`); se ele mudou e não passa mais, avisa e não lista nada; os conferidos já vêm marcados; os botões "Colocar no lugar original" e "Retomar colocação interrompida" e a caixa de Program Files **não são criados** (um teste `ast` confere que `staging_info`, `plan_placement` e `run_placement` só existem fora desse modo); continua por `guarded_restore_selected`, sem `allow_elevated`; "Retomar restauração interrompida" continua disponível (só aceita chaves da lista carregada);
+  - arquivo alterado no backup depois de feito (SHA-256 diferente) para a restauração inteira com erro (comportamento do motor, sem mudança), sem deixar o arquivo nem `.partial` no destino;
+  - o resultado (`partial_report_text`) mostra só quantidades e o **nome** da pasta nova (nunca o caminho); se algum arquivo restaurado parecer senha exportada do navegador, o aviso diz só quantos, sem caminho;
+  - a Central mostra "Conferidos: X · Falharam: Y" numa linha separada abaixo do motivo (`counts_text`); `reason_detail_text` não mudou;
+  - testes em `tests/test_recovery_center_p2_08_fatia2.py` (backups sintéticos em `TemporaryDirectory`; um deles feito pelo `copy_backup` real com uma falha simulada na leitura).
 
 ### ✅ Validação do Raphael — M2
 Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um backup real (somente leitura).

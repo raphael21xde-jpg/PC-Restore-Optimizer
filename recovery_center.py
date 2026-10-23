@@ -1,4 +1,4 @@
-"""P2-08 (fatia 1): central de recuperação (parte sem Tk, somente leitura).
+"""P2-08 (fatias 1 e 2): central de recuperação (parte sem Tk, somente leitura).
 
 Procura backups (manifest.json) numa pasta escolhida, mostra cada um com nome
 amigável, data, situação, quantidade e tamanho, e diz se ele pode ser
@@ -10,7 +10,10 @@ Regras de segurança:
   manifest.json (até 256 MiB) e, na conferência opcional, os arquivos do backup;
 - links simbólicos, junções e pontos de reparse são pulados ou recusados;
 - os textos mostram só o nome da pasta do backup, nunca o caminho completo
-  (que pode ter o nome de usuário) nem caminhos de dentro do backup.
+  (que pode ter o nome de usuário) nem caminhos de dentro do backup;
+- fatia 2: um backup "parcial, com erros" pode liberar só os arquivos
+  conferidos (partial_ok); a lista 'errors' do manifesto (que tem caminhos)
+  nunca é mostrada.
 """
 from __future__ import annotations
 
@@ -52,6 +55,23 @@ REASON_OLD = ('Backup de uma versão antiga do aplicativo: ele não diz quantos 
               'restaurar por aqui fica desligado. Os arquivos continuam guardados.')
 REASON_COPIES = ('Há cópias diferentes deste mesmo backup em outras pastas. Confira qual é a '
                  'certa antes de restaurar.')
+# P2-08 (fatia 2): motivos do botão "Restaurar só os conferidos…" (sem caminhos)
+PARTIAL_OK = ('Dá para restaurar só os arquivos conferidos (sempre numa pasta nova); os que '
+              'falharam ficam de fora.')
+PARTIAL_COMPLETE = 'O backup está completo: use "Restaurar…".'
+PARTIAL_NOT_FINISHED = ('O backup não terminou (foi interrompido ou ainda está em andamento). '
+                        'Termine ou retome o backup antes de restaurar.')
+PARTIAL_OLD = ('O backup não diz quantos arquivos e quantos bytes deveria ter (versão antiga do '
+               'aplicativo), então não dá para saber quantos ficariam de fora.')
+PARTIAL_NO_VERIFIED = ('A lista de arquivos do backup não diz, para cada arquivo, se ele foi '
+                       'conferido (versão antiga do aplicativo). Por segurança, a restauração '
+                       'parcial fica desligada.')
+PARTIAL_SHA = 'Há arquivo marcado como conferido sem SHA-256 válido na lista do backup.'
+PARTIAL_NONE = 'Nenhum arquivo deste backup foi conferido; não há o que restaurar.'
+PARTIAL_COUNT = 'A quantidade de arquivos não bate com a planejada.'
+PARTIAL_SIZE = 'O tamanho dos arquivos conferidos passa do tamanho planejado.'
+PARTIAL_CHANGED = ('Este backup não pode mais ser restaurado só com os arquivos conferidos: '
+                   '{reason} Nada foi alterado.')
 CANCELLED_TEXT = 'A busca foi interrompida antes do fim.'
 NO_SELECTION_TEXT = 'Nenhum backup selecionado'
 
@@ -66,6 +86,92 @@ def reason_detail_text(row):
         return NO_SELECTION_TEXT
     answer = 'Sim' if row['restorable'] else 'Não'
     return f'Pode restaurar: {answer}. Motivo: {row["reason"]}'
+
+
+def _is_count(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def partial_restore_info(doc, entries):
+    """P2-08 (fatia 2): pode restaurar só os conferidos? (só leitura, sem caminhos)
+
+    doc é o manifesto já lido; entries, os arquivos verificados (_entries).
+    Devolve (liberado, conferidos, falharam, motivo). falharam = esperados -
+    conferidos (None quando o manifesto não diz quantos esperava).
+    """
+    good = len(entries)
+    expected_files = doc.get('file_count_expected')
+    expected_bytes = doc.get('bytes_expected')
+    bad = expected_files - good if _is_count(expected_files) else None
+    status = doc.get('status')
+    if status == 'concluido':
+        return False, good, bad, PARTIAL_COMPLETE
+    if status != 'parcial_com_erros':
+        return False, good, bad, PARTIAL_NOT_FINISHED
+    if not _is_count(expected_files) or not _is_count(expected_bytes) or expected_files < 1:
+        return False, good, bad, PARTIAL_OLD
+    files = doc.get('files')
+    if not isinstance(files, list):
+        return False, good, bad, PARTIAL_NO_VERIFIED
+    for item in files:
+        if not isinstance(item, dict) or not isinstance(item.get('verified'), bool):
+            return False, good, bad, PARTIAL_NO_VERIFIED
+        sha = item.get('sha256')
+        if item['verified'] and (not isinstance(sha, str)
+                                 or not re.fullmatch('[a-fA-F0-9]{64}', sha)):
+            return False, good, bad, PARTIAL_SHA
+    if sum(1 for item in files if item['verified']) != good:
+        return False, good, bad, PARTIAL_SHA
+    if good < 1:
+        return False, good, bad, PARTIAL_NONE
+    if good >= expected_files or len(files) > expected_files:
+        return False, good, bad, PARTIAL_COUNT
+    try:
+        total = sum(int(item.get('bytes') or 0) for item in entries.values())
+    except (TypeError, ValueError):
+        return False, good, bad, PARTIAL_SIZE
+    if total > expected_bytes:
+        return False, good, bad, PARTIAL_SIZE
+    return True, good, bad, PARTIAL_OK
+
+
+def counts_text(row):
+    """'Conferidos: X · Falharam: Y' (vazio quando a linha não tem contagem)."""
+    if not row or row.get('verified_files') is None:
+        return ''
+    if row.get('failed_files') is None:
+        return f'Conferidos: {row["verified_files"]}'
+    return f'Conferidos: {row["verified_files"]} · Falharam: {row["failed_files"]}'
+
+
+def partial_confirmation_text(row):
+    """Confirmação separada do botão "Restaurar só os conferidos…" (sem caminhos)."""
+    return (f'Restaurar só os arquivos conferidos deste backup?\n\n'
+            f'Vão ser restaurados {row["verified_files"]} arquivo(s) '
+            f'({human_size(row.get("bytes") or 0)}). '
+            f'Ficam de fora {row["failed_files"]} arquivo(s), porque eles não foram copiados '
+            'ou conferidos quando o backup foi feito (por exemplo, um arquivo aberto por '
+            'outro programa ou removido pelo antivírus).\n\n'
+            'A restauração é feita sempre numa pasta NOVA, cada arquivo é conferido de novo '
+            'pelo SHA-256, e nada é apagado nem sobrescrito. Neste modo, "Colocar no lugar '
+            'original" não é oferecido.')
+
+
+def partial_report_text(restored, left_out, folder_name, *, not_marked=0, passwords=0):
+    """Resultado da restauração parcial: só quantidades e o NOME da pasta nova."""
+    name = Path(str(folder_name).replace('\\', '/')).name
+    lines = [f'Restauração parcial concluída: {restored} arquivo(s) restaurado(s) e '
+             f'conferido(s) pelo SHA-256, na pasta nova "{name}".',
+             f'{left_out} arquivo(s) ficaram de fora porque não tinham sido copiados ou '
+             'conferidos quando o backup foi feito.']
+    if not_marked:
+        lines.append(f'{not_marked} arquivo(s) conferido(s) não foram marcados e também '
+                     'não foram restaurados.')
+    if passwords:
+        lines.append(f'Atenção: {passwords} arquivo(s) restaurado(s) parecem senhas exportadas '
+                     'do navegador, gravadas sem proteção. Confira a pasta nova.')
+    lines.append('Nada foi apagado nem sobrescrito.')
+    return '\n'.join(lines)
 
 
 def _cancel_check(cancelled):
@@ -202,41 +308,55 @@ def _signature(entries):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
-def inspect_backup(manifest):
-    """Resumo de um backup (só leitura). Nunca lança erro: o motivo vai em 'reason'."""
-    manifest = Path(manifest)
-    row = {'manifest': manifest, 'folder': manifest.parent.name, 'name': manifest.parent.name,
-           'date': '', 'started': '', 'status': '', 'status_text': 'Ilegível', 'files': 0, 'bytes': 0,
-           'size_text': '', 'restorable': False, 'reason': '', 'key': None,
-           'signature': None, 'copies': 1}
+def _read_doc(manifest):
+    """Lê o manifest.json uma vez (só leitura). Devolve (doc, None) ou (None, motivo)."""
     try:
         info = os.lstat(manifest)
     except OSError:
-        row['reason'] = REASON_UNREADABLE
-        return row
+        return None, REASON_UNREADABLE
     if _is_link(info):
-        row['reason'] = REASON_LINK
-        return row
+        return None, REASON_LINK
     if not stat.S_ISREG(info.st_mode):
-        row['reason'] = REASON_NOT_FILE
-        return row
+        return None, REASON_NOT_FILE
     if info.st_size > MANIFEST_LIMIT:
-        row['reason'] = REASON_TOO_BIG
-        return row
+        return None, REASON_TOO_BIG
     try:
         with open(manifest, 'rb') as handle:
             raw = handle.read(MANIFEST_LIMIT + 1)
         if len(raw) > MANIFEST_LIMIT:
-            row['reason'] = REASON_TOO_BIG
-            return row
+            return None, REASON_TOO_BIG
         doc = json.loads(raw.decode('utf-8'))
     except (OSError, ValueError, UnicodeDecodeError):
-        row['reason'] = REASON_UNREADABLE
-        return row
+        return None, REASON_UNREADABLE
     if not isinstance(doc, dict) or doc.get('schema') not in SCHEMAS \
             or not isinstance(doc.get('files'), list):
-        row['reason'] = REASON_SCHEMA
-        return row
+        return None, REASON_SCHEMA
+    return doc, None
+
+
+def _refuse(row, reason):
+    row['reason'] = reason
+    row['partial_ok'] = False
+    row['partial_reason'] = reason
+    return row
+
+
+def inspect_backup(manifest):
+    """Resumo de um backup (só leitura). Nunca lança erro: o motivo vai em 'reason'.
+
+    P2-08 (fatia 2): também diz quantos arquivos foram conferidos e quantos
+    falharam, e se dá para restaurar só os conferidos ('partial_ok' e
+    'partial_reason'). Isso não muda 'restorable' nem 'reason'.
+    """
+    manifest = Path(manifest)
+    row = {'manifest': manifest, 'folder': manifest.parent.name, 'name': manifest.parent.name,
+           'date': '', 'started': '', 'status': '', 'status_text': 'Ilegível', 'files': 0, 'bytes': 0,
+           'size_text': '', 'restorable': False, 'reason': '', 'key': None,
+           'signature': None, 'copies': 1, 'verified_files': None, 'failed_files': None,
+           'partial_ok': False, 'partial_reason': ''}
+    doc, refused = _read_doc(manifest)
+    if doc is None:
+        return _refuse(row, refused)
     try:
         labels = backup_labels(manifest.parent.parent)
     except Exception:
@@ -251,13 +371,11 @@ def inspect_backup(manifest):
     try:
         entries = _entries(doc)  # o manifesto é lido uma vez só por inspeção
     except (OSError, ValueError, TypeError, AttributeError):
-        row['reason'] = REASON_ENTRIES
-        return row
+        return _refuse(row, REASON_ENTRIES)
     try:
         total = sum(int(item.get('bytes') or 0) for item in entries.values())
     except (TypeError, ValueError):
-        row['reason'] = REASON_ENTRIES
-        return row
+        return _refuse(row, REASON_ENTRIES)
     row['files'] = len(entries)
     row['bytes'] = total
     row['size_text'] = human_size(total)
@@ -283,7 +401,36 @@ def inspect_backup(manifest):
     else:
         row['restorable'] = True
         row['reason'] = REASON_OK
+    ok, good, bad, partial_reason = partial_restore_info(doc, entries)
+    row['verified_files'] = good
+    row['failed_files'] = bad
+    row['partial_ok'] = ok
+    row['partial_reason'] = partial_reason
     return row
+
+
+def load_partial_keys(manifest):
+    """Relê o manifesto e devolve as chaves dos arquivos conferidos (só leitura).
+
+    Usado ao abrir a janela no modo "só os conferidos": se o backup não passar
+    mais nas regras, lança ValueError com um texto em português, sem caminhos.
+    """
+    return load_partial_info(manifest)['keys']
+
+
+def load_partial_info(manifest):
+    """Como load_partial_keys, mas devolve {'keys', 'verified', 'failed'}."""
+    doc, refused = _read_doc(Path(manifest))
+    if doc is None:
+        raise ValueError(PARTIAL_CHANGED.format(reason=refused))
+    try:
+        entries = _entries(doc)
+    except (OSError, ValueError, TypeError, AttributeError):
+        raise ValueError(PARTIAL_CHANGED.format(reason=REASON_ENTRIES)) from None
+    ok, good, bad, reason = partial_restore_info(doc, entries)
+    if not ok:
+        raise ValueError(PARTIAL_CHANGED.format(reason=reason))
+    return {'keys': sorted(entries, key=str.casefold), 'verified': good, 'failed': bad}
 
 
 def group_copies(rows):
@@ -308,6 +455,8 @@ def group_copies(rows):
             for row in members:
                 row['restorable'] = False
                 row['reason'] = REASON_COPIES
+                row['partial_ok'] = False
+                row['partial_reason'] = REASON_COPIES
     return rows
 
 

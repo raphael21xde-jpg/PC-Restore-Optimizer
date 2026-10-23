@@ -1,16 +1,19 @@
-"""P2-08 (fatia 1): janela "Central de recuperação" (Tk fino, somente leitura).
+"""P2-08 (fatias 1 e 2): janela "Central de recuperação" (Tk fino, somente leitura).
 
 Lista os backups de uma pasta (recovery_center.scan, num Job) e, para o
 backup escolhido, permite "Conferir integridade" (opcional, num Job) e
 "Restaurar…", que só abre a janela de restauração que já existe
 (restore_ui.show_restore). Nada aqui grava, apaga ou restaura sozinho.
 A tela mostra só o nome da pasta de cada backup, nunca o caminho completo.
+Fatia 2: "Restaurar só os conferidos…" (só para backup parcial liberado por
+recovery_center.partial_restore_info) pede uma confirmação separada e abre a
+mesma janela no modo only_verified=True (sempre pasta nova).
 """
 from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 import recovery_center as rc
 from recovery_center import scan, verify_backup
@@ -121,7 +124,11 @@ def show_recovery_center(app, *, folder=None, ask_folder=None, scanner=None, ver
         verify_button.state(['disabled'] if busy or row is None else ['!disabled'])
         restore_button.state(['disabled'] if busy or row is None or not row['restorable']
                              else ['!disabled'])
-        detail.set(rc.reason_detail_text(row))
+        partial_button.state(['disabled'] if busy or row is None or not row.get('partial_ok')
+                             else ['!disabled'])
+        text = rc.reason_detail_text(row)
+        counts = rc.counts_text(row)
+        detail.set(f'{text}\n{counts}' if counts else text)
         if row is not None and not busy:
             status.set(f'{row["name"]}: {row["reason"]}')
 
@@ -216,6 +223,24 @@ def show_recovery_center(app, *, folder=None, ask_folder=None, scanner=None, ver
             return
         show_restore(app, row['manifest'])
 
+    def restore_partial():
+        """P2-08 (fatia 2): confirmação separada e janela no modo "só os conferidos"."""
+        row = current()
+        if row is None:
+            status.set(SELECT_TEXT)
+            return
+        if state['busy']:
+            return
+        if not row.get('partial_ok'):
+            status.set('Não dá para restaurar só os conferidos deste backup: '
+                       f'{row.get("partial_reason") or row["reason"]}')
+            return
+        if not messagebox.askyesno('Restaurar só os conferidos', rc.partial_confirmation_text(row),
+                                   parent=dlg):
+            status.set('Restauração não iniciada. Nada foi alterado.')
+            return
+        show_restore(app, row['manifest'], only_verified=True)
+
     dlg.center_search = search
     tools = ttk.Frame(frame)
     tools.pack(fill='x', pady=(8, 0))
@@ -225,9 +250,12 @@ def show_recovery_center(app, *, folder=None, ask_folder=None, scanner=None, ver
     verify_button.pack(side='left', padx=(7, 0))
     restore_button = ttk.Button(tools, text='Restaurar…', command=restore)
     restore_button.pack(side='left', padx=(7, 0))
+    partial_button = ttk.Button(tools, text='Restaurar só os conferidos…', command=restore_partial)
+    partial_button.pack(side='left', padx=(7, 0))
     ttk.Button(tools, text='Fechar', command=dlg.destroy).pack(side='right')
     dlg.center_buttons = {'Escolher pasta': choose_button, 'Conferir integridade': verify_button,
-                          'Restaurar…': restore_button}
+                          'Restaurar…': restore_button,
+                          'Restaurar só os conferidos…': partial_button}
 
     def on_destroy(event):
         if event.widget is not dlg:

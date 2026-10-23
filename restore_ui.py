@@ -5,6 +5,8 @@ and delegates all disk operations to the unchanged restore_selected function,
 through guarded_restore_selected (P2-02), which refuses an elevated process.
 P2-01 (fatia 2) adds "Colocar no lugar original": the screen only calls
 restore_place_flow, which holds every check and text.
+P2-08 (fatia 2) adds only_verified=True: only the verified files of a partial
+backup, always into a new folder, without the placement buttons.
 """
 from __future__ import annotations
 
@@ -29,10 +31,22 @@ from long_paths import read_long_paths_enabled, staging_target_length, warning_t
 from restore_place_flow import (confirmation_text, friendly_report, run_placement,
                                 staging_info)
 from winget_programs_ui import show_programs
+from recovery_center import load_partial_info, partial_report_text
 from launcher_guide_ui import show_launchers
 
+PARTIAL_MODE_TEXT = ('Modo "só os arquivos conferidos": os arquivos que falharam no backup ficam '
+                     'de fora. A restauração vai sempre para uma pasta NOVA, cada arquivo é '
+                     'conferido de novo pelo SHA-256, e nada é apagado nem sobrescrito.')
 
-def show_restore(app, manifest, small=False, *, elevation_probe=None):
+
+def show_restore(app, manifest, small=False, *, elevation_probe=None, only_verified=False):
+    """Abre a janela de restauração.
+
+    only_verified=True (P2-08, fatia 2): modo "só os arquivos conferidos" de um
+    backup parcial. A lista é relida (recovery_center.load_partial_keys), os
+    conferidos já vêm marcados, a restauração vai sempre para uma pasta nova e
+    os botões de "Colocar no lugar original" não são criados.
+    """
     if app.busy:
         messagebox.showinfo('Operação em andamento', 'Aguarde a operação atual terminar.')
         return
@@ -54,7 +68,8 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
     selected_text = tk.StringVar(value='Nenhum arquivo marcado para restaurar.')
     hint = tk.StringVar(value='Abra um grupo para visualizar seus itens. Clique em [ ] para marcar uma pasta inteira.')
     state = dict(job=None, index=None, selected=set(), hits={}, busy=True,
-                 shown={}, after=None, small=small, started=None, meter=None, active_keys=None, prefix=None)
+                 shown={}, after=None, small=small, started=None, meter=None, active_keys=None, prefix=None,
+                 partial_failed=None, partial_total=0)
 
     ttk.Label(frame, text='Restauração organizada — sem substituir arquivos originais',
               font=('Segoe UI', 13, 'bold')).pack(anchor='w')
@@ -64,6 +79,9 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
                   font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(6, 2))
     ttk.Label(frame, text='Marque jogos, categorias, pastas ou arquivos. A seleção permanece ao pesquisar e navegar.',
               wraplength=1080).pack(anchor='w', pady=(5, 2))
+    if only_verified:
+        ttk.Label(frame, text=PARTIAL_MODE_TEXT, wraplength=1080,
+                  font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(2, 2))
     ttk.Label(frame, textvariable=status, wraplength=1080).pack(fill='x', pady=(5, 6))
     progress_bar = ttk.Progressbar(frame, mode='indeterminate')
     progress_bar.pack(fill='x', pady=(0, 8))
@@ -261,7 +279,8 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
         app.busy = value
         restore_button.configure(state='disabled' if value else 'normal')
         for button in (resume_button, place_button, resume_place_button):
-            button.configure(state='disabled' if value else 'normal')
+            if button is not None:
+                button.configure(state='disabled' if value else 'normal')
         field.configure(state='disabled' if value else 'normal')
         cancel_button.configure(state='normal' if value else 'disabled')
         if value and state['meter'] is None:
@@ -323,6 +342,15 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
                             resume_from=resume_from,cancelled=cancelled,progress=progress))
         def done(result):
             path,count=result
+            if only_verified:
+                # P2-08 (fatia 2): só quantidades e o NOME da pasta nova, nunca caminhos.
+                found=scan_paths(Path(path)/key for key in chosen)
+                report=partial_report_text(count,state['partial_failed'] or 0,Path(path).name,
+                                           not_marked=max(0,state['partial_total']-count),
+                                           passwords=len(found))
+                status.set(report)
+                messagebox.showinfo('Restauração aprovada',report,parent=dlg)
+                return
             record=json.loads((path/'ESTADO-RESTAURACAO.json').read_text(encoding='utf-8'))
             stats=record.get('performance',{})
             detail=f'Tempo: {time_text(stats.get("elapsed_sec"))}; velocidade média: {stats.get("bytes_per_sec",0)/1024**2:.1f} MiB/s'
@@ -393,103 +421,107 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
     resume_button=ttk.Button(actions,text='Retomar restauração interrompida',command=resume_restore)
     resume_button.pack(side='left',padx=(9,0))
 
-    include_protected = tk.BooleanVar(master=dlg, value=False)
+    place_button = resume_place_button = None
+    if not only_verified:
+        # P2-08 (fatia 2): no modo "só os conferidos" a colocação no lugar
+        # original não existe; a restauração vai sempre para uma pasta nova.
+        include_protected = tk.BooleanVar(master=dlg, value=False)
 
-    def show_report(text):
-        window = tk.Toplevel(dlg)
-        window.title('Colocar no lugar original — resultado')
-        window.geometry('820x480')
-        box = tk.Text(window, wrap='word')
-        box.insert('1.0', text)
-        box.configure(state='disabled')
-        box.pack(fill='both', expand=True, padx=10, pady=10)
-        ttk.Button(window, text='Fechar', command=window.destroy).pack(pady=(0, 10))
+        def show_report(text):
+            window = tk.Toplevel(dlg)
+            window.title('Colocar no lugar original — resultado')
+            window.geometry('820x480')
+            box = tk.Text(window, wrap='word')
+            box.insert('1.0', text)
+            box.configure(state='disabled')
+            box.pack(fill='both', expand=True, padx=10, pady=10)
+            ttk.Button(window, text='Fechar', command=window.destroy).pack(pady=(0, 10))
 
-    def start_placement(info, resuming):
-        """Monta a prévia em segundo plano, confirma e coloca os arquivos."""
-        state['meter'] = None
-        state['prefix'] = None
-        progress_bar.configure(mode='indeterminate')
-        set_busy(True)
-        status.set('Montando a prévia: conferindo o que já existe no lugar original…')
-        def build_plan(cancelled, progress):
-            # P2-03: o registro é lido uma vez, só leitura, junto com a prévia.
-            return (plan_placement(info['manifest'], info['folder'], keys=info['keys']),
-                    read_long_paths_enabled())
-        state['job'] = Job(build_plan)
+        def start_placement(info, resuming):
+            """Monta a prévia em segundo plano, confirma e coloca os arquivos."""
+            state['meter'] = None
+            state['prefix'] = None
+            progress_bar.configure(mode='indeterminate')
+            set_busy(True)
+            status.set('Montando a prévia: conferindo o que já existe no lugar original…')
+            def build_plan(cancelled, progress):
+                # P2-03: o registro é lido uma vez, só leitura, junto com a prévia.
+                return (plan_placement(info['manifest'], info['folder'], keys=info['keys']),
+                        read_long_paths_enabled())
+            state['job'] = Job(build_plan)
 
-        def planned(result):
-            plan, long_paths_enabled = result
-            allow = bool(include_protected.get())
-            title = 'Retomar colocação' if resuming else 'Colocar no lugar original'
-            if not messagebox.askyesno(title, confirmation_text(plan, allow, long_paths_enabled),
-                                       parent=dlg):
-                status.set('Colocação não iniciada. Nada foi alterado.')
+            def planned(result):
+                plan, long_paths_enabled = result
+                allow = bool(include_protected.get())
+                title = 'Retomar colocação' if resuming else 'Colocar no lugar original'
+                if not messagebox.askyesno(title, confirmation_text(plan, allow, long_paths_enabled),
+                                           parent=dlg):
+                    status.set('Colocação não iniciada. Nada foi alterado.')
+                    return
+                if allow and plan.counts()['precisa_admin']:
+                    if not messagebox.askyesno(
+                            'Confirmar pastas do sistema',
+                            'Você marcou a opção de incluir arquivos de Program Files/ProgramData. '
+                            'Arquivos de programas instalados normalmente devem ser reinstalados '
+                            'pelo próprio programa, não copiados.\n\n'
+                            'Incluir mesmo assim esses arquivos?', parent=dlg):
+                        allow = False
+                if refuse_if_elevated():
+                    return
+                set_busy(True)
+                status.set('Colocando os arquivos no lugar original…')
+                state['job'] = Job(lambda cancelled, progress: run_placement(
+                    plan, allow_protected=allow, cancelled=cancelled,
+                    progress=progress,
+                    elevation_probe=elevation_probe))
+
+                def placed(result):
+                    report = friendly_report(plan, result)
+                    status.set(report.split('\n')[2])
+                    # P2-06: avisa sobre senhas sem proteção entre os arquivos colocados.
+                    done_keys = set(result.get('placed', [])) | set(result.get('resumed', [])) \
+                        | set(result.get('equal', []))
+                    passwords = alert_lines(scan_paths(
+                        item.target for item in plan.items if item.key in done_keys))
+                    if passwords:
+                        report += '\n' + PASSWORDS_TITLE + ':\n' + '\n'.join(passwords) + '\n'
+                    show_report(report)
+                poll(placed)
+            poll(planned)
+
+        def choose_staging(resuming):
+            if state['busy']:
                 return
-            if allow and plan.counts()['precisa_admin']:
-                if not messagebox.askyesno(
-                        'Confirmar pastas do sistema',
-                        'Você marcou a opção de incluir arquivos de Program Files/ProgramData. '
-                        'Arquivos de programas instalados normalmente devem ser reinstalados '
-                        'pelo próprio programa, não copiados.\n\n'
-                        'Incluir mesmo assim esses arquivos?', parent=dlg):
-                    allow = False
             if refuse_if_elevated():
                 return
-            set_busy(True)
-            status.set('Colocando os arquivos no lugar original…')
-            state['job'] = Job(lambda cancelled, progress: run_placement(
-                plan, allow_protected=allow, cancelled=cancelled,
-                progress=progress,
-                elevation_probe=elevation_probe))
+            folder = filedialog.askdirectory(parent=dlg, title=(
+                'Selecione a pasta TESTE-RESTAURACAO da colocação interrompida' if resuming else
+                'Selecione a pasta TESTE-RESTAURACAO (restauração concluída) para colocar no lugar original'))
+            if not folder:
+                return
+            try:
+                info = staging_info(folder, manifest)
+            except Exception as exc:
+                messagebox.showerror('Não é possível colocar no lugar original', str(exc), parent=dlg)
+                return
+            if resuming and not info['has_journal']:
+                messagebox.showinfo('Nada para retomar',
+                                    'Não há colocação interrompida para esta pasta. '
+                                    'Use "Colocar no lugar original".', parent=dlg)
+                return
+            start_placement(info, resuming)
 
-            def placed(result):
-                report = friendly_report(plan, result)
-                status.set(report.split('\n')[2])
-                # P2-06: avisa sobre senhas sem proteção entre os arquivos colocados.
-                done_keys = set(result.get('placed', [])) | set(result.get('resumed', [])) \
-                    | set(result.get('equal', []))
-                passwords = alert_lines(scan_paths(
-                    item.target for item in plan.items if item.key in done_keys))
-                if passwords:
-                    report += '\n' + PASSWORDS_TITLE + ':\n' + '\n'.join(passwords) + '\n'
-                show_report(report)
-            poll(placed)
-        poll(planned)
+        def place_original():
+            choose_staging(False)
 
-    def choose_staging(resuming):
-        if state['busy']:
-            return
-        if refuse_if_elevated():
-            return
-        folder = filedialog.askdirectory(parent=dlg, title=(
-            'Selecione a pasta TESTE-RESTAURACAO da colocação interrompida' if resuming else
-            'Selecione a pasta TESTE-RESTAURACAO (restauração concluída) para colocar no lugar original'))
-        if not folder:
-            return
-        try:
-            info = staging_info(folder, manifest)
-        except Exception as exc:
-            messagebox.showerror('Não é possível colocar no lugar original', str(exc), parent=dlg)
-            return
-        if resuming and not info['has_journal']:
-            messagebox.showinfo('Nada para retomar',
-                                'Não há colocação interrompida para esta pasta. '
-                                'Use "Colocar no lugar original".', parent=dlg)
-            return
-        start_placement(info, resuming)
+        def resume_place():
+            choose_staging(True)
 
-    def place_original():
-        choose_staging(False)
-
-    def resume_place():
-        choose_staging(True)
-
-    place_button = ttk.Button(actions, text='Colocar no lugar original', command=place_original)
-    place_button.pack(side='left', padx=(9, 0))
-    resume_place_button = ttk.Button(actions, text='Retomar colocação interrompida',
-                                     command=resume_place)
-    resume_place_button.pack(side='left', padx=(9, 0))
+        place_button = ttk.Button(actions, text='Colocar no lugar original', command=place_original)
+        place_button.pack(side='left', padx=(9, 0))
+        resume_place_button = ttk.Button(actions, text='Retomar colocação interrompida',
+                                         command=resume_place)
+        resume_place_button.pack(side='left', padx=(9, 0))
     # P2-04: abre a lista de programas salva na pasta deste backup; a instalação
     # só acontece lá dentro, depois de uma confirmação explícita.
     ttk.Button(tools, text='Programas do backup',
@@ -497,9 +529,10 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
     # P2-05: só leitura; mostra onde estão as bibliotecas de jogos e como religá-las.
     ttk.Button(tools, text='Launchers de jogos',
                command=lambda: show_launchers(dlg)).pack(side='left', padx=(7, 0))
-    ttk.Checkbutton(tools, variable=include_protected,
-                    text='Incluir arquivos de Program Files/ProgramData ao colocar no lugar original'
-                    ).pack(side='right')
+    if not only_verified:
+        ttk.Checkbutton(tools, variable=include_protected,
+                        text='Incluir arquivos de Program Files/ProgramData ao colocar no lugar original'
+                        ).pack(side='right')
 
     def cancel():
         if state['job'] is not None and state['busy']:
@@ -523,6 +556,14 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
 
     def load(cancelled, progress):
         entries = verified_entries(manifest)
+        if only_verified:
+            # Relê o manifesto: se ele mudou e não passa mais, a janela avisa e não lista nada.
+            info = load_partial_info(manifest)
+            if any(key not in entries for key in info['keys']):
+                raise ValueError('A lista de arquivos conferidos mudou. Feche e abra de novo.')
+            entries = {key: entries[key] for key in info['keys']}
+            state['partial_failed'] = info['failed']
+            state['partial_total'] = len(entries)
         if cancelled.is_set():
             raise InterruptedError('Leitura cancelada.')
         if small:
@@ -540,6 +581,8 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None):
         state['hits'] = index.search_counts('')
         if small and index.files:
             state['selected'].add(next(iter(index.files)))
+        if only_verified:
+            state['selected'].update(index.files)  # os conferidos já vêm marcados
         render_root()
         if small and index.files:
             # Reveal the one marked file in the existing hierarchy.
