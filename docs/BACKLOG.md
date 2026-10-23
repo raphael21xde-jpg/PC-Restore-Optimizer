@@ -182,7 +182,7 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 
 ---
 
-## Marco M2 — Preservação para qualquer PC  ← ATUAL
+## Marco M2 — Preservação para qualquer PC
 ### P2-07 · Estabilidade da interface Tk
 - Eliminar `invalid command name`, `Tcl interpreter is leaked` e os prints soltos dos testes.
 - Precisa de ambiente com Tk para conferir; os agentes na nuvem (Linux sem Tk) pulam para o próximo item testável.
@@ -264,11 +264,17 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 
 ---
 
-## Marco M3 — Otimização universal (carro-chefe)
-### P3-01 · Perfil de hardware (somente leitura) — `pronto`
+## Marco M3 — Otimização universal (carro-chefe)  ← ATUAL
+### P3-01 · Perfil de hardware (somente leitura) — `pronto` (fatia 1 concluída)
 - CPU, GPU, RAM (velocidade e dual channel), discos, notebook ou desktop, Windows.
 - Classificação em básico / intermediário / gamer / alto desempenho / notebook.
 - Testes com dados simulados.
+- **Fatia 1 — `concluído`** (branch `auto/P3-01-perfil-hardware`): novo `hardware_profile.py` (funções puras, sem comandos) monta o perfil a partir do que `inspect_pc()` já lê; `inspect_pc()` devolve `profile` (também fora do Windows) e o JSON exportado leva o perfil; a aba "1 Diagnóstico" mostra a seção "PERFIL DO SEU PC". Testes: `tests/test_hardware_profile_p3_01.py`.
+  - Escolhas de design (as mais seguras): nenhuma consulta nova ao sistema; sem CPU ou RAM legível a classe é "indefinido"; notebook vem antes da potência (PCSystemType 2 = notebook, 1/3 = desktop, ausente ou outro = "desconhecido", nunca "desktop"); limites fixos: alto desempenho = GPU dedicada + 16 threads + 32 GiB; gamer = GPU dedicada + 6 núcleos + 16 GiB; intermediário = 4 núcleos + 8 GiB; básico = o resto.
+  - GPU dedicada pelo nome: GeForce, RTX, GTX, Quadro, Radeon RX/Pro e Arc A/B contam; "Microsoft Basic Display Adapter", UHD/HD Graphics, Iris, Vega, "Radeon Graphics" e nome vazio não; nome desconhecido = não identificado.
+  - Dual channel nunca é "confirmado" nesta fatia: 2 ou mais módulos de mesma capacidade = "provável (não confirmado)"; 1 módulo = "não (1 módulo)"; tamanhos diferentes = "não confirmado".
+  - Privacidade: o perfil não guarda número de série, nome do PC, usuário nem caminhos (textos com cara de caminho são descartados); placa-mãe e BIOS ficam fora. Entrada malformada (lista/dicionário, texto, None, negativos, bool, NaN) vira "desconhecido", nunca erro. Nada de BIOS.
+- **Fatia 2 — `pronto`**: discos (SSD/HDD/NVMe, reaproveitando `diagnostics.disk_inventory`), chassi (Win32_SystemEnclosure/bateria, só leitura) e dual channel confirmado (DeviceLocator/BankLabel). Antes de qualquer consulta real, pedir confirmação.
 ### P3-03 · Registro de alterações e "desfazer tudo" — `pronto`
 - Diário de cada alteração, desfazer individual e desfazer tudo, ponto de restauração antes de cada lote (simulado nos testes).
 - Nenhum ajuste passa por fora do diário.
