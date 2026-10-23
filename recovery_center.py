@@ -53,6 +53,19 @@ REASON_OLD = ('Backup de uma versão antiga do aplicativo: ele não diz quantos 
 REASON_COPIES = ('Há cópias diferentes deste mesmo backup em outras pastas. Confira qual é a '
                  'certa antes de restaurar.')
 CANCELLED_TEXT = 'A busca foi interrompida antes do fim.'
+NO_SELECTION_TEXT = 'Nenhum backup selecionado'
+
+
+def reason_detail_text(row):
+    """Texto completo do motivo, mostrado abaixo da tabela (FIX-P2-08-01).
+
+    Usa só 'restorable' e 'reason' (nunca o nome da pasta, que pode ter o nome
+    de usuário), não corta o texto e não altera a linha.
+    """
+    if row is None:
+        return NO_SELECTION_TEXT
+    answer = 'Sim' if row['restorable'] else 'Não'
+    return f'Pode restaurar: {answer}. Motivo: {row["reason"]}'
 
 
 def _cancel_check(cancelled):

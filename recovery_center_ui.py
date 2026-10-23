@@ -12,6 +12,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
 
+import recovery_center as rc
 from recovery_center import scan, verify_backup
 from restore_jobs import Job
 from restore_ui import show_restore
@@ -94,6 +95,16 @@ def show_recovery_center(app, *, folder=None, ask_folder=None, scanner=None, ver
     bar.grid(row=0, column=1, sticky='ns')
     grid.rowconfigure(0, weight=1)
     grid.columnconfigure(0, weight=1)
+    # FIX-P2-08-01: motivo completo abaixo da tabela, com quebra de linha (só leitura)
+    detail = tk.StringVar(master=dlg, value=rc.NO_SELECTION_TEXT)
+    dlg.center_detail = detail
+    detail_label = ttk.Label(grid, textvariable=detail, wraplength=1050, justify='left')
+    detail_label.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(6, 0))
+
+    def fit_detail(event):
+        detail_label.configure(wraplength=max(200, event.width - 20))
+
+    grid.bind('<Configure>', fit_detail, add='+')
 
     def current():
         ids = tree.selection()
@@ -110,6 +121,7 @@ def show_recovery_center(app, *, folder=None, ask_folder=None, scanner=None, ver
         verify_button.state(['disabled'] if busy or row is None else ['!disabled'])
         restore_button.state(['disabled'] if busy or row is None or not row['restorable']
                              else ['!disabled'])
+        detail.set(rc.reason_detail_text(row))
         if row is not None and not busy:
             status.set(f'{row["name"]}: {row["reason"]}')
 
@@ -128,6 +140,7 @@ def show_recovery_center(app, *, folder=None, ask_folder=None, scanner=None, ver
         rows = list(result.get('rows', []))
         state['rows'] = rows
         tree.delete(*tree.get_children(''))
+        detail.set(rc.NO_SELECTION_TEXT)
         for index, row in enumerate(rows):
             tree.insert('', 'end', iid=f'row:{index}', text=row['name'],
                         values=(row['folder'], row['date'], row['status_text'], row['files'],
