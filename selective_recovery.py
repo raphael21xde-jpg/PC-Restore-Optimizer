@@ -35,7 +35,7 @@ def _any_reparse_ancestor(path):
         except FileNotFoundError:
             continue
         if (stat.S_ISLNK(info.st_mode) or
-                bool(getattr(info, 'st_file_attributes', 0) & REPARSE_FLAG)):
+                bool((getattr(info, 'st_file_attributes', 0) or 0) & REPARSE_FLAG)):
             raise ValueError(f'Link/junção proibido no caminho: {current}')
 
 

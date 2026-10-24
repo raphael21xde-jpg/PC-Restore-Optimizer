@@ -7,6 +7,7 @@ calls the original with ``test_root=<temp>``; without it the real mode
 refuses (C: or a system that is not Windows).
 """
 import ast
+import contextlib
 import dataclasses
 import hashlib
 import inspect
@@ -27,6 +28,7 @@ import backup_core  # noqa: E402
 import copy_authorization as ca  # noqa: E402
 import multi_source_executor as executor  # noqa: E402
 import real_copy_flow as rcf  # noqa: E402
+import selective_recovery  # noqa: E402
 from multi_source_plan import prepare_multi_source_preview  # noqa: E402
 from multi_source_targets import preview_multi_source_targets  # noqa: E402
 from transfer_engine import choose_strategy  # noqa: E402
@@ -300,6 +302,8 @@ class RealExecutorTests(Base):
         self.assertEqual(collector.calls, 0)
 
     def test_drive_root_is_refused_as_target_and_source(self):
+        # ``anchor`` is the root of the drive that holds the TEMP folder; the
+        # test only expects the refusal, and nothing is ever written there.
         anchor = Path(self.root.anchor)
         auth = self.authorize()
         preview = self.preview()
@@ -486,8 +490,13 @@ class FlowTests(Base):
         ]
         for label, wrap, extra, reason in cases:
             with self.subTest(label):
-                with patch.object(executor, 'validate_target',
-                                  self._validate(wrap)):
+                # Without the wrapper the target is treated as being on C:,
+                # so the refusal does not depend on the TEMP drive letter.
+                drive = (patch.object(selective_recovery, 'volume_of',
+                                      return_value='C:')
+                         if not wrap else contextlib.nullcontext())
+                with drive, patch.object(executor, 'validate_target',
+                                         self._validate(wrap)):
                     flow = self.flow(**extra)
                     flow.request_disk_check()
                     state = flow.confirm_disk_check(True)
