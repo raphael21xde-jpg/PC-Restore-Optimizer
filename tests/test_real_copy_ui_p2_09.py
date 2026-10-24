@@ -212,6 +212,51 @@ class FlowGuardTests(Base):
         self.assertEqual(collector.calls, 1)
         self.assertNothingWritten()
 
+    # FIX-P2-09-07 (R-19): "Nada foi gravado" only when the executor was never called.
+    def test_cancel_text_is_pure_and_only_promises_when_executor_not_called(self):
+        self.assertEqual(rcf.cancel_text(None), rcf.CANCELADO)
+        flow = self.confirmed()
+        self.assertIs(flow.executor_called, False)
+        self.assertEqual(rcf.cancel_text(flow), rcf.CANCELADO)
+        for value in (True, None, 1, 'sim'):
+            with self.subTest(value=value):
+                flow.executor_called = value
+                self.assertEqual(rcf.cancel_text(flow), rcf.CANCELADO_INCERTO)
+        self.assertNotIn('Nada foi gravado', rcf.CANCELADO_INCERTO)
+        self.assertIn('não verificada', rcf.CANCELADO_INCERTO)
+
+    def test_cancel_after_the_executor_ran_never_says_nothing_written(self):
+        results = (
+            ('erro', RuntimeError('falha qualquer'), rcf.RECUSADO),
+            ('incompleto', {'status': 'incompleto', 'destinations': []}, rcf.INCOMPLETO),
+            ('verificado', {'status': 'verificado', 'destinations': []}, rcf.CONCLUIDO),
+        )
+        for name, outcome, state in results:
+            with self.subTest(name):
+                flow = self.confirmed()
+                kwargs = ({'side_effect': outcome} if isinstance(outcome, Exception)
+                          else {'return_value': outcome})
+                with patch.object(executor, 'run_real_copy', **kwargs), \
+                        patch.object(executor, 'format_report_pt', return_value='ok'):
+                    self.assertEqual(flow.run(), state)
+                self.assertIs(flow.executor_called, True)
+                self.assertEqual(flow.cancel(), rcf.INICIO)
+                self.assertEqual(flow.message, rcf.CANCELADO_INCERTO)
+                flow.close()
+                self.assertEqual(flow.request_disk_check(), rcf.INICIO)
+                self.assertEqual(flow.message, rcf.CANCELADO_INCERTO)
+
+    def test_refused_run_does_not_mark_the_executor_called(self):
+        flow = self.confirmed()
+        flow.cancel()
+        with patch.object(executor, 'run_real_copy',
+                          side_effect=AssertionError('não podia copiar')):
+            self.assertEqual(flow.run(), rcf.RECUSADO)
+        self.assertIs(flow.executor_called, False)
+        self.assertEqual(flow.cancel(), rcf.INICIO)
+        self.assertEqual(flow.message, rcf.CANCELADO)
+        self.assertNothingWritten()
+
     def test_cancel_just_before_run_refuses_without_the_executor(self):
         # "Cancelar" right after "Copiar agora", before the Job takes the lock:
         # the confirmation is gone and run() never reaches the executor.
@@ -464,7 +509,7 @@ class WindowTests(Base):
     def test_changing_choices_discards_the_confirmation(self):
         extra = self.root / 'source_C'
         extra.mkdir()
-        for button in ('Adicionar origem', 'Limpar escolhas'):
+        for button in ('Adicionar origem', 'Adicionar destino', 'Limpar escolhas'):
             with self.subTest(button):
                 dlg = self.confirmed_dialog(CountingCollector())
                 token = dlg.real_copy_state['flow']._authorization['token']
@@ -570,6 +615,44 @@ class WindowTests(Base):
         self.assertEqual(collector.calls, 1)
         self.assertNotIn('Copiar agora', self.enabled(dlg))
         self.assertNothingWritten()
+
+    def test_cancel_during_copy_with_unexpected_error_does_not_promise(self):
+        # FIX-P2-09-07: "Cancelar" while the copy runs and the copy step then
+        # ends with an error: the window must not say "Nada foi gravado".
+        for case in ('executor', 'job'):
+            with self.subTest(case):
+                dlg = self.confirmed_dialog(CountingCollector())
+                flow = dlg.real_copy_state['flow']
+                started, gate = threading.Event(), threading.Event()
+
+                def boom(*args, **kwargs):
+                    started.set()
+                    gate.wait(WAIT)
+                    raise RuntimeError('falha depois de começar')
+
+                patches = [patch.object(executor, 'run_real_copy', side_effect=boom)]
+                if case == 'job':
+                    # The step itself breaks after the executor: the Job ends in error.
+                    patches.append(patch.object(flow, '_refuse',
+                                                side_effect=RuntimeError('quebrou')))
+                for item in patches:
+                    item.start()
+                    self.addCleanup(item.stop)
+                self.click(dlg, 'Copiar agora')
+                self.assertTrue(started.wait(WAIT))
+                self.click(dlg, 'Cancelar')
+                self.assertEqual(dlg.real_copy_status.get(), rcu.MSG_PARANDO)
+                gate.set()
+                self.pump(dlg)
+                for item in reversed(patches):
+                    item.stop()
+                self.assertEqual(dlg.real_copy_status.get(), rcf.CANCELADO_INCERTO)
+                self.assertNotIn('Nada foi gravado', self.visible(dlg))
+                self.assertClean(self.visible(dlg))
+                self.assertNotIn('Copiar agora', self.enabled(dlg))
+                dlg.destroy()
+                self.tk_root.update()
+        self.assertEqual(self.source_state(), self.state)
 
     def test_refused_copy_disables_cancel_and_copy(self):
         same = fake_inventory({'C': 0, 'A': 1, 'B': 1, 'T': 1, 'U': 3})

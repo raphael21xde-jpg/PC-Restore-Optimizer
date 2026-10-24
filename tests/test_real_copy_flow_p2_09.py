@@ -638,7 +638,7 @@ class FlowTests(Base):
         texts = [rcf.AVISO_CONSULTA_TEXTO, rcf.CANCELADO, rcf.NAO_CONFIRMADO,
                  rcf.MSG_PREVIA, rcf.MSG_UNIDADE, rcf.MSG_SOBREPOR, rcf.MSG_LINK,
                  rcf.MSG_RAIZ, rcf.MSG_MUDOU, rcf.MSG_INESPERADO, rcf.VERDICT_DOUBT,
-                 rcf.MSG_SUMIU, rcf.MSG_INCOMPLETO]
+                 rcf.MSG_SUMIU, rcf.MSG_INCOMPLETO, rcf.CANCELADO_INCERTO]
         for text in texts:
             with self.subTest(text=text[:30]):
                 self.assertClean(text)

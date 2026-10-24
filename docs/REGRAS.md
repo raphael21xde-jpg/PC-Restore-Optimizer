@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 4 (R-14 a R-17; lista inicial de 23/10/2026, R-01 a R-13).
+poda: 6 (R-14 a R-19; lista inicial de 23/10/2026, R-01 a R-13).
 
 | Nº | Regra | Origem | Data |
 |---|---|---|---|
@@ -32,3 +32,4 @@ poda: 4 (R-14 a R-17; lista inicial de 23/10/2026, R-01 a R-13).
 | R-16 | Linha de status no `docs/BACKLOG.md` não cita o nome de uma trava de segurança; o nome fica numa linha separada, para o status poder ser atualizado sem tocar a trava 3 do integrador. | Revisão do FIX-P2-09-04 (`d2d9273`, PR #100) | 2026-10-24 |
 | R-17 | Função nova que reaproveita uma trava ou recusa já testada em outra função (ex.: modo real x área de teste) ganha os mesmos testes de recusa e de token (chamada malformada, caminho inexistente, link na origem, revalidação, retomada); "a lógica é compartilhada" não substitui o teste. | Revisão da P2-09 fatia 3b-1 (f8f2ed9) | 2026-10-24 |
 | R-18 | Cada ação de tela listada nos critérios do backlog (botão, cancelar, trocar escolhas) tem teste de janela próprio; teste do controlador não substitui o da tela. | Revisão da P2-09 fatia 3b-2 (PR #106) | 2026-10-24 |
+| R-19 | Texto de cancelamento ou de erro nunca afirma "Nada foi gravado" se o executor pode ter sido chamado; essa frase só aparece quando o fluxo garante que o executor não foi chamado (senão: "trate a cópia como não verificada"). | Revisão da PR #106 (P2-09 fatia 3b-2), FIX-P2-09-07 | 2026-10-24 |
