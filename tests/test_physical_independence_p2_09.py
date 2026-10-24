@@ -222,7 +222,7 @@ class VerifyTests(unittest.TestCase):
                      'pode copiar'):
             self.assertNotIn(text, result['texto'])
 
-    def test_independent_verdict_with_negative_answer_never_says_separate(self):
+    def test_inventory_status_none_is_refused_as_not_fresh(self):
         def not_fresh_value(*args, **kwargs):
             report = real(*args, **kwargs)
             report['inventory_status'] = None
@@ -231,6 +231,7 @@ class VerifyTests(unittest.TestCase):
         real = pi.inspect_fresh_drive_safety
         with patch.object(pi, 'inspect_fresh_drive_safety', not_fresh_value):
             result = self.assertRefused(verify(CountingCollector()))
+        self.assertIn(pi.MSG_NOT_FRESH, result['texto'])
         self.assertNotIn('Discos separados', result['texto'])
         self.assertNotIn('disco separado', result['texto'])
 
@@ -242,6 +243,7 @@ class VerifyTests(unittest.TestCase):
                 self.assertIs(result[LOCK], False)
                 self.assertEqual(result['veredito'], 'duvida')
                 self.assertIn(pi.MSG_NO_COLLECTOR, result['texto'])
+                self.assertIn('a cópia foi recusada', result['texto'])
                 self.assertNotIn('Discos separados', result['texto'])
 
     def test_numeric_bus_type_stays_doubt(self):

@@ -35,8 +35,8 @@ MSG_SAME_DRIVE = ('Dois ou mais destinos ficam na mesma unidade ({unidade}). '
                   'Escolha cada destino numa unidade diferente.')
 MSG_NOT_FRESH = ('A conferência dos discos não foi feita agora, na hora. '
                  'Por segurança, nada foi considerado separado.')
-MSG_NO_COLLECTOR = ('A conferência dos discos não foi informada. Nada foi '
-                    'considerado separado.')
+MSG_NO_COLLECTOR = ('O app não recebeu a conferência dos discos. Por '
+                    'segurança, a cópia foi recusada para estes destinos.')
 
 FALLBACK_TEXT = ('Não deu para confirmar que os discos são separados.\n'
                  'Por segurança, escolha um destino em outro disco ou '
@@ -106,7 +106,7 @@ def verify_physical_independence(source_letters, target_letters, *, collector):
     """Check, on a new inventory, that every target is on another disk.
 
     Returns ``{'physical_independence_verified', 'veredito', 'destinos',
-    'texto'}``. Calls ``collector`` exactly once. Never raises.
+    'texto'}``. Calls ``collector`` at most once. Never raises.
     """
     if not callable(collector):
         return _refused(MSG_NO_COLLECTOR)
@@ -135,7 +135,9 @@ def verify_physical_independence(source_letters, target_letters, *, collector):
             return _refused(MSG_LETTERS)
         if report.get('inventory_status') != 'fresh_collected':
             return _refused(MSG_NOT_FRESH)
-        # A negative answer never shows the "separate disks" text (R-14).
+        # Extra defense (not reachable today: the checks above already
+        # refuse): a negative answer never shows the "separate disks"
+        # text (R-14).
         if not verified and verdict.get('veredito') == INDEPENDENT:
             return _refused(MSG_ERROR)
         return {
