@@ -302,7 +302,10 @@ def run_real_copy(plan, target_preview, *, volume_lookup, usage, disk_collector,
     """Real mode (no test area): same checks and order as run_protected_copy.
 
     Paths and recheck, new disk check, authorization consumed, then the
-    copy. Every refusal before the copy uses the token up.
+    copy. Every refusal before the copy uses the token up. A refusal is
+    raised as ValueError or OSError whose text may hold a full path with the
+    user name: the caller never shows ``str(error)``, only a short reason of
+    its own (see real_copy_flow).
     """
     return _run_with(plan, target_preview, _real_path, None, volume_lookup,
                      usage, disk_collector, authorization, cancelled,

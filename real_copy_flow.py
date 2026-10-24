@@ -12,7 +12,9 @@ of its own:
    authorization (``copy_authorization.authorize_copy``);
 4. ``run()`` calls ``multi_source_executor.run_real_copy``, which checks
    everything again (including a new disk query) and uses the
-   authorization up.
+   authorization up. The state is ``concluido`` only when every
+   destination was copied and verified; otherwise it is ``incompleto``
+   (cancelled, interrupted or not verified) and the report says why.
 
 ``reset()`` and ``cancel()`` use the authorization up and go back to the
 start. Any error becomes the state ``recusado`` with a short reason in
@@ -32,6 +34,7 @@ AVISO_CONSULTA = 'aviso_consulta'
 PREVIA = 'previa'
 CONFIRMADO = 'confirmado'
 CONCLUIDO = 'concluido'
+INCOMPLETO = 'incompleto'
 RECUSADO = 'recusado'
 
 AVISO_CONSULTA_TEXTO = (
@@ -56,6 +59,12 @@ MSG_RAIZ = ('A origem ou o destino não pode ser a pasta principal de uma '
             'unidade: escolha uma pasta dentro dela. Nada foi gravado.')
 MSG_MUDOU = ('A origem ou o destino mudou desde a prévia. Faça a prévia de '
              'novo. Nada foi gravado.')
+MSG_SUMIU = ('A origem ou o destino não existe mais ou não está acessível. '
+             'Confira as pastas e faça a prévia de novo. Nada foi gravado.')
+MSG_INCOMPLETO = ('A cópia não terminou conferida em todos os destinos: veja o '
+                  'relatório. Trate o backup como não verificado.')
+MSG_SEM_RELATORIO = ('A cópia foi feita e conferida (SHA-256), mas o relatório '
+                     'não pôde ser montado.')
 MSG_INESPERADO = ('Aconteceu um erro inesperado. Trate a cópia como não '
                   'verificada e faça a prévia de novo.')
 
@@ -80,7 +89,13 @@ VERDICT_DOUBT = ('Não deu para confirmar que os destinos ficam em outro disco, 
 
 
 def _reason(error):
-    """Short Portuguese reason for an error; never the original message."""
+    """Short Portuguese reason for an error; never the original message.
+
+    The executor raises only before the first byte (copy problems come back
+    in the result), so a missing path here means nothing was written.
+    """
+    if isinstance(error, (FileNotFoundError, NotADirectoryError)):
+        return MSG_SUMIU
     if not isinstance(error, ValueError):
         return MSG_INESPERADO
     text = str(error)
@@ -177,14 +192,21 @@ class RealCopyFlow:
                 self.plan, self.target_preview, volume_lookup=self._volume_lookup,
                 usage=self._usage, disk_collector=self._disk_collector,
                 authorization=auth, cancelled=cancelled, progress=progress)
-            report = executor.format_report_pt(result)
         except Exception as error:  # noqa: BLE001 - shown as a short reason
             discard_authorization(auth)
             return self._refuse(_reason(error))
         self.result = result
-        self.report = report
-        self.state = CONCLUIDO
-        self.message = None
+        verified = isinstance(result, dict) and result.get('status') == 'verificado'
+        try:
+            self.report = executor.format_report_pt(result)
+        except Exception:  # noqa: BLE001 - the copy itself already ended
+            self.report = None
+        if verified:
+            self.state = CONCLUIDO
+            self.message = None if self.report is not None else MSG_SEM_RELATORIO
+        else:
+            self.state = INCOMPLETO
+            self.message = MSG_INCOMPLETO
         return self.state
 
     def reset(self):

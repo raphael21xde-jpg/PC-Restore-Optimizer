@@ -138,18 +138,131 @@ class RealExecutorTests(Base):
         return auth
 
     def assertRefused(self, auth, *, preview=None, plan=None, collector=None,
-                      pattern=None, wrap=True):
+                      pattern=None, wrap=True, resume=None, error=ValueError):
         context = self.temp_target() if wrap else patch.object(
             executor, 'validate_target', ORIGINAL_VALIDATE)
-        with context, self.assertRaises(ValueError) as caught:
+        before = self.whole_tree()
+        with context, self.assertRaises(error) as caught:
             executor.run_real_copy(
                 plan or self.plan, preview or self.preview(),
-                **self.kwargs(collector), authorization=auth)
+                **self.kwargs(collector), authorization=auth,
+                resume_manifests=resume)
         if pattern is not None:
             self.assertRegex(str(caught.exception), pattern)
-        self.assertNothingWritten()
+        self.assertEqual(self.whole_tree(), before)
+        self.assertEqual(self.source_state(), self.state)
         self.assertNotIn(auth['token'], ca._ISSUED)
         return str(caught.exception)
+
+    def whole_tree(self):
+        return sorted(str(p.relative_to(self.root)) for p in self.root.rglob('*'))
+
+    def make_link(self, target, name):
+        link = self.root / name
+        try:
+            os.symlink(target, link, target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f'links não disponíveis: {type(error).__name__}')
+        return link
+
+    def test_malformed_call_does_not_use_the_token_up(self):
+        auth = self.authorize()
+        values = self.kwargs()
+        with self.temp_target():
+            with self.assertRaises(TypeError):
+                executor.run_real_copy(self.plan, self.preview(), **values)
+            with self.assertRaises(TypeError):
+                executor.run_real_copy(
+                    self.plan, self.preview(), values['volume_lookup'],
+                    values['usage'], values['disk_collector'], auth)
+            with self.assertRaises(TypeError):
+                executor.run_real_copy(self.plan, self.preview(), **values,
+                                       authorization=auth, extra=True)
+            with self.assertRaises(TypeError):
+                executor.run_real_copy(self.plan, self.preview(), 'a mais',
+                                       **values, authorization=auth)
+        self.assertNothingWritten()
+        self.assertEqual(values['disk_collector'].calls, 0)
+        # Python refused the call before any check ran: the token is still there.
+        self.assertIn(auth['token'], ca._ISSUED)
+        with self.temp_target():
+            result = executor.run_real_copy(
+                self.plan, self.preview(), **self.kwargs(), authorization=auth)
+        self.assertEqual(result['status'], 'verificado')
+
+    def test_missing_source_or_target_is_refused(self):
+        missing = self.root / 'nao_existe'
+        cases = {
+            'pasta escolhida': dict(plan=dataclasses.replace(
+                self.plan, selected=[*self.plan.selected, str(missing)])),
+            'arquivo de origem': dict(plan=dataclasses.replace(
+                self.plan, files=[dataclasses.replace(
+                    self.plan.files[0], source=str(missing / 'x.txt')),
+                    *self.plan.files[1:]])),
+            'destino': dict(preview=self.preview()),
+        }
+        cases['destino']['preview']['destinations'][0]['path'] = str(missing)
+        for label, case in cases.items():
+            with self.subTest(label):
+                auth = self.authorize()
+                collector = CountingCollector()
+                self.assertRefused(auth, collector=collector, error=OSError, **case)
+                self.assertEqual(collector.calls, 0)
+        self.assertFalse(missing.exists())
+
+    def test_link_on_the_source_side_is_refused(self):
+        link = self.make_link(self.folders['source_A'], 'atalho_A')
+        through = dataclasses.replace(
+            self.plan, files=[dataclasses.replace(
+                self.plan.files[0], source=str(link / self.first.name)),
+                *self.plan.files[1:]])
+        selected = dataclasses.replace(
+            self.plan, selected=[str(link), *self.plan.selected[1:]])
+        for label, plan in (('arquivo', through), ('pasta escolhida', selected)):
+            with self.subTest(label):
+                auth = self.authorize()
+                self.assertRefused(auth, plan=plan, pattern='Link/junção')
+
+    def test_bad_resume_manifests_are_refused(self):
+        target = self.folders['target_T']
+        real = target / 'copia_antiga'
+        real.mkdir()
+        (real / 'manifest.json').write_text('{}', encoding='utf-8')
+        other = self.root / 'outra' / 'copia'
+        other.mkdir(parents=True)
+        (other / 'manifest.json').write_text('{}', encoding='utf-8')
+        link = target / 'atalho'
+        try:
+            os.symlink(real, link, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            link = None
+        cases = [
+            ('fora do destino', str(other / 'manifest.json'), ValueError,
+             'inválido para este destino'),
+            ('inexistente', str(target / 'nada' / 'manifest.json'), OSError, None),
+        ]
+        if link is not None:
+            cases.append(('com link', str(link / 'manifest.json'), ValueError,
+                          'Link/junção'))
+        for label, manifest, error, pattern in cases:
+            with self.subTest(label):
+                auth = self.authorize()
+                collector = CountingCollector()
+                self.assertRefused(auth, resume={str(target): manifest},
+                                   collector=collector, error=error,
+                                   pattern=pattern)
+                self.assertEqual(collector.calls, 0)
+        self.assertEqual((real / 'manifest.json').read_text(encoding='utf-8'), '{}')
+
+    def test_source_changed_after_plan_is_refused(self):
+        auth = self.authorize()
+        self.second.write_bytes(b'mudou' * 100)
+        self.state = self.source_state()
+        collector = CountingCollector()
+        self.assertRefused(auth, collector=collector, pattern='Fonte modificada')
+        self.assertEqual(collector.calls, 0)
+        self.assertEqual(self.tree('target_T'), [])
+        self.assertEqual(self.tree('target_U'), [])
 
     def test_required_keyword_only_arguments(self):
         for func, names in ((executor.preview_real_execution, ('disk_collector',)),
@@ -200,11 +313,7 @@ class RealExecutorTests(Base):
             executor.preview_real_execution(self.plan, preview, **self.kwargs())
 
     def test_link_or_junction_is_refused(self):
-        link = self.root / 'atalho_T'
-        try:
-            os.symlink(self.folders['target_T'], link, target_is_directory=True)
-        except (OSError, NotImplementedError) as error:
-            self.skipTest(f'links não disponíveis: {type(error).__name__}')
+        link = self.make_link(self.folders['target_T'], 'atalho_T')
         auth = self.authorize()
         preview = self.preview()
         preview['destinations'][0]['path'] = str(link)
@@ -214,6 +323,7 @@ class RealExecutorTests(Base):
         preview = self.preview()
         preview['destinations'][0]['path'] = str(inner)
         self.assertRefused(auth, preview=preview)
+        self.assertEqual(self.tree('target_T'), [])
 
     def test_target_inside_source_and_source_inside_target(self):
         inside = self.folders['source_A'] / 'dentro'
@@ -417,6 +527,62 @@ class FlowTests(Base):
         return lambda destination, **kw: ORIGINAL_VALIDATE(
             destination, **dict(kw, test_root=root))
 
+    def confirmed_flow(self):
+        self.allow_temp_target()
+        flow = self.flow()
+        flow.request_disk_check()
+        self.assertEqual(flow.confirm_disk_check(True), rcf.PREVIA)
+        self.assertEqual(flow.confirm_copy(True), rcf.CONFIRMADO)
+        return flow
+
+    def test_missing_folder_is_a_clear_reason(self):
+        missing = self.root / 'nao_existe'
+        preview = self.preview()
+        preview['destinations'][0]['path'] = str(missing)
+        with self.temp_target():
+            flow = self.flow(preview=preview)
+            flow.request_disk_check()
+            self.assertEqual(flow.confirm_disk_check(True), rcf.RECUSADO)
+        self.assertEqual(flow.message, rcf.MSG_SUMIU)
+        self.assertIn('Nada foi gravado', flow.message)
+        for error in (FileNotFoundError(str(missing)), NotADirectoryError(str(missing))):
+            with self.subTest(error=type(error).__name__):
+                flow = self.confirmed_flow()
+                with patch.object(executor, 'run_real_copy', side_effect=error):
+                    self.assertEqual(flow.run(), rcf.RECUSADO)
+                self.assertEqual(flow.message, rcf.MSG_SUMIU)
+                self.assertClean(flow.message)
+        self.assertNothingWritten()
+
+    def test_cancelled_copy_is_not_concluded(self):
+        import threading
+        flow = self.confirmed_flow()
+        event = threading.Event()
+        event.set()
+        self.assertEqual(flow.run(cancelled=event), rcf.INCOMPLETO)
+        self.assertEqual(flow.message, rcf.MSG_INCOMPLETO)
+        self.assertEqual(flow.result['status'], 'nao_verificado')
+        self.assertIn('cancelado', flow.report)
+        self.assertClean(flow.report)
+        self.assertNothingWritten()
+
+    def test_partial_result_is_not_concluded(self):
+        flow = self.confirmed_flow()
+        partial = {'status': 'parcial', 'destinations': []}
+        with patch.object(executor, 'run_real_copy', return_value=partial):
+            self.assertEqual(flow.run(), rcf.INCOMPLETO)
+        self.assertIs(flow.result, partial)
+
+    def test_report_failure_after_verified_copy_keeps_the_result(self):
+        flow = self.confirmed_flow()
+        with patch.object(executor, 'format_report_pt',
+                          side_effect=RuntimeError(str(self.root))):
+            self.assertEqual(flow.run(), rcf.CONCLUIDO)
+        self.assertEqual(flow.result['status'], 'verificado')
+        self.assertIsNone(flow.report)
+        self.assertEqual(flow.message, rcf.MSG_SEM_RELATORIO)
+        self.assertClean(flow.message)
+
     def test_unexpected_error_is_generic(self):
         self.allow_temp_target()
         flow = self.flow()
@@ -460,7 +626,8 @@ class FlowTests(Base):
     def test_all_texts_are_clean_and_negative_ones_never_positive(self):
         texts = [rcf.AVISO_CONSULTA_TEXTO, rcf.CANCELADO, rcf.NAO_CONFIRMADO,
                  rcf.MSG_PREVIA, rcf.MSG_UNIDADE, rcf.MSG_SOBREPOR, rcf.MSG_LINK,
-                 rcf.MSG_RAIZ, rcf.MSG_MUDOU, rcf.MSG_INESPERADO, rcf.VERDICT_DOUBT]
+                 rcf.MSG_RAIZ, rcf.MSG_MUDOU, rcf.MSG_INESPERADO, rcf.VERDICT_DOUBT,
+                 rcf.MSG_SUMIU, rcf.MSG_INCOMPLETO]
         for text in texts:
             with self.subTest(text=text[:30]):
                 self.assertClean(text)
