@@ -71,13 +71,13 @@ MSG_BOOT_UNKNOWN = ('Não foi possível saber em qual disco o Windows inicia. '
 MSG_CROSS = ('As informações do Windows sobre o disco do destino {unidade} '
              'não batem ou estão incompletas.')
 MSG_BUS = ('Não deu para confirmar que o disco do destino {unidade} é um '
-           'disco físico comum (por exemplo RAID, disco virtual, disco de '
-           'servidor ou tipo desconhecido).')
+           'disco físico comum (por exemplo RAID, disco virtual ou tipo '
+           'desconhecido).')
 MSG_SOURCE_BAD = ('Não foi possível confirmar em qual disco fica uma das '
                   'unidades de origem.')
 MSG_SOURCE_BUS = ('Não deu para confirmar que o disco de uma das unidades '
                   'de origem é um disco físico comum (por exemplo RAID, disco '
-                  'virtual, disco de servidor ou tipo desconhecido).')
+                  'virtual ou tipo desconhecido).')
 MSG_REPORT_BAD = ('A conferência dos discos está incompleta ou em formato '
                   'inesperado. Por segurança, nada foi considerado separado.')
 MSG_NO_TARGET = 'Nenhum destino foi informado.'

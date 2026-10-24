@@ -195,6 +195,74 @@ class VerifyTests(unittest.TestCase):
         self.assertIsNot(first, original)
         self.assertEqual(first, original)
 
+    def test_repeated_target_letter_says_same_drive(self):
+        for targets in (['T:', 'T:'], ['T:', 't'], ['u', 'T:', 'U:']):
+            with self.subTest(targets=targets):
+                collector = CountingCollector()
+                result = self.assertRefused(verify(collector, SOURCES, targets))
+                self.assertIn('mesma unidade', result['texto'])
+                letter = targets[-1].strip()[0].upper() + ':'
+                self.assertIn(f'({letter})', result['texto'])
+                self.assertEqual(collector.calls, 0)
+
+    def test_not_fresh_with_independent_verdict_never_says_separate(self):
+        real = pi.inspect_fresh_drive_safety
+
+        def stale(*args, **kwargs):
+            report = real(*args, **kwargs)
+            report['inventory_status'] = 'cached'
+            return report
+
+        with patch.object(pi, 'inspect_fresh_drive_safety', stale):
+            result = self.assertRefused(verify(CountingCollector()))
+        self.assertEqual(result['veredito'], 'duvida')
+        self.assertEqual(result['destinos'], [])
+        self.assertIn(pi.MSG_NOT_FRESH, result['texto'])
+        for text in ('Discos separados', 'disco separado', 'liberado',
+                     'pode copiar'):
+            self.assertNotIn(text, result['texto'])
+
+    def test_inventory_status_none_is_refused_as_not_fresh(self):
+        def not_fresh_value(*args, **kwargs):
+            report = real(*args, **kwargs)
+            report['inventory_status'] = None
+            return report
+
+        real = pi.inspect_fresh_drive_safety
+        with patch.object(pi, 'inspect_fresh_drive_safety', not_fresh_value):
+            result = self.assertRefused(verify(CountingCollector()))
+        self.assertIn(pi.MSG_NOT_FRESH, result['texto'])
+        self.assertNotIn('Discos separados', result['texto'])
+        self.assertNotIn('disco separado', result['texto'])
+
+    def test_missing_or_bad_collector_is_refused_without_exception(self):
+        for collector in (None, 'x', 3):
+            with self.subTest(collector=collector):
+                result = pi.verify_physical_independence(
+                    SOURCES, TARGETS, collector=collector)
+                self.assertIs(result[LOCK], False)
+                self.assertEqual(result['veredito'], 'duvida')
+                self.assertIn(pi.MSG_NO_COLLECTOR, result['texto'])
+                self.assertIn('a cópia foi recusada', result['texto'])
+                self.assertNotIn('Discos separados', result['texto'])
+
+    def test_numeric_bus_type_stays_doubt(self):
+        # Pending for slice 3: numeric BusType codes are not mapped yet.
+        for bus in (17, 11, '11', '17', True, 0, None, ''):
+            with self.subTest(bus=bus):
+                inv = fake_inventory(bus={0: 'NVMe', 1: 'NVMe', 2: bus, 3: 'SATA'})
+                result = self.assertRefused(verify(CountingCollector(inv)))
+                self.assertEqual(result['veredito'], 'duvida')
+
+    def test_no_server_disk_wording_in_code(self):
+        for name in ('physical_disk_check.py', 'physical_independence.py',
+                     'multi_source_executor.py'):
+            with self.subTest(file=name):
+                text = (ROOT / name).read_text(encoding='utf-8')
+                self.assertNotIn('disco de servidor', text)
+        self.assertIn('(por exemplo RAID, disco virtual ou tipo desconhecido)',
+                      pi.format_verdict_pt.__globals__['MSG_BUS'])
+
     def test_collector_is_called_exactly_once(self):
         for inv in (fake_inventory(), None,
                     fake_inventory({'C': 0, 'A': 1, 'B': 1, 'T': 1, 'U': 3})):
@@ -416,6 +484,44 @@ class ExecutorGateTests(unittest.TestCase):
                 self.plan, self.preview(), **self.kwargs(CountingCollector()),
                 physical_independence_verified=True)
         self.assertEqual(self.tree('target_T'), [])
+
+    def test_two_targets_on_same_drive_refuse_with_reason(self):
+        folder_a = self.folders['target_T'] / 'a'
+        folder_b = self.folders['target_T'] / 'b'
+        folder_a.mkdir()
+        folder_b.mkdir()
+        preview = preview_multi_source_targets(
+            self.plan, [str(folder_a), str(folder_b)],
+            usage=self.usage, volume_lookup=self.volume)
+        collector = CountingCollector()
+        with patch.object(backup_core, 'copy_backup',
+                          side_effect=AssertionError('não podia copiar')) as copier:
+            with self.assertRaisesRegex(ValueError, 'Cópia recusada') as caught:
+                executor.run_protected_copy(
+                    self.plan, preview, **self.kwargs(collector))
+        copier.assert_not_called()
+        self.assertIn('mesma unidade', str(caught.exception))
+        self.assertNotIn('Discos separados', str(caught.exception))
+        self.assertNotIn(str(self.root), str(caught.exception))
+        self.assertEqual(self.tree('target_T'), ['a', 'b'])
+        self.assertEqual(sorted(p.name for p in folder_a.rglob('*')), [])
+        self.assertEqual(sorted(p.name for p in folder_b.rglob('*')), [])
+        self.assertEqual(self.source_state(), self.state)
+
+    def test_missing_disk_collector_refuses_without_crash(self):
+        before = sorted(str(p) for p in self.root.rglob('*'))
+        info = executor.preview_execution(
+            self.plan, self.preview(), **self.kwargs(None))
+        self.assertEqual(info['physical_check']['veredito'], 'duvida')
+        self.assertIn(pi.MSG_NO_COLLECTOR, info['physical_check']['texto'])
+        with patch.object(backup_core, 'copy_backup',
+                          side_effect=AssertionError('não podia copiar')) as copier:
+            with self.assertRaisesRegex(ValueError, 'Cópia recusada') as caught:
+                executor.run_protected_copy(
+                    self.plan, self.preview(), **self.kwargs(None))
+        copier.assert_not_called()
+        self.assertIn(pi.MSG_NO_COLLECTOR, str(caught.exception))
+        self.assertEqual(sorted(str(p) for p in self.root.rglob('*')), before)
 
     def test_report_without_check_says_it_was_not_done(self):
         text = executor.format_report_pt({'status': 'verificado', 'destinations': []})

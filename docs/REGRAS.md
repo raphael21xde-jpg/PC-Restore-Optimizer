@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 0 (lista inicial de 23/10/2026).
+poda: 1 (lista inicial de 23/10/2026).
 
 | Nº | Regra | Origem | Data |
 |---|---|---|---|
@@ -27,3 +27,4 @@ poda: 0 (lista inicial de 23/10/2026).
 | R-11 | Agendamento numa janela Tk usa `WindowTimers` (cancelado ao fechar), nunca `window.after` solto. Teste que cria raiz Tk usa `track_tk_root`/`close_tk_root` de `tests/tk_helpers.py`. | `invalid command name` e `Tcl interpreter is leaked` no log da `main` b0f669f (P2-07, PRs #80 e #81) | 2026-10-22 |
 | R-12 | `st_file_attributes` pode vir `None` no Windows: ler sempre como `(getattr(info, 'st_file_attributes', 0) or 0)`. | Revisão do P2-08 (`a29ef57`, PR #77) | 2026-10-21 |
 | R-13 | A recusa de rodar como administrador é a **primeira** coisa de cada motor e tela de restauração: antes de perguntar pasta, ler manifesto ou criar qualquer coisa. | Revisão do P2-02 (`f2cb23d`, PRs #59 e P2-02 fatia 2) | 2026-10-21 |
+| R-14 | Texto mostrado ao usuário sai da mesma decisão da trava: se a resposta ficou negativa, o texto nunca afirma que os discos são separados (nem o título "Discos separados"), nem diz "liberado" ou "pode copiar"; negações como "nada foi considerado separado" são permitidas. | Revisão da PR #95 (P2-09 fatia 2b) e revisão da PR #97 | 2026-10-24 |
