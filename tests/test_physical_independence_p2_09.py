@@ -22,6 +22,7 @@ from fake_disks_p2_09 import (FAKE_MODEL, FAKE_SERIAL, CountingCollector,  # noq
                               fake_inventory)
 
 import backup_core  # noqa: E402
+import copy_authorization  # noqa: E402
 import multi_source_executor as executor  # noqa: E402
 import physical_independence as pi  # noqa: E402
 from multi_source_plan import prepare_multi_source_preview  # noqa: E402
@@ -396,6 +397,15 @@ class ExecutorGateTests(unittest.TestCase):
         return dict(test_root=str(self.sandbox), volume_lookup=self.volume,
                     usage=self.usage, disk_collector=collector)
 
+    def _autorizar(self, preview):
+        """Slice 3a: the person's confirmation of this exact preview."""
+        try:
+            info = executor.preview_execution(
+                self.plan, preview, **self.kwargs(CountingCollector()))
+        except (OSError, ValueError):
+            return {'copy_authorized': False}
+        return copy_authorization.authorize_copy(info, user_confirmed=True)
+
     def source_state(self):
         return {p.name: (hashlib.sha256(p.read_bytes()).hexdigest(), p.stat().st_mtime_ns)
                 for p in (self.first, self.second)}
@@ -416,7 +426,8 @@ class ExecutorGateTests(unittest.TestCase):
                     side_effect=AssertionError('não podia copiar')) as copier:
                 with self.assertRaisesRegex(ValueError, 'Cópia recusada') as caught:
                     executor.run_protected_copy(
-                        self.plan, self.preview(), **self.kwargs(collector))
+                        self.plan, self.preview(), **self.kwargs(collector),
+                        authorization=self._autorizar(self.preview()))
                 copier.assert_not_called()
                 self.assertEqual(collector.calls, 1)
                 self.assertIn('Por segurança', str(caught.exception))
@@ -430,7 +441,8 @@ class ExecutorGateTests(unittest.TestCase):
         moved = fake_inventory({'C': 0, 'A': 1, 'B': 1, 'T': 2, 'U': 1})
         collector = CountingCollector(good, moved)
         result = executor.run_protected_copy(
-            self.plan, self.preview(), **self.kwargs(collector))
+            self.plan, self.preview(), **self.kwargs(collector),
+            authorization=self._autorizar(self.preview()))
         self.assertEqual(collector.calls, 2)
         first, second = result['destinations']
         self.assertEqual(first['status'], 'verificado')
@@ -450,7 +462,8 @@ class ExecutorGateTests(unittest.TestCase):
     def test_collector_called_once_per_destination(self):
         collector = CountingCollector()
         result = executor.run_protected_copy(
-            self.plan, self.preview(), **self.kwargs(collector))
+            self.plan, self.preview(), **self.kwargs(collector),
+            authorization=self._autorizar(self.preview()))
         self.assertEqual(result['status'], 'verificado')
         self.assertEqual(collector.calls, 2)
         text = executor.format_report_pt(result)
@@ -482,6 +495,7 @@ class ExecutorGateTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             executor.run_protected_copy(
                 self.plan, self.preview(), **self.kwargs(CountingCollector()),
+                authorization=self._autorizar(self.preview()),
                 physical_independence_verified=True)
         self.assertEqual(self.tree('target_T'), [])
 
@@ -498,7 +512,8 @@ class ExecutorGateTests(unittest.TestCase):
                           side_effect=AssertionError('não podia copiar')) as copier:
             with self.assertRaisesRegex(ValueError, 'Cópia recusada') as caught:
                 executor.run_protected_copy(
-                    self.plan, preview, **self.kwargs(collector))
+                    self.plan, preview, **self.kwargs(collector),
+                    authorization=self._autorizar(preview))
         copier.assert_not_called()
         self.assertIn('mesma unidade', str(caught.exception))
         self.assertNotIn('Discos separados', str(caught.exception))
@@ -518,7 +533,8 @@ class ExecutorGateTests(unittest.TestCase):
                           side_effect=AssertionError('não podia copiar')) as copier:
             with self.assertRaisesRegex(ValueError, 'Cópia recusada') as caught:
                 executor.run_protected_copy(
-                    self.plan, self.preview(), **self.kwargs(None))
+                    self.plan, self.preview(), **self.kwargs(None),
+                    authorization=self._autorizar(self.preview()))
         copier.assert_not_called()
         self.assertIn(pi.MSG_NO_COLLECTOR, str(caught.exception))
         self.assertEqual(sorted(str(p) for p in self.root.rglob('*')), before)

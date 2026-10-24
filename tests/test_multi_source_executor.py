@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import backup_core
+import copy_authorization
 import multi_source_executor as executor
 from multi_source_plan import prepare_multi_source_preview
 from multi_source_targets import preview_multi_source_targets
@@ -98,6 +99,22 @@ class ProtectedExecutorTests(unittest.TestCase):
         values.update(extra)
         return values
 
+    def _autorizar(self, preview, plan=None, **extra):
+        """Slice 3a: the person's confirmation of this exact preview.
+
+        When the preview itself is refused, a refused authorization is
+        returned; the executor then stops on its own earlier check.
+        """
+        for name in ('cancelled', 'progress'):
+            extra.pop(name, None)
+        values = self.kwargs(**extra)
+        values['disk_collector'] = CountingCollector()
+        try:
+            info = executor.preview_execution(plan or self.plan, preview, **values)
+        except (OSError, ValueError):
+            return {'copy_authorized': False}
+        return copy_authorization.authorize_copy(info, user_confirmed=True)
+
     def source_state(self):
         return {p.name: (hashlib.sha256(p.read_bytes()).hexdigest(),
                          p.stat().st_size, p.stat().st_mtime_ns)
@@ -127,7 +144,8 @@ class ProtectedExecutorTests(unittest.TestCase):
 
         with patch.object(backup_core, 'copy_backup', copy_with_fault):
             result = executor.run_protected_copy(
-                self.plan, self.preview(), **self.kwargs())
+                self.plan, self.preview(), **self.kwargs(),
+                authorization=self._autorizar(self.preview()))
         self.assertEqual(result['status'], 'nao_verificado')
         first = result['destinations'][0]
         self.assertEqual(first['status'], 'interrompido')
@@ -137,9 +155,11 @@ class ProtectedExecutorTests(unittest.TestCase):
     def test_01_without_test_root_refuses_and_writes_nothing(self):
         preview = self.preview()
         for call in (executor.preview_execution, executor.run_protected_copy):
+            extra = ({'authorization': self._autorizar(preview)}
+                     if call is executor.run_protected_copy else {})
             with self.subTest(call=call.__name__):
                 with self.assertRaisesRegex(ValueError, 'Executor ainda não liberado'):
-                    call(self.plan, preview, **self.kwargs(test_root=None))
+                    call(self.plan, preview, **self.kwargs(test_root=None), **extra)
         self.assert_targets_empty()
         self.assertEqual(self.source_state(), self.snapshot)
 
@@ -147,7 +167,9 @@ class ProtectedExecutorTests(unittest.TestCase):
     def test_02_paths_outside_test_root_refused_before_writing(self):
         preview = self.preview([str(self.target_t), str(self.outside)])
         with self.assertRaisesRegex(ValueError, 'fora da área de teste'):
-            executor.run_protected_copy(self.plan, preview, **self.kwargs())
+            executor.run_protected_copy(
+                self.plan, preview, **self.kwargs(),
+                authorization=self._autorizar(preview))
         self.assert_targets_empty()
         self.assertEqual(self.tree(self.outside), [])
         # Sources outside the sandbox are refused as well.
@@ -173,7 +195,8 @@ class ProtectedExecutorTests(unittest.TestCase):
             self.plan, [str(nested)], usage=self.usage, volume_lookup=lookup)
         with self.assertRaisesRegex(ValueError, 'sobrep'):
             executor.run_protected_copy(
-                self.plan, inside_source, **self.kwargs(volume_lookup=lookup))
+                self.plan, inside_source, **self.kwargs(volume_lookup=lookup),
+                authorization=self._autorizar(inside_source, volume_lookup=lookup))
         self.assertEqual(self.tree(nested), [])
         # Destination that contains the sources (the sandbox root itself
         # is refused, so use a parent folder inside the sandbox).
@@ -193,7 +216,9 @@ class ProtectedExecutorTests(unittest.TestCase):
         contains['destinations'][0].update(path=str(holder), volume='H:')
         with self.assertRaisesRegex(ValueError, 'sobrep'):
             executor.run_protected_copy(
-                plan, contains, **self.kwargs(volume_lookup=lookup2))
+                plan, contains, **self.kwargs(volume_lookup=lookup2),
+                authorization=self._autorizar(contains, plan=plan,
+                                              volume_lookup=lookup2))
         self.assertEqual(sorted(p.name for p in holder.iterdir()), ['origem'])
         self.assert_targets_empty()
 
@@ -209,20 +234,25 @@ class ProtectedExecutorTests(unittest.TestCase):
         linked = self.preview()
         linked['destinations'][1]['path'] = str(link)
         with self.assertRaisesRegex(ValueError, '[Ll]ink'):
-            executor.run_protected_copy(self.plan, linked, **self.kwargs())
+            executor.run_protected_copy(
+                self.plan, linked, **self.kwargs(),
+                authorization=self._autorizar(linked))
         self.assertEqual(self.tree(real), [])
         # test_root reached through a link in an ancestor.
         alias = self.root / 'alias'
         os.symlink(self.sandbox, alias, target_is_directory=True)
         with self.assertRaisesRegex(ValueError, '[Ll]ink'):
             executor.run_protected_copy(
-                self.plan, preview, **self.kwargs(test_root=str(alias)))
+                self.plan, preview, **self.kwargs(test_root=str(alias)),
+                authorization=self._autorizar(preview, test_root=str(alias)))
         # Source folder swapped for a link after the plan was made.
         moved = self.sandbox / 'source_B_real'
         self.source_b.rename(moved)
         os.symlink(moved, self.source_b, target_is_directory=True)
         with self.assertRaisesRegex(ValueError, '[Ll]ink'):
-            executor.run_protected_copy(self.plan, preview, **self.kwargs())
+            executor.run_protected_copy(
+                self.plan, preview, **self.kwargs(),
+                authorization=self._autorizar(preview))
         self.assert_targets_empty()
 
     # --- 5 ---------------------------------------------------------------
@@ -239,7 +269,9 @@ class ProtectedExecutorTests(unittest.TestCase):
 
     # --- 6 ---------------------------------------------------------------
     def test_06_two_destinations_two_manifests_hashes_match(self):
-        result = executor.run_protected_copy(self.plan, self.preview(), **self.kwargs())
+        result = executor.run_protected_copy(
+            self.plan, self.preview(), **self.kwargs(),
+            authorization=self._autorizar(self.preview()))
         self.assertEqual(result['status'], 'verificado')
         self.assertEqual(result['copies_verified'], 2)
         manifests = [Path(row['manifest']) for row in result['destinations']]
@@ -259,7 +291,9 @@ class ProtectedExecutorTests(unittest.TestCase):
 
     # --- 7 ---------------------------------------------------------------
     def test_07_sources_untouched(self):
-        executor.run_protected_copy(self.plan, self.preview(), **self.kwargs())
+        executor.run_protected_copy(
+            self.plan, self.preview(), **self.kwargs(),
+            authorization=self._autorizar(self.preview()))
         self.assertEqual(self.source_state(), self.snapshot)
         self.assertEqual(sorted(p.name for p in self.source_a.iterdir()), ['documento.txt'])
         self.assertEqual(sorted(p.name for p in self.source_b.iterdir()), ['progresso.sav'])
@@ -276,7 +310,8 @@ class ProtectedExecutorTests(unittest.TestCase):
 
         with patch.object(executor, 'verify_complete_manifest', verify_then_cancel):
             result = executor.run_protected_copy(
-                self.plan, self.preview(), **self.kwargs(cancelled=cancelled))
+                self.plan, self.preview(), **self.kwargs(cancelled=cancelled),
+                authorization=self._autorizar(self.preview(), cancelled=cancelled))
         self.assertEqual(result['status'], 'parcial')
         self.assertIn('cancel', result['reason'].lower())
         self.assertEqual(result['copies_verified'], 1)
@@ -287,7 +322,8 @@ class ProtectedExecutorTests(unittest.TestCase):
         cancelled_early = threading.Event()
         cancelled_early.set()
         other = executor.run_protected_copy(
-            self.plan, self.preview(), **self.kwargs(cancelled=cancelled_early))
+            self.plan, self.preview(), **self.kwargs(cancelled=cancelled_early),
+            authorization=self._autorizar(self.preview(), cancelled=cancelled_early))
         self.assertEqual(other['status'], 'nao_verificado')
         self.assertEqual(self.tree(self.target_u), [])
 
@@ -295,9 +331,10 @@ class ProtectedExecutorTests(unittest.TestCase):
     def test_09_resume_after_interruption_then_source_change_refused(self):
         _, manifest = self.interrupted_first_destination()
         self.assertEqual(self.tree(self.target_u), [])
+        resume = {str(self.target_t): str(manifest)}
         result = executor.run_protected_copy(
-            self.plan, self.preview(),
-            **self.kwargs(resume_manifests={str(self.target_t): str(manifest)}))
+            self.plan, self.preview(), **self.kwargs(resume_manifests=resume),
+            authorization=self._autorizar(self.preview(), resume_manifests=resume))
         self.assertEqual(result['status'], 'verificado')
         self.assertEqual(Path(result['destinations'][0]['manifest']), manifest)
         self.assertEqual(verify_complete_manifest(manifest)['files_verified'], 2)
@@ -307,10 +344,11 @@ class ProtectedExecutorTests(unittest.TestCase):
         _, manifest = self.interrupted_first_destination()
         saved = manifest.read_bytes()
         self.second.write_bytes(b'changed-after-interruption')
+        resume = {str(self.target_t): str(manifest)}
         with self.assertRaisesRegex(ValueError, 'modificada'):
             executor.run_protected_copy(
-                self.plan, self.preview(),
-                **self.kwargs(resume_manifests={str(self.target_t): str(manifest)}))
+                self.plan, self.preview(), **self.kwargs(resume_manifests=resume),
+                authorization=self._autorizar(self.preview(), resume_manifests=resume))
         self.assertEqual(manifest.read_bytes(), saved)
         self.assertEqual(self.tree(self.target_u), [])
         # A manifest for an unknown destination is refused too.
@@ -332,7 +370,8 @@ class ProtectedExecutorTests(unittest.TestCase):
 
         with patch.object(backup_core, 'copy_backup', copy_then_corrupt):
             result = executor.run_protected_copy(
-                self.plan, self.preview(), **self.kwargs())
+                self.plan, self.preview(), **self.kwargs(),
+                authorization=self._autorizar(self.preview()))
         self.assertEqual(result['status'], 'nao_verificado')
         self.assertEqual(result['destinations'][0]['status'], 'nao_verificado')
         self.assertEqual(result['destinations'][1]['status'], 'nao_iniciado')
@@ -342,7 +381,9 @@ class ProtectedExecutorTests(unittest.TestCase):
 
     # --- 11 --------------------------------------------------------------
     def test_11_report_is_portuguese_without_temporary_paths(self):
-        result = executor.run_protected_copy(self.plan, self.preview(), **self.kwargs())
+        result = executor.run_protected_copy(
+            self.plan, self.preview(), **self.kwargs(),
+            authorization=self._autorizar(self.preview()))
         text = executor.format_report_pt(result)
         self.assertIn('nenhum arquivo da origem foi gravado ou apagado', text)
         self.assertIn('Destino 1', text)
@@ -354,7 +395,9 @@ class ProtectedExecutorTests(unittest.TestCase):
 
     # --- 12 --------------------------------------------------------------
     def test_12_result_keys_are_exactly_the_expected_set(self):
-        result = executor.run_protected_copy(self.plan, self.preview(), **self.kwargs())
+        result = executor.run_protected_copy(
+            self.plan, self.preview(), **self.kwargs(),
+            authorization=self._autorizar(self.preview()))
         self.assertEqual(set(result), {
             'schema', 'status', 'reason', 'copies_requested', 'copies_verified',
             'files_per_copy', 'bytes_per_copy', 'destinations', 'physical_check'})
@@ -395,7 +438,8 @@ class ProtectedExecutorTests(unittest.TestCase):
 
         with patch.object(executor, 'verify_complete_manifest', cancel_then_verify):
             result = executor.run_protected_copy(
-                self.plan, self.preview(), **self.kwargs(cancelled=cancelled))
+                self.plan, self.preview(), **self.kwargs(cancelled=cancelled),
+                authorization=self._autorizar(self.preview(), cancelled=cancelled))
         self.assert_cancelled_during_check(result)
 
     def test_fix1_cancel_while_hashing_is_cancelled_not_mismatch(self):
@@ -410,7 +454,8 @@ class ProtectedExecutorTests(unittest.TestCase):
         with patch.object(selective_recovery, 'verify_committed_backup_file',
                           cancel_while_hashing):
             result = executor.run_protected_copy(
-                self.plan, self.preview(), **self.kwargs(cancelled=cancelled))
+                self.plan, self.preview(), **self.kwargs(cancelled=cancelled),
+                authorization=self._autorizar(self.preview(), cancelled=cancelled))
         self.assert_cancelled_during_check(result)
         self.assertNotIn('ausente ou diferente', result['reason'])
 
@@ -441,18 +486,22 @@ class ProtectedExecutorTests(unittest.TestCase):
 
     def test_fix2_disk_unavailable_before_second_destination(self):
         recheck = self.recheck_failing_on_second_call(OSError('disco desconectado'))
+        authorization = self._autorizar(self.preview())
         with patch.object(executor, 'recheck_multi_source_preview', recheck):
             result = executor.run_protected_copy(
-                self.plan, self.preview(), **self.kwargs())
+                self.plan, self.preview(), **self.kwargs(),
+                authorization=authorization)
         self.assert_stopped_before_second(result)
         self.assertNotIn('A origem mudou', result['reason'])
 
     def test_fix2_generic_reason_for_any_recheck_value_error(self):
         recheck = self.recheck_failing_on_second_call(
             ValueError('Diagnóstico de discos alterado; refaça a prévia.'))
+        authorization = self._autorizar(self.preview())
         with patch.object(executor, 'recheck_multi_source_preview', recheck):
             result = executor.run_protected_copy(
-                self.plan, self.preview(), **self.kwargs())
+                self.plan, self.preview(), **self.kwargs(),
+                authorization=authorization)
         self.assert_stopped_before_second(result)
         self.assertNotIn('A origem mudou', result['reason'])
 
@@ -467,7 +516,8 @@ class ProtectedExecutorTests(unittest.TestCase):
         with patch.object(executor, 'verify_complete_manifest',
                           verify_then_change_source):
             result = executor.run_protected_copy(
-                self.plan, self.preview(), **self.kwargs())
+                self.plan, self.preview(), **self.kwargs(),
+                authorization=self._autorizar(self.preview()))
         self.assert_stopped_before_second(result)
 
     def test_fix4_test_root_must_be_inside_system_temp_folder(self):
@@ -478,16 +528,19 @@ class ProtectedExecutorTests(unittest.TestCase):
             with self.subTest(test_root=bad):
                 with self.assertRaisesRegex(ValueError, 'área de teste'):
                     executor.run_protected_copy(
-                        self.plan, preview, **self.kwargs(test_root=bad))
+                        self.plan, preview, **self.kwargs(test_root=bad),
+                        authorization=self._autorizar(preview, test_root=bad))
         # A folder outside the system temp folder is refused: point the temp
         # folder to a sibling so the sandbox is outside it.
         fake_temp = self.root / 'fake-temp'
         fake_temp.mkdir()
         with patch.object(executor.tempfile, 'gettempdir', lambda: str(fake_temp)):
             for call in (executor.preview_execution, executor.run_protected_copy):
+                extra = ({'authorization': {'copy_authorized': False}}
+                         if call is executor.run_protected_copy else {})
                 with self.subTest(call=call.__name__):
                     with self.assertRaisesRegex(ValueError, 'pasta temporária'):
-                        call(self.plan, preview, **self.kwargs())
+                        call(self.plan, preview, **self.kwargs(), **extra)
         self.assertEqual(self.tree(self.root), sorted(before + ['fake-temp']))
         self.assert_targets_empty()
 
