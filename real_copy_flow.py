@@ -53,6 +53,7 @@ import threading
 from pathlib import Path
 
 import backup_core
+import copy_refusal as refusal
 import multi_source_executor as executor
 from copy_authorization import authorize_copy, discard_authorization
 
@@ -109,6 +110,17 @@ _BY_PREFIX = (
     (executor.ROOT_REFUSED, MSG_RAIZ),
     ('Link/junção proibido', MSG_LINK),
 )
+# FIX-P2-09-06: typed refusals (copy_refusal.CopyRefusal) pick the reason
+# by their kind; the text search below is only the fallback.
+_BY_KIND = {
+    refusal.KIND_CONFIRM: executor.REFUSED_CONFIRM,
+    refusal.KIND_DISKS: executor.REFUSED_DISKS,
+    refusal.KIND_UNIDADE: MSG_UNIDADE,
+    refusal.KIND_RAIZ: MSG_RAIZ,
+    refusal.KIND_LINK: MSG_LINK,
+    refusal.KIND_SOBREPOR: MSG_SOBREPOR,
+    refusal.KIND_MUDOU: MSG_MUDOU,
+}
 _SOBREPOR = ('não pode se sobrepor', 'pode se sobrepor à origem')
 _MUDOU = ('mudou', 'mudaram', 'divergente', 'alterad', 'modificad',
           'desapareceu')
@@ -130,6 +142,11 @@ def _reason(error):
         return MSG_SUMIU
     if not isinstance(error, ValueError):
         return MSG_INESPERADO
+    if isinstance(error, refusal.CopyRefusal):
+        kind = getattr(error, 'kind', None)
+        if isinstance(kind, str) and kind in _BY_KIND:
+            return _BY_KIND[kind]
+    # No known kind: the old text search, kept for paths not converted.
     text = str(error)
     for prefix, reason in _BY_PREFIX:
         if text.startswith(prefix):

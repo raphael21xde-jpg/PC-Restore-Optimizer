@@ -21,6 +21,8 @@ from backup_destination_guard import (destination_ancestry_identity,
                                       verify_committed_backup_file)
 from drive_catalog import safe_to_mark
 from volume_paths import volume_of
+from copy_refusal import (KIND_LINK, KIND_SOBREPOR, KIND_UNIDADE,
+                          CopyRefusal)
 
 FILE_LIMIT = 400_000
 REPARSE_FLAG = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
@@ -36,7 +38,8 @@ def _any_reparse_ancestor(path):
             continue
         if (stat.S_ISLNK(info.st_mode) or
                 bool((getattr(info, 'st_file_attributes', 0) or 0) & REPARSE_FLAG)):
-            raise ValueError(f'Link/junção proibido no caminho: {current}')
+            raise CopyRefusal(KIND_LINK,
+                              f'Link/junção proibido no caminho: {current}')
 
 
 def prepare_selected_c(paths, *, choices=None, test_root=None, cancelled=None):
@@ -92,18 +95,21 @@ def validate_target(destination, *, restore=False, test_root=None, forbidden=())
     """Require an existing writable volume other than C:, outside protected sources."""
     target = Path(destination)
     if not target.is_dir():
-        raise ValueError('Selecione uma pasta de destino existente e acessível.')
+        raise CopyRefusal(KIND_UNIDADE,
+                          'Selecione uma pasta de destino existente e acessível.')
     _any_reparse_ancestor(target)
     if test_root is None:
         drive = volume_of(str(target))
         if os.name != 'nt' or drive == 'SEM UNIDADE' or drive == 'C:':
-            raise ValueError('Escolha uma pasta existente em unidade diferente de C:. '
-                             'Este fluxo preserva somente origens selecionadas no C:.')
+            raise CopyRefusal(KIND_UNIDADE,
+                              'Escolha uma pasta existente em unidade diferente de C:. '
+                              'Este fluxo preserva somente origens selecionadas no C:.')
     resolved = target.resolve(strict=True)
     for source in forbidden:
         other = Path(source).resolve(strict=True)
         if (resolved == other or resolved in other.parents or other in resolved.parents):
-            raise ValueError('A pasta de destino não pode se sobrepor à origem/backup.')
+            raise CopyRefusal(KIND_SOBREPOR,
+                              'A pasta de destino não pode se sobrepor à origem/backup.')
     return resolved
 
 
