@@ -31,6 +31,12 @@ MSG_ERROR = ('Não foi possível conferir os discos agora. Por segurança, '
              'nada foi considerado separado.')
 MSG_LETTERS = ('As unidades conferidas não são exatamente as unidades '
                'pedidas. Por segurança, nada foi considerado separado.')
+MSG_SAME_DRIVE = ('Dois ou mais destinos ficam na mesma unidade ({unidade}). '
+                  'Escolha cada destino numa unidade diferente.')
+MSG_NOT_FRESH = ('A conferência dos discos não foi feita agora, na hora. '
+                 'Por segurança, nada foi considerado separado.')
+MSG_NO_COLLECTOR = ('A conferência dos discos não foi informada. Nada foi '
+                    'considerado separado.')
 
 FALLBACK_TEXT = ('Não deu para confirmar que os discos são separados.\n'
                  'Por segurança, escolha um destino em outro disco ou '
@@ -53,6 +59,21 @@ def _letters(values):
             return None
         result.append(letter)
     return result
+
+
+def _repeated_letter(values):
+    """First drive letter ('X:') that appears twice in a valid list, or None."""
+    if not isinstance(values, (list, tuple)):
+        return None
+    seen = []
+    for item in values:
+        if not isinstance(item, str) or not _LETTER.fullmatch(item.strip()):
+            return None
+        letter = item.strip()[0].upper() + ':'
+        if letter in seen:
+            return letter
+        seen.append(letter)
+    return None
 
 
 def _refused(reason):
@@ -87,7 +108,12 @@ def verify_physical_independence(source_letters, target_letters, *, collector):
     Returns ``{'physical_independence_verified', 'veredito', 'destinos',
     'texto'}``. Calls ``collector`` exactly once. Never raises.
     """
+    if not callable(collector):
+        return _refused(MSG_NO_COLLECTOR)
     try:
+        repeated = _repeated_letter(target_letters)
+        if repeated is not None:
+            return _refused(MSG_SAME_DRIVE.format(unidade=repeated))
         sources = _letters(source_letters)
         targets = _letters(target_letters)
         if sources is None or targets is None:
@@ -107,6 +133,11 @@ def verify_physical_independence(source_letters, target_letters, *, collector):
                     letters_match)
         if not letters_match:
             return _refused(MSG_LETTERS)
+        if report.get('inventory_status') != 'fresh_collected':
+            return _refused(MSG_NOT_FRESH)
+        # A negative answer never shows the "separate disks" text (R-14).
+        if not verified and verdict.get('veredito') == INDEPENDENT:
+            return _refused(MSG_ERROR)
         return {
             'physical_independence_verified': verified,
             'veredito': verdict['veredito'],

@@ -257,7 +257,7 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
   - se algo falha depois de criada a pasta de medição (subpasta da rodada → relatório "interrompida" com o motivo; relatório que não grava → `BenchStopped` com o nome da pasta), o script diz "MEDIÇÃO INTERROMPIDA" e que a pasta ficou e pode ser apagada à mão, sem mostrar caminho; "MEDIÇÃO NÃO FEITA" só aparece nas recusas, quando nada foi gravado;
   - o relatório diz "nenhum arquivo da origem foi gravado ou apagado" (ler pode atualizar a data de último acesso, que é só metadado);
   - `scripts/medir_copia.py`: só `argparse` chamando `copy_bench`; código de saída 0 (concluída), 1 (interrompida) e 2 (recusada ou erro do sistema).
-### P2-09 · Executor multi-disco real — `em andamento` (fatias 1, 2a e 2b concluídas; a 2b espera o merge do Raphael)
+### P2-09 · Executor multi-disco real — `em andamento` (fatias 1, 2a e 2b concluídas; a 2b foi mesclada pelo Raphael na PR #95, em 23/10/2026; a fatia 3 está `pronto`)
 - **Desbloqueado pelo Raphael em 23/10/2026**, por pedido explícito numa conversa ("pode começar o P2-09"). Mexe nas travas de segurança (`copy_authorized` / `physical_independence_verified`), por isso vai em 3 fatias, cada uma com testador, revisor e validação Windows.
 - Base que já existe: `multi_source_fixture_runner.py` (só roda dentro de `test_root`), `multi_source_plan.py`, `multi_source_recheck.py`, `multi_source_targets.py` e `drive_safety_report.py`. Não recomeçar o motor de backup.
 - O que **nunca** muda, em nenhuma fatia: `deletions_authorized`, `ready_for_format` e `installation_authorized` continuam `False`. "Não copiar" nunca significa apagar. A origem só é lida.
@@ -287,7 +287,18 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
   - relatório: "Isto não prova…" foi trocado pelo texto do último veredito (**escolha extra:** a frase final do avaliador "nada foi copiado…" fica fora do relatório da cópia, para não contradizê-lo; sem conferência, aparece "A conferência dos discos não foi feita.");
   - sem mudança: as linhas `False` de `drive_safety_report.py` e as travas `copy_authorized`, `deletions_authorized`, `ready_for_format` e `installation_authorized`; `app.py` e as telas `*_ui.py` não importam o executor nem a ponte (testes conferem); nenhum script de consulta real foi criado;
   - pendência para a fatia 3: a primeira consulta real dos discos (com aviso e confirmação antes) acontece na tela da fatia 3 e na validação do Raphael.
+- **Situação em 24/10/2026:** a fatia 2b está `concluído` (merge do Raphael, PR #95, 23/10/2026). A fatia 3 passa a `pronto`; **o merge dela é do Raphael**.
 - **Fatia 3 (cópia real com confirmação):** `bloqueado` até o merge do Raphael na fatia 2b. Tela com a prévia completa e o botão de confirmar; `copy_authorized` só vira `True` depois do clique do usuário e vale só para **copiar**. **O merge é do Raphael.** Depois, validação: copiar uma pasta de teste do C: para outro disco físico e conferir o relatório.
+
+### FIX-P2-09-03 · Ressalvas da revisão da ponte de discos (PR #95)
+- **Status:** `concluído` (branch `auto/FIX-P2-09-03-ressalvas-trava-disco`). A condição que deixa a resposta positiva não mudou; só ficaram mais claros os motivos das recusas.
+- Dois destinos na mesma unidade (ex.: `T:\a` e `T:\b`, ou `T:` e `t`): a recusa continua e agora diz o motivo: "Dois ou mais destinos ficam na mesma unidade (T:). Escolha cada destino numa unidade diferente." (helper `_repeated_letter`, chamado antes de `_letters`; o collector nem é chamado).
+- Inventário que não foi coletado agora: recusa própria ("A conferência dos discos não foi feita agora, na hora…"), com veredito `duvida` e sem destinos, mesmo se o avaliador disse `independentes`. E se a resposta final ficou negativa com veredito `independentes`, a ponte devolve a recusa genérica: um resultado negativo nunca mostra o texto de "Discos separados" (regra R-14).
+- Collector ausente ou que não é chamável (`None`, `'x'`): recusa com "A conferência dos discos não foi informada. Nada foi considerado separado.", sem exceção. No executor, `disk_collector=None` dá prévia com `duvida` e a cópia é recusada com "Cópia recusada…" antes do 1º byte (sem mudança de código no executor).
+- Texto do barramento: "disco de servidor" saiu de `MSG_BUS` e `MSG_SOURCE_BUS`; agora é "(por exemplo RAID, disco virtual ou tipo desconhecido)".
+- **Escolha de design (coordenador, opção mais segura):** os códigos numéricos de BusType (ex.: 17 = NVMe, 11 = SATA) **não** foram mapeados, porque isso faria mais casos chegarem a "independentes" e afrouxaria a conferência. Um teste documenta que número, texto numérico (`'11'`), `True`, vazio ou ausente continuam `duvida`.
+- **Pendência para a fatia 3:** decidir o mapeamento dos códigos numéricos de BusType com a consulta real dos discos (o merge da fatia 3 é do Raphael).
+- Testes: `tests/test_physical_independence_p2_09.py` (mesma unidade na ponte e no executor, inventário não novo, collector ausente, BusType numérico, texto antigo fora do código).
 
 ### FIX-P2-09-01 · Ressalvas da revisão do executor (PR #85)
 - **Status:** `concluído` (branch `auto/FIX-P2-09-01-executor-ressalvas`).
