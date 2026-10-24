@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 1 (lista inicial de 23/10/2026).
+poda: 2 (R-14 e R-15; lista inicial de 23/10/2026, R-01 a R-13).
 
 | Nº | Regra | Origem | Data |
 |---|---|---|---|

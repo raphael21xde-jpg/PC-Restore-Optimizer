@@ -21,7 +21,11 @@ refused. Right before the first byte the executor rebuilds the preview and
 consumes that authorization (same preview, at most 5 minutes old, one-time
 token). The token is used up on every call that receives it: on success, on
 a refused authorization, and also when the executor refuses earlier (test
-area, paths, recheck or disks). Anything else means no write.
+area, paths, recheck or disks). The one exception is a malformed call
+(TypeError raised by Python before the function runs, e.g. a required
+argument missing or ``authorization`` passed by position): nothing is
+checked, nothing is written and the token is NOT used up. Anything else
+means no write.
 ``test_root`` is still required.
 """
 from __future__ import annotations

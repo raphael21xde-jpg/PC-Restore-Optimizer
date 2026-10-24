@@ -402,8 +402,29 @@ class ExecutorTests(unittest.TestCase):
         clock = FakeClock(0.0)
         info = executor.preview_execution(self.plan, self.preview(), **self.kwargs())
         auth = ca.authorize_copy(info, user_confirmed=True, clock=clock)
-        with patch.object(executor.time, 'monotonic', lambda: 5 * 60 + 1.0):
+        # Only the executor's clock moves; time.monotonic of the process stays.
+        late = SimpleNamespace(monotonic=lambda: 5 * 60 + 1.0)
+        with patch.object(executor, 'time', late):
             self.assertRefusedNothingWritten(auth)
+
+    def test_malformed_call_does_not_use_the_token_up(self):
+        auth = self._autorizar(self.preview())
+        with self.assertRaises(TypeError):
+            executor.run_protected_copy(self.plan, self.preview(), **self.kwargs())
+        values = self.kwargs()
+        with self.assertRaises(TypeError):
+            executor.run_protected_copy(
+                self.plan, self.preview(), values['test_root'], values['volume_lookup'],
+                values['usage'], values['disk_collector'], auth)
+        with self.assertRaises(TypeError):
+            ca.consume_authorization(auth, self.preview())
+        self.assertEqual(self.tree('target_T'), [])
+        self.assertEqual(self.tree('target_U'), [])
+        # Python refused the call before any check ran: the token is still there.
+        self.assertIn(auth['token'], ca._ISSUED)
+        result = executor.run_protected_copy(
+            self.plan, self.preview(), **self.kwargs(), authorization=auth)
+        self.assertEqual(result['status'], 'verificado')
 
     def test_good_authorization_copies_and_is_used_once(self):
         auth = self._autorizar(self.preview())

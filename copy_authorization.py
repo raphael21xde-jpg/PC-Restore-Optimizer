@@ -136,7 +136,10 @@ def consume_authorization(auth, preview_atual, *, clock):
     A registered token is used up on every call that receives it, accepted
     or refused (lock not True, other preview, expired, forged fingerprint or
     time): after a refusal the person makes a new preview and confirms
-    again. A missing or unregistered token has nothing to use up.
+    again. A missing or unregistered token has nothing to use up. A
+    malformed call (TypeError raised by Python, e.g. ``clock`` missing or
+    passed by position) never enters this function, so the token is NOT
+    used up and nothing is authorized either.
     """
     try:
         if not isinstance(auth, dict):
