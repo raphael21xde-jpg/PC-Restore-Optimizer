@@ -23,9 +23,11 @@ import time
 PREVIEW_SCHEMA = 'pcro-multi-source-executor-preview-v1'
 VALID_SECONDS = 5 * 60
 NOT_AUTHORIZED = ('Cópia não autorizada: falta a sua confirmação, ou a prévia '
-                  'não permite copiar. Nada foi gravado.')
+                  'não permite copiar. Nada foi gravado. Faça a prévia e '
+                  'confirme de novo.')
 
-# Tokens issued and not yet used: token -> (fingerprint, issued_at).
+# Tokens issued and not yet used: token -> (fingerprint, issued_at). Entries
+# older than VALID_SECONDS are dropped whenever a new token is issued.
 _ISSUED = {}
 _LOCK = threading.Lock()
 
@@ -107,6 +109,9 @@ def authorize_copy(preview, *, user_confirmed, clock=time.monotonic):
             return _refused()
         token = secrets.token_hex(32)
         with _LOCK:
+            for old in [key for key, (_, when) in _ISSUED.items()
+                        if not 0 <= issued_at - when <= VALID_SECONDS]:
+                del _ISSUED[old]
             _ISSUED[token] = (fingerprint, issued_at)
     except Exception:  # noqa: BLE001 - any error means "not authorized"
         return _refused()
@@ -114,21 +119,34 @@ def authorize_copy(preview, *, user_confirmed, clock=time.monotonic):
             'token': token, 'emitida_em': issued_at, 'motivo': None}
 
 
+def discard_authorization(auth):
+    """Use up the token without copying (the executor refused earlier)."""
+    try:
+        token = auth.get('token') if isinstance(auth, dict) else None
+        if isinstance(token, str):
+            with _LOCK:
+                _ISSUED.pop(token, None)
+    except Exception:  # noqa: BLE001 - nothing to use up
+        pass
+
+
 def consume_authorization(auth, preview_atual, *, clock):
     """True only once, for a valid, unexpired authorization of this preview.
 
-    The token is used up on any attempt, even a refused one: after a refusal
-    the person makes a new preview and confirms again.
+    A registered token is used up on every call that receives it, accepted
+    or refused (lock not True, other preview, expired, forged fingerprint or
+    time): after a refusal the person makes a new preview and confirms
+    again. A missing or unregistered token has nothing to use up.
     """
     try:
-        if not isinstance(auth, dict) or auth.get('copy_authorized') is not True:
+        if not isinstance(auth, dict):
             return False
         token = auth.get('token')
         if not isinstance(token, str):
             return False
         with _LOCK:
             stored = _ISSUED.pop(token, None)
-        if stored is None:
+        if stored is None or auth.get('copy_authorized') is not True:
             return False
         fingerprint, issued_at = stored
         if auth.get('fingerprint') != fingerprint or auth.get('emitida_em') != issued_at:

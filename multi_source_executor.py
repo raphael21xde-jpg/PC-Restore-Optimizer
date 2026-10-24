@@ -14,11 +14,15 @@ same disk means no write. The executor only reads that answer; it never
 writes any safety lock and never accepts a ready-made answer from outside.
 It does not authorize formatting or installing anything.
 
-Slice 3a: the copy also requires ``authorization``, made by
-``copy_authorization.authorize_copy`` from the person's confirmation of the
-preview. Right before the first byte the executor rebuilds the preview and
+Slice 3a: the copy also requires ``authorization``. It is only valid when
+it was issued, and registered, by ``copy_authorization.authorize_copy`` from
+the person's confirmation of the preview; a dict made anywhere else is
+refused. Right before the first byte the executor rebuilds the preview and
 consumes that authorization (same preview, at most 5 minutes old, one-time
-token). Anything else means no write. ``test_root`` is still required.
+token). The token is used up on every call that receives it: on success, on
+a refused authorization, and also when the executor refuses earlier (test
+area, paths, recheck or disks). Anything else means no write.
+``test_root`` is still required.
 """
 from __future__ import annotations
 
@@ -27,7 +31,7 @@ import time
 from pathlib import Path
 
 import backup_core
-from copy_authorization import consume_authorization
+from copy_authorization import consume_authorization, discard_authorization
 from multi_backup_destinations import _under
 from multi_source_recheck import recheck_multi_source_preview
 from physical_independence import READ_ONLY_NOTE, verify_physical_independence
@@ -219,13 +223,18 @@ def run_protected_copy(plan, target_preview, *, test_root, volume_lookup, usage,
     authorization for this exact preview is consumed before the first byte.
     Stops at the first problem. Sources are only read.
     """
-    sandbox = _sandbox(test_root)
-    sources, rows, resume, source_volumes = _check(
-        plan, target_preview, sandbox, volume_lookup, usage, resume_manifests)
-    independent, summary = _disk_check(source_volumes, rows, disk_collector)
-    if not independent:
-        raise ValueError(REFUSED_DISKS + '\n' + summary['texto'])
-    current = _preview(plan, sources, rows, resume, summary)
+    try:
+        sandbox = _sandbox(test_root)
+        sources, rows, resume, source_volumes = _check(
+            plan, target_preview, sandbox, volume_lookup, usage, resume_manifests)
+        independent, summary = _disk_check(source_volumes, rows, disk_collector)
+        if not independent:
+            raise ValueError(REFUSED_DISKS + '\n' + summary['texto'])
+        current = _preview(plan, sources, rows, resume, summary)
+    except BaseException:
+        # Refused before the authorization check: the token is used up too.
+        discard_authorization(authorization)
+        raise
     if consume_authorization(authorization, current,
                              clock=time.monotonic) is not True:
         raise ValueError(REFUSED_CONFIRM)

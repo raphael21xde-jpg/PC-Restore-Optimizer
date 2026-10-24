@@ -230,12 +230,53 @@ class ConsumeTests(unittest.TestCase):
                 self.assertIs(ca.consume_authorization(
                     auth, sample_preview(), clock=clock), False)
 
+    def test_any_refusal_uses_the_registered_token_up(self):
+        clock = FakeClock()
+        for label, change in (('trava 1', lambda a: dict(a, **{LOCK: 1})),
+                              ('fingerprint', lambda a: dict(a, fingerprint='0')),
+                              ('hora', lambda a: dict(a, emitida_em=1.0))):
+            with self.subTest(label):
+                auth = self.auth(clock)
+                self.assertIs(ca.consume_authorization(
+                    change(auth), sample_preview(), clock=clock), False)
+                self.assertNotIn(auth['token'], ca._ISSUED)
+                self.assertIs(ca.consume_authorization(
+                    auth, sample_preview(), clock=clock), False)
+        auth = self.auth(clock)
+        self.assertIs(ca.consume_authorization(
+            auth, changed_previews()['destino'], clock=clock), False)
+        self.assertNotIn(auth['token'], ca._ISSUED)
+
     def test_malformed_current_preview_is_false_without_exception(self):
         for preview in (None, {}, 'x', sample_preview(copies='2')):
             with self.subTest(preview=repr(preview)[:30]):
                 clock = FakeClock()
                 self.assertIs(ca.consume_authorization(
                     self.auth(clock), preview, clock=clock), False)
+
+    def test_old_tokens_are_dropped_when_a_new_one_is_issued(self):
+        old = self.auth(FakeClock(0.0))
+        recent = self.auth(FakeClock(100.0))
+        self.assertIn(old['token'], ca._ISSUED)
+        newest = self.auth(FakeClock(5 * 60 + 1.0))
+        self.assertNotIn(old['token'], ca._ISSUED)
+        self.assertIn(recent['token'], ca._ISSUED)
+        self.assertIn(newest['token'], ca._ISSUED)
+        clock = FakeClock(5 * 60 + 1.0)
+        self.assertIs(ca.consume_authorization(old, sample_preview(), clock=clock),
+                      False)
+        self.assertIs(ca.consume_authorization(recent, sample_preview(), clock=clock),
+                      True)
+
+    def test_discard_uses_up_the_token(self):
+        clock = FakeClock()
+        auth = self.auth(clock)
+        ca.discard_authorization(auth)
+        self.assertNotIn(auth['token'], ca._ISSUED)
+        self.assertIs(ca.consume_authorization(auth, sample_preview(), clock=clock),
+                      False)
+        for bad in (None, {}, 'x', {'token': 1}):
+            ca.discard_authorization(bad)  # never raises
 
     def test_clock_is_required_keyword_only(self):
         param = inspect.signature(ca.consume_authorization).parameters['clock']
@@ -390,6 +431,35 @@ class ExecutorTests(unittest.TestCase):
                 self.plan, self.preview(), **self.kwargs(CountingCollector(same)),
                 authorization=auth)
         self.assertEqual(self.tree('target_T'), [])
+        # The disk refusal used the token up: a retry needs a new confirmation.
+        self.assertNotIn(auth['token'], ca._ISSUED)
+        self.assertRefusedNothingWritten(auth)
+
+    def test_earlier_refusals_also_use_the_token_up(self):
+        relative = self.preview()
+        relative['destinations'][0]['path'] = 'target_T'
+        cases = {
+            'area de teste': dict(test_root=None),
+            'destino relativo': dict(preview=relative),
+            'coletor com erro': dict(collector=CountingCollector(error=OSError('x'))),
+        }
+        for label, case in cases.items():
+            with self.subTest(label):
+                auth = self._autorizar(self.preview())
+                values = self.kwargs(case.get('collector'))
+                if 'test_root' in case:
+                    values['test_root'] = case['test_root']
+                with self.assertRaises(ValueError) as caught:
+                    executor.run_protected_copy(
+                        self.plan, case.get('preview') or self.preview(), **values,
+                        authorization=auth)
+                self.assertNotEqual(str(caught.exception), executor.REFUSED_CONFIRM)
+                self.assertNotIn(auth['token'], ca._ISSUED)
+                self.assertRefusedNothingWritten(auth)
+
+    def test_not_authorized_text_says_what_to_do(self):
+        self.assertTrue(ca.NOT_AUTHORIZED.endswith(
+            'Faça a prévia e confirme de novo.'))
 
     def test_negative_texts_never_sound_positive(self):
         texts = [executor.REFUSED_CONFIRM, ca.NOT_AUTHORIZED,
