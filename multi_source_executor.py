@@ -13,13 +13,25 @@ destination is on another physical disk than the sources. Doubt, error or
 same disk means no write. The executor only reads that answer; it never
 writes any safety lock and never accepts a ready-made answer from outside.
 It does not authorize formatting or installing anything.
+
+Slice 3a: the copy also requires ``authorization``. It is only valid when
+it was issued, and registered, by ``copy_authorization.authorize_copy`` from
+the person's confirmation of the preview; a dict made anywhere else is
+refused. Right before the first byte the executor rebuilds the preview and
+consumes that authorization (same preview, at most 5 minutes old, one-time
+token). The token is used up on every call that receives it: on success, on
+a refused authorization, and also when the executor refuses earlier (test
+area, paths, recheck or disks). Anything else means no write.
+``test_root`` is still required.
 """
 from __future__ import annotations
 
 import tempfile
+import time
 from pathlib import Path
 
 import backup_core
+from copy_authorization import consume_authorization, discard_authorization
 from multi_backup_destinations import _under
 from multi_source_recheck import recheck_multi_source_preview
 from physical_independence import READ_ONLY_NOTE, verify_physical_independence
@@ -50,6 +62,9 @@ PROBLEMS = {
 REFUSED_DISKS = ('Cópia recusada: não deu para confirmar que os destinos '
                  'ficam em outro disco, separado da origem. Nada foi gravado.')
 NO_DISK_CHECK = 'A conferência dos discos não foi feita.'
+REFUSED_CONFIRM = ('Cópia recusada: falta a sua confirmação para esta prévia, '
+                   'ou ela mudou ou expirou. Faça a prévia e confirme de novo. '
+                   'Nada foi gravado.')
 
 
 def _sandbox(test_root):
@@ -176,6 +191,10 @@ def preview_execution(plan, target_preview, *, test_root, volume_lookup, usage,
     sources, rows, resume, source_volumes = _check(
         plan, target_preview, sandbox, volume_lookup, usage, resume_manifests)
     _, summary = _disk_check(source_volumes, rows, disk_collector)
+    return _preview(plan, sources, rows, resume, summary)
+
+
+def _preview(plan, sources, rows, resume, summary):
     return {
         'schema': PREVIEW_SCHEMA,
         'sources': sorted({str(p.parent) for p in sources}),
@@ -195,20 +214,30 @@ def _row(base, status, *, manifest=None, files=0, size=0, problem=None):
 
 
 def run_protected_copy(plan, target_preview, *, test_root, volume_lookup, usage,
-                       disk_collector, cancelled=None, resume_manifests=None,
-                       progress=None):
+                       disk_collector, authorization, cancelled=None,
+                       resume_manifests=None, progress=None):
     """Copy the plan to every destination, one verified manifest each.
 
     Everything is rechecked before the first write and again before each
-    destination, including a new physical-disk check. Stops at the first
-    problem. Sources are only read.
+    destination, including a new physical-disk check. The person's
+    authorization for this exact preview is consumed before the first byte.
+    Stops at the first problem. Sources are only read.
     """
-    sandbox = _sandbox(test_root)
-    _, rows, resume, source_volumes = _check(
-        plan, target_preview, sandbox, volume_lookup, usage, resume_manifests)
-    independent, summary = _disk_check(source_volumes, rows, disk_collector)
-    if not independent:
-        raise ValueError(REFUSED_DISKS + '\n' + summary['texto'])
+    try:
+        sandbox = _sandbox(test_root)
+        sources, rows, resume, source_volumes = _check(
+            plan, target_preview, sandbox, volume_lookup, usage, resume_manifests)
+        independent, summary = _disk_check(source_volumes, rows, disk_collector)
+        if not independent:
+            raise ValueError(REFUSED_DISKS + '\n' + summary['texto'])
+        current = _preview(plan, sources, rows, resume, summary)
+    except BaseException:
+        # Refused before the authorization check: the token is used up too.
+        discard_authorization(authorization)
+        raise
+    if consume_authorization(authorization, current,
+                             clock=time.monotonic) is not True:
+        raise ValueError(REFUSED_CONFIRM)
     results = []
     reason = None
     for base in rows:
