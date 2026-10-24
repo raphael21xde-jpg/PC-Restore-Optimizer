@@ -26,7 +26,23 @@ area, paths, recheck or disks). The one exception is a malformed call
 argument missing or ``authorization`` passed by position): nothing is
 checked, nothing is written and the token is NOT used up. Anything else
 means no write.
-``test_root`` is still required.
+
+Slice 3b-1: ``preview_execution`` and ``run_protected_copy`` still require
+``test_root`` (``None`` gives NOT_RELEASED). The real mode lives in two
+functions with other names, ``preview_real_execution`` and
+``run_real_copy``, with no ``test_root``. There every source, selected
+folder and destination must be an absolute path, with no link or junction
+in any ancestor, that exists (``resolve(strict=True)``) and is not the root
+of a drive; each destination also goes through ``validate_target`` with
+``test_root=None``, which refuses C: and any system that is not Windows.
+The order is the same as in the test area: paths and recheck, then the new
+physical-disk check, then the authorization is consumed, then the copy. In
+``run_real_copy`` the token is used up on every call that receives it: on
+success, on a refused authorization and on every refusal before it (paths,
+recheck, disk check or disks not separate). The only exception, as above,
+is a malformed call (TypeError raised by Python before the function runs),
+which checks nothing, writes nothing and does NOT use the token up.
+The app does not call the real mode yet.
 """
 from __future__ import annotations
 
@@ -104,10 +120,36 @@ def _inside(value, sandbox):
     return resolved
 
 
-def _check(plan, target_preview, sandbox, volume_lookup, usage, resume_manifests):
+ROOT_REFUSED = 'Origem ou destino não pode ser a raiz de uma unidade.'
+
+
+def _real_path(value):
+    """Real mode: absolute, no link/junction above it, existing, not a drive root."""
+    raw = Path(value)
+    if not raw.is_absolute():
+        raise ValueError('Caminho não é absoluto.')
+    if raw == Path(raw.anchor):
+        raise ValueError(ROOT_REFUSED)
+    _any_reparse_ancestor(raw)
+    resolved = raw.resolve(strict=True)
+    if resolved == Path(resolved.anchor):
+        raise ValueError(ROOT_REFUSED)
+    return resolved
+
+
+def _sandbox_paths(test_root):
+    """Path checker and validate_target area for the test-area mode."""
+    sandbox = _sandbox(test_root)
+    return (lambda value: _inside(value, sandbox)), str(sandbox)
+
+
+def _check(plan, target_preview, place, target_root, volume_lookup, usage,
+           resume_manifests):
     """Validate everything without writing.
 
-    Returns (sources, rows, resume map, source volumes from the recheck).
+    ``place`` checks and resolves each path (``_inside`` for the test area,
+    ``_real_path`` for the real mode); ``target_root`` is handed to
+    ``validate_target`` (the test area, or None in the real mode). Returns (sources, rows, resume map, source volumes from the recheck).
     """
     files = getattr(plan, 'files', None)
     if not files or getattr(plan, 'warnings', None):
@@ -124,20 +166,20 @@ def _check(plan, target_preview, sandbox, volume_lookup, usage, resume_manifests
         raise ValueError('Plano de origem sem as pastas escolhidas.')
     sources = []
     for task in files:
-        sources.append(_inside(task.source, sandbox))
+        sources.append(place(task.source))
     # Folders that hold sources: a destination may not be inside them, and
     # they may not be inside a destination.
     protected = sorted({str(p.parent) for p in sources} |
-                       {str(_inside(item, sandbox)) for item in selected})
+                       {str(place(item)) for item in selected})
 
     folders = []
     for row in requested:
         if not isinstance(row, dict) or not isinstance(row.get('path'), str):
             raise ValueError('Destino da prévia inválido.')
-        folder = _inside(row['path'], sandbox)
+        folder = place(row['path'])
         if not folder.is_dir():
             raise ValueError('Destino precisa ser uma pasta existente.')
-        validate_target(str(folder), test_root=str(sandbox), forbidden=protected)
+        validate_target(str(folder), test_root=target_root, forbidden=protected)
         for source in sources:
             if _under(folder, source) or _under(source, folder):
                 raise ValueError('O destino não pode se sobrepor à origem.')
@@ -158,7 +200,7 @@ def _check(plan, target_preview, sandbox, volume_lookup, usage, resume_manifests
             folder = str(Path(key).resolve())
             if folder not in by_path:
                 raise ValueError('A retomada aponta para um destino fora da prévia.')
-            manifest = _inside(value, sandbox)
+            manifest = place(value)
             if (manifest.name != 'manifest.json' or not manifest.is_file()
                     or manifest.parent.parent != Path(folder)):
                 raise ValueError('Manifesto de retomada inválido para este destino.')
@@ -191,9 +233,26 @@ def _disk_check(source_volumes, rows, disk_collector):
 def preview_execution(plan, target_preview, *, test_root, volume_lookup, usage,
                       disk_collector, resume_manifests=None):
     """Show what would be copied, writing nothing at all."""
-    sandbox = _sandbox(test_root)
+    place, target_root = _sandbox_paths(test_root)
+    return _preview_with(plan, target_preview, place, target_root, volume_lookup,
+                         usage, disk_collector, resume_manifests)
+
+
+def preview_real_execution(plan, target_preview, *, volume_lookup, usage,
+                           disk_collector, resume_manifests=None):
+    """Real mode (no test area): show what would be copied, writing nothing.
+
+    It reads the disk list once through ``disk_collector``.
+    """
+    return _preview_with(plan, target_preview, _real_path, None, volume_lookup,
+                         usage, disk_collector, resume_manifests)
+
+
+def _preview_with(plan, target_preview, place, target_root, volume_lookup, usage,
+                  disk_collector, resume_manifests):
     sources, rows, resume, source_volumes = _check(
-        plan, target_preview, sandbox, volume_lookup, usage, resume_manifests)
+        plan, target_preview, place, target_root, volume_lookup, usage,
+        resume_manifests)
     _, summary = _disk_check(source_volumes, rows, disk_collector)
     return _preview(plan, sources, rows, resume, summary)
 
@@ -228,9 +287,38 @@ def run_protected_copy(plan, target_preview, *, test_root, volume_lookup, usage,
     Stops at the first problem. Sources are only read.
     """
     try:
-        sandbox = _sandbox(test_root)
+        place, target_root = _sandbox_paths(test_root)
+    except BaseException:
+        discard_authorization(authorization)
+        raise
+    return _run_with(plan, target_preview, place, target_root, volume_lookup,
+                     usage, disk_collector, authorization, cancelled,
+                     resume_manifests, progress)
+
+
+def run_real_copy(plan, target_preview, *, volume_lookup, usage, disk_collector,
+                  authorization, cancelled=None, resume_manifests=None,
+                  progress=None):
+    """Real mode (no test area): same checks and order as run_protected_copy.
+
+    Paths and recheck, new disk check, authorization consumed, then the
+    copy. Every refusal before the copy uses the token up. A refusal is
+    raised as ValueError or OSError whose text may hold a full path with the
+    user name: the caller never shows ``str(error)``, only a short reason of
+    its own (see real_copy_flow).
+    """
+    return _run_with(plan, target_preview, _real_path, None, volume_lookup,
+                     usage, disk_collector, authorization, cancelled,
+                     resume_manifests, progress)
+
+
+def _run_with(plan, target_preview, place, target_root, volume_lookup, usage,
+              disk_collector, authorization, cancelled, resume_manifests,
+              progress):
+    try:
         sources, rows, resume, source_volumes = _check(
-            plan, target_preview, sandbox, volume_lookup, usage, resume_manifests)
+            plan, target_preview, place, target_root, volume_lookup, usage,
+            resume_manifests)
         independent, summary = _disk_check(source_volumes, rows, disk_collector)
         if not independent:
             raise ValueError(REFUSED_DISKS + '\n' + summary['texto'])
