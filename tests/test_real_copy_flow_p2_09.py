@@ -412,6 +412,9 @@ class FlowTests(Base):
     def test_warning_text(self):
         text = rcf.AVISO_CONSULTA_TEXTO
         self.assertIn('vou só ler a lista de discos', text)
+        # Slice 3b-2: the person is told the folders were already listed.
+        self.assertIn('Já li a lista de arquivos das pastas escolhidas', text)
+        self.assertIn('espaço livre dos destinos (só leitura)', text)
         self.assertIn('nada é gravado, formatado nem apagado', text)
 
     def test_collector_is_required_keyword_only(self):
@@ -564,11 +567,10 @@ class FlowTests(Base):
         self.assertNothingWritten()
 
     def test_cancelled_copy_is_not_concluded(self):
-        import threading
         flow = self.confirmed_flow()
-        event = threading.Event()
-        event.set()
-        self.assertEqual(flow.run(cancelled=event), rcf.INCOMPLETO)
+        # The flow's own Event (slice 3b-2) is handed to the executor.
+        flow.cancel_event.set()
+        self.assertEqual(flow.run(), rcf.INCOMPLETO)
         self.assertEqual(flow.message, rcf.MSG_INCOMPLETO)
         self.assertEqual(flow.result['status'], 'nao_verificado')
         self.assertIn('cancelado', flow.report)
@@ -693,8 +695,12 @@ class CodeShapeTests(unittest.TestCase):
         for path in files:
             text = path.read_text(encoding='utf-8')
             with self.subTest(file=path.name):
-                self.assertIsNone(re.search(r'\breal_copy_flow\b', text))
+                # Slice 3b-2: only the real copy window uses the controller.
+                if path.name != 'real_copy_ui.py':
+                    self.assertIsNone(re.search(r'\breal_copy_flow\b', text))
                 self.assertNotIn('multi_source_executor', text)
+        window = (ROOT / 'real_copy_ui.py').read_text(encoding='utf-8')
+        self.assertRegex(window, r'(?m)^import real_copy_flow as rcf$')
 
     def test_executor_keeps_no_lock_writes(self):
         source = (ROOT / 'multi_source_executor.py').read_text(encoding='utf-8')
