@@ -52,6 +52,8 @@ from pathlib import Path
 
 import backup_core
 from copy_authorization import consume_authorization, discard_authorization
+from copy_refusal import (KIND_CONFIRM, KIND_DISKS, KIND_MUDOU, KIND_RAIZ,
+                          KIND_SOBREPOR, KIND_UNIDADE, CopyRefusal)
 from multi_backup_destinations import _under
 from multi_source_recheck import recheck_multi_source_preview
 from physical_independence import READ_ONLY_NOTE, verify_physical_independence
@@ -129,11 +131,11 @@ def _real_path(value):
     if not raw.is_absolute():
         raise ValueError('Caminho não é absoluto.')
     if raw == Path(raw.anchor):
-        raise ValueError(ROOT_REFUSED)
+        raise CopyRefusal(KIND_RAIZ, ROOT_REFUSED)
     _any_reparse_ancestor(raw)
     resolved = raw.resolve(strict=True)
     if resolved == Path(resolved.anchor):
-        raise ValueError(ROOT_REFUSED)
+        raise CopyRefusal(KIND_RAIZ, ROOT_REFUSED)
     return resolved
 
 
@@ -178,11 +180,13 @@ def _check(plan, target_preview, place, target_root, volume_lookup, usage,
             raise ValueError('Destino da prévia inválido.')
         folder = place(row['path'])
         if not folder.is_dir():
-            raise ValueError('Destino precisa ser uma pasta existente.')
+            raise CopyRefusal(KIND_UNIDADE,
+                              'Destino precisa ser uma pasta existente.')
         validate_target(str(folder), test_root=target_root, forbidden=protected)
         for source in sources:
             if _under(folder, source) or _under(source, folder):
-                raise ValueError('O destino não pode se sobrepor à origem.')
+                raise CopyRefusal(KIND_SOBREPOR,
+                                  'O destino não pode se sobrepor à origem.')
         folders.append(folder)
 
     # Resume requests are checked before the recheck, so a bad request is
@@ -210,11 +214,12 @@ def _check(plan, target_preview, place, target_root, volume_lookup, usage,
     fresh = recheck_multi_source_preview(
         plan, target_preview, volume_lookup=volume_lookup, usage=usage)
     if len(fresh['destinations']) != len(folders):
-        raise ValueError('Quantidade de destinos mudou após a revalidação.')
+        raise CopyRefusal(KIND_MUDOU,
+                          'Quantidade de destinos mudou após a revalidação.')
     rows = []
     for number, (folder, observed) in enumerate(zip(folders, fresh['destinations']), 1):
         if str(folder) != observed['path']:
-            raise ValueError('Destino divergente após a revalidação.')
+            raise CopyRefusal(KIND_MUDOU, 'Destino divergente após a revalidação.')
         rows.append({'number': number, 'path': str(folder),
                      'volume': observed['volume'], 'free_bytes': observed['free_bytes']})
 
@@ -321,7 +326,7 @@ def _run_with(plan, target_preview, place, target_root, volume_lookup, usage,
             resume_manifests)
         independent, summary = _disk_check(source_volumes, rows, disk_collector)
         if not independent:
-            raise ValueError(REFUSED_DISKS + '\n' + summary['texto'])
+            raise CopyRefusal(KIND_DISKS, REFUSED_DISKS + '\n' + summary['texto'])
         current = _preview(plan, sources, rows, resume, summary)
     except BaseException:
         # Refused before the authorization check: the token is used up too.
@@ -329,7 +334,7 @@ def _run_with(plan, target_preview, place, target_root, volume_lookup, usage,
         raise
     if consume_authorization(authorization, current,
                              clock=time.monotonic) is not True:
-        raise ValueError(REFUSED_CONFIRM)
+        raise CopyRefusal(KIND_CONFIRM, REFUSED_CONFIRM)
     results = []
     reason = None
     for base in rows:

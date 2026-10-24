@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from copy_refusal import KIND_MUDOU, CopyRefusal
 from selective_recovery import _any_reparse_ancestor
 from multi_source_targets import preview_multi_source_targets, diagnostic_fingerprint
 
@@ -23,7 +24,8 @@ def recheck_multi_source_preview(plan, target_preview, *, volume_lookup,
         if disk_diagnostic is None:
             raise ValueError('Diagnóstico atualizado obrigatório para revalidação.')
         if diagnostic_fingerprint(disk_diagnostic) != expected_fingerprint:
-            raise ValueError('Diagnóstico de discos alterado; refaça a prévia.')
+            raise CopyRefusal(KIND_MUDOU,
+                              'Diagnóstico de discos alterado; refaça a prévia.')
     elif disk_diagnostic is not None:
         raise ValueError('Prévia antiga sem diagnóstico; refaça a prévia.')
     files = getattr(plan, 'files', None)
@@ -35,9 +37,10 @@ def recheck_multi_source_preview(plan, target_preview, *, volume_lookup,
         try:
             st = source.stat()
         except OSError as exc:
-            raise ValueError('Fonte desapareceu ou tornou-se inacessível.') from exc
+            raise CopyRefusal(KIND_MUDOU,
+                              'Fonte desapareceu ou tornou-se inacessível.') from exc
         if not source.is_file() or st.st_size != task.size or st.st_mtime_ns != task.mtime_ns:
-            raise ValueError('Fonte modificada depois do planejamento.')
+            raise CopyRefusal(KIND_MUDOU, 'Fonte modificada depois do planejamento.')
     original = target_preview.get('destinations')
     if not isinstance(original, list) or not original:
         raise ValueError('Nenhum destino na prévia.')
@@ -48,8 +51,8 @@ def recheck_multi_source_preview(plan, target_preview, *, volume_lookup,
                                          volume_lookup=volume_lookup,
                                          disk_diagnostic=disk_diagnostic)
     if fresh['source_volumes'] != target_preview.get('source_volumes'):
-        raise ValueError('Unidades de origem mudaram desde a prévia.')
+        raise CopyRefusal(KIND_MUDOU, 'Unidades de origem mudaram desde a prévia.')
     for old, current in zip(original, fresh['destinations']):
         if old.get('path') != current['path'] or old.get('volume') != current['volume']:
-            raise ValueError('Destino ou unidade mudou desde a prévia.')
+            raise CopyRefusal(KIND_MUDOU, 'Destino ou unidade mudou desde a prévia.')
     return fresh
