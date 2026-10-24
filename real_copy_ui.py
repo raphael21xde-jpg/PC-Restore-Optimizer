@@ -206,15 +206,19 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
         """A etapa terminou depois de um "Cancelar".
 
         Montagem da lista ou leitura dos discos: nada continua (não aparece
-        aviso nem prévia). Cópia: o relatório diz como ela terminou.
+        aviso nem prévia). Cópia: o relatório diz como ela terminou. Se a
+        cópia terminou com erro (recusa ou erro inesperado), o texto só diz
+        "Nada foi gravado" quando o fluxo garante que o executor não foi
+        chamado (regra R-19); senão manda tratar a cópia como não verificada.
         """
         flow = state['flow']
         if flow is not None and flow.state in (rcf.CONCLUIDO, rcf.INCOMPLETO):
             show_flow(MSG_CONCLUIDO)
             return
+        message = rcf.cancel_text(flow)
         forget_flow()
         show_text('')
-        status.set(rcf.CANCELADO)
+        status.set(message)
 
     def show_flow(default=None):
         flow = state['flow']
@@ -274,7 +278,9 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
         def done(kind, value):
             if kind != 'done':
                 # Nunca mostra a mensagem original (pode ter caminho).
-                status.set(rcf.CANCELADO if kind == 'cancelled' else MSG_PLANO_FALHOU)
+                # Ainda não há fluxo: o executor não foi chamado.
+                status.set(rcf.cancel_text(None) if kind == 'cancelled'
+                           else MSG_PLANO_FALHOU)
                 return
             plan, preview = value
             flow = rcf.RealCopyFlow(plan, preview, volume_lookup=lookup, usage=space,
@@ -358,7 +364,7 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
         if flow is not None:
             flow.cancel()
         show_text('')
-        status.set(rcf.CANCELADO)
+        status.set(rcf.cancel_text(flow))
         update_buttons()
 
     tools = ttk.Frame(frame)

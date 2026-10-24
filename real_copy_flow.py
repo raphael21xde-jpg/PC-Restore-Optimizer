@@ -40,6 +40,12 @@ Slice 3b-2 (the window runs the slow steps in a ``Job``):
   authorization and has used it up before the first byte; if the disk
   check is running there is no authorization yet, and the preview that
   comes back is dropped. After ``close()`` every step is refused.
+
+FIX-P2-09-07 (rule R-19): ``executor_called`` becomes ``True`` right before
+``run()`` hands the copy to the executor and is never cleared. While it is
+``True``, a cancel text never says "nothing was written":
+``cancel_text(flow)`` gives ``CANCELADO`` only when the flow guarantees the
+executor was not called, and ``CANCELADO_INCERTO`` otherwise.
 """
 from __future__ import annotations
 
@@ -66,6 +72,8 @@ AVISO_CONSULTA_TEXTO = (
     'de discos deste computador (e ler de novo logo antes de copiar): nada é '
     'gravado, formatado nem apagado. Quer continuar?')
 CANCELADO = 'Cancelado. Nada foi gravado.'
+CANCELADO_INCERTO = ('Cancelado. A cópia pode ter ficado incompleta: trate-a '
+                     'como não verificada.')
 NAO_CONFIRMADO = ('A cópia não foi confirmada. Nada foi gravado. Para copiar, '
                   'confirme a prévia.')
 
@@ -133,6 +141,18 @@ def _reason(error):
     return MSG_PREVIA
 
 
+def cancel_text(flow):
+    """Text after a cancel (pure; no Tk, reads no disk).
+
+    ``CANCELADO`` ("nothing was written") only when there is no flow or the
+    flow guarantees the executor was not called (``executor_called is
+    False``); any other value gives ``CANCELADO_INCERTO``.
+    """
+    if flow is None or getattr(flow, 'executor_called', None) is False:
+        return CANCELADO
+    return CANCELADO_INCERTO
+
+
 def _drive(value):
     drive = Path(value).drive if isinstance(value, str) else ''
     return drive if len(drive) == 2 and drive[1] == ':' else None
@@ -151,6 +171,8 @@ class RealCopyFlow:
         self._authorization = None
         self._busy = threading.Lock()
         self._closed = False
+        # True once run() handed the copy to the executor; never cleared.
+        self.executor_called = False
         self.cancel_event = threading.Event()
         self.state = INICIO
         self.message = None
@@ -183,7 +205,7 @@ class RealCopyFlow:
         try:
             if self._closed:
                 self._reset_unlocked()
-                self.message = CANCELADO
+                self.message = cancel_text(self)
                 return self.state
             return work()
         finally:
@@ -223,7 +245,7 @@ class RealCopyFlow:
         if self.cancel_event.is_set() or self._closed:
             # Cancelled while the disks were being read: drop the preview.
             self._reset_unlocked()
-            self.message = CANCELADO
+            self.message = cancel_text(self)
             return self.state
         self.preview = preview
         self.state = PREVIA
@@ -261,6 +283,7 @@ class RealCopyFlow:
         if self.state != CONFIRMADO or auth is None:
             discard_authorization(auth)
             return self._refuse(executor.REFUSED_CONFIRM)
+        self.executor_called = True  # from here on something may be written
         try:
             result = executor.run_real_copy(
                 self.plan, self.target_preview, volume_lookup=self._volume_lookup,
@@ -298,7 +321,7 @@ class RealCopyFlow:
             return OCUPADO
         try:
             self._reset_unlocked()
-            self.message = CANCELADO
+            self.message = cancel_text(self)
             if not self._closed:
                 self.cancel_event.clear()
             return self.state
