@@ -20,6 +20,8 @@ from fake_disks_p2_09 import CountingCollector, fake_inventory  # noqa: E402
 from test_real_copy_flow_p2_09 import FORBIDDEN_POSITIVE, Base, sha  # noqa: E402
 
 import copy_authorization as ca  # noqa: E402
+import multi_source_plan  # noqa: E402
+import restore_jobs  # noqa: E402
 import multi_source_executor as executor  # noqa: E402
 import real_copy_flow as rcf  # noqa: E402
 
@@ -210,6 +212,20 @@ class FlowGuardTests(Base):
         self.assertEqual(collector.calls, 1)
         self.assertNothingWritten()
 
+    def test_cancel_just_before_run_refuses_without_the_executor(self):
+        # "Cancelar" right after "Copiar agora", before the Job takes the lock:
+        # the confirmation is gone and run() never reaches the executor.
+        collector = CountingCollector()
+        flow = self.confirmed(collector)
+        token = flow._authorization['token']
+        self.assertEqual(flow.cancel(), rcf.INICIO)
+        with patch.object(executor, 'run_real_copy',
+                          side_effect=AssertionError('não podia copiar')):
+            self.assertEqual(flow.run(), rcf.RECUSADO)
+        self.assertNotIn(token, ca._ISSUED)
+        self.assertEqual(collector.calls, 1)
+        self.assertNothingWritten()
+
     def test_close_during_copy_stops_it(self):
         collector = GateCollector(block_on=(2,))
         flow = self.confirmed(collector)
@@ -397,6 +413,8 @@ class WindowTests(Base):
         self.pump(dlg)
         self.assertEqual(flow.state, rcf.CONCLUIDO)
         self.assertIn('Todas as cópias foram feitas e conferidas.', dlg.real_copy_text())
+        self.assertNotIn('Cancelar', self.enabled(dlg))
+        self.assertNotIn('Copiar agora', self.enabled(dlg))
         self.assertClean(self.visible(dlg))
         for target in ('target_T', 'target_U'):
             copied = list(self.folders[target].rglob('documento.txt'))
@@ -429,6 +447,140 @@ class WindowTests(Base):
         self.assertClean(self.visible(dlg))
         for word in FORBIDDEN_POSITIVE:
             self.assertNotIn(word, self.visible(dlg))
+        self.assertNothingWritten()
+
+    def confirmed_dialog(self, collector):
+        dlg = self.open(collector)
+        self.choose_all(dlg)
+        self.click(dlg, 'Ler discos')
+        self.pump(dlg)
+        self.click(dlg, 'Sim, pode ler')
+        self.pump(dlg)
+        self.click(dlg, 'Confirmo esta cópia')
+        self.assertEqual(dlg.real_copy_state['flow'].state, rcf.CONFIRMADO)
+        self.assertIn('Copiar agora', self.enabled(dlg))
+        return dlg
+
+    def test_changing_choices_discards_the_confirmation(self):
+        extra = self.root / 'source_C'
+        extra.mkdir()
+        for button in ('Adicionar origem', 'Limpar escolhas'):
+            with self.subTest(button):
+                dlg = self.confirmed_dialog(CountingCollector())
+                token = dlg.real_copy_state['flow']._authorization['token']
+                self.assertIn(token, ca._ISSUED)
+                self.answers = [str(extra)]
+                self.click(dlg, button)
+                self.assertNotIn(token, ca._ISSUED)
+                self.assertIsNone(dlg.real_copy_state['flow'])
+                self.assertNotIn('Copiar agora', self.enabled(dlg))
+                self.assertEqual(dlg.real_copy_status.get(), rcu.MSG_ESCOLHA)
+                self.assertEqual(dlg.real_copy_text(), '')
+                dlg.destroy()
+                self.tk_root.update()
+        self.assertNothingWritten()
+
+    def test_cancel_during_copy_ends_incomplete_with_report(self):
+        collector = GateCollector(block_on=(3,))
+        dlg = self.confirmed_dialog(collector)
+        flow = dlg.real_copy_state['flow']
+        self.click(dlg, 'Copiar agora')
+        self.assertTrue(collector.entered.wait(WAIT))
+        self.click(dlg, 'Cancelar')
+        self.assertEqual(dlg.real_copy_status.get(), rcu.MSG_PARANDO)
+        self.assertTrue(flow.cancel_event.is_set())
+        collector.release()
+        self.pump(dlg)
+        self.assertEqual(flow.state, rcf.INCOMPLETO)
+        self.assertEqual(dlg.real_copy_status.get(), rcf.MSG_INCOMPLETO)
+        self.assertEqual(dlg.real_copy_text(), flow.report)
+        self.assertIn('Só parte das cópias foi feita e conferida.', dlg.real_copy_text())
+        self.assertClean(self.visible(dlg))
+        self.assertNotIn('Cancelar', self.enabled(dlg))
+        self.assertNotIn('Copiar agora', self.enabled(dlg))
+        self.assertEqual(self.source_state(), self.state)
+
+    def test_cancel_during_disk_check_drops_the_preview(self):
+        collector = GateCollector(block_on=(1,))
+        dlg = self.open(collector)
+        self.choose_all(dlg)
+        self.click(dlg, 'Ler discos')
+        self.pump(dlg)
+        self.click(dlg, 'Sim, pode ler')
+        self.assertTrue(collector.entered.wait(WAIT))
+        self.click(dlg, 'Cancelar')
+        self.assertEqual(dlg.real_copy_status.get(), rcu.MSG_PARANDO)
+        collector.release()
+        self.pump(dlg)
+        self.assertIsNone(dlg.real_copy_state['flow'])
+        self.assertEqual(dlg.real_copy_status.get(), rcf.CANCELADO)
+        self.assertEqual(dlg.real_copy_text(), '')
+        for name in ('Confirmo esta cópia', 'Copiar agora', 'Cancelar'):
+            self.assertNotIn(name, self.enabled(dlg))
+        self.assertNothingWritten()
+
+    def test_cancel_while_building_the_file_list(self):
+        entered, gate = threading.Event(), threading.Event()
+        original = multi_source_plan.prepare_multi_source_preview
+
+        def slow(*args, **kwargs):
+            entered.set()
+            gate.wait(WAIT)
+            return original(*args, **kwargs)
+
+        collector = CountingCollector()
+        with patch.object(rcu, 'prepare_multi_source_preview', slow):
+            dlg = self.open(collector)
+            self.choose_all(dlg)
+            self.click(dlg, 'Ler discos')
+            self.assertTrue(entered.wait(WAIT))
+            self.assertIsNone(dlg.real_copy_state['flow'])
+            self.click(dlg, 'Cancelar')
+            self.assertEqual(dlg.real_copy_status.get(), rcu.MSG_PARANDO)
+            gate.set()
+            self.pump(dlg)
+        self.assertIsNone(dlg.real_copy_state['flow'])
+        self.assertEqual(dlg.real_copy_status.get(), rcf.CANCELADO)
+        self.assertNotIn(rcf.AVISO_CONSULTA_TEXTO, self.visible(dlg))
+        self.assertNotIn('Sim, pode ler', self.enabled(dlg))
+        self.assertEqual(collector.calls, 0)
+        self.assertNothingWritten()
+
+    def test_cancel_right_after_copy_click_says_cancelled(self):
+        collector = CountingCollector()
+        dlg = self.confirmed_dialog(collector)
+        flow = dlg.real_copy_state['flow']
+        token = flow._authorization['token']
+        gate = threading.Event()
+
+        def late_job(work):
+            # The Job only starts its work after "Cancelar" was clicked.
+            return restore_jobs.Job(lambda c, p: (gate.wait(WAIT), work(c, p))[1])
+
+        with patch.object(rcu, 'Job', late_job):
+            self.click(dlg, 'Copiar agora')
+            self.click(dlg, 'Cancelar')
+            self.assertEqual(dlg.real_copy_status.get(), rcu.MSG_PARANDO)
+            gate.set()
+            self.pump(dlg)
+        self.assertEqual(dlg.real_copy_status.get(), rcf.CANCELADO)
+        self.assertEqual(dlg.real_copy_text(), '')
+        self.assertIsNone(dlg.real_copy_state['flow'])
+        self.assertNotIn(token, ca._ISSUED)
+        self.assertEqual(collector.calls, 1)
+        self.assertNotIn('Copiar agora', self.enabled(dlg))
+        self.assertNothingWritten()
+
+    def test_refused_copy_disables_cancel_and_copy(self):
+        same = fake_inventory({'C': 0, 'A': 1, 'B': 1, 'T': 1, 'U': 3})
+        dlg = self.confirmed_dialog(CountingCollector(fake_inventory(), same))
+        self.click(dlg, 'Copiar agora')
+        self.pump(dlg)
+        self.assertEqual(dlg.real_copy_state['flow'].state, rcf.RECUSADO)
+        self.assertEqual(dlg.real_copy_status.get(), executor.REFUSED_DISKS)
+        self.assertNotIn('Cancelar', self.enabled(dlg))
+        self.assertNotIn('Copiar agora', self.enabled(dlg))
+        self.assertClean(self.visible(dlg))
         self.assertNothingWritten()
 
     def test_one_window_only(self):

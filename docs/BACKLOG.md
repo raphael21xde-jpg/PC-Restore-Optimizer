@@ -319,6 +319,10 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
   - tudo que pode esperar roda num `Job` e volta ao Tk por `WindowTimers.after` (R-10/R-11); fechar a janela cancela o `Job`, chama `flow.close()` e não deixa `after` pendente;
   - a tela mostra só `flow.message`, `preview_text()`, o relatório e textos fixos dela; nunca a mensagem original de um erro (R-07: a tela não guarda exceção nenhuma) nem caminhos (as pastas escolhidas aparecem só como quantidade e letra da unidade);
   - a tela não importa o executor nem o módulo de autorização, não tem nome de trava nem chamada de apagar (testes conferem); `app.py` ganhou só o item "Cópia protegida para outro disco" no menu (`_nav_action`, fora de `nav_buttons`), com import tardio de `real_copy_ui`; o teste antigo de guarda agora permite `real_copy_flow` só em `real_copy_ui.py`.
+  - correções da revisão da PR #106 (regra R-18): cada ação da tela ganhou teste de janela próprio: trocar as escolhas ("Adicionar origem", "Limpar escolhas") com a confirmação feita gasta o token e desliga "Copiar agora"; "Cancelar" durante a cópia mostra "Parando…" e depois o relatório (`incompleto`); durante "Sim, pode ler" descarta a prévia; durante a montagem da lista de arquivos mostra "Cancelado" e o aviso não aparece; em `recusado` e `concluido`, "Cancelar" e "Copiar agora" ficam desligados;
+  - "Cancelar" logo depois de "Copiar agora" (antes de a etapa pegar a trava): a tela guarda que a pessoa cancelou e, quando a etapa termina, mostra "Cancelado. Nada foi gravado." (o fluxo recusa a cópia sem chamar o executor);
+  - o aviso antes da leitura dos discos agora diz que a lista de arquivos das pastas escolhidas e o espaço livre dos destinos já foram lidos (só leitura), e que o aviso é sobre ler a lista de discos;
+  - **decisão pendente:** a janela não recusa rodar como administrador (R-13 cobre só restauração); arquivos copiados como admin podem ficar inacessíveis — a decidir com o Raphael na validação.
 
 ### FIX-P2-09-06 · `_reason` por exceções com tipo (ressalva da 3b-1)
 - **Status:** `pronto`.

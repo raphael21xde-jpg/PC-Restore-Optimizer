@@ -101,8 +101,9 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
     dlg.minsize(680, 460)
     timers = WindowTimers(dlg)
     dlg.real_copy_timers = timers
+    # stopping: a pessoa clicou em "Cancelar" depois que a etapa começou.
     state = {'sources': [], 'targets': [], 'flow': None, 'job': None, 'busy': False,
-             'closed': False}
+             'stopping': False}
     dlg.real_copy_state = state
 
     frame = ttk.Frame(dlg, padding=14)
@@ -183,6 +184,7 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
 
     def start(work, done, message, while_running=None):
         state['busy'] = True
+        state['stopping'] = False
         status.set(message)
         update_buttons()
         job = Job(work)
@@ -191,10 +193,28 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
         def finished(kind, value):
             state['busy'] = False
             state['job'] = None
-            done(kind, value)
+            if state['stopping']:
+                stopped()
+            else:
+                done(kind, value)
+            state['stopping'] = False
             update_buttons()
 
         wait_job(job, finished, while_running)
+
+    def stopped():
+        """A etapa terminou depois de um "Cancelar".
+
+        Montagem da lista ou leitura dos discos: nada continua (não aparece
+        aviso nem prévia). Cópia: o relatório diz como ela terminou.
+        """
+        flow = state['flow']
+        if flow is not None and flow.state in (rcf.CONCLUIDO, rcf.INCOMPLETO):
+            show_flow(MSG_CONCLUIDO)
+            return
+        forget_flow()
+        show_text('')
+        status.set(rcf.CANCELADO)
 
     def show_flow(default=None):
         flow = state['flow']
@@ -327,15 +347,18 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
         job = state['job']
         if job is not None:
             job.cancelled.set()
-        if flow is None:
-            if state['busy']:
-                status.set(MSG_PARANDO)
-            return
-        if flow.cancel() == rcf.OCUPADO:
+        if state['busy']:
+            # A etapa em andamento termina sozinha; o resultado vem depois.
+            state['stopping'] = True
+            if flow is not None:
+                flow.cancel()
             status.set(MSG_PARANDO)
+            update_buttons()
             return
+        if flow is not None:
+            flow.cancel()
         show_text('')
-        status.set(flow.message or rcf.CANCELADO)
+        status.set(rcf.CANCELADO)
         update_buttons()
 
     tools = ttk.Frame(frame)
@@ -366,7 +389,6 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
     def on_destroy(event):
         if event.widget is not dlg:
             return
-        state['closed'] = True
         if getattr(app, 'real_copy_dialog', None) is dlg:
             app.real_copy_dialog = None
         if state['job'] is not None:

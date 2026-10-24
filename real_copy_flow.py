@@ -61,9 +61,10 @@ RECUSADO = 'recusado'
 OCUPADO = 'ocupado'
 
 AVISO_CONSULTA_TEXTO = (
-    'Para montar a prévia, vou só ler a lista de discos deste computador '
-    '(e ler de novo logo antes de copiar): nada é gravado, formatado nem '
-    'apagado. Quer continuar?')
+    'Já li a lista de arquivos das pastas escolhidas e o espaço livre dos '
+    'destinos (só leitura). Agora, para montar a prévia, vou só ler a lista '
+    'de discos deste computador (e ler de novo logo antes de copiar): nada é '
+    'gravado, formatado nem apagado. Quer continuar?')
 CANCELADO = 'Cancelado. Nada foi gravado.'
 NAO_CONFIRMADO = ('A cópia não foi confirmada. Nada foi gravado. Para copiar, '
                   'confirme a prévia.')

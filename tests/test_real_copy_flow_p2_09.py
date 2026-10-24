@@ -412,6 +412,9 @@ class FlowTests(Base):
     def test_warning_text(self):
         text = rcf.AVISO_CONSULTA_TEXTO
         self.assertIn('vou só ler a lista de discos', text)
+        # Slice 3b-2: the person is told the folders were already listed.
+        self.assertIn('Já li a lista de arquivos das pastas escolhidas', text)
+        self.assertIn('espaço livre dos destinos (só leitura)', text)
         self.assertIn('nada é gravado, formatado nem apagado', text)
 
     def test_collector_is_required_keyword_only(self):
