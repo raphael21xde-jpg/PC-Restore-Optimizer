@@ -20,9 +20,30 @@ of its own:
 start. Any error becomes the state ``recusado`` with a short reason in
 plain Portuguese, never a path. Sources are only read; nothing here
 formats, erases or installs anything.
+
+Slice 3b-2 (the window runs the slow steps in a ``Job``):
+
+- ``cancel_event`` is the flow's own ``threading.Event``; ``run()`` hands it
+  to the executor. ``request_disk_check()`` clears it (a new attempt),
+  unless the window was closed;
+- a lock without waiting (``_busy``) lets only one step run at a time. A
+  second call to any step while another one is running is refused with
+  ``OCUPADO``: it reads no disk, writes nothing, changes no state and
+  uses no authorization up;
+- ``cancel()`` while a step is running only sets ``cancel_event``; the
+  final state comes from that step (a cancelled copy ends ``incompleto``).
+  When nothing is running, ``cancel()`` resets and uses the authorization
+  up, as before;
+- ``close()`` (the window closed) sets ``cancel_event`` and marks the flow
+  closed. If nothing is running it also uses the authorization up right
+  away. If the copy is running, the executor already holds the
+  authorization and has used it up before the first byte; if the disk
+  check is running there is no authorization yet, and the preview that
+  comes back is dropped. After ``close()`` every step is refused.
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import backup_core
@@ -36,6 +57,8 @@ CONFIRMADO = 'confirmado'
 CONCLUIDO = 'concluido'
 INCOMPLETO = 'incompleto'
 RECUSADO = 'recusado'
+# Not a state: the answer of a step refused because another one is running.
+OCUPADO = 'ocupado'
 
 AVISO_CONSULTA_TEXTO = (
     'Para montar a prévia, vou só ler a lista de discos deste computador '
@@ -125,6 +148,9 @@ class RealCopyFlow:
         self._usage = usage
         self._disk_collector = disk_collector
         self._authorization = None
+        self._busy = threading.Lock()
+        self._closed = False
+        self.cancel_event = threading.Event()
         self.state = INICIO
         self.message = None
         self.preview = None
@@ -142,32 +168,72 @@ class RealCopyFlow:
         self.message = reason
         return self.state
 
+    def _reset_unlocked(self):
+        self._drop_authorization()
+        self.preview = self.result = self.report = None
+        self.state = INICIO
+        self.message = None
+        return self.state
+
+    def _step(self, work):
+        """Run one step under the lock; refuse at once if another one runs."""
+        if not self._busy.acquire(blocking=False):
+            return OCUPADO
+        try:
+            if self._closed:
+                self._reset_unlocked()
+                self.message = CANCELADO
+                return self.state
+            return work()
+        finally:
+            self._busy.release()
+
+    @property
+    def busy(self):
+        """True while a step is running (read only; for the window)."""
+        return self._busy.locked()
+
     # -- steps -----------------------------------------------------------
     def request_disk_check(self):
         """Show the warning before reading the disk list (reads nothing)."""
-        self._drop_authorization()
-        self.preview = self.result = self.report = None
-        self.state = AVISO_CONSULTA
-        self.message = AVISO_CONSULTA_TEXTO
-        return self.state
+        def work():
+            self._reset_unlocked()
+            self.cancel_event.clear()
+            self.state = AVISO_CONSULTA
+            self.message = AVISO_CONSULTA_TEXTO
+            return self.state
+        return self._step(work)
 
     def confirm_disk_check(self, confirmed):
         """Only ``True`` after the warning reads the disks and builds the preview."""
-        if self.state != AVISO_CONSULTA or confirmed is not True:
-            return self.reset()
+        return self._step(lambda: self._confirm_disk_check(confirmed))
+
+    def _confirm_disk_check(self, confirmed):
+        if (self.state != AVISO_CONSULTA or confirmed is not True
+                or self.cancel_event.is_set()):
+            return self._reset_unlocked()
         try:
-            self.preview = executor.preview_real_execution(
+            preview = executor.preview_real_execution(
                 self.plan, self.target_preview, volume_lookup=self._volume_lookup,
                 usage=self._usage, disk_collector=self._disk_collector)
         except Exception as error:  # noqa: BLE001 - shown as a short reason
             self.preview = None
             return self._refuse(_reason(error))
+        if self.cancel_event.is_set() or self._closed:
+            # Cancelled while the disks were being read: drop the preview.
+            self._reset_unlocked()
+            self.message = CANCELADO
+            return self.state
+        self.preview = preview
         self.state = PREVIA
         self.message = None
         return self.state
 
     def confirm_copy(self, confirmed):
         """Turn the person's answer to the preview into an authorization."""
+        return self._step(lambda: self._confirm_copy(confirmed))
+
+    def _confirm_copy(self, confirmed):
         if self.state not in (PREVIA, CONFIRMADO):
             return self._refuse(NAO_CONFIRMADO)
         self._drop_authorization()
@@ -181,8 +247,15 @@ class RealCopyFlow:
             self.message = None
         return self.state
 
-    def run(self, cancelled=None, progress=None):
-        """Copy now (synchronous). Without a valid confirmation it refuses."""
+    def run(self, progress=None):
+        """Copy now (synchronous). Without a valid confirmation it refuses.
+
+        ``cancel_event`` is handed to the executor; setting it (``cancel()``
+        or ``close()``) stops the copy and the state becomes ``incompleto``.
+        """
+        return self._step(lambda: self._run(progress))
+
+    def _run(self, progress):
         auth, self._authorization = self._authorization, None
         if self.state != CONFIRMADO or auth is None:
             discard_authorization(auth)
@@ -191,7 +264,7 @@ class RealCopyFlow:
             result = executor.run_real_copy(
                 self.plan, self.target_preview, volume_lookup=self._volume_lookup,
                 usage=self._usage, disk_collector=self._disk_collector,
-                authorization=auth, cancelled=cancelled, progress=progress)
+                authorization=auth, cancelled=self.cancel_event, progress=progress)
         except Exception as error:  # noqa: BLE001 - shown as a short reason
             discard_authorization(auth)
             return self._refuse(_reason(error))
@@ -211,17 +284,30 @@ class RealCopyFlow:
 
     def reset(self):
         """Back to the start; any authorization is used up."""
-        self._drop_authorization()
-        self.preview = self.result = self.report = None
-        self.state = INICIO
-        self.message = None
-        return self.state
+        return self._step(self._reset_unlocked)
 
     def cancel(self):
-        """The person gave up: same as reset, with a short message."""
-        self.reset()
-        self.message = CANCELADO
-        return self.state
+        """The person gave up.
+
+        While a step is running it only sets ``cancel_event`` (``OCUPADO``);
+        otherwise it is the same as reset, with a short message.
+        """
+        self.cancel_event.set()
+        if not self._busy.acquire(blocking=False):
+            return OCUPADO
+        try:
+            self._reset_unlocked()
+            self.message = CANCELADO
+            if not self._closed:
+                self.cancel_event.clear()
+            return self.state
+        finally:
+            self._busy.release()
+
+    def close(self):
+        """The window closed: stop what is running and refuse every later step."""
+        self._closed = True
+        return self.cancel()
 
     # -- texts -----------------------------------------------------------
     def preview_text(self):
