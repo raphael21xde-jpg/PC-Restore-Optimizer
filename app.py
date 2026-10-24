@@ -272,6 +272,8 @@ class App(tk.Tk):
         self.after_format_nav = self._nav_action('✚', 'Depois de formatar', self.open_after_format)
         self.recovery_center_nav = self._nav_action('⟲', 'Central de recuperação',
                                                     self.open_recovery_center)
+        self.real_copy_nav = self._nav_action('⇉', 'Cópia protegida para outro disco',
+                                              self.open_real_copy)
         self._nav_entry('optimization', '⚡', 'Otimização')
         self._nav_heading('SISTEMA E DIAGNÓSTICO')
         self._nav_entry('diagnostic', '◫', 'Diagnóstico')
@@ -338,6 +340,15 @@ class App(tk.Tk):
     def open_after_format(self):
         """P2-11: assistente "Depois de formatar" (pede o manifest.json do backup)."""
         return show_after_format(self)
+
+    def open_real_copy(self):
+        """P2-09 (fatia 3b-2): janela "Cópia protegida para outro disco".
+
+        Import tardio: a janela só é carregada quando a pessoa a abre. Ela
+        avisa antes de ler a lista de discos e só copia depois da confirmação.
+        """
+        from real_copy_ui import show_real_copy
+        return show_real_copy(self)
 
     def navigate(self, page):
         if page in (self.inventory, self.browsers):
