@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 2 (R-14 e R-15; lista inicial de 23/10/2026, R-01 a R-13).
+poda: 3 (R-14 a R-16; lista inicial de 23/10/2026, R-01 a R-13).
 
 | Nº | Regra | Origem | Data |
 |---|---|---|---|
@@ -29,3 +29,4 @@ poda: 2 (R-14 e R-15; lista inicial de 23/10/2026, R-01 a R-13).
 | R-13 | A recusa de rodar como administrador é a **primeira** coisa de cada motor e tela de restauração: antes de perguntar pasta, ler manifesto ou criar qualquer coisa. | Revisão do P2-02 (`f2cb23d`, PRs #59 e P2-02 fatia 2) | 2026-10-21 |
 | R-14 | Texto mostrado ao usuário sai da mesma decisão da trava: se a resposta ficou negativa, o texto nunca afirma que os discos são separados (nem o título "Discos separados"), nem diz "liberado" ou "pode copiar"; negações como "nada foi considerado separado" são permitidas. | Revisão da PR #95 (P2-09 fatia 2b) e revisão da PR #97 | 2026-10-24 |
 | R-15 | Texto do backlog ou docstring que descreve uma trava ou um token diz exatamente quando ele é gasto ou recusado; se há caminho de recusa que não gasta o token, isso é dito (ou o código passa a gastar). | Revisão da PR P2-09 fatia 3a (77387dd) | 2026-10-24 |
+| R-16 | Linha de status no `docs/BACKLOG.md` não cita o nome de uma trava de segurança; o nome fica numa linha separada, para o status poder ser atualizado sem tocar a trava 3 do integrador. | Revisão do FIX-P2-09-04 (`d2d9273`, PR #100) | 2026-10-24 |
