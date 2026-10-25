@@ -54,7 +54,9 @@ class TypedRefusalTests(unittest.TestCase):
         self.assertIsInstance(error, ValueError)
         self.assertEqual(str(error), executor.ROOT_REFUSED)
         self.assertEqual(error.kind, cr.KIND_RAIZ)
-        self.assertEqual(set(cr.KINDS), {kind for kind, _, _ in CONVERTED})
+        # FIX-P2-09-08 added KIND_ADMIN (a new refusal, not a converted text).
+        self.assertEqual(set(cr.KINDS) - {cr.KIND_ADMIN},
+                         {kind for kind, _, _ in CONVERTED})
 
     def test_each_kind_gives_the_same_short_reason_as_before(self):
         for kind, message, reason in CONVERTED:

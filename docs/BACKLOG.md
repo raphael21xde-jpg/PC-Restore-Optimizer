@@ -183,7 +183,7 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 
 ---
 
-## Marco M2 — Preservação para qualquer PC  ← ATUAL (P2-09 desbloqueado em 23/10; P3-01 fatia 1 já feita)
+## Marco M2 — Preservação para qualquer PC (P2-09 desbloqueado em 23/10; P3-01 fatia 1 já feita)
 ### P2-07 · Estabilidade da interface Tk
 - Eliminar `invalid command name`, `Tcl interpreter is leaked` e os prints soltos dos testes.
 - Precisa de ambiente com Tk para conferir; os agentes na nuvem (Linux sem Tk) pulam para o próximo item testável.
@@ -322,7 +322,16 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
   - correções da revisão da PR #106 (regra R-18): cada ação da tela ganhou teste de janela próprio: trocar as escolhas ("Adicionar origem", "Limpar escolhas") com a confirmação feita gasta o token e desliga "Copiar agora"; "Cancelar" durante a cópia mostra "Parando…" e depois o relatório (`incompleto`); durante "Sim, pode ler" descarta a prévia; durante a montagem da lista de arquivos mostra "Cancelado" e o aviso não aparece; em `recusado` e `concluido`, "Cancelar" e "Copiar agora" ficam desligados;
   - "Cancelar" logo depois de "Copiar agora" (antes de a etapa pegar a trava): a tela guarda que a pessoa cancelou e, quando a etapa termina, mostra "Cancelado. Nada foi gravado." (o fluxo recusa a cópia sem chamar o executor);
   - o aviso antes da leitura dos discos agora diz que a lista de arquivos das pastas escolhidas e o espaço livre dos destinos já foram lidos (só leitura), e que o aviso é sobre ler a lista de discos;
-  - **decisão pendente:** a janela não recusa rodar como administrador (R-13 cobre só restauração); arquivos copiados como admin podem ficar inacessíveis — a decidir com o Raphael na validação.
+  - **decisão pendente:** a janela não recusa rodar como administrador (R-13 cobre só restauração); arquivos copiados como admin podem ficar inacessíveis — a decidir com o Raphael na validação. **Decidido na validação do M2: recusar (feito no FIX-P2-09-08).**
+
+### FIX-P2-09-08 · Recusar a cópia real como administrador
+- **Status:** `concluído` (branch `auto/FIX-P2-09-08-recusar-admin-copia-real`). Nenhuma linha com o nome de uma trava foi tocada; o executor não mudou.
+- Origem: validação do M2 (pedido `marco-20261024-p2-09-copia-real`, aprovado pelo Raphael), 25/10/2026. A pergunta "a janela de cópia protegida real deve recusar rodar como administrador, como já faz a restauração?" ficou com a proposta dos agentes: **sim**, porque arquivos copiados como administrador podem ficar sem acesso para o usuário normal.
+- `real_copy_flow.py`: nova função `process_elevated(probe)` (só repassa para `elevation_guard.is_process_elevated`, sem detecção nova) e novo parâmetro `elevated_probe=` do `RealCopyFlow` (padrão `None` = conferência real). `request_disk_check`, `confirm_disk_check`, `confirm_copy` e `run` conferem **antes** de qualquer outra coisa: elevado → `CopyRefusal(KIND_ADMIN, MSG_ADMIN)` → estado `recusado` com `MSG_ADMIN`, sem ler discos, sem autorizar, sem chamar o executor (`executor_called` continua `False`) e com o token gasto.
+- `copy_refusal.py`: novo `KIND_ADMIN = 'administrador'` em `KINDS`; o `_reason` acha `MSG_ADMIN` pela tabela `_BY_KIND` (não depende do texto). O teste antigo `test_fix_p2_09_06` passou a ignorar só esse `kind` novo na comparação com as mensagens convertidas.
+- `real_copy_ui.py`: com o aplicativo aberto como administrador a janela mostra o aviso `ADMIN_TEXT` (em negrito, abaixo da introdução), a linha de status diz que a cópia está desligada e "Ler discos" fica sempre desligado (e o comando não faz nada mesmo se for chamado). A janela usa `rcf.process_elevated` (não importa módulo novo) e passa o mesmo probe ao fluxo: se a tela falhar, o fluxo recusa sozinho (defesa dupla).
+- **Escolhas (opção mais segura):** a conferência roda de novo em cada etapa (não só ao abrir), para recusar mesmo que a resposta mude no meio; um probe que falha (exceção) conta como "não elevado", que é o comportamento já documentado do `elevation_guard` (a conferência é só de leitura e informativa; o Windows continua barrando o que o usuário normal não pode fazer); "Adicionar origem/destino" continuam ligados porque só escolhem pastas, sem ler nada nem gravar.
+- Testes: `tests/test_real_copy_admin_p2_09.py` — elevado recusa antes de ler discos e antes de qualquer gravação (destinos vazios, executor e prévia nunca chamados); elevado depois da prévia recusa antes de autorizar; elevado antes de copiar recusa, gasta o token e não chama o executor; não elevado → fluxo igual ao de hoje (copia e confere, probe consultado nas 4 etapas); probe com exceção → não elevado; padrão usa o guard real (trocado no teste); recusa tem `kind`; textos simples e sem caminho; janela (pula sem Tk): aviso visível e "Ler discos" desligado como administrador, sem aviso quando não é. Os testes antigos da tela e do fluxo agora passam `elevated_probe` "não elevado", para não depender de como o teste foi aberto. Nova regra R-20 em `docs/REGRAS.md`.
 
 ### FIX-P2-09-07 · Ressalvas da revisão da janela de cópia real (PR #106)
 - **Status:** `concluído` (branch `auto/FIX-P2-09-07-ressalvas-janela-copia`). Nenhuma linha com o nome de uma trava foi tocada; o executor e o `_reason` não mudaram.
@@ -421,10 +430,11 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
 ### ✅ Validação do Raphael — M2
 Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um backup real (somente leitura).
 - A issue "Validar M2" pode ser aberta já, para o que está pronto (benchmark e central). O P2-09 ganha uma validação própria no fim da fatia 3.
+- **Validado pelo Raphael no PCRO Monitor em 24/10/2026 (issue #110)**, pedido `marco-20261024-p2-09-copia-real`. A pergunta sobre rodar como administrador ficou com a proposta dos agentes (recusar): FIX-P2-09-08.
 
 ---
 
-## Marco M3 — Otimização universal (carro-chefe)
+## Marco M3 — Otimização universal (carro-chefe)  ← ATUAL
 ### P3-01 · Perfil de hardware (somente leitura) — `pronto` (fatia 1 concluída)
 - CPU, GPU, RAM (velocidade e dual channel), discos, notebook ou desktop, Windows.
 - Classificação em básico / intermediário / gamer / alto desempenho / notebook.

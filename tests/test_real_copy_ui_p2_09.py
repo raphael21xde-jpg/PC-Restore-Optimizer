@@ -389,9 +389,10 @@ class WindowTests(Base):
     def ask(self, parent, title):
         return self.answers.pop(0) if self.answers else None
 
-    def open(self, collector):
+    def open(self, collector, elevated_probe=lambda: False):
         dlg = rcu.show_real_copy(self.tk_root, collector=collector, ask_folder=self.ask,
-                                 volume_lookup=self.volume, usage=self.usage)
+                                 volume_lookup=self.volume, usage=self.usage,
+                                 elevated_probe=elevated_probe)
         self.addCleanup(self.finish, dlg)
         return dlg
 

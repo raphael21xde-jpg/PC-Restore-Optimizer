@@ -46,6 +46,15 @@ FIX-P2-09-07 (rule R-19): ``executor_called`` becomes ``True`` right before
 ``True``, a cancel text never says "nothing was written":
 ``cancel_text(flow)`` gives ``CANCELADO`` only when the flow guarantees the
 executor was not called, and ``CANCELADO_INCERTO`` otherwise.
+
+FIX-P2-09-08 (validation of M2): files copied by an elevated process could
+end up with administrator permissions, out of reach of the normal user. So
+``request_disk_check``, ``confirm_disk_check``, ``confirm_copy`` and ``run``
+first ask ``elevation_guard.is_process_elevated(probe)``; when elevated the
+step raises ``CopyRefusal(KIND_ADMIN, ...)`` and the state is ``recusado``
+with ``MSG_ADMIN`` before any disk read, authorization or write. The probe
+is injectable (``elevated_probe=``); ``None`` is the real check. A probe
+that fails counts as "not elevated" (documented behavior of the guard).
 """
 from __future__ import annotations
 
@@ -54,6 +63,7 @@ from pathlib import Path
 
 import backup_core
 import copy_refusal as refusal
+import elevation_guard
 import multi_source_executor as executor
 from copy_authorization import authorize_copy, discard_authorization
 
@@ -98,6 +108,13 @@ MSG_INCOMPLETO = ('A cópia não terminou conferida em todos os destinos: veja o
                   'relatório. Trate o backup como não verificado.')
 MSG_SEM_RELATORIO = ('A cópia foi feita e conferida (SHA-256), mas o relatório '
                      'não pôde ser montado.')
+MSG_ADMIN = ('Cópia recusada: o aplicativo está rodando como administrador. '
+             'Assim os arquivos copiados ficariam com permissões de '
+             'administrador e seu usuário normal poderia não conseguir abrir '
+             'ou alterar esses arquivos. Feche o aplicativo e abra de novo '
+             'como usuário normal: abra pelo atalho normal, sem usar '
+             "'Executar como administrador'. Nada foi copiado nem gravado no "
+             'destino.')
 MSG_INESPERADO = ('Aconteceu um erro inesperado. Trate a cópia como não '
                   'verificada e faça a prévia de novo.')
 
@@ -120,6 +137,7 @@ _BY_KIND = {
     refusal.KIND_LINK: MSG_LINK,
     refusal.KIND_SOBREPOR: MSG_SOBREPOR,
     refusal.KIND_MUDOU: MSG_MUDOU,
+    refusal.KIND_ADMIN: MSG_ADMIN,
 }
 _SOBREPOR = ('não pode se sobrepor', 'pode se sobrepor à origem')
 _MUDOU = ('mudou', 'mudaram', 'divergente', 'alterad', 'modificad',
@@ -158,6 +176,15 @@ def _reason(error):
     return MSG_PREVIA
 
 
+def process_elevated(probe=None):
+    """True only when the process is confirmed elevated (read only).
+
+    Thin wrapper over ``elevation_guard.is_process_elevated`` so the window
+    uses the very same check as the flow. A failing probe gives False.
+    """
+    return elevation_guard.is_process_elevated(probe)
+
+
 def cancel_text(flow):
     """Text after a cancel (pure; no Tk, reads no disk).
 
@@ -179,8 +206,9 @@ class RealCopyFlow:
     """Steps of the real copy screen, in memory, with no window."""
 
     def __init__(self, plan, target_preview, *, volume_lookup, usage,
-                 disk_collector):
+                 disk_collector, elevated_probe=None):
         self.plan = plan
+        self._elevated_probe = elevated_probe
         self.target_preview = target_preview
         self._volume_lookup = volume_lookup
         self._usage = usage
@@ -207,6 +235,20 @@ class RealCopyFlow:
         self.state = RECUSADO
         self.message = reason
         return self.state
+
+    def _require_not_elevated(self):
+        """Raise a typed refusal when the process runs as administrator."""
+        if process_elevated(self._elevated_probe):
+            raise refusal.CopyRefusal(refusal.KIND_ADMIN, MSG_ADMIN)
+
+    def _guarded(self, work):
+        """Refuse before ``work`` (no disk read, no write) when elevated."""
+        try:
+            self._require_not_elevated()
+        except refusal.CopyRefusal as error:
+            self.preview = None
+            return self._refuse(_reason(error))
+        return work()
 
     def _reset_unlocked(self):
         self._drop_authorization()
@@ -242,11 +284,12 @@ class RealCopyFlow:
             self.state = AVISO_CONSULTA
             self.message = AVISO_CONSULTA_TEXTO
             return self.state
-        return self._step(work)
+        return self._step(lambda: self._guarded(work))
 
     def confirm_disk_check(self, confirmed):
         """Only ``True`` after the warning reads the disks and builds the preview."""
-        return self._step(lambda: self._confirm_disk_check(confirmed))
+        return self._step(lambda: self._guarded(
+            lambda: self._confirm_disk_check(confirmed)))
 
     def _confirm_disk_check(self, confirmed):
         if (self.state != AVISO_CONSULTA or confirmed is not True
@@ -271,7 +314,8 @@ class RealCopyFlow:
 
     def confirm_copy(self, confirmed):
         """Turn the person's answer to the preview into an authorization."""
-        return self._step(lambda: self._confirm_copy(confirmed))
+        return self._step(lambda: self._guarded(
+            lambda: self._confirm_copy(confirmed)))
 
     def _confirm_copy(self, confirmed):
         if self.state not in (PREVIA, CONFIRMADO):
@@ -293,7 +337,7 @@ class RealCopyFlow:
         ``cancel_event`` is handed to the executor; setting it (``cancel()``
         or ``close()``) stops the copy and the state becomes ``incompleto``.
         """
-        return self._step(lambda: self._run(progress))
+        return self._step(lambda: self._guarded(lambda: self._run(progress)))
 
     def _run(self, progress):
         auth, self._authorization = self._authorization, None

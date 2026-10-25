@@ -17,6 +17,10 @@ rodando e invalida a confirmação. A tela mostra só os textos do fluxo
 (mensagem, prévia e relatório) e os textos fixos daqui: nunca a mensagem
 original de um erro nem caminhos (podem ter o nome de usuário).
 A origem só é lida; nada aqui formata, apaga ou instala.
+
+FIX-P2-09-08: aberta como administrador, a janela mostra o aviso
+(``ADMIN_TEXT``) e deixa "Ler discos" desligado. O RealCopyFlow também
+recusa sozinho (defesa dupla), mesmo que a tela falhe.
 """
 from __future__ import annotations
 
@@ -55,6 +59,13 @@ MSG_COPIANDO = 'Copiando e conferindo… Você pode cancelar a qualquer momento.
 MSG_PARANDO = 'Parando… aguarde.'
 MSG_CONCLUIDO = 'Cópia feita e conferida (SHA-256) em todos os destinos.'
 MSG_OCUPADO = 'Aguarde: uma etapa ainda está em andamento.'
+ADMIN_TEXT = ('O aplicativo está aberto como administrador, por isso a cópia está '
+              'desligada: os arquivos copiados poderiam ficar sem acesso para o seu '
+              'usuário normal. Nada foi lido dos discos nem gravado no destino. '
+              'Feche e abra de novo pelo atalho normal, sem usar "Executar como '
+              'administrador".')
+MSG_ADMIN_DESLIGADO = ('A cópia está desligada porque o aplicativo está aberto como '
+                       'administrador (veja o aviso acima).')
 
 BUTTONS = ('Adicionar origem', 'Adicionar destino', 'Limpar escolhas', 'Ler discos',
            'Sim, pode ler', 'Não', 'Confirmo esta cópia', 'Copiar agora', 'Cancelar')
@@ -72,12 +83,14 @@ def _drives(paths):
 
 
 def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
-                   usage=None):
+                   usage=None, elevated_probe=None):
     """Abre a janela (uma por vez).
 
     collector() -> inventário dos discos (padrão: diagnostics.disk_inventory);
     só o RealCopyFlow o chama, e só depois de confirm_disk_check(True).
     ask_folder(janela, título) -> caminho escolhido ou None.
+    elevated_probe() -> True se o aplicativo roda como administrador
+    (padrão: a conferência real, só leitura).
     """
     previous = getattr(app, 'real_copy_dialog', None)
     if previous is not None:
@@ -93,6 +106,7 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
     choose = ask_folder or _ask_folder
     lookup = volume_lookup or volume_of
     space = usage or shutil.disk_usage
+    elevated = rcf.process_elevated(elevated_probe)
 
     dlg = tk.Toplevel(app)
     app.real_copy_dialog = dlg
@@ -103,19 +117,23 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
     dlg.real_copy_timers = timers
     # stopping: a pessoa clicou em "Cancelar" depois que a etapa começou.
     state = {'sources': [], 'targets': [], 'flow': None, 'job': None, 'busy': False,
-             'stopping': False}
+             'stopping': False, 'elevated': elevated}
     dlg.real_copy_state = state
 
     frame = ttk.Frame(dlg, padding=14)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text=TITLE, font=('Segoe UI', 12, 'bold')).pack(anchor='w')
     ttk.Label(frame, wraplength=850, text=INTRO_TEXT).pack(anchor='w', pady=(4, 8))
+    if elevated:
+        ttk.Label(frame, wraplength=850, text=ADMIN_TEXT, justify='left',
+                  font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 6))
 
     choices = tk.StringVar(master=dlg, value='')
     dlg.real_copy_choices = choices
     ttk.Label(frame, textvariable=choices, wraplength=850,
               justify='left').pack(fill='x', pady=(0, 4))
-    status = tk.StringVar(master=dlg, value=MSG_ESCOLHA)
+    idle_text = MSG_ADMIN_DESLIGADO if elevated else MSG_ESCOLHA
+    status = tk.StringVar(master=dlg, value=idle_text)
     dlg.real_copy_status = status
     ttk.Label(frame, textvariable=status, wraplength=850, justify='left',
               font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(0, 6))
@@ -154,7 +172,7 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
             'Adicionar origem': not busy,
             'Adicionar destino': not busy,
             'Limpar escolhas': not busy,
-            'Ler discos': (not busy and bool(state['sources'])
+            'Ler discos': (not busy and not state['elevated'] and bool(state['sources'])
                            and bool(state['targets'])),
             'Sim, pode ler': not busy and current == rcf.AVISO_CONSULTA,
             'Não': not busy and current == rcf.AVISO_CONSULTA,
@@ -244,7 +262,7 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
             state[kind].append(chosen)
         forget_flow()
         show_text('')
-        status.set(MSG_ESCOLHA)
+        status.set(idle_text)
         update_choices()
         update_buttons()
 
@@ -255,13 +273,14 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
         state['targets'].clear()
         forget_flow()
         show_text('')
-        status.set(MSG_ESCOLHA)
+        status.set(idle_text)
         update_choices()
         update_buttons()
 
     # -- etapas -----------------------------------------------------------
     def read_disks():
-        if state['busy'] or not state['sources'] or not state['targets']:
+        if (state['busy'] or state['elevated'] or not state['sources']
+                or not state['targets']):
             return
         forget_flow()
         show_text('')
@@ -284,7 +303,8 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
                 return
             plan, preview = value
             flow = rcf.RealCopyFlow(plan, preview, volume_lookup=lookup, usage=space,
-                                    disk_collector=disk_collector)
+                                    disk_collector=disk_collector,
+                                    elevated_probe=elevated_probe)
             state['flow'] = flow
             flow.request_disk_check()
             show_flow()
