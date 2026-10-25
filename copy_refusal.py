@@ -19,9 +19,11 @@ KIND_RAIZ = 'raiz'             # source or destination is a drive root
 KIND_LINK = 'link'             # a link or junction in the path
 KIND_SOBREPOR = 'sobrepor'     # destination inside the source or vice versa
 KIND_MUDOU = 'mudou'           # something changed since the preview
+# FIX-P2-09-08: the app is running as administrator (copy screen only).
+KIND_ADMIN = 'administrador'
 
 KINDS = (KIND_CONFIRM, KIND_DISKS, KIND_UNIDADE, KIND_RAIZ, KIND_LINK,
-         KIND_SOBREPOR, KIND_MUDOU)
+         KIND_SOBREPOR, KIND_MUDOU, KIND_ADMIN)
 
 
 class CopyRefusal(ValueError):

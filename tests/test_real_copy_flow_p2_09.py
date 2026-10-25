@@ -125,9 +125,13 @@ class Base(unittest.TestCase):
                     FAKE_SERIAL, FAKE_MODEL, 'Ficticio'):
             self.assertNotIn(bad, text)
 
-    def flow(self, collector=None, preview=None, plan=None):
+    def flow(self, collector=None, preview=None, plan=None,
+             elevated_probe=lambda: False):
+        # FIX-P2-09-08: not elevated by default, so the tests do not depend
+        # on how the test runner itself was opened.
         return rcf.RealCopyFlow(plan or self.plan, preview or self.preview(),
-                                **self.kwargs(collector))
+                                **self.kwargs(collector),
+                                elevated_probe=elevated_probe)
 
 
 class RealExecutorTests(Base):
