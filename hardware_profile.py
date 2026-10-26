@@ -11,6 +11,9 @@ Limites fixos (escolha mais segura, documentada em docs/BACKLOG.md):
 - intermediário: 4 núcleos ou mais + 8 GiB ou mais;
 - básico: o resto.
 Sem CPU ou RAM legível a classe é "indefinido"; notebook vem antes da potência.
+
+Fatia 2: discos (Get-PhysicalDisk), gabinete e bateria (notebook x desktop) e
+dual channel confirmado só quando o Windows diz o canal ("Channel A/B").
 """
 from __future__ import annotations
 
@@ -33,6 +36,40 @@ _BASIC_ADAPTER = re.compile(r'basic (display|render)', re.I)
 _DEDICATED = re.compile(r'geforce|\brtx\b|\bgtx\b|quadro|radeon\s*(\(tm\)\s*)?(rx|pro)\b'
                         r'|\barc\s*(\(tm\)\s*)?[ab]\d{2,3}', re.I)
 _INTEGRATED = re.compile(r'uhd|\bhd graphics|iris|vega|radeon\s*(\(tm\)\s*)?graphics', re.I)
+_CHANNEL = re.compile(r'channel\s*[-_]?\s*([a-h])(?![a-z])', re.I)
+
+SCAN_CONFIRMATION = (
+    'O app vai ler informações deste PC: processador, memória RAM, placa de vídeo, '
+    'discos (tipo e tamanho), gabinete e bateria (para saber se é notebook ou PC de mesa) '
+    'e a versão do Windows.\n\n'
+    'É só leitura: nada é alterado, apagado ou instalado. Pode levar alguns segundos.\n\n'
+    'Deseja continuar?'
+)
+
+NOTEBOOK_CHASSIS = frozenset({8, 9, 10, 14, 30, 31, 32})
+DESKTOP_CHASSIS = frozenset({3, 4, 5, 6, 7, 15, 16, 35, 36})
+
+DISK_NVME = 'NVMe'
+DISK_SSD = 'SSD'
+DISK_HDD = 'HDD'
+DISK_EXTERNAL = 'externo/virtual'
+DISK_TYPE_LABELS = {
+    DISK_NVME: 'NVMe (SSD rápido)',
+    DISK_SSD: 'SSD',
+    DISK_HDD: 'HD (disco mecânico)',
+    DISK_EXTERNAL: 'externo ou virtual',
+    UNKNOWN: 'tipo não identificado',
+}
+# Get-PhysicalDisk: BusType numérico -> nome curto; só estes nomes saem no perfil.
+_BUS_NAMES = {1: 'SCSI', 3: 'ATA', 7: 'USB', 8: 'RAID', 10: 'SAS', 11: 'SATA', 12: 'SD',
+              15: 'virtual', 16: 'Spaces', 17: 'NVMe'}
+_BUS_TEXT = {'scsi': 'SCSI', 'ata': 'ATA', 'usb': 'USB', 'raid': 'RAID', 'sas': 'SAS',
+             'sata': 'SATA', 'sd': 'SD', 'file backed virtual': 'virtual',
+             'storage spaces': 'Spaces', 'spaces': 'Spaces', 'nvme': 'NVMe'}
+_EXTERNAL_BUSES = frozenset({'USB', 'virtual', 'Spaces'})
+_MEDIA_NUMBERS = {3: DISK_HDD, 4: DISK_SSD}
+_MEDIA_TEXT = {'hdd': DISK_HDD, 'ssd': DISK_SSD}
+
 _PATHLIKE = re.compile(r'[a-z]:[\\/]|\\\\|[\\/](users|home)[\\/]|\\', re.I)
 
 
@@ -97,6 +134,34 @@ def _gpus(hardware):
     return gpus
 
 
+def _channel(entry):
+    """Letra do canal só quando DeviceLocator/BankLabel diz "Channel X"; senão None."""
+    for key in ('DeviceLocator', 'BankLabel'):
+        value = entry.get(key)
+        if isinstance(value, str):
+            found = _CHANNEL.search(value)
+            if found:
+                return found.group(1).upper()
+    return None
+
+
+def _dual_channel(entries):
+    """Texto do dual channel; "sim (confirmado)" só com prova explícita de 2 canais."""
+    entries = _items(entries)
+    capacities = [_num(item.get('Capacity')) for item in entries]
+    valid = [c for c in capacities if c]
+    if not entries or len(valid) != len(entries):
+        return UNKNOWN
+    if len(valid) == 1:
+        return 'não (1 módulo)'
+    if len(set(valid)) != 1:
+        return 'não confirmado (módulos de tamanhos diferentes)'
+    channels = [_channel(item) for item in entries]
+    if all(channels) and len(set(channels)) >= 2:
+        return 'sim (confirmado)'
+    return 'provável (não confirmado)'
+
+
 def _ram(hardware):
     entries = _items(hardware.get('ram'))
     capacities = [_num(item.get('Capacity')) for item in entries]
@@ -105,24 +170,98 @@ def _ram(hardware):
     if total is not None and total == int(total):
         total = int(total)
     speeds = [int(s) for s in (_num(item.get('ConfiguredClockSpeed')) for item in entries) if s]
-    if not entries or len(valid) != len(entries):
-        dual = UNKNOWN
-    elif len(valid) == 1:
-        dual = 'não (1 módulo)'
-    elif len(set(valid)) == 1:
-        dual = 'provável (não confirmado)'
-    else:
-        dual = 'não confirmado (módulos de tamanhos diferentes)'
     return {'total_gib': total, 'modules': len(valid) if total is not None else None,
-            'configured_mts': min(speeds) if speeds else None, 'dual_channel': dual}
+            'configured_mts': min(speeds) if speeds else None, 'dual_channel': _dual_channel(entries)}
+
+
+def _code(value):
+    """Código inteiro (enum do Windows); bool, NaN, frações e negativos viram None."""
+    number = _num(value)
+    if number is None or number != int(number):
+        return None
+    return int(number)
+
+
+def _bus(value):
+    code = _code(value)
+    if code is not None:
+        return _BUS_NAMES.get(code)
+    if isinstance(value, str):
+        return _BUS_TEXT.get(' '.join(value.split()).lower())
+    return None
+
+
+def _media(value):
+    code = _code(value)
+    if code is not None:
+        return _MEDIA_NUMBERS.get(code)
+    if isinstance(value, str):
+        return _MEDIA_TEXT.get(value.strip().lower())
+    return None
+
+
+def _disks(hardware):
+    """Discos físicos (linhas de Get-PhysicalDisk) -> [{type, bus, size_gib}].
+
+    Só tipo, barramento e tamanho saem daqui: número de série e nome do disco nunca.
+    """
+    if not isinstance(hardware, dict):
+        return []
+    disks = []
+    for item in _items(hardware.get('disks')):
+        bus = _bus(item.get('BusType'))
+        media = _media(item.get('MediaType'))
+        if bus in _EXTERNAL_BUSES:
+            kind = DISK_EXTERNAL
+        elif bus == 'NVMe':
+            kind = DISK_NVME
+        elif media:
+            kind = media
+        else:
+            kind = UNKNOWN
+        size = _num(item.get('Size'))
+        size_gib = round(size / GIB, 1) if size else None
+        if not size_gib:  # menos de 0,05 GiB: dado sem sentido
+            size_gib = None
+        if size_gib is not None and size_gib == int(size_gib):
+            size_gib = int(size_gib)
+        disks.append({'type': kind, 'bus': bus, 'size_gib': size_gib})
+    return disks
+
+
+def _chassis_types(hardware):
+    """Códigos de gabinete (Win32_SystemEnclosure.ChassisTypes) válidos."""
+    codes = []
+    for item in _items(hardware.get('chassis')):
+        value = item.get('ChassisTypes')
+        values = value if isinstance(value, list) else [value]
+        codes.extend(c for c in (_code(v) for v in values) if c is not None)
+    return codes
+
+
+def _battery(hardware):
+    """True = tem bateria, False = o Windows não listou bateria, None = não sei."""
+    if 'battery' not in hardware:
+        return None
+    value = hardware.get('battery')
+    if value is None or value == []:
+        return False
+    if isinstance(value, dict):
+        return True
+    if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+        return True
+    return None
 
 
 def _form_factor(hardware):
     entries = _items(hardware.get('pc'))
-    kind = _num(entries[0].get('PCSystemType')) if entries else None
-    if kind == 2:
+    kind = _code(entries[0].get('PCSystemType')) if entries else None
+    chassis = _chassis_types(hardware)
+    battery = _battery(hardware)
+    if kind == 2 or any(c in NOTEBOOK_CHASSIS for c in chassis) or battery is True:
         return 'notebook'
-    if kind in (1, 3):
+    if (kind in (1, 3) and chassis and all(c in DESKTOP_CHASSIS for c in chassis)
+            and battery is False):
         return 'desktop'
     return UNKNOWN
 
@@ -176,6 +315,7 @@ def build_profile(hardware):
         'ram': _ram(hardware),
         'form_factor': _form_factor(hardware),
         'windows': _windows(hardware),
+        'disks': _disks(hardware),
     }
     unknown = []
     if profile['cpu']['cores'] is None:
@@ -188,6 +328,8 @@ def build_profile(hardware):
         unknown.append('form_factor')
     if profile['windows']['caption'] is None:
         unknown.append('windows')
+    if not profile['disks']:
+        unknown.append('disks')
     profile['unknown'] = unknown
     profile['tier'], profile['reasons'] = classify(profile)
     return profile
@@ -221,6 +363,16 @@ def profile_lines(profile):
     lines.extend([
         f"  Memória RAM: {_show(ram.get('total_gib'), ' GiB')} | velocidade configurada "
         f"{_show(ram.get('configured_mts'), ' MT/s')} | dual channel: {_show(ram.get('dual_channel'))}",
+    ])
+    disks = profile.get('disks') if isinstance(profile.get('disks'), list) else []
+    if disks:
+        for disk in disks:
+            disk = disk if isinstance(disk, dict) else {}
+            kind = DISK_TYPE_LABELS.get(disk.get('type'), DISK_TYPE_LABELS[UNKNOWN])
+            lines.append(f"  Disco: {kind} | {_show(disk.get('size_gib'), ' GiB')}")
+    else:
+        lines.append('  Discos: não disponível')
+    lines.extend([
         f'  Tipo de PC: {form}',
         f"  Windows: {_show(win.get('caption'))}" + (f" (versão {win['version']})" if win.get('version') else ''),
         f'  Classe: {TIER_LABELS[tier]}',
