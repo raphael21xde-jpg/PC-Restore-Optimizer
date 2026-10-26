@@ -435,7 +435,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 ---
 
 ## Marco M3 — Otimização universal (carro-chefe)  ← ATUAL
-### P3-01 · Perfil de hardware (somente leitura) — `pronto` (fatia 1 concluída)
+### P3-01 · Perfil de hardware (somente leitura) — `concluído` (fatias 1 e 2)
 - CPU, GPU, RAM (velocidade e dual channel), discos, notebook ou desktop, Windows.
 - Classificação em básico / intermediário / gamer / alto desempenho / notebook.
 - Testes com dados simulados.
@@ -444,7 +444,13 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - GPU dedicada pelo nome: GeForce, RTX, GTX, Quadro, Radeon RX/Pro e Arc A/B contam; "Microsoft Basic Display Adapter", UHD/HD Graphics, Iris, Vega, "Radeon Graphics" e nome vazio não; nome desconhecido = não identificado.
   - Dual channel nunca é "confirmado" nesta fatia: 2 ou mais módulos de mesma capacidade = "provável (não confirmado)"; 1 módulo = "não (1 módulo)"; tamanhos diferentes = "não confirmado".
   - Privacidade: o perfil não guarda número de série, nome do PC, usuário nem caminhos (textos com cara de caminho são descartados); placa-mãe e BIOS ficam fora. Entrada malformada (lista/dicionário, texto, None, negativos, bool, NaN) vira "desconhecido", nunca erro. Nada de BIOS.
-- **Fatia 2 — `pronto`**: discos (SSD/HDD/NVMe, reaproveitando `diagnostics.disk_inventory`), chassi (Win32_SystemEnclosure/bateria, só leitura) e dual channel confirmado (DeviceLocator/BankLabel). Antes de qualquer consulta real, pedir confirmação.
+- **Fatia 2 — `concluído`** (branch `auto/P3-01-perfil-hardware-fatia2`): discos (NVMe/SSD/HDD/externo ou virtual/desconhecido), gabinete e bateria (notebook x desktop) e dual channel confirmado (DeviceLocator/BankLabel). "Analisar este PC" agora pede confirmação antes de qualquer consulta. Testes: `tests/test_hardware_profile_p3_01_fatia2.py`.
+  - Escolhas de design (26/10/2026, as mais seguras):
+    - **não** reaproveitar `diagnostics.disk_inventory` (roda mais comandos e lê número de série); em vez disso, uma consulta só de leitura `Get-PhysicalDisk | Select-Object MediaType,BusType,Size`; novas consultas `Win32_SystemEnclosure` (só `ChassisTypes`) e `Win32_Battery` (só `BatteryStatus`); a consulta da RAM passa a trazer `DeviceLocator` e `BankLabel`; fora do Windows continua sem nenhum comando;
+    - discos: barramento USB (7), virtual (15) ou Spaces (16) = "externo/virtual" (vem antes de tudo); NVMe (17 ou "NVMe") = NVMe; MediaType 4/"SSD" = SSD; 3/"HDD" = HDD; qualquer outro (0, SCM, vazio, valor estranho) = "desconhecido", nunca SSD; o perfil guarda só `type`, `bus` (nome curto de uma lista fixa) e `size_gib`; tamanho abaixo de 0,05 GiB = não disponível; sem discos, `disks` entra em `unknown`;
+    - notebook: PCSystemType 2, **ou** gabinete 8/9/10/14/30/31/32, **ou** bateria presente (um nobreak listado como bateria também vira notebook: erra para o lado mais cuidadoso); desktop exige as três provas: PCSystemType 1 ou 3, **todos** os gabinetes em 3/4/5/6/7/15/16/35/36 e o Windows não listar nenhuma bateria (consulta respondida vazia); se a consulta de bateria falhou ou veio estranha, "desconhecido"; por isso um PC com só o PCSystemType 1 deixou de ser "desktop" (o teste da fatia 1 que só roda no Windows ganhou gabinete e bateria simulados);
+    - dual channel "sim (confirmado)" só com 2+ módulos do mesmo tamanho **e** todos com "Channel X"/"ChannelX" em DeviceLocator ou BankLabel, em pelo menos 2 canais diferentes; "BANK 0/1", "DIMM 1/2", canal repetido (A/A) ou algum módulo sem canal = "provável (não confirmado)"; os rótulos nunca entram no perfil;
+    - confirmação: `hardware_profile.SCAN_CONFIRMATION` (texto fixo) num `messagebox.askyesno`; "Não" não roda nada e só avisa "Análise cancelada. Nada foi lido nem alterado."
 ### P3-03 · Registro de alterações e "desfazer tudo" — `pronto`
 - Diário de cada alteração, desfazer individual e desfazer tudo, ponto de restauração antes de cada lote (simulado nos testes).
 - Nenhum ajuste passa por fora do diário.

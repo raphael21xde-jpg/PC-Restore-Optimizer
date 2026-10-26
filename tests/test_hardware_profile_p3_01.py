@@ -208,6 +208,11 @@ class EngineIntegrationTests(unittest.TestCase):
         import optimization_engine as oe
         hardware = FIXTURES['gamer'][0]
         def fake_ps(code, timeout=22):
+            # Fatia 2: "desktop" agora exige gabinete de mesa e nenhuma bateria.
+            if 'Win32_SystemEnclosure' in code:
+                return {'ChassisTypes': [3]}
+            if 'Win32_Battery' in code or 'Get-PhysicalDisk' in code:
+                return None
             for key, cim in (('cpu', 'Win32_Processor'), ('gpu', 'Win32_VideoController'),
                              ('ram', 'Win32_PhysicalMemory'), ('os', 'Win32_OperatingSystem'),
                              ('pc', 'Win32_ComputerSystem')):

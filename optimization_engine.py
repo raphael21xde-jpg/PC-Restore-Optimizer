@@ -95,11 +95,15 @@ def inspect_pc():
     queries = {
         'cpu': 'Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | ConvertTo-Json -Depth 3',
         'gpu': 'Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | ConvertTo-Json -Depth 3',
-        'ram': 'Get-CimInstance Win32_PhysicalMemory | Select-Object Capacity,Speed,ConfiguredClockSpeed,Manufacturer | ConvertTo-Json -Depth 3',
+        'ram': 'Get-CimInstance Win32_PhysicalMemory | Select-Object Capacity,Speed,ConfiguredClockSpeed,Manufacturer,DeviceLocator,BankLabel | ConvertTo-Json -Depth 3',
         'board': 'Get-CimInstance Win32_BaseBoard | Select-Object Manufacturer,Product | ConvertTo-Json -Depth 3',
         'bios': 'Get-CimInstance Win32_BIOS | Select-Object Manufacturer,SMBIOSBIOSVersion,ReleaseDate | ConvertTo-Json -Depth 3',
         'os': 'Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber | ConvertTo-Json -Depth 3',
         'pc': 'Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,PCSystemType | ConvertTo-Json -Depth 3',
+        # P3-01 fatia 2: só leitura; nada de número de série nem nome do disco.
+        'chassis': 'Get-CimInstance Win32_SystemEnclosure | Select-Object ChassisTypes | ConvertTo-Json -Depth 3',
+        'battery': 'Get-CimInstance Win32_Battery | Select-Object BatteryStatus | ConvertTo-Json -Depth 3',
+        'disks': 'Get-PhysicalDisk | Select-Object MediaType,BusType,Size | ConvertTo-Json -Depth 3',
     }
     for key, code in queries.items():
         try:
