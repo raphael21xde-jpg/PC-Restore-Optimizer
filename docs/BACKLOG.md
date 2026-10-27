@@ -454,6 +454,10 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 ### P3-03 · Registro de alterações e "desfazer tudo" — `pronto`
 - Diário de cada alteração, desfazer individual e desfazer tudo, ponto de restauração antes de cada lote (simulado nos testes).
 - Nenhum ajuste passa por fora do diário.
+- **Fatia 1 — `concluído`** (branch `auto/P3-03-diario-alteracoes`): novo `change_journal.py` (sem Tk, sem comandos) com o diário (`pcro-journal-1`, gravação atômica), aplicar lote com ponto de restauração antes (função injetável), desfazer um item, desfazer tudo em ordem inversa e recuperação de alteração interrompida. Testes: `tests/test_change_journal_p3_03.py`.
+  - Escolhas de design (27/10/2026, as mais seguras): sem ponto de restauração o lote é recusado; desfazer só se o valor atual for o que o app gravou (nunca sobrescreve mudança feita por outro programa); "desfazer tudo" para na primeira falha; pendência ou estado desconhecido bloqueia novos lotes; diário ilegível, de schema errado ou que seja link bloqueia tudo; só valores simples, sem caminhos; entradas nunca são apagadas.
+  - Detalhes do desenvolvedor: o adaptador recebe a chave (`read(key)`, `apply(key, valor)`, `revert(key, valor)`), porque um mesmo tipo pode ter vários ajustes; a chave é um nome simples (letras, números, `_ . -`), nunca um caminho; a comparação é estrita (`True` não é igual a `1`); se desfazer um item do lote com falha não se confirmar, ele vira "desconhecido" e bloqueia novos lotes; `recover_interrupted` só lê, nunca aplica nem desfaz.
+- **Fatia 2 — `pronto`**: tela "Alterações feitas" + "Desfazer tudo" na aba de otimização; plano de energia atual passa pelo diário.
 ### P3-06 · BIOS: só orientação — `pronto` (depois de P3-01)
 - Verifica XMP/EXPO, Resizable BAR e versão da BIOS, só lendo.
 - Mostra o passo a passo por fabricante. **Nunca altera.**
