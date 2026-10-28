@@ -115,6 +115,11 @@ MSG_ADMIN = ('Cópia recusada: o aplicativo está rodando como administrador. '
              'como usuário normal: abra pelo atalho normal, sem usar '
              "'Executar como administrador'. Nada foi copiado nem gravado no "
              'destino.')
+# FIX-P2-09-09 (R-19): used when the executor already ran in this flow, so the
+# refusal cannot claim that nothing was copied.
+MSG_ADMIN_INCERTO = (MSG_ADMIN.split(' Nada foi')[0]
+                     + ' A cópia anterior pode ter ficado incompleta: '
+                     'trate-a como não verificada.')
 MSG_INESPERADO = ('Aconteceu um erro inesperado. Trate a cópia como não '
                   'verificada e faça a prévia de novo.')
 
@@ -247,6 +252,9 @@ class RealCopyFlow:
             self._require_not_elevated()
         except refusal.CopyRefusal as error:
             self.preview = None
+            if self.executor_called:
+                # FIX-P2-09-09 (R-19): something may already have been written.
+                return self._refuse(MSG_ADMIN_INCERTO)
             return self._refuse(_reason(error))
         return work()
 
