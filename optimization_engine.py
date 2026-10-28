@@ -16,6 +16,7 @@ import tempfile
 from datetime import datetime, timezone
 
 from hardware_profile import build_profile
+from elevation_guard import is_process_elevated
 
 GUID_PATTERN = re.compile(r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b')
 BALANCED_GUID = '381b4222-f694-41f0-9685-ff5bb260df2e'
@@ -226,6 +227,127 @@ def revert_power_plan(journal_path: Path):
     record['reverted_at'] = datetime.now(timezone.utc).isoformat()
     _atomic_json(path, record)
     return previous
+
+
+# ---------- P3-03 fatia 2a: plano de energia pelo diário de alterações ----------
+
+POWER_KIND = 'power_plan'
+POWER_KEY = 'active_scheme'
+# Texto FIXO: nada vindo do usuário entra no comando do PowerShell.
+RESTORE_POINT_DESCRIPTION = 'PC Restore Optimizer - antes de ajustes'
+_GUID_FULL = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+
+
+class PowerPlanAdapter:
+    """Adaptador do diário (``change_journal``) para o plano de energia ativo.
+
+    ``read`` só lê; ``apply``/``revert`` só rodam ``powercfg /setactive`` com um
+    GUID que esteja na lista atual do Windows. Tudo é injetável para os testes:
+    ``run(comando)``, ``active()`` e ``plans()``. Sem injeção, as funções do
+    módulo são procuradas na hora da chamada.
+    """
+
+    kind = POWER_KIND
+    label = 'Plano de energia'
+
+    def __init__(self, run=None, active=None, plans=None):
+        self._run_fn = run
+        self._active_fn = active
+        self._plans_fn = plans
+
+    def _check_key(self, key):
+        if key != POWER_KEY:
+            raise OptimizationError('Ajuste de energia desconhecido; nada alterado.')
+
+    def available(self):
+        return (self._plans_fn or available_power_plans)()
+
+    def read(self, key):
+        self._check_key(key)
+        return str((self._active_fn or active_power_guid)()).lower()
+
+    def _set(self, key, value):
+        self._check_key(key)
+        guid = value.lower() if isinstance(value, str) else ''
+        if not _GUID_FULL.match(guid):
+            raise OptimizationError('Plano de energia inválido; nada alterado.')
+        if guid not in {str(p.get('guid', '')).lower() for p in self.available()}:
+            raise OptimizationError('Plano não consta da lista atual do Windows; nada alterado.')
+        (self._run_fn or _run)(['powercfg', '/setactive', guid])
+
+    def apply(self, key, value):
+        self._set(key, value)
+
+    def revert(self, key, value):
+        self._set(key, value)
+
+
+_SEQUENCE_QUERY = ('$p = @(Get-ComputerRestorePoint); '
+                   'if ($p.Count -gt 0) { ($p | Measure-Object -Property SequenceNumber -Maximum).Maximum '
+                   '| ConvertTo-Json } else { 0 | ConvertTo-Json }')
+_CHECKPOINT = (f"Checkpoint-Computer -Description '{RESTORE_POINT_DESCRIPTION}' "
+               "-RestorePointType 'MODIFY_SETTINGS'")
+
+
+def _sequence(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and (value != value or value in (float('inf'), float('-inf'))
+                                     or not value.is_integer()):
+        return None
+    return int(value)
+
+
+def create_restore_point(_description=None, *, run=None, elevated=None):
+    """Cria um ponto de restauração e só devolve True se ele foi CONFIRMADO.
+
+    Lê o maior número de sequência, roda ``Checkpoint-Computer`` com a descrição
+    fixa e lê de novo: só é True se o número aumentou. Sem administrador devolve
+    False sem rodar nada. Nunca liga a Proteção do sistema. Atenção: o Windows não
+    cria um ponto novo se já criou um nas últimas 24 horas; nesse caso o número não
+    sobe e a resposta é False (o lote é recusado). A descrição recebida do diário
+    é ignorada de propósito.
+    """
+    try:
+        if not (elevated or is_process_elevated)():
+            return False
+        runner = run or _ps
+        before = _sequence(runner(_SEQUENCE_QUERY, timeout=60))
+        if before is None:
+            return False
+        runner(_CHECKPOINT, timeout=300)
+        after = _sequence(runner(_SEQUENCE_QUERY, timeout=60))
+        return after is not None and after > before
+    except Exception:  # comando, PowerShell ou permissão: não confirmado
+        return False
+
+
+def legacy_power_pending(journal_path) -> str:
+    """Lê (sem gravar) o registro antigo ``pcro-power-1``.
+
+    Devolve ``'none'`` (não existe ou já foi desfeito), ``'applied'`` (troca antiga
+    ainda aplicada), ``'pending'`` (interrompida ou com falha) ou ``'unreadable'``
+    (ilegível, outro formato, atalho ou pasta).
+    """
+    path = Path(journal_path)
+    if os.path.islink(path):
+        return 'unreadable'
+    if not path.exists():
+        return 'none'
+    try:
+        record = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return 'unreadable'
+    if not isinstance(record, dict) or record.get('schema') != 'pcro-power-1':
+        return 'unreadable'
+    status = record.get('status')
+    if status == 'reverted':
+        return 'none'
+    if status == 'applied':
+        return 'applied'
+    if status in ('prepared', 'failed'):
+        return 'pending'
+    return 'unreadable'
 
 
 def export_snapshot(report: dict, filename: Path):

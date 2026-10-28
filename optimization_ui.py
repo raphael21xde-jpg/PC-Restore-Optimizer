@@ -16,8 +16,13 @@ from datetime import datetime, timezone
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from optimization_engine import (inspect_pc, available_power_plans, active_power_guid,
-                                 safe_change_power_plan, revert_power_plan, export_snapshot,
-                                 OptimizationError)
+                                 revert_power_plan, export_snapshot,
+                                 OptimizationError, PowerPlanAdapter, create_restore_point,
+                                 legacy_power_pending, POWER_KIND, POWER_KEY)
+from change_journal import ChangeJournal, JournalError, BatchRefused
+from elevation_guard import is_process_elevated
+from restore_jobs import Job
+from ui_timers import WindowTimers
 from hardware_profile import profile_lines, SCAN_CONFIRMATION
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
@@ -25,6 +30,40 @@ from stutter_deep import study_csv, study_text
 from optimization_monitor import (KEYS, LABELS, read_afterburner_log, find_afterburner_logs,
                                   poll_nvidia, combine, summarized, new_session, append_sample,
                                   finish_session, session_comparison)
+
+# ---------- P3-03 fatia 2a: textos da troca de plano (sem caminhos, R-07) ----------
+POWER_ADMIN_TEXT = (
+    'Para trocar o plano de energia, o app cria antes um ponto de restauração do Windows, '
+    'e isso só funciona com o app aberto como administrador. O app nunca pede isso sozinho. '
+    'Se quiser trocar o plano: feche o app, clique com o botão direito no atalho dele e '
+    'escolha "Executar como administrador". Depois, para fazer backup ou restaurar, abra o '
+    'app de novo do jeito normal. Desfazer uma troca funciona sem administrador.')
+POWER_RESTORE_POINT_HELP = (
+    'Possíveis motivos: a Proteção do sistema está desligada no disco do Windows, ou o '
+    'Windows já criou um ponto de restauração nas últimas 24 horas (ele não cria outro '
+    'antes disso). O app não liga a Proteção do sistema sozinho.')
+POWER_LEGACY_TEXT = (
+    'Existe uma troca de plano feita por uma versão antiga do app. Por segurança, novas '
+    'trocas ficam bloqueadas até ela ser desfeita. Use "Desfazer alteração antiga".')
+POWER_LEGACY_PENDING_TEXT = (
+    'A troca de plano feita por uma versão antiga do app ficou interrompida, e o app não '
+    'sabe com certeza qual plano ficou ativo. Confira o plano de energia nas Configurações '
+    'do Windows. Por segurança, o app não troca mais o plano sozinho.')
+POWER_LEGACY_UNREADABLE_TEXT = (
+    'O registro de uma troca de plano feita por uma versão antiga do app não pôde ser lido. '
+    'Confira o plano de energia nas Configurações do Windows. Por segurança, o app não troca '
+    'mais o plano sozinho.')
+POWER_JOURNAL_OFF_TEXT = 'Por segurança, as trocas de plano e o Desfazer ficam desligados.'
+POWER_GENERIC_FAIL = ('O Windows não confirmou a operação. Confira o plano de energia nas '
+                      'Configurações do Windows.')
+_LEGACY_KNOWN_MESSAGES = {
+    'Nenhuma alteração anterior registrada neste aplicativo.',
+    'Registro de reversão está ilegível.',
+    'Não há ajuste aplicado para reverter.',
+    'Plano original não existe mais. Nenhuma alteração feita.',
+    'O plano foi alterado por outro programa. Não sobrescrevi a escolha atual.',
+    'Windows não confirmou a reversão. Verifique o plano ativo.',
+}
 
 BG='#0C1220'; PANEL='#192438'; TEXT='#EFF4FF'; MUTED='#9CAAC0'; ACCENT='#9C85FF';
 GREEN='#5DDEB1'; AMBER='#F3BE67'; BORDER='#2B3952'
@@ -77,13 +116,31 @@ def build_presentmon_args(executable, process, output_file, seconds, session_nam
 
 
 class OptimizationPanel(tk.Frame):
-    def __init__(self, master, app_dir):
+    def __init__(self, master, app_dir, *, state_dir=None, power_adapter=None,
+                 restore_point=None, elevated_probe=None, ask=None, show=None):
         super().__init__(master, bg=BG)
         self.app_dir=Path(app_dir)
-        self.state_dir = (Path(os.environ['LOCALAPPDATA']) / 'PC-Restore-Optimizer'
-                          if os.name == 'nt' and os.environ.get('LOCALAPPDATA')
-                          else self.app_dir)
+        if state_dir is not None:
+            self.state_dir = Path(state_dir)
+        else:
+            self.state_dir = (Path(os.environ['LOCALAPPDATA']) / 'PC-Restore-Optimizer'
+                              if os.name == 'nt' and os.environ.get('LOCALAPPDATA')
+                              else self.app_dir)
         self.power_journal=self.state_dir/'otimizacao-energia-reversao.json'
+        # P3-03 fatia 2a: toda troca de plano passa pelo diário de alterações.
+        self.change_journal_path=self.state_dir/'otimizacao-diario.json'
+        self.power_adapter=power_adapter or PowerPlanAdapter()
+        self._restore_point=restore_point or create_restore_point
+        self._elevated_probe=elevated_probe
+        self._ask=ask or (lambda title, text: messagebox.askyesno(title, text))
+        self._show=show or self._messagebox
+        self._timers=WindowTimers(self)
+        self.power_busy=False
+        self._power_job=None
+        self.journal=None
+        self.journal_error=''
+        self.legacy_state='none'
+        self._load_change_journal()
         self.bench_journal=self.state_dir/'otimizacao-benchmarks.json'
         self.monitor_dir=self.state_dir/'sessoes-monitoramento'
         self.afterburner_config=self.state_dir/'afterburner-fonte.json'
@@ -750,10 +807,19 @@ class OptimizationPanel(tk.Frame):
         self.btn_apply.pack(side='left',padx=(0,9))
         self.btn_revert=ttk.Button(buttons,text='Desfazer minha última mudança',command=self.revert_plan)
         self.btn_revert.pack(side='left')
+        # Só aparece quando existe uma troca feita por uma versão antiga do app.
+        self.btn_legacy=ttk.Button(buttons,text='Desfazer alteração antiga',command=self.undo_legacy_plan)
+        self.power_status=tk.StringVar(value='')
+        tk.Label(area,textvariable=self.power_status,bg=BG,fg=AMBER,anchor='w',justify='left',
+                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
         self.power_text=self._text_area(area)
-        self._write(self.power_text,'Nenhum plano consultado. Clique em Atualizar.\n'
-                    'Ao aplicar: é gravado o plano anterior para possibilitar desfazer.\n'
-                    'Se um programa externo mudar o plano depois, a reversão automática será bloqueada.')
+        intro=['Nenhum plano consultado. Clique em Atualizar.',
+               'Ao aplicar: o app cria antes um ponto de restauração do Windows e anota a troca no diário de alterações.',
+               'Se um programa externo mudar o plano depois, o Desfazer não sobrescreve a escolha dele.']
+        if self.journal_error:
+            intro=[self.journal_error,POWER_JOURNAL_OFF_TEXT]
+        self._write(self.power_text,'\n'.join(intro))
+        self._update_power_buttons()
 
     def _build_benchmarks(self,parent):
         area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
@@ -876,10 +942,11 @@ class OptimizationPanel(tk.Frame):
 
     def load_plans(self):
         try:
-            plans=available_power_plans()
-            active=active_power_guid()
+            plans=self.power_adapter.available()
+            active=self.power_adapter.read(POWER_KEY)
         except Exception as exc:
-            self._write(self.power_text,str(exc))
+            # R-07: nunca a mensagem crua do Windows (pode ter nome de usuário).
+            self._write(self.power_text,'Não foi possível ler os planos de energia do Windows. Nada foi alterado.')
             return
         self.plans=plans
         self.plan_box['values']=[p['name']+' | '+p['guid']+('  [ATUAL]' if p['guid']==active else '') for p in plans]
@@ -894,32 +961,255 @@ class OptimizationPanel(tk.Frame):
         self._write(self.power_text,'\n'.join(text))
         self.note.set('Planos de energia consultados; nada foi alterado.')
 
+    # ---------- P3-03 fatia 2a: troca de plano pelo diário ----------
+    @staticmethod
+    def _messagebox(kind, title, text):
+        {'info':messagebox.showinfo,'warning':messagebox.showwarning,
+         'error':messagebox.showerror}.get(kind,messagebox.showinfo)(title,text)
+
+    def _load_change_journal(self):
+        """Só lê arquivos: abrir o painel nunca roda comando nenhum."""
+        try:
+            self.journal=ChangeJournal(self.change_journal_path,{POWER_KIND:self.power_adapter},
+                                       self._restore_point)
+            self.journal_error=''
+        except JournalError as exc:
+            self.journal=None
+            self.journal_error=str(exc)
+        self.legacy_state=legacy_power_pending(self.power_journal)
+
+    def _is_elevated(self):
+        return is_process_elevated(self._elevated_probe)
+
+    def _last_applied_power(self):
+        if self.journal is None:
+            return None
+        applied=[e for e in self.journal.entries() if e['kind']==POWER_KIND and e['status']=='applied']
+        return applied[-1]['id'] if applied else None
+
+    def _update_power_buttons(self):
+        if not hasattr(self,'btn_apply'):
+            return
+        busy=self.power_busy
+        usable=self.journal is not None and not self.journal_error
+        legacy=self.legacy_state!='none'
+        can_apply=usable and not busy and not legacy
+        can_revert=usable and not busy and self._last_applied_power() is not None
+        self.btn_apply.state(['!disabled'] if can_apply else ['disabled'])
+        self.btn_revert.state(['!disabled'] if can_revert else ['disabled'])
+        if legacy:
+            if not self.btn_legacy.winfo_manager():
+                self.btn_legacy.pack(side='left',padx=(9,0))
+            self.btn_legacy.state(['disabled'] if busy else ['!disabled'])
+        elif self.btn_legacy.winfo_manager():
+            self.btn_legacy.pack_forget()
+        if self.journal_error:
+            self.power_status.set(self.journal_error+' '+POWER_JOURNAL_OFF_TEXT)
+        elif legacy:
+            self.power_status.set(POWER_LEGACY_TEXT)
+
+    def _journal_failed(self,message):
+        self.journal=None
+        self.journal_error=message
+        self._update_power_buttons()
+        self._show('error','Diário de alterações',message+' '+POWER_JOURNAL_OFF_TEXT)
+
+    def _run_power_job(self,work,done):
+        self.power_busy=True
+        self._update_power_buttons()
+        job=Job(lambda cancelled,progress:work())
+        self._power_job=job
+        def poll():
+            result=job.poll()
+            if result is None:
+                self._timers.after(80,poll)
+                return
+            self.power_busy=False
+            kind,value=result
+            if kind!='done':
+                value={'status':'error'}
+            done(value)
+            self._update_power_buttons()
+        self._timers.after(10,poll)
+
+    def _render_plans(self,plans,active):
+        self.plans=plans
+        self.plan_box['values']=[p['name']+' | '+p['guid']+('  [ATUAL]' if p['guid']==active else '') for p in plans]
+        idx=next((i for i,p in enumerate(plans) if p['guid']==active),0)
+        if plans:
+            self.plan_box.current(idx)
+        text=['PLANOS DO WINDOWS — LEITURA','']
+        for p in plans:
+            text.append(('● ' if p['guid']==active else '  ')+p['name']+' | '+p['guid'])
+        self._write(self.power_text,'\n'.join(text))
+
+    def _read_plans_work(self):
+        try:
+            return {'plans':self.power_adapter.available(),'active':self.power_adapter.read(POWER_KEY)}
+        except Exception:
+            return {'plans':None,'active':None}
+
     def apply_plan(self):
+        if self.power_busy:
+            return
+        if self.journal is None or self.journal_error:
+            self._show('error','Plano de energia',(self.journal_error or 'O diário de alterações não está disponível.')
+                       +' '+POWER_JOURNAL_OFF_TEXT)
+            return
+        if self.legacy_state!='none':
+            self._show('warning','Plano de energia',POWER_LEGACY_TEXT)
+            return
         if not self.plans or self.plan_box.current()<0:
-            messagebox.showinfo('Energia','Clique em Atualizar primeiro.');return
+            self._show('info','Energia','Clique em Atualizar primeiro.');return
         target=self.plans[self.plan_box.current()]
-        if not messagebox.askyesno('Confirmar alteração reversível',
+        if not self._is_elevated():
+            # O app nunca pede elevação: só explica e não roda nada.
+            self.power_status.set(POWER_ADMIN_TEXT)
+            self._show('warning','Plano de energia',POWER_ADMIN_TEXT)
+            return
+        if not self._ask('Confirmar alteração reversível',
                 'Deseja selecionar o plano “'+target['name']+'” no Windows?\n\n'
                 'Pode alterar temperatura, consumo e autonomia. Sem ganho de FPS garantido.\n'
-                'O app salvará o plano anterior em AppData e oferecerá Desfazer.\n\n'
+                'Antes, o app cria um ponto de restauração do Windows e anota a troca no diário de alterações, '
+                'para você poder desfazer.\n\n'
                 'Esta é uma alteração real do sistema, não apenas um teste.'):
             return
-        try:
-            result=safe_change_power_plan(target['guid'],self.power_journal)
-            self.load_plans()
-            self.note.set('Plano alterado e registrado para reversão.' if result['changed'] else 'Este plano já estava ativo.')
-        except Exception as exc:
-            messagebox.showerror('Plano de energia',str(exc))
+        guid=target['guid']
+        journal=self.journal
+        def work():
+            try:
+                if journal.has_blocking():
+                    journal.recover_interrupted()
+                try:
+                    if self.power_adapter.read(POWER_KEY)==guid:
+                        outcome={'status':'unchanged'}
+                        outcome.update(self._read_plans_work())
+                        return outcome
+                except Exception:
+                    pass
+                self.state_dir.mkdir(parents=True,exist_ok=True)
+                journal.apply_batch([{'kind':POWER_KIND,'key':POWER_KEY,'after':guid}])
+                outcome={'status':'applied'}
+            except BatchRefused as exc:
+                outcome={'status':'refused','message':str(exc)}
+            except JournalError as exc:
+                outcome={'status':'journal','message':str(exc)}
+            except Exception:
+                outcome={'status':'error'}
+            outcome.update(self._read_plans_work())
+            return outcome
+        self.power_status.set('Criando o ponto de restauração e trocando o plano… Isto pode demorar um pouco.')
+        self._run_power_job(work,self._apply_done)
+
+    def _after_power_job(self,outcome):
+        if outcome.get('plans'):
+            self._render_plans(outcome['plans'],outcome.get('active'))
+
+    def _apply_done(self,outcome):
+        self._after_power_job(outcome)
+        status=outcome.get('status')
+        if status=='applied':
+            self.power_status.set('Plano trocado e anotado no diário de alterações. Use Desfazer para voltar.')
+            self.note.set('Plano alterado e registrado para reversão.')
+        elif status=='unchanged':
+            self.power_status.set('Este plano já estava ativo. Nada foi alterado.')
+            self.note.set('Este plano já estava ativo.')
+        elif status=='journal':
+            self.power_status.set('')
+            self._journal_failed(outcome.get('message',''))
+        elif status=='refused':
+            message=outcome.get('message','')
+            if 'ponto de restauração' in message:
+                message+=' '+POWER_RESTORE_POINT_HELP
+            self.power_status.set(message)
+            self._show('warning','Plano de energia',message)
+        else:
+            self.power_status.set(POWER_GENERIC_FAIL)
+            self._show('error','Plano de energia',POWER_GENERIC_FAIL)
 
     def revert_plan(self):
-        if not messagebox.askyesno('Reverter plano','Restaurar o plano de energia que estava ativo antes da alteração feita por este app?'):
+        if self.power_busy:
             return
-        try:
-            revert_power_plan(self.power_journal)
-            self.load_plans()
+        if self.journal is None or self.journal_error:
+            self._show('error','Reverter energia',(self.journal_error or 'O diário de alterações não está disponível.')
+                       +' '+POWER_JOURNAL_OFF_TEXT)
+            return
+        change_id=self._last_applied_power()
+        if change_id is None:
+            self._show('info','Reverter energia','Não há troca de plano feita pelo app para desfazer.')
+            return
+        if not self._ask('Reverter plano','Restaurar o plano de energia que estava ativo antes da última troca feita por este app?'):
+            return
+        journal=self.journal
+        def work():
+            try:
+                ok,reason=journal.undo(change_id)
+                outcome={'status':'reverted' if ok else 'refused','message':reason}
+            except JournalError as exc:
+                outcome={'status':'journal','message':str(exc)}
+            except Exception:
+                outcome={'status':'error'}
+            outcome.update(self._read_plans_work())
+            return outcome
+        self.power_status.set('Desfazendo a última troca de plano…')
+        self._run_power_job(work,self._revert_done)
+
+    def _revert_done(self,outcome):
+        self._after_power_job(outcome)
+        status=outcome.get('status')
+        if status=='reverted':
+            self.power_status.set('Plano de energia anterior restaurado.')
             self.note.set('Plano de energia anterior restaurado.')
-        except Exception as exc:
-            messagebox.showerror('Reverter energia',str(exc))
+        elif status=='journal':
+            self.power_status.set('')
+            self._journal_failed(outcome.get('message',''))
+        elif status=='refused':
+            message=outcome.get('message') or POWER_GENERIC_FAIL
+            self.power_status.set(message)
+            self._show('warning','Reverter energia',message)
+        else:
+            self.power_status.set(POWER_GENERIC_FAIL)
+            self._show('error','Reverter energia',POWER_GENERIC_FAIL)
+
+    def undo_legacy_plan(self):
+        """Desfaz a troca feita pela versão antiga (``pcro-power-1``).
+
+        O arquivo antigo nunca é apagado nem convertido; só ``revert_power_plan``
+        o atualiza, e só quando a troca antiga ainda está aplicada.
+        """
+        if self.power_busy:
+            return
+        self.legacy_state=legacy_power_pending(self.power_journal)
+        if self.legacy_state=='none':
+            self._update_power_buttons()
+            self.power_status.set('Não há troca antiga para desfazer.')
+            return
+        if self.legacy_state=='pending':
+            self._show('warning','Desfazer alteração antiga',POWER_LEGACY_PENDING_TEXT)
+            return
+        if self.legacy_state=='unreadable':
+            self._show('warning','Desfazer alteração antiga',POWER_LEGACY_UNREADABLE_TEXT)
+            return
+        if not self._ask('Desfazer alteração antiga','Restaurar o plano de energia que estava ativo antes da troca feita pela versão antiga do app?'):
+            return
+        path=self.power_journal
+        def work():
+            try:
+                revert_power_plan(path)
+                outcome={'status':'reverted'}
+            except OptimizationError as exc:
+                text=str(exc)
+                outcome={'status':'refused','message':text if text in _LEGACY_KNOWN_MESSAGES else POWER_GENERIC_FAIL}
+            except Exception:
+                outcome={'status':'error'}
+            outcome.update(self._read_plans_work())
+            return outcome
+        self.power_status.set('Desfazendo a troca antiga…')
+        self._run_power_job(work,self._legacy_done)
+
+    def _legacy_done(self,outcome):
+        self.legacy_state=legacy_power_pending(self.power_journal)
+        self._revert_done(outcome)
 
     def import_csv(self):
         scenario=' '.join(self.scenario.get().strip().split())
