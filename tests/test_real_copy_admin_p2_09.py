@@ -116,12 +116,36 @@ class AdminFlowTests(Base):
         with patch.object(executor, 'run_real_copy') as run:
             self.assertAdminRefused(flow, flow.run())
         run.assert_not_called()
+        # FIX-P2-09-09: the executor never ran, so "nothing copied" holds.
+        self.assertEqual(flow.message, rcf.MSG_ADMIN)
+        self.assertFalse(flow.executor_called)
         self.assertNotIn(token, ca._ISSUED)
         self.assertEqual(collector.calls, 1)
         self.assertNothingWritten()
         # Destination folders stay empty; a missing one is never created.
         self.assertEqual(list(self.folders['target_T'].iterdir()), [])
         self.assertFalse((self.root / 'nao_existe').exists())
+
+    def test_elevated_after_executor_ran_does_not_claim_nothing_copied(self):
+        # FIX-P2-09-09 (R-19): after a real copy already ran, the admin
+        # refusal must not say that nothing was copied.
+        self.allow_temp_target()
+        probe = Switch(False)
+        flow = self.flow(CountingCollector(), elevated_probe=probe)
+        flow.request_disk_check()
+        flow.confirm_disk_check(True)
+        flow.confirm_copy(True)
+        self.assertEqual(flow.run(), rcf.CONCLUIDO)
+        self.assertTrue(flow.executor_called)
+        probe.value = True
+        with patch.object(executor, 'run_real_copy') as run:
+            self.assertEqual(flow.run(), rcf.RECUSADO)
+        run.assert_not_called()
+        self.assertEqual(flow.state, rcf.RECUSADO)
+        self.assertEqual(flow.message, rcf.MSG_ADMIN_INCERTO)
+        self.assertNotIn('Nada foi', flow.message)
+        self.assertIsNone(flow._authorization)
+        self.assertTrue(flow.executor_called)
 
     def test_not_elevated_flow_is_unchanged(self):
         self.allow_temp_target()
@@ -177,6 +201,19 @@ class AdminFlowTests(Base):
         self.assertIn('administrador', text)
         self.assertIn("sem usar 'Executar como administrador'", text)
         self.assertIn('Nada foi copiado nem gravado no destino.', text)
+        for word in FORBIDDEN_POSITIVE + ('elevat', 'UAC', 'IsUserAnAdmin'):
+            self.assertNotIn(word, text)
+
+    def test_uncertain_message_is_plain_and_safe(self):
+        # FIX-P2-09-09: same start as MSG_ADMIN, never claims "Nada foi".
+        text = rcf.MSG_ADMIN_INCERTO
+        self.assertClean(text)
+        self.assertNotIn(os.path.expanduser('~'), text)
+        self.assertNotIn('Nada foi', text)
+        self.assertTrue(text.endswith('A cópia anterior pode ter ficado '
+                                      'incompleta: trate-a como não verificada.'))
+        start = rcf.MSG_ADMIN.split(' Nada foi')[0]
+        self.assertTrue(text.startswith(start))
         for word in FORBIDDEN_POSITIVE + ('elevat', 'UAC', 'IsUserAnAdmin'):
             self.assertNotIn(word, text)
 
@@ -261,6 +298,17 @@ class AdminWindowTests(Base):
         self.tk_root.update()
         self.assertIsNone(dlg.real_copy_state['flow'])
         self.assertFalse(dlg.real_copy_state['busy'])
+        self.assertEqual(collector.calls, 0)
+        self.assertNothingWritten()
+
+    def test_elevated_clear_choices_keeps_disabled_status(self):
+        # FIX-P2-09-09 (R-18): "Limpar escolhas" keeps the admin status.
+        collector = CountingCollector()
+        dlg = self.open(collector, admin)
+        self.choose_all(dlg)
+        self.click(dlg, 'Limpar escolhas')
+        self.assertEqual(dlg.real_copy_status.get(), rcu.MSG_ADMIN_DESLIGADO)
+        self.assertNotIn('Ler discos', self.enabled(dlg))
         self.assertEqual(collector.calls, 0)
         self.assertNothingWritten()
 
