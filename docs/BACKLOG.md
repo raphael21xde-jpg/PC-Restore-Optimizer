@@ -326,7 +326,7 @@ Quando P2-01 a P2-11 estiverem `concluído`, os agentes abrem a issue **"Validar
   - **decisão pendente:** a janela não recusa rodar como administrador (R-13 cobre só restauração); arquivos copiados como admin podem ficar inacessíveis — a decidir com o Raphael na validação. **Decidido na validação do M2: recusar (feito no FIX-P2-09-08).**
 
 ### FIX-P2-09-09 · Ressalvas da revisão da recusa como administrador (PR #111)
-- **Status:** `concluído` (branch `auto/FIX-P2-09-09-ressalvas-admin-copia-real`, issue #112). O executor não mudou; nenhuma linha com o nome de uma trava foi tocada.
+- **Status:** `concluído` (PR #117, branch `auto/FIX-P2-09-09-ressalvas-admin-copia-real`, issue #112). O executor não mudou; nenhuma linha com o nome de uma trava foi tocada.
 - Problema (regra R-19): se o aplicativo passasse a rodar como administrador depois de uma cópia real já feita no mesmo fluxo, a recusa mostrava `MSG_ADMIN`, que termina com "Nada foi copiado nem gravado no destino.", o que podia ser falso.
 - `real_copy_flow.py`: nova constante `MSG_ADMIN_INCERTO` (mesmo começo de `MSG_ADMIN`, terminando com "A cópia anterior pode ter ficado incompleta: trate-a como não verificada."; sem "Nada foi"). Em `_guarded`, com `executor_called` `True` a recusa usa `MSG_ADMIN_INCERTO`; com `False`, nada muda (continua `MSG_ADMIN`). O tipo da recusa (`KIND_ADMIN`) e a ordem das conferências não mudaram.
 - **Escolhas de design (opção mais segura):** `MSG_ADMIN_INCERTO` é montada a partir de `MSG_ADMIN` (corta antes de " Nada foi"), para as duas nunca divergirem no começo; a escolha do texto fica só em `_guarded` (a tabela `_BY_KIND` continua com `MSG_ADMIN`); `elevation_guard` e a ordem prévia/janela não mudaram.
