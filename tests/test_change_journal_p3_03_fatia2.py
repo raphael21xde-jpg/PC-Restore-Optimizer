@@ -53,6 +53,7 @@ class FakePowercfg:
         self.plan_list = [{'guid': g, 'name': n, 'active': False} for g, n in plans]
         self.calls = []
         self.ignore_set = False
+        self.active_error = None
 
     def plans(self):
         self.calls.append(('list',))
@@ -60,6 +61,8 @@ class FakePowercfg:
 
     def active(self):
         self.calls.append(('get',))
+        if self.active_error is not None:
+            raise self.active_error
         return self.current
 
     def run(self, command, timeout=18):
@@ -278,9 +281,6 @@ class PowerPanelTests(SafetyNet):
         self.restore_ok = {'value': True}
         self.messages = []
         self.answers = []
-        patcher = mock.patch.object(oe, 'safe_change_power_plan', side_effect=_forbidden)
-        self.safe_change = patcher.start()
-        self.addCleanup(patcher.stop)
 
     def restore_point(self, description):
         self.restore_calls.append(description)
@@ -354,7 +354,8 @@ class PowerPanelTests(SafetyNet):
         self.assertEqual((entries[0]['kind'], entries[0]['key'], entries[0]['status'],
                           entries[0]['before'], entries[0]['after']),
                          (oe.POWER_KIND, oe.POWER_KEY, 'applied', A, B))
-        self.safe_change.assert_not_called()
+        # A tela nem importa mais a troca antiga (fora do diário).
+        self.assertFalse(hasattr(ou, 'safe_change_power_plan'))
         self.assertTrue(panel.btn_revert.instate(['!disabled']))
         self.assertIn('diário de alterações', panel.power_status.get())
         self.assertFalse(self.legacy_file().exists())
@@ -508,6 +509,139 @@ class PowerPanelTests(SafetyNet):
         self.assertTrue(panel.btn_apply.instate(['!disabled']))
         self.assertFalse(self.journal_file.exists())
         self.assertEqual(self.restore_calls, [])
+
+    # ---------- revisão R-18: casos que faltavam ----------
+    def write_prepared(self, before=A, after=B):
+        entry = {'id': '1', 'batch': '1', 'kind': oe.POWER_KIND, 'key': oe.POWER_KEY,
+                 'before': before, 'after': after, 'status': 'prepared',
+                 'created': '2026-10-28T00:00:00+00:00', 'updated': '2026-10-28T00:00:00+00:00'}
+        self.journal_file.write_text(json.dumps({'schema': cj.SCHEMA, 'entries': [entry]}),
+                                     encoding='utf-8')
+
+    def test_interrupted_item_back_to_before_is_recovered_and_batch_goes_on(self):
+        self.write_prepared(before=A, after=B)
+        panel = self.panel()
+        self.root.update()
+        self.assertEqual(self.fake.calls, [])  # abrir não confere nada
+        with mock.patch.object(panel.journal, 'recover_interrupted',
+                               wraps=panel.journal.recover_interrupted) as recover, \
+                mock.patch.object(panel.journal, 'undo', side_effect=_forbidden), \
+                mock.patch.object(panel.journal, 'undo_all', side_effect=_forbidden):
+            self.apply(panel, C)
+        recover.assert_called_once_with()
+        self.assertEqual([e['status'] for e in self.entries()], ['reverted', 'applied'])
+        self.assertEqual(self.fake.current, C)
+        self.assertEqual(self.fake.setactive(), [('powercfg', '/setactive', C)])
+        self.assertEqual(len(self.restore_calls), 1)
+
+    def test_interrupted_item_with_unknown_plan_refuses_change(self):
+        self.write_prepared(before=A, after=B)
+        self.fake.current = C  # nem o valor de antes, nem o de depois
+        panel = self.panel()
+        self.choose(panel, B)
+        with mock.patch.object(panel.journal, 'recover_interrupted',
+                               wraps=panel.journal.recover_interrupted) as recover:
+            panel.btn_apply.invoke()
+            self.wait_idle(panel)
+        recover.assert_called_once_with()
+        self.assertEqual([e['status'] for e in self.entries()], ['unknown'])
+        self.assertEqual(self.fake.setactive(), [])
+        self.assertEqual(self.fake.current, C)
+        self.assertEqual(self.restore_calls, [])
+        kind, _title, text = self.messages[-1]
+        self.assertEqual(kind, 'warning')
+        self.assertIn('interrompida ou sem confirmação', text)
+
+    def test_legacy_pending_or_failed_shows_check_text_and_runs_nothing(self):
+        for status in ('prepared', 'failed'):
+            with self.subTest(status=status):
+                raw = json.dumps({'schema': 'pcro-power-1', 'status': status,
+                                  'previous': A, 'requested': B}).encode('utf-8')
+                self.legacy_file().write_bytes(raw)
+                self.fake.calls.clear()
+                self.messages.clear()
+                with mock.patch.object(ou, 'revert_power_plan', side_effect=_forbidden) as old:
+                    panel = self.panel()
+                    self.root.update()
+                    self.assertEqual(panel.legacy_state, 'pending')
+                    self.assertTrue(panel.btn_apply.instate(['disabled']))
+                    self.assertEqual(panel.btn_legacy.winfo_manager(), 'pack')
+                    panel.btn_legacy.invoke()
+                    self.wait_idle(panel)
+                old.assert_not_called()
+                self.assertEqual(self.messages[-1][2], ou.POWER_LEGACY_PENDING_TEXT)
+                self.assertEqual(self.fake.calls, [])
+                self.assertEqual(self.answers, [])
+                self.assertEqual(self.legacy_file().read_bytes(), raw)
+                self.assertTrue(panel.btn_apply.instate(['disabled']))
+                self.assertFalse(self.journal_file.exists())
+                panel.destroy()
+
+    def power_text(self, panel):
+        return panel.power_text.get('1.0', 'end')
+
+    def test_plan_list_failure_with_user_path_shows_fixed_text(self):
+        secret = 'C:\\Users\\Fulano\\AppData\\powercfg.log'
+        for broken in ('plans', 'active'):
+            with self.subTest(broken=broken):
+                fake = FakePowercfg()
+
+                def fail(*args, **kwargs):
+                    raise oe.OptimizationError('Falha na consulta Windows: ' + secret)
+                setattr(fake, broken, fail)
+                self.fake = fake
+                panel = self.panel()
+                panel.load_plans()
+                text = self.power_text(panel)
+                self.assertIn('Não foi possível ler os planos de energia do Windows.', text)
+                self.assertNotIn('Fulano', text)
+                self.assertNotIn('Fulano', panel.power_status.get())
+                self.assertNotIn('Fulano', panel.note.get())
+                self.assertEqual(fake.setactive(), [])
+                panel.destroy()
+
+    def test_read_failure_with_user_path_during_apply_hides_path(self):
+        panel = self.panel()
+        self.choose(panel, B)
+        self.fake.active_error = oe.OptimizationError('Acesso negado em C:\\Users\\Fulano\\x')
+        panel.btn_apply.invoke()
+        self.wait_idle(panel)
+        self.assertEqual(self.fake.setactive(), [])
+        shown = ' '.join(m[2] for m in self.messages) + panel.power_status.get() + self.power_text(panel)
+        self.assertNotIn('Fulano', shown)
+
+    def test_unexpected_error_shows_generic_text(self):
+        panel = self.panel()
+        self.choose(panel, B)
+        with mock.patch.object(panel.journal, 'apply_batch',
+                               side_effect=RuntimeError('C:\\Users\\Fulano\\erro cru')):
+            panel.btn_apply.invoke()
+            self.wait_idle(panel)
+        self.assertEqual(self.messages[-1], ('error', 'Plano de energia', ou.POWER_GENERIC_FAIL))
+        self.assertEqual(panel.power_status.get(), ou.POWER_GENERIC_FAIL)
+        self.assertNotIn('Fulano', ' '.join(m[2] for m in self.messages))
+        self.assertTrue(panel.btn_apply.instate(['!disabled']))  # diário continua usável
+
+    def test_legacy_messages_are_filtered(self):
+        raw = json.dumps({'schema': 'pcro-power-1', 'status': 'applied',
+                          'previous': A, 'requested': B}).encode('utf-8')
+        known = 'O plano foi alterado por outro programa. Não sobrescrevi a escolha atual.'
+        self.assertIn(known, ou._LEGACY_KNOWN_MESSAGES)
+        cases = [('Acesso negado: C:\\Users\\Fulano\\x', ou.POWER_GENERIC_FAIL), (known, known)]
+        for error, expected in cases:
+            with self.subTest(expected=expected):
+                self.legacy_file().write_bytes(raw)
+                self.messages.clear()
+                panel = self.panel()
+                with mock.patch.object(ou, 'revert_power_plan',
+                                       side_effect=oe.OptimizationError(error)):
+                    panel.btn_legacy.invoke()
+                    self.wait_idle(panel)
+                self.assertEqual(self.messages[-1][2], expected)
+                self.assertNotIn('Fulano', panel.power_status.get())
+                self.assertEqual(self.legacy_file().read_bytes(), raw)
+                self.assertTrue(panel.btn_apply.instate(['disabled']))
+                panel.destroy()
 
 
 if __name__ == '__main__':

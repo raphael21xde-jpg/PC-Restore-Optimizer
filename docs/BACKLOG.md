@@ -471,7 +471,10 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - Registro antigo (`otimizacao-energia-reversao.json`, `pcro-power-1`): se estiver aplicado, interrompido ou ilegível, novas trocas ficam bloqueadas e aparece "Desfazer alteração antiga". Só o caso "aplicado" roda `revert_power_plan` (que marca o arquivo como desfeito); interrompido ou ilegível só mostram o que conferir e o bloqueio continua (nenhum botão para "liberar" à força). O arquivo antigo nunca é apagado nem convertido. `safe_change_power_plan` continua no motor, mas a tela não usa mais.
   - Textos sem caminhos nem mensagens cruas do Windows (R-07): a lista de planos que falha mostra um texto fixo.
   - **Risco para o "Validar M3":** o Windows não cria um ponto de restauração novo se já criou um nas últimas 24 horas (regra do próprio Windows). Nesse caso o número não sobe e a troca é recusada, com a explicação na tela. Na validação, pode ser preciso esperar 24 h entre testes de troca, ou usar um PC sem ponto recente. A Proteção do sistema precisa estar ligada no disco do Windows (o app não liga).
-- **Fatia 2b — `pronto`**: subaba "Alterações feitas" (lista do diário com `summary_lines`) + botão "Desfazer tudo" (`undo_all`), na aba de otimização.
+- **Fatia 2b — `pronto`**: subaba "Alterações feitas" (lista do diário com `summary_lines`) + botão "Desfazer tudo" (`undo_all`), na aba de otimização. Deve também dar saída e orientação para item `unknown` do diário e para registro antigo interrompido ou ilegível: hoje esses casos bloqueiam novas trocas sem saída na tela.
+### FIX-P3-03-01 · Ler os planos de energia fora da thread da interface — `pronto`
+- Origem: revisão da P3-03 fatia 2a (`1adf5c4`). `load_plans` ainda roda o `powercfg` na thread do Tk (R-10).
+- Levar `load_plans` para `Job` com retorno por `WindowTimers.after`, e desligar o botão "Atualizar" durante uma troca ou um desfazer.
 ### P3-06 · BIOS: só orientação — `pronto` (depois de P3-01)
 - Verifica XMP/EXPO, Resizable BAR e versão da BIOS, só lendo.
 - Mostra o passo a passo por fabricante. **Nunca altera.**
