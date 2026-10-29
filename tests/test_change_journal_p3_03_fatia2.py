@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -326,6 +327,7 @@ class PowerPanelTests(SafetyNet):
 
     def choose(self, panel, guid):
         panel.load_plans()
+        self.wait_idle(panel)
         index = [p['guid'] for p in panel.plans].index(guid)
         panel.plan_box.current(index)
 
@@ -592,6 +594,7 @@ class PowerPanelTests(SafetyNet):
                 self.fake = fake
                 panel = self.panel()
                 panel.load_plans()
+                self.wait_idle(panel)
                 text = self.power_text(panel)
                 self.assertIn('Não foi possível ler os planos de energia do Windows.', text)
                 self.assertNotIn('Fulano', text)
@@ -643,6 +646,125 @@ class PowerPanelTests(SafetyNet):
                 self.assertTrue(panel.btn_apply.instate(['disabled']))
                 panel.destroy()
 
+
+    # ---------- FIX-P3-03-01: leitura dos planos fora da thread da tela ----------
+    def blocking_fake(self, method):
+        """Troca um método do powercfg falso por um que espera um Event."""
+        gate = threading.Event()
+        self.addCleanup(gate.set)  # nunca deixar thread presa no fim do teste
+        original = getattr(self.fake, method)
+
+        def blocked(*args, **kwargs):
+            gate.wait(5)
+            return original(*args, **kwargs)
+        setattr(self.fake, method, blocked)
+        return gate
+
+    def assert_power_buttons(self, panel, disabled):
+        state = ['disabled'] if disabled else ['!disabled']
+        self.assertTrue(panel.btn_refresh.instate(state))
+        self.assertTrue(panel.btn_apply.instate(state))
+
+    def test_plans_are_read_outside_main_thread(self):
+        threads = []
+        plans, active = self.fake.plans, self.fake.active
+
+        def plans_spy():
+            threads.append(threading.current_thread())
+            return plans()
+
+        def active_spy():
+            threads.append(threading.current_thread())
+            return active()
+        self.fake.plans, self.fake.active = plans_spy, active_spy
+        panel = self.panel()
+        panel.load_plans()
+        self.wait_idle(panel)
+        self.assertEqual(len(threads), 2)
+        for thread in threads:
+            self.assertIsNot(thread, threading.main_thread())
+        self.assertEqual([p['guid'] for p in panel.plans], [A, B, C])
+
+    def test_load_plans_returns_at_once_and_disables_buttons(self):
+        gate = self.blocking_fake('plans')
+        panel = self.panel()
+        started = time.monotonic()
+        panel.load_plans()
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.root.update()
+        self.assertTrue(panel.power_busy)
+        self.assert_power_buttons(panel, disabled=True)
+        self.assertTrue(panel.btn_revert.instate(['disabled']))
+        self.assertIn('somente leitura', panel.note.get())
+        gate.set()
+        self.wait_idle(panel)
+        self.assert_power_buttons(panel, disabled=False)
+        self.assertEqual([p['guid'] for p in panel.plans], [A, B, C])
+        text = self.power_text(panel)
+        self.assertIn('Equilibrado', text)
+        self.assertIn('Antes de alterar:', text)
+        self.assertEqual(panel.note.get(), 'Planos de energia consultados; nada foi alterado.')
+        self.assertEqual(self.fake.setactive(), [])
+
+    def test_refresh_disabled_during_apply_and_undo(self):
+        gate = self.blocking_fake('run')  # antes do painel: o adaptador guarda a função
+        panel = self.panel()
+        self.choose(panel, B)
+        panel.btn_apply.invoke()
+        self.root.update()
+        self.assertTrue(panel.power_busy)
+        self.assertTrue(panel.btn_refresh.instate(['disabled']))
+        gate.set()
+        self.wait_idle(panel)
+        self.assertTrue(panel.btn_refresh.instate(['!disabled']))
+        self.assertEqual(self.fake.current, B)
+        gate.clear()
+        panel.btn_revert.invoke()
+        self.root.update()
+        self.assertTrue(panel.power_busy)
+        self.assertTrue(panel.btn_refresh.instate(['disabled']))
+        gate.set()
+        self.wait_idle(panel)
+        self.assertTrue(panel.btn_refresh.instate(['!disabled']))
+        self.assertEqual(self.fake.current, A)
+
+    def test_load_plans_while_busy_runs_nothing(self):
+        panel = self.panel()
+        panel.power_busy = True
+        before = list(self.fake.calls)
+        panel.load_plans()
+        time.sleep(0.1)
+        self.root.update()
+        self.assertEqual(self.fake.calls, before)
+        self.assertIsNone(panel._power_job)
+        panel.power_busy = False
+
+    def test_failed_refresh_keeps_previous_plans(self):
+        panel = self.panel()
+        self.choose(panel, B)
+        self.fake.active_error = oe.OptimizationError('Acesso negado em C:\\Users\\Fulano\\x')
+        panel.load_plans()
+        self.wait_idle(panel)
+        self.assertEqual([p['guid'] for p in panel.plans], [A, B, C])
+        text = self.power_text(panel)
+        self.assertIn('Não foi possível ler os planos de energia do Windows. Nada foi alterado.', text)
+        self.assertNotIn('Fulano', text + panel.power_status.get() + panel.note.get())
+
+    def test_closing_window_during_read_is_safe(self):
+        gate = self.blocking_fake('plans')
+        panel = self.panel()
+        panel.load_plans()
+        self.root.update()
+        job = panel._power_job
+        self.assertIsNotNone(job)
+        panel.destroy()
+        gate.set()
+        job.thread.join(5)
+        self.assertFalse(job.thread.is_alive())
+        for _ in range(10):  # deixa o laço de eventos rodar: nenhum TclError
+            self.root.update()
+            time.sleep(0.02)
+        self.assertEqual(self.fake.setactive(), [])
 
 if __name__ == '__main__':
     unittest.main()

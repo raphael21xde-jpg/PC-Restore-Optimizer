@@ -472,9 +472,11 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - Textos sem caminhos nem mensagens cruas do Windows (R-07): a lista de planos que falha mostra um texto fixo.
   - **Risco para o "Validar M3":** o Windows não cria um ponto de restauração novo se já criou um nas últimas 24 horas (regra do próprio Windows). Nesse caso o número não sobe e a troca é recusada, com a explicação na tela. Na validação, pode ser preciso esperar 24 h entre testes de troca, ou usar um PC sem ponto recente. A Proteção do sistema precisa estar ligada no disco do Windows (o app não liga).
 - **Fatia 2b — `pronto`**: subaba "Alterações feitas" (lista do diário com `summary_lines`) + botão "Desfazer tudo" (`undo_all`), na aba de otimização. Deve também dar saída e orientação para item `unknown` do diário e para registro antigo interrompido ou ilegível: hoje esses casos bloqueiam novas trocas sem saída na tela.
-### FIX-P3-03-01 · Ler os planos de energia fora da thread da interface — `pronto`
+### FIX-P3-03-01 · Ler os planos de energia fora da thread da interface — `concluído`
 - Origem: revisão da P3-03 fatia 2a (`1adf5c4`). `load_plans` ainda roda o `powercfg` na thread do Tk (R-10).
 - Levar `load_plans` para `Job` com retorno por `WindowTimers.after`, e desligar o botão "Atualizar" durante uma troca ou um desfazer.
+- **Feito:** `load_plans` só mostra "Consultando planos de energia (somente leitura)..." e chama `_run_power_job(_read_plans_work, _plans_loaded)`; o `powercfg` roda numa thread e a resposta volta pelo `WindowTimers.after`. O botão "Atualizar" virou `btn_refresh` e fica desligado enquanto há leitura, troca ou desfazer.
+- **Escolhas de design (as mais seguras):** um só estado de "ocupado" (`power_busy`) para leitura, troca e desfazer; durante a leitura, Aplicar e Desfazer também ficam desligados; clicar em Atualizar com o painel ocupado não faz nada; se a leitura falhar, a lista anterior (`self.plans`) é mantida e só o texto muda para a mensagem fixa (R-07, sem mensagem crua do Windows); fechar a janela no meio da leitura não dá erro (o `WindowTimers` cancela a resposta).
 ### P3-06 · BIOS: só orientação — `pronto` (depois de P3-01)
 - Verifica XMP/EXPO, Resizable BAR e versão da BIOS, só lendo.
 - Mostra o passo a passo por fabricante. **Nunca altera.**
