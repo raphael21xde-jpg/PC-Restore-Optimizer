@@ -801,7 +801,8 @@ class OptimizationPanel(tk.Frame):
         self._label(control,'Planos reconhecidos pelo Windows',bold=True).pack(anchor='w',pady=(0,5))
         self.plan_box=ttk.Combobox(control,state='readonly',textvariable=self.plan_choice,width=78)
         self.plan_box.pack(side='left',fill='x',expand=True,padx=(0,8))
-        ttk.Button(control,text='Atualizar',command=self.load_plans).pack(side='left')
+        self.btn_refresh=ttk.Button(control,text='Atualizar',command=self.load_plans)
+        self.btn_refresh.pack(side='left')
         buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(2,8))
         self.btn_apply=ttk.Button(buttons,text='Aplicar plano selecionado',style='Primary.TButton',command=self.apply_plan)
         self.btn_apply.pack(side='left',padx=(0,9))
@@ -941,24 +942,24 @@ class OptimizationPanel(tk.Frame):
                 messagebox.showerror('Exportação',str(exc))
 
     def load_plans(self):
-        try:
-            plans=self.power_adapter.available()
-            active=self.power_adapter.read(POWER_KEY)
-        except Exception as exc:
-            # R-07: nunca a mensagem crua do Windows (pode ter nome de usuário).
-            self._write(self.power_text,'Não foi possível ler os planos de energia do Windows. Nada foi alterado.')
+        """Lê os planos numa thread (R-10): o powercfg nunca roda na thread da tela."""
+        if self.power_busy:
             return
-        self.plans=plans
-        self.plan_box['values']=[p['name']+' | '+p['guid']+('  [ATUAL]' if p['guid']==active else '') for p in plans]
-        idx=next((i for i,p in enumerate(plans) if p['guid']==active),0)
-        self.plan_box.current(idx)
-        text=['PLANOS DO WINDOWS — LEITURA', '']
-        for p in plans:
-            text.append(('● ' if p['guid']==active else '  ')+p['name']+' | '+p['guid'])
-        text.extend(['','Antes de alterar:',' • Compare temperaturas e comportamento com sua rotina.',
-                     ' • Planos da fabricante podem ser necessários para notebooks.',
-                     ' • Não há promessa de aumento de FPS.',' • Alterações externas bloqueiam reversão automática.'])
-        self._write(self.power_text,'\n'.join(text))
+        self.note.set('Consultando planos de energia (somente leitura)...')
+        self._run_power_job(self._read_plans_work,self._plans_loaded)
+
+    def _plans_loaded(self,outcome):
+        plans=outcome.get('plans')
+        if plans is None:
+            # R-07: nunca a mensagem crua do Windows (pode ter nome de usuário).
+            # A lista anterior (self.plans) fica como estava.
+            self._write(self.power_text,'Não foi possível ler os planos de energia do Windows. Nada foi alterado.')
+            self.note.set('Não foi possível ler os planos de energia. Nada foi alterado.')
+            return
+        self._render_plans(plans,outcome.get('active'),
+                           ['','Antes de alterar:',' • Compare temperaturas e comportamento com sua rotina.',
+                            ' • Planos da fabricante podem ser necessários para notebooks.',
+                            ' • Não há promessa de aumento de FPS.',' • Alterações externas bloqueiam reversão automática.'])
         self.note.set('Planos de energia consultados; nada foi alterado.')
 
     # ---------- P3-03 fatia 2a: troca de plano pelo diário ----------
@@ -996,6 +997,8 @@ class OptimizationPanel(tk.Frame):
         can_apply=usable and not busy and not legacy
         can_revert=usable and not busy and self._last_applied_power() is not None
         self.btn_apply.state(['!disabled'] if can_apply else ['disabled'])
+        if hasattr(self,'btn_refresh'):
+            self.btn_refresh.state(['disabled'] if busy else ['!disabled'])
         self.btn_revert.state(['!disabled'] if can_revert else ['disabled'])
         if legacy:
             if not self.btn_legacy.winfo_manager():
@@ -1032,7 +1035,7 @@ class OptimizationPanel(tk.Frame):
             self._update_power_buttons()
         self._timers.after(10,poll)
 
-    def _render_plans(self,plans,active):
+    def _render_plans(self,plans,active,extra=()):
         self.plans=plans
         self.plan_box['values']=[p['name']+' | '+p['guid']+('  [ATUAL]' if p['guid']==active else '') for p in plans]
         idx=next((i for i,p in enumerate(plans) if p['guid']==active),0)
@@ -1041,6 +1044,7 @@ class OptimizationPanel(tk.Frame):
         text=['PLANOS DO WINDOWS — LEITURA','']
         for p in plans:
             text.append(('● ' if p['guid']==active else '  ')+p['name']+' | '+p['guid'])
+        text.extend(extra)
         self._write(self.power_text,'\n'.join(text))
 
     def _read_plans_work(self):
