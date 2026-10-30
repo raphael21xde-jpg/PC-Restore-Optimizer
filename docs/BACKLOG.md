@@ -477,6 +477,19 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - Levar `load_plans` para `Job` com retorno por `WindowTimers.after`, e desligar o botão "Atualizar" durante uma troca ou um desfazer.
 - **Feito:** `load_plans` só mostra "Consultando planos de energia (somente leitura)..." e chama `_run_power_job(_read_plans_work, _plans_loaded)`; o `powercfg` roda numa thread e a resposta volta pelo `WindowTimers.after`. O botão "Atualizar" virou `btn_refresh` e fica desligado enquanto há leitura, troca ou desfazer.
 - **Escolhas de design (as mais seguras):** um só estado de "ocupado" (`power_busy`) para leitura, troca e desfazer; durante a leitura, Aplicar e Desfazer também ficam desligados; clicar em Atualizar com o painel ocupado não faz nada; se a leitura falhar, a lista anterior (`self.plans`) é mantida e só o texto muda para a mensagem fixa (R-07, sem mensagem crua do Windows); fechar a janela no meio da leitura não dá erro (o `WindowTimers` cancela a resposta).
+### FIX-20261030-teste-sem-admin · Teste da recusa sem administrador desatualizado — `concluído`
+- Origem: validação Windows da `main` @866ce6f (29/10/2026): `test_without_admin_change_is_refused_and_explained` falhou em `assertIsNone(panel._power_job)`.
+- Causa: desde a PR #121 a escolha do plano já lê os planos num Job de leitura, então `_power_job` não fica vazio; o app estava certo (sem administrador o Aplicar volta antes de iniciar a troca).
+- **Feito** (branch `auto/FIX-20261030-teste-sem-admin`, só teste): o teste guarda o Job antes de clicar em Aplicar e confere que continua o mesmo (`assertIs`); `test_load_plans_while_busy_runs_nothing` passou a comparar do mesmo jeito. `optimization_ui.py` não mudou. Regra nova: R-21.
+### FIX-P3-03-02 · Ressalvas da revisão da PR #115 (diário de alterações) — `pronto` (antes da P3-03 fatia 2b)
+- Duas instâncias no mesmo diário podem perder entradas; falha de gravação no meio do lote não desfaz o que já foi aplicado; número com dígito unicode dá erro cru.
+- Critérios: os itens da issue #116.
+### FIX-P3-01-01 · Ressalvas da revisão da PR #113 (perfil de hardware) — `pronto`
+- Dual channel com todos os módulos no mesmo canal, tipos de barramento que faltam, aviso de nobreak visto como bateria, erro do PowerShell sem texto cru e ajustes nos testes.
+- Critérios: os itens da issue #114.
+### FIX-P2-09-10 · Ressalvas da revisão da PR #117 (cópia real) — `pronto`
+- Linha contraditória no backlog, constante própria para o começo comum das mensagens de administrador e texto mais claro sobre a cópia anterior.
+- Critérios: os itens da issue #118.
 ### P3-06 · BIOS: só orientação — `pronto` (depois de P3-01)
 - Verifica XMP/EXPO, Resizable BAR e versão da BIOS, só lendo.
 - Mostra o passo a passo por fabricante. **Nunca altera.**
