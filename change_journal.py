@@ -64,9 +64,15 @@ STATUS_TEXT = {
 MSG_CHANGED_OUTSIDE = ('O valor foi mudado por outro programa depois do ajuste; '
                        'o app não vai sobrescrever.')
 MSG_OTHER_WINDOW = ('O diário de alterações foi alterado por outra janela do app; '
-                    'feche e abra de novo. Nada foi gravado.')
+                    'feche e abra o app de novo. Nada foi gravado.')
 MSG_SAVE_FAILED_BEFORE = ('O diário de alterações não pôde ser gravado da última vez; '
                           'feche e abra o app de novo. Nada foi gravado.')
+MSG_BATCH_SAVE_FAILED_NONE = 'Não foi possível gravar o diário; nenhum ajuste foi aplicado.'
+MSG_UNDO_NOT_NOTED = ('O ajuste foi desfeito no sistema, mas o diário não pôde ser anotado; '
+                      'feche e abra o app de novo.')
+MSG_UNDO_UNKNOWN_NOT_NOTED = ('O app tentou desfazer o ajuste no sistema, mas não conseguiu confirmar '
+                              'e o diário não pôde ser anotado; confira manualmente e '
+                              'feche e abra o app de novo.')
 MSG_BATCH_SAVE_FAILED = 'Não foi possível gravar o diário; os ajustes deste lote foram desfeitos.'
 MSG_BATCH_SAVE_FAILED_CHECK = ('Não foi possível gravar o diário; confira manualmente: '
                                '{n} ajuste(s) não voltaram ao valor anterior.')
@@ -362,6 +368,8 @@ class ChangeJournal:
         except JournalError:
             # O diário não pôde ser gravado: desfaz pelo adaptador, sem gravar mais nada.
             self._mark_stale(MSG_SAVE_FAILED_BEFORE)
+            if not touched:
+                raise BatchRefused(MSG_BATCH_SAVE_FAILED_NONE) from None
             not_back = self._rollback(touched, persist=False)
             if not_back:
                 raise BatchRefused(MSG_BATCH_SAVE_FAILED_CHECK.format(n=not_back)) from None
@@ -402,12 +410,20 @@ class ChangeJournal:
         except Exception:
             pass
         ok, current = self._read(entry)
+        # O adaptador já foi chamado: se a anotação falhar, a mensagem diz o que
+        # mudou no sistema e nunca "Nada foi gravado" (R-19).
         if ok and same_value(current, entry['before']):
-            self._set(entry, 'reverted')
+            try:
+                self._set(entry, 'reverted')
+            except JournalError:
+                raise JournalError(MSG_UNDO_NOT_NOTED) from None
             return True, ''
         if ok and same_value(current, entry['after']):
             return False, 'O ajuste não voltou ao valor anterior; ele continua aplicado.'
-        self._set(entry, 'unknown')
+        try:
+            self._set(entry, 'unknown')
+        except JournalError:
+            raise JournalError(MSG_UNDO_UNKNOWN_NOT_NOTED) from None
         return False, 'Não foi possível confirmar que o ajuste voltou ao valor anterior; confira manualmente.'
 
     def undo_all(self):
@@ -418,7 +434,9 @@ class ChangeJournal:
         lista) e os mais antigos, que nem foram tentados. Eles continuam no
         estado em que estavam (``applied``, ou ``unknown`` se o próprio desfazer
         não pôde ser confirmado). Se o diário mudou por fora, recusa com
-        ``JournalError`` antes de qualquer coisa."""
+        ``JournalError`` antes de qualquer coisa; se a anotação de um item falhar
+        depois de ele ter sido desfeito no sistema, o ``JournalError`` de ``undo``
+        sobe com o texto que diz isso (os itens anteriores já ficaram anotados)."""
         self._check_disk_unchanged()
         applied = [e['id'] for e in reversed(self._entries) if e['status'] == 'applied']
         done = []

@@ -20,7 +20,7 @@ import change_journal as cj  # noqa: E402
 from tests.test_change_journal_p3_03 import FakeAdapter, RestorePoint  # noqa: E402
 
 STALE = ('O diário de alterações foi alterado por outra janela do app; '
-         'feche e abra de novo. Nada foi gravado.')
+         'feche e abra o app de novo. Nada foi gravado.')
 
 
 class Base(unittest.TestCase):
@@ -146,6 +146,60 @@ class ChangedOutsideTest(Base):
         self.assertEqual(self.calls, [])
 
 
+class OtherWindowDuringRevert(FakeAdapter):
+    """Adaptador falso: outra janela grava o diário enquanto o revert acontece."""
+
+    def __init__(self, calls, initial, path, mode='ok'):
+        super().__init__(calls, initial)
+        self.path = path
+        self.mode = mode   # 'ok': revert pega; 'lost': revert não pega nem fica no valor novo
+
+    def revert(self, key, value):
+        data = json.loads(self.path.read_text(encoding='utf-8'))
+        data['entries'][0]['note'] = 'outra janela'
+        self.path.write_text(json.dumps(data), encoding='utf-8')
+        super().revert(key, value)
+        if self.mode == 'lost':
+            self.values[key] = 'outro'
+
+
+class UndoSaveFailsAfterRevertTest(Base):
+    """Revisão da PR #124 (R-19): o sistema já voltou, então não pode dizer "Nada foi gravado"."""
+
+    def setUp(self):
+        super().setUp()
+        self.adapter = OtherWindowDuringRevert(self.calls, {'a': 1, 'b': 'equilibrado'}, self.path)
+
+    def run_undo(self, use_all=False):
+        j = self.journal()
+        j.apply_batch([{'kind': 'energia', 'key': 'a', 'after': 2}])
+        with self.assertRaises(cj.JournalError) as ctx:
+            j.undo_all() if use_all else j.undo('1')
+        return j, str(ctx.exception)
+
+    def test_undo_reverted_but_not_noted(self):
+        for use_all in (False, True):
+            with self.subTest(undo_all=use_all):
+                self.path.unlink(missing_ok=True)
+                self.adapter.values = {'a': 1, 'b': 'equilibrado'}
+                j, message = self.run_undo(use_all)
+                self.assertEqual(message, cj.MSG_UNDO_NOT_NOTED)
+                self.assertNotIn('Nada foi gravado', message)
+                self.assertIn('desfeito no sistema', message)
+                self.assertEqual(self.adapter.values['a'], 1)
+                # o arquivo da outra janela não foi sobrescrito
+                self.assertEqual(self.disk_entries()[0]['note'], 'outra janela')
+                with self.assertRaises(cj.JournalError):
+                    j.undo('1')
+
+    def test_undo_unconfirmed_and_not_noted(self):
+        self.adapter.mode = 'lost'
+        _j, message = self.run_undo()
+        self.assertEqual(message, cj.MSG_UNDO_UNKNOWN_NOT_NOTED)
+        self.assertNotIn('Nada foi gravado', message)
+        self.assertIn('confira manualmente', message)
+
+
 class FailingSave:
     """Deixa as N primeiras gravações passarem e faz a seguinte falhar."""
 
@@ -189,6 +243,13 @@ class SaveFailsMidBatchTest(Base):
         self.assertIn('foram desfeitos', message)
         self.assertEqual(self.adapter.values, {'a': 1, 'b': 'equilibrado', 'c': False})
         self.assertNotIn(('apply', 'b', 'alto'), self.calls)
+
+    def test_first_save_fails_says_nothing_applied(self):
+        _j, message = self.run_failing(0)
+        self.assertEqual(message, 'Não foi possível gravar o diário; nenhum ajuste foi aplicado.')
+        self.assertNotIn('apply', [c[0] for c in self.calls])
+        self.assertNotIn('revert', [c[0] for c in self.calls])
+        self.assertEqual(self.adapter.values, {'a': 1, 'b': 'equilibrado', 'c': False})
 
     def test_revert_failing_says_check_manually(self):
         self.adapter.ignore_revert.add('a')

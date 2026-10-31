@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 8 (R-14 a R-21; lista inicial de 23/10/2026, R-01 a R-13).
+poda: 10 (R-14 a R-23; lista inicial de 23/10/2026, R-01 a R-13).
 
 | Nº | Regra | Origem | Data |
 |---|---|---|---|
@@ -35,3 +35,5 @@ poda: 8 (R-14 a R-21; lista inicial de 23/10/2026, R-01 a R-13).
 | R-19 | Texto de cancelamento ou de erro nunca afirma "Nada foi gravado" se o executor pode ter sido chamado; essa frase só aparece quando o fluxo garante que o executor não foi chamado (senão: "trate a cópia como não verificada"). | Revisão da PR #106 (P2-09 fatia 3b-2), FIX-P2-09-07 | 2026-10-24 |
 | R-20 | Toda tela ou fluxo que grava arquivos do usuário (cópia, restauração, colocação) recusa rodar como administrador antes de ler discos, autorizar ou gravar, usando `elevation_guard.is_process_elevated`; a tela também mostra o aviso e desliga o botão (defesa dupla). | Validação do M2 (pedido `marco-20261024-p2-09-copia-real`), FIX-P2-09-08 | 2026-10-25 |
 | R-21 | Teste que confere "nenhum trabalho foi iniciado" compara a identidade do Job antes e depois da ação (assertIs), nunca exige `_power_job is None`, porque leituras anteriores também criam Job. Testes de Tk rodam na nuvem com o Python do uv + xvfb-run antes do merge. | Validação Windows da main 866ce6f (FIX-20261030-teste-sem-admin) | 2026-10-30 |
+| R-22 | Arquivo de estado do app que duas instâncias podem abrir (diário, progresso) é relido e conferido, ou protegido por trava exclusiva, antes de cada gravação; gravar a lista da memória por cima nunca pode apagar entrada gravada por outra instância. | Revisão da PR #115 (issue #116), FIX-P3-03-02 | 2026-10-31 |
+| R-23 | Se a gravação do diário falha depois que o adaptador já mexeu no sistema, a mensagem diz o que mudou no sistema e nunca usa "Nada foi gravado". | Revisão da PR #124 (FIX-P3-03-02) | 2026-10-31 |
