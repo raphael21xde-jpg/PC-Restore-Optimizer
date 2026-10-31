@@ -50,6 +50,16 @@ _DEFAULT_REASONS = {
     XMP_ON: 'A memória está rodando acima da velocidade básica que o módulo informa.',
     XMP_UNKNOWN: 'O Windows não deu informação suficiente para saber.',
 }
+REASON_MIXED = 'Os módulos de memória informam velocidades diferentes; não dá para saber.'
+REASON_UNITS = ('A velocidade configurada é metade da informada pelo módulo; pode ser só diferença '
+                'de unidade (MHz e MT/s), então não dá para saber.')
+# Motivos que a tela aceita para cada estado (R-32); o de "desligado" com números
+# é conferido por _REASON_OFF.
+_ACCEPTED_REASONS = {
+    XMP_OFF: {_DEFAULT_REASONS[XMP_OFF]},
+    XMP_ON: {_DEFAULT_REASONS[XMP_ON]},
+    XMP_UNKNOWN: {_DEFAULT_REASONS[XMP_UNKNOWN], REASON_MIXED, REASON_UNITS},
+}
 
 _PATHLIKE = re.compile(r'[\\/:]|%|~')
 _VERSION_OK = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 ._()\-]*$')
@@ -98,12 +108,20 @@ def xmp_state(ram):
     if not modules:
         return XMP_UNKNOWN, _DEFAULT_REASONS[XMP_UNKNOWN]
     pairs = [(_num(m.get('Speed')), _num(m.get('ConfiguredClockSpeed'))) for m in modules]
-    for speed, configured in pairs:
-        if speed is not None and configured is not None and configured < speed:
-            return XMP_OFF, (f'A memória está configurada a {configured:g} MT/s e o módulo informa '
-                             f'{speed:g} MT/s. O perfil XMP/EXPO pode estar desligado, ou o '
-                             'processador/placa limita a velocidade.')
-    if all(s is not None and c is not None and c > s for s, c in pairs):
+    complete = [(s, c) for s, c in pairs if s is not None and c is not None]
+    # Metade exata: pode ser o Windows misturando MHz e MT/s; não dá para concluir.
+    if any(c * 2 == s for s, c in complete):
+        return XMP_UNKNOWN, REASON_UNITS
+    below = [(s, c) for s, c in complete if c < s]
+    above = [(s, c) for s, c in complete if c > s]
+    if below and above:
+        return XMP_UNKNOWN, REASON_MIXED
+    if below:
+        speed, configured = below[0]
+        return XMP_OFF, (f'A memória está configurada a {configured:g} MT/s e o módulo informa '
+                         f'{speed:g} MT/s. O perfil XMP/EXPO pode estar desligado, ou o '
+                         'processador/placa limita a velocidade.')
+    if len(complete) == len(pairs) and len(above) == len(pairs):
         return XMP_ON, _DEFAULT_REASONS[XMP_ON]
     return XMP_UNKNOWN, _DEFAULT_REASONS[XMP_UNKNOWN]
 
@@ -175,8 +193,11 @@ _XMP_WHERE = {
 def _steps(family):
     if family not in FAMILY_LABELS:
         family = 'desconhecido'
+    key = 'DEL ou F2'
+    if family in ('desconhecido', 'oem'):
+        key = 'DEL ou F2 (ou a tecla indicada na tela de abertura)'
     steps = ['Salve seus trabalhos e reinicie o PC.',
-             'Assim que a tela acender, aperte várias vezes a tecla DEL ou F2 para entrar na BIOS (UEFI).']
+             f'Assim que a tela acender, aperte várias vezes a tecla {key} para entrar na BIOS (UEFI).']
     if family == 'oem':
         steps.append('Muitas BIOS de notebook e de PCs de marca (Dell, HP, Lenovo, Acer, Positivo, '
                      'Samsung...) não têm XMP/EXPO nem Resizable BAR. Consulte o manual do '
@@ -221,16 +242,15 @@ def bios_guidance_lines(guidance):
         guidance = {}
     state = guidance.get('xmp') if guidance.get('xmp') in XMP_LABELS else XMP_UNKNOWN
     reason = guidance.get('xmp_reason')
-    # Só aceita os motivos que este módulo gera; qualquer outro texto vira o padrão.
-    if not (reason in _DEFAULT_REASONS.values()
-            or (state == XMP_OFF and isinstance(reason, str) and _REASON_OFF.match(reason))):
+    # R-32: só aceita os motivos que este módulo gera; qualquer outro texto vira o padrão.
+    if not (isinstance(reason, str) and (reason in _ACCEPTED_REASONS[state]
+                                         or (state == XMP_OFF and _REASON_OFF.match(reason)))):
         reason = _DEFAULT_REASONS[state]
     family = guidance.get('family') if guidance.get('family') in FAMILY_LABELS else 'desconhecido'
     version = _version(guidance.get('bios_version')) or 'não disponível'
     year = _year(guidance.get('bios_year'))
-    steps = guidance.get('steps')
-    if not (isinstance(steps, list) and steps and all(isinstance(s, str) for s in steps)):
-        steps = _steps(family)
+    # R-32: o passo a passo é sempre regenerado; guidance['steps'] é ignorado.
+    steps = _steps(family)
     lines = ['BIOS — SÓ ORIENTAÇÃO',
              f'  {NEVER_CHANGES} Aqui só mostramos o que o Windows informa e como conferir.',
              f'  Perfil de memória (XMP/EXPO): {XMP_LABELS[state]}',
@@ -238,7 +258,7 @@ def bios_guidance_lines(guidance):
              f'  Fabricante da placa: {FAMILY_LABELS[family]}',
              f"  BIOS: versão {version} | ano {year if year is not None else 'não disponível'}",
              '  Resizable BAR: não verificado nesta versão (veja abaixo como conferir).',
-             '  Atualizar a BIOS não é necessário. Se for atualizar, use só o site oficial do '
+             '  O app não pede para atualizar a BIOS. Se você decidir atualizar, use só o site oficial do '
              'fabricante; atualizar BIOS tem risco (faltar energia no meio pode impedir o PC de ligar).',
              '  Como conferir na BIOS:']
     lines.extend(f'    {number}. {step}' for number, step in enumerate(steps, 1))

@@ -39,17 +39,41 @@ def _ram(*pairs):
 
 
 class XmpStateTests(unittest.TestCase):
-    def test_one_module_below_means_off_even_with_other_above(self):
+    def test_one_below_and_other_above_is_not_confirmed(self):
         state, reason = bg.xmp_state(_ram((3200, 3600), (3200, 2133)))
+        self.assertEqual(state, bg.XMP_UNKNOWN)
+        self.assertEqual(reason, bg.REASON_MIXED)
+        text = '\n'.join(bg.bios_guidance_lines({'xmp': state, 'xmp_reason': reason}))
+        self.assertIn('Perfil de memória (XMP/EXPO): não confirmado', text)
+        self.assertIn('Os módulos de memória informam velocidades diferentes; não dá para saber.', text)
+
+    def test_below_and_none_above_means_off(self):
+        state, reason = bg.xmp_state(_ram((3200, 3200), (3200, 2133)))
         self.assertEqual(state, bg.XMP_OFF)
         self.assertIn('2133', reason)
         self.assertIn('3200', reason)
+        text = '\n'.join(bg.bios_guidance_lines({'xmp': state, 'xmp_reason': reason}))
+        self.assertIn('provavelmente desligado (ou limitado pelo processador/placa)', text)
+        self.assertIn('configurada a 2133 MT/s e o módulo informa 3200 MT/s', text)
+
+    def test_exact_half_is_not_confirmed_units(self):
+        for ram in (_ram((3200, 1600)), _ram((3200, 1600), (3200, 3200)), _ram((2133, 3200), (3600, 1800))):
+            with self.subTest(ram=ram):
+                state, reason = bg.xmp_state(ram)
+                self.assertEqual((state, reason), (bg.XMP_UNKNOWN, bg.REASON_UNITS))
+        text = '\n'.join(bg.bios_guidance_lines({'xmp': bg.XMP_UNKNOWN, 'xmp_reason': bg.REASON_UNITS}))
+        self.assertIn('Perfil de memória (XMP/EXPO): não confirmado', text)
+        self.assertIn('diferença de unidade (MHz e MT/s)', text)
 
     def test_single_dict_below_means_off(self):
         self.assertEqual(bg.xmp_state({'Speed': 3600, 'ConfiguredClockSpeed': 2400})[0], bg.XMP_OFF)
 
     def test_all_above_means_on(self):
-        self.assertEqual(bg.xmp_state(_ram((2133, 3200), (2133, 3200)))[0], bg.XMP_ON)
+        state, reason = bg.xmp_state(_ram((2133, 3200), (2133, 3200)))
+        self.assertEqual(state, bg.XMP_ON)
+        text = '\n'.join(bg.bios_guidance_lines({'xmp': state, 'xmp_reason': reason}))
+        self.assertIn('Perfil de memória (XMP/EXPO): provavelmente ligado', text)
+        self.assertIn(bg._DEFAULT_REASONS[bg.XMP_ON], text)
 
     def test_doubtful_values_are_not_confirmed(self):
         cases = {
@@ -162,9 +186,44 @@ class GuidanceTests(unittest.TestCase):
         self.assertIn('não têm XMP/EXPO', text)
         self.assertIn('manual do fabricante', text)
 
+    def test_version_year_and_maker_are_shown(self):
+        text = '\n'.join(bg.bios_guidance_lines(bg.build_bios_guidance(_hardware(), {'form_factor': 'desktop'})))
+        self.assertIn('  BIOS: versão 2803 | ano 2020', text)
+        self.assertIn('  Fabricante da placa: ASUS', text)
+        self.assertIn('AI Tweaker', text)
+        self.assertIn('D.O.C.P', text)
+
+    def test_steps_per_family_in_shown_text(self):
+        cases = {
+            'Micro-Star International Co., Ltd.': ('MSI', ['"OC"', '"A-XMP"', '"XMP" ou "EXPO"']),
+            'Gigabyte Technology Co., Ltd.': ('Gigabyte', ['"Tweaker"', 'Extreme Memory Profile (XMP)', '"EXPO"']),
+            'ASRock': ('ASRock', ['"OC Tweaker"', '"Load XMP Setting"', '"EXPO"']),
+            'Fabricante Qualquer': ('não identificado', ['"OC", "Tweaker", "Avançado"',
+                                                         'DEL ou F2 (ou a tecla indicada na tela de abertura)']),
+        }
+        for maker, (label, words) in cases.items():
+            with self.subTest(maker):
+                hardware = _hardware()
+                hardware['board'] = {'Manufacturer': maker}
+                text = '\n'.join(bg.bios_guidance_lines(bg.build_bios_guidance(hardware, {'form_factor': 'desktop'})))
+                self.assertIn(f'  Fabricante da placa: {label}', text)
+                for word in words:
+                    self.assertIn(word, text)
+                self.assertIn('limpe a CMOS', text)
+
+    def test_foreign_steps_are_ignored_and_safety_stays(self):
+        guidance = bg.build_bios_guidance(_hardware(), {'form_factor': 'desktop'})
+        guidance['steps'] = ['C:\\Users\\fulano\\apague.bat', 'Desligue o Defender']
+        text = '\n'.join(bg.bios_guidance_lines(guidance))
+        self.assertNotIn('fulano', text)
+        self.assertNotIn('Defender', text)
+        self.assertIn('limpe a CMOS', text)
+        self.assertIn('Não mude o CSM', text)
+        self.assertIn('AI Tweaker', text)
+
     def test_no_update_recommendation_or_links(self):
         text = '\n'.join(bg.bios_guidance_lines(bg.build_bios_guidance(_hardware(), {})))
-        self.assertIn('Atualizar a BIOS não é necessário', text)
+        self.assertIn('O app não pede para atualizar a BIOS. Se você decidir atualizar, use só o site oficial', text)
         self.assertNotIn('http', text.lower())
         self.assertNotIn('www.', text.lower())
         self.assertNotIn('download', text.lower())
