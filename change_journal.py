@@ -498,46 +498,58 @@ class ChangeJournal:
 
         Todas as mudanças vão numa única gravação. Se ela falhar, os estados em
         memória voltam ao que eram e o ``JournalError`` sobe (nada foi gravado).
+        Uma exceção no meio da conferência também devolve a memória e sobe.
         Devolve ``{'changed': [(id, antigo, novo)], 'outside': [...], 'unreadable': [...]}``."""
         self._check_disk_unchanged()
         result = {'changed': [], 'outside': [], 'unreadable': []}
         saved = []   # (entrada, cópia de antes) para voltar se a gravação falhar
-        for entry in self._entries:
-            status = entry['status']
-            if status not in ('applied', 'unknown') or entry['kind'] not in self._adapters:
-                continue
-            if same_value(entry['before'], entry['after']):
-                continue
-            ok, current = self._read(entry)
-            if not ok:
-                result['unreadable'].append(entry['id'])
-                continue
-            new = None
-            if status == 'applied':
-                if same_value(current, entry['before']):
-                    new = 'reverted'
-                elif not same_value(current, entry['after']):
-                    result['outside'].append(entry['id'])
-            elif same_value(current, entry['after']):
-                new = 'applied'
-            elif same_value(current, entry['before']):
-                # Na dúvida, "não aplicada" em vez de "desfeita".
-                new = 'reverted' if entry.get('note') == NOTE_UNDO else 'failed'
-            if new is None:
-                continue
-            saved.append((entry, dict(entry)))
-            entry['status'] = new
-            entry['updated'] = _now()
-            result['changed'].append((entry['id'], status, new))
+        # FIX-P3-03-09: qualquer exceção no meio do laço (até KeyboardInterrupt, que
+        # ``_read`` não engole) devolve a memória ao que era antes de repassar.
+        try:
+            for entry in self._entries:
+                status = entry['status']
+                if status not in ('applied', 'unknown') or entry['kind'] not in self._adapters:
+                    continue
+                if same_value(entry['before'], entry['after']):
+                    continue
+                ok, current = self._read(entry)
+                if not ok:
+                    result['unreadable'].append(entry['id'])
+                    continue
+                new = None
+                if status == 'applied':
+                    if same_value(current, entry['before']):
+                        new = 'reverted'
+                    elif not same_value(current, entry['after']):
+                        result['outside'].append(entry['id'])
+                elif same_value(current, entry['after']):
+                    new = 'applied'
+                elif same_value(current, entry['before']):
+                    # Na dúvida, "não aplicada" em vez de "desfeita".
+                    new = 'reverted' if entry.get('note') == NOTE_UNDO else 'failed'
+                if new is None:
+                    continue
+                saved.append((entry, dict(entry)))
+                entry['status'] = new
+                entry['updated'] = _now()
+                result['changed'].append((entry['id'], status, new))
+        except BaseException:
+            self._restore_saved(saved)
+            raise
         if saved:
             try:
                 self._persist()
             except JournalError:
-                for entry, before in saved:
-                    entry.clear()
-                    entry.update(before)
+                self._restore_saved(saved)
                 raise
         return result
+
+    @staticmethod
+    def _restore_saved(saved):
+        """Volta cada entrada mudada pelo ``recheck`` à cópia guardada antes."""
+        for entry, before in saved:
+            entry.clear()
+            entry.update(before)
 
     def entries(self):
         return copy.deepcopy(self._entries)
