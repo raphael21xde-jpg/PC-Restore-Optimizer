@@ -836,17 +836,25 @@ class WindowTests(unittest.TestCase):
         # FIX-20261031 (R-29): registrada depois da limpeza da pasta, roda antes dela;
         # espera a gravação em segundo plano antes de apagar a pasta temporária.
         self.addCleanup(self._join_savers)
+        # FIX-20261031-01: marca se a janela abriu; só então o gravador precisa existir.
+        self._opened = False
         self.tmp = Path(tmp.name)
         self.base = self.tmp / 'progresso'
         self.manifest = _backup(self.tmp / 'E')
 
     def _join_savers(self):
-        for key, saver in list(getattr(self.root, 'after_format_savers', {}).items()):
+        if not self._opened:
+            return  # a janela não abriu: não há gravação para esperar
+        # FIX-20261031-01: leitura direta (sem getattr com padrão); se o atributo
+        # mudar de nome em after_format_ui, o teste falha em vez de passar calado.
+        savers = vars(self.root)['after_format_savers']
+        for key, saver in list(savers.items()):
             self.assertTrue(saver.join(10), f'gravação do progresso não terminou: {key}')
 
     def open(self, manifest=None):
         dlg = afu.show_after_format(self.root, manifest=manifest or self.manifest,
                                     base=self.base, checker=lambda m, c: FAKE_CHECK)
+        self._opened = True
         until = time.monotonic() + 5
         while dlg.after_format_state['busy'] and time.monotonic() < until:
             self.root.update()
@@ -986,6 +994,7 @@ class WindowTests(unittest.TestCase):
             return FAKE_CHECK
         dlg = afu.show_after_format(self.root, manifest=self.manifest, base=self.base,
                                     checker=checker)
+        self._opened = True
         self.assertTrue(started.wait(5))
         dlg.destroy()
         self.root.update()
