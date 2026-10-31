@@ -599,6 +599,16 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 ### P3-06 · BIOS: só orientação — `pronto` (depois de P3-01)
 - Verifica XMP/EXPO, Resizable BAR e versão da BIOS, só lendo.
 - Mostra o passo a passo por fabricante. **Nunca altera.**
+- **Fatia 1 — `concluído`** (branch `auto/P3-06-bios-orientacao`): novo `bios_guidance.py` (funções puras, sem Tk, sem comandos, sem importar outros módulos do projeto); `inspect_pc()` devolve `bios_guidance` (também fora do Windows) usando só o que já lia (RAM `Speed`/`ConfiguredClockSpeed`, `Win32_BaseBoard.Manufacturer`, `Win32_BIOS` `SMBIOSBIOSVersion`/`ReleaseDate`), sem consulta nova; a aba "1 Diagnóstico" mostra a seção "BIOS — SÓ ORIENTAÇÃO" logo depois de "PERFIL DO SEU PC", sempre com a frase "O app nunca altera a BIOS". Testes: `tests/test_bios_guidance_p3_06.py`.
+  - Escolhas de design (31/10/2026, as mais seguras):
+    - XMP/EXPO "provavelmente desligado (ou limitado pelo processador/placa)" quando algum módulo tem velocidade configurada menor que a informada **e nenhum** está acima; "provavelmente ligado" só quando todos os módulos têm os dois valores e a configurada é maior; módulos uns abaixo e outros acima = "não confirmado" com o motivo "Os módulos de memória informam velocidades diferentes; não dá para saber."; configurada exatamente metade da informada (MHz x MT/s) = "não confirmado" com motivo próprio; o resto (valores faltando, iguais, 0, texto, bool, NaN, lista vazia) é "não confirmado". Nunca "ligado" se algum dado aponta o contrário (revisão da PR #150);
+    - família da placa só pelo fabricante: ASUS, MSI (Micro-Star), Gigabyte, ASRock; notebook ou marca de PC pronto (Dell, HP, Lenovo, Acer, Positivo, Samsung...) = "notebook ou PC de marca", com aviso de que muitas dessas BIOS não têm XMP/EXPO e de consultar o manual do fabricante; o resto = "não identificado";
+    - guarda só família, versão e ano da BIOS; nunca modelo da placa, número de série ou nome do PC; versão com cara de caminho, com mais de 40 caracteres ou com caracteres fora de letras/números/espaço/`._-()` é descartada; ano só de "/Date(ms)/" ou "AAAAMMDD...", entre 1990 e o ano atual;
+    - na tela, entrada estranha vira "não confirmado"/"não identificado"/"não disponível", nunca erro; só são exibidos os motivos que o próprio módulo gera, e o passo a passo é sempre regenerado pela família (o campo `steps` do relatório é ignorado) — regra R-32;
+    - Resizable BAR: "não verificado nesta versão", só passo a passo (inclui "não mude o CSM nem o modo de inicialização");
+    - não recomenda atualizar a BIOS: "O app não pede para atualizar a BIOS. Se você decidir atualizar, use só o site oficial do fabricante; atualizar BIOS tem risco"; sem link nem download;
+    - passo a passo genérico (DEL/F2, e para placa não identificada ou PC de marca "DEL ou F2 (ou a tecla indicada na tela de abertura)"; ASUS "AI Tweaker / D.O.C.P / EXPO", MSI "OC / XMP / EXPO", Gigabyte "Tweaker / XMP / EXPO", ASRock "OC Tweaker / XMP / EXPO"), "na dúvida, saia sem salvar" e, no fim, "se o PC não ligar, limpe a CMOS seguindo o manual da placa"; as linhas "verificar"/"manual" que `inspect_pc()` já gerava ficaram iguais.
+- **Fatia 2 — `pronto`**: ler o estado do Resizable BAR só lendo (consulta a definir, sem administrador e sem alterar nada) e um botão "Ver passo a passo" separado na aba.
 ### P3-07 · Check-up de segurança (somente leitura) — `pronto` (depois de P3-01)
 - **Pedido do Raphael em 23/10/2026.** Procura sinais de minerador escondido e de programas suspeitos. **Não é antivírus:** o app nunca apaga, nunca encerra processos, nunca muda o Defender e nunca coloca nada em quarentena. Se achar algo, explica e recomenda a "Verificação offline" do Defender e uma segunda opinião (Malwarebytes, só do site oficial).
 - **O que olha (só leitura):**
@@ -616,6 +626,8 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - Só ajustes da lista segura do `CLAUDE.md`, cada um com aplicar e desfazer.
 - **Nunca** desligar Defender ou Windows Update.
 ### P3-05 · Ajustes avançados (com confirmação) — `pronto` (depois de P3-04)
+### FIX-P3-06-01 · Revisar o que o JSON exportado leva (modelo da placa/PC) — `pronto`
+- Registro da revisão da PR #150: conferir se a tela e o JSON exportado do diagnóstico levam o modelo da placa (`Win32_BaseBoard.Product`) e do PC (`Win32_ComputerSystem.Model`), lidos desde antes do P3-06, e se devem sair. Não implementado.
 
 ### ✅ Validação do Raphael — M3
 Issue "Validar M3": rodar o check-up de segurança, medir, aplicar os ajustes seguros, medir de novo e desfazer tudo, no PC dele.

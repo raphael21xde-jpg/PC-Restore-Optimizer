@@ -24,6 +24,7 @@ from elevation_guard import is_process_elevated
 from restore_jobs import Job
 from ui_timers import WindowTimers
 from hardware_profile import profile_lines, SCAN_CONFIRMATION
+from bios_guidance import bios_guidance_lines
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
 from stutter_deep import study_csv, study_text
@@ -987,6 +988,7 @@ class OptimizationPanel(tk.Frame):
         plans=report.get('power',{})
         lines.extend(['','Plano de energia: '+str(plans.get('active_guid') or 'indisponível'),''])
         lines.extend(profile_lines(report.get('profile') or {}))
+        lines.extend(bios_guidance_lines(report.get('bios_guidance') or {}))
         lines.append('OBSERVAÇÕES:')
         lines.extend('  • '+str(p['message']) for p in report.get('checks',[]))
         if report.get('errors'):

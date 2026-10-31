@@ -16,6 +16,7 @@ import tempfile
 from datetime import datetime, timezone
 
 from hardware_profile import build_profile
+from bios_guidance import build_bios_guidance
 from elevation_guard import is_process_elevated
 
 GUID_PATTERN = re.compile(r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b')
@@ -97,6 +98,7 @@ def inspect_pc():
     if not _is_windows():
         result['errors'].append('Faça o diagnóstico no Windows em que pretende otimizar.')
         result['profile'] = build_profile(result['hardware'])
+        result['bios_guidance'] = build_bios_guidance(result['hardware'], result['profile'])
         return result
     queries = {
         'cpu': 'Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | ConvertTo-Json -Depth 3',
@@ -142,6 +144,8 @@ def inspect_pc():
     result['unmeasured'] = ['temperatura CPU/GPU (disponível separadamente no monitoramento em tempo real se os sensores responderem)', 'consumo neste relatório estático', 'estabilidade de memória',
                             'versões compatíveis de perfis BIOS', 'FPS de jogo', 'latência DWM']
     result['profile'] = build_profile(result['hardware'])
+    # P3-06: só orientação; usa o que já foi lido, sem consulta nova.
+    result['bios_guidance'] = build_bios_guidance(result['hardware'], result['profile'])
     return result
 
 
