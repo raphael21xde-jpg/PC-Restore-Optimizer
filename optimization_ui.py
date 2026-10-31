@@ -1027,6 +1027,8 @@ class OptimizationPanel(tk.Frame):
         except JournalError as exc:
             self.journal=None
             self.journal_error=str(exc)
+        # FIX-P3-03-07: ao (re)carregar, a frase de "desligado" volta ao texto padrão.
+        self.journal_off_text=POWER_JOURNAL_OFF_TEXT
         self.legacy_state=legacy_power_pending(self.power_journal)
 
     def _is_elevated(self):
@@ -1080,8 +1082,8 @@ class OptimizationPanel(tk.Frame):
         if legacy:
             if not self.btn_legacy.winfo_manager():
                 self.btn_legacy.pack(side='left',padx=(9,0))
-            # FIX-P3-03-06 (R-30): com o diário desligado, este botão também fica desligado.
-            self.btn_legacy.state(['disabled'] if busy or self.journal_error else ['!disabled'])
+            # FIX-P3-03-06/07 (R-30): com o diário desligado ou ausente, este botão também fica desligado.
+            self.btn_legacy.state(['!disabled'] if usable and not busy else ['disabled'])
         elif self.btn_legacy.winfo_manager():
             self.btn_legacy.pack_forget()
         if self.journal_error:
@@ -1345,8 +1347,9 @@ class OptimizationPanel(tk.Frame):
         """
         if self.power_busy:
             return
-        if self.journal_error:
-            # FIX-P3-03-06: defesa dupla; o botão já fica desligado com o diário desligado.
+        if self.journal is None or self.journal_error:
+            # FIX-P3-03-06/07: defesa dupla, mesma condição das outras três ações; o botão
+            # já fica desligado com o diário desligado.
             self._show('error','Desfazer alteração antiga',self._journal_error_text())
             return
         self.legacy_state=legacy_power_pending(self.power_journal)

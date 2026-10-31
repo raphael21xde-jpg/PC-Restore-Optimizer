@@ -1,9 +1,12 @@
 """FIX-P3-03-06: ressalvas da revisão da PR #137 (issue #138).
 
-- depois do erro inesperado do "Desfazer tudo", a linha de status da aba 4, a aba 7 e a
-  introdução da aba 4 falam em "desligado" uma vez só, sem "trocas de plano";
+- depois do erro inesperado do "Desfazer tudo", a linha de status da aba 4 e a aba 7 falam
+  em "desligado" uma vez só, sem "trocas de plano"; a caixa de texto da aba 4 não é
+  redesenhada e continua com a lista de planos (FIX-P3-03-07);
 - o botão "Desfazer alteração antiga" também fica desligado com o diário desligado (R-30);
-- o texto do erro inesperado fala em "botões de aplicar e desfazer ajustes".
+- o texto do erro inesperado fala em "botões de aplicar e desfazer ajustes";
+- FIX-P3-03-07 (issue #143): diário ausente também desliga "Desfazer alteração antiga" e
+  recarregar o diário volta a frase padrão de "desligado".
 
 Tudo sintético: reaproveita o painel e os ajudantes da fatia 2b (TemporaryDirectory,
 powercfg falso, ponto de restauração falso). Nenhum comando real é executado.
@@ -55,6 +58,7 @@ class JournalOffTextTests(f2b.ChangesTabHelpers):
 
     def test_unexpected_error_says_off_once_everywhere(self):
         panel = self.two_changes()
+        before = self.power_text(panel)
         self.unexpected_error(panel)
         status = panel.power_status.get()
         self.assertEqual(status, ou.CHANGES_UNEXPECTED_ERROR_TEXT)
@@ -63,9 +67,14 @@ class JournalOffTextTests(f2b.ChangesTabHelpers):
                 self.assertEqual(text.count('desligad'), 1)
                 self.assertNotIn('trocas de plano', text)
                 self.assertNotIn(f2b.NADA, text)
+        # FIX-P3-03-07 (R-31): a caixa de texto da aba 4 não é redesenhada com o erro;
+        # ela mostra a lista de planos lida de novo pelo Job, sem "desligado".
         intro = self.power_text(panel)
-        self.assertLessEqual(intro.count('desligad'), 1)
+        self.assertTrue(intro.startswith('PLANOS DO WINDOWS — LEITURA\n'))
+        self.assertEqual(intro, before)
+        self.assertNotIn('desligad', intro)
         self.assertNotIn('trocas de plano', intro)
+        self.assertNotIn(ou.POWER_JOURNAL_OFF_TEXT, intro)
         self.assertTrue(panel.btn_apply.instate(['disabled']))
         self.assertTrue(panel.btn_revert.instate(['disabled']))
         self.assertTrue(panel.btn_undo_all.instate(['disabled']))
@@ -129,6 +138,56 @@ class JournalOffTextTests(f2b.ChangesTabHelpers):
         self.assertEqual(self.messages,
                          [('error', 'Desfazer alteração antiga', expected)])
         self.assertEqual(self.legacy_file().read_bytes(), LEGACY_APPLIED)
+
+
+@unittest.skipIf(NO_DISPLAY, 'Sem Tk ou sem tela gráfica')
+class FixP30307Tests(f2b.ChangesTabHelpers):
+    """FIX-P3-03-07 (issue #143): ressalvas da revisão da PR #142."""
+    unexpected_error = JournalOffTextTests.unexpected_error
+
+    def test_legacy_refuses_when_journal_is_none(self):
+        self.write_journal(f2b._entry(1, 'applied', A, C))
+        self.legacy_file().write_bytes(LEGACY_APPLIED)
+        self.fake.current = C
+        panel = self.panel()
+        self.root.update()
+        panel.journal = None
+        panel.journal_error = ''
+        panel._update_power_buttons()
+        self.assertTrue(panel.btn_legacy.instate(['disabled']))
+        self.fake.calls.clear()
+        self.messages.clear()
+        self.answers.clear()
+        expected = 'O diário de alterações não está disponível. ' + ou.POWER_JOURNAL_OFF_TEXT
+        with mock.patch.object(ou, 'revert_power_plan', side_effect=_forbidden) as old:
+            panel.undo_legacy_plan()
+            self.wait_idle(panel)
+        old.assert_not_called()
+        self.assertEqual(self.fake.calls, [])
+        self.assertEqual(self.answers, [])
+        self.assertEqual(self.restore_calls, [])
+        self.assertEqual(self.legacy_file().read_bytes(), LEGACY_APPLIED)
+        self.assertEqual(self.messages, [('error', 'Desfazer alteração antiga', expected)])
+        self.assertEqual(self.fake.current, C)
+
+    def test_reload_restores_default_off_text(self):
+        panel = self.two_changes()
+        self.unexpected_error(panel)
+        self.assertIsNone(panel.journal_off_text)
+        self.journal_file.write_bytes(b'{nao e json')
+        panel._load_change_journal()
+        self.assertEqual(panel.journal_off_text, ou.POWER_JOURNAL_OFF_TEXT)
+        self.assertIsNone(panel.journal)
+        self.assertEqual(panel._journal_error_text(),
+                         panel.journal_error + ' ' + ou.POWER_JOURNAL_OFF_TEXT)
+
+    def test_reload_ok_clears_error_and_restores_off_text(self):
+        panel = self.two_changes()
+        self.unexpected_error(panel)
+        panel._load_change_journal()
+        self.assertEqual(panel.journal_error, '')
+        self.assertIsNotNone(panel.journal)
+        self.assertEqual(panel.journal_off_text, ou.POWER_JOURNAL_OFF_TEXT)
 
 
 if __name__ == '__main__':
