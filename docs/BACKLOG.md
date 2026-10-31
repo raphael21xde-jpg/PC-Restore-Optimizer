@@ -517,6 +517,16 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - extra: `tests/test_index_audit_bridge.test_preview_is_not_an_import_conflicts_are_explicit` só roda no Windows (o caminho de teste é do Windows e `abspath` só vale lá).
 - Itens 5 e 6 da issue ficaram fora. A P3-03 fatia 2b-2 segue `pronto` e é a próxima.
 - Testes: `tests/test_change_journal_fix_p3_03_03.py` (erro inesperado depois de desfazer parte, aviso de desconhecido sem esconder o resultado, aba 7 com troca antiga, singular e plural).
+### FIX-P3-03-04 · Ressalvas da revisão da PR #133 (aviso único e textos do Desfazer tudo) — `concluído` (PR a preencher)
+- Origem: issue #134 (revisão da PR #133, FIX-P3-03-03).
+- **Status:** `concluído` (branch `auto/FIX-P3-03-04-ressalvas-133`). Mudaram só `optimization_ui.py`, os testes (`tests/test_change_journal_fix_p3_03_03.py`, `tests/test_change_journal_p3_03_fatia2b.py`, `tests/test_index_audit_bridge.py`), este backlog e `docs/REGRAS.md` (R-28). `change_journal.py` não mudou. Nenhuma linha com o nome de uma trava foi tocada.
+- **Escolhas de design (opção mais segura):**
+  - um só aviso no erro inesperado do "Desfazer tudo": `_journal_failed` ganhou o parâmetro `title` (padrão "Diário de alterações") e esse caminho passa "Desfazer tudo"; o `_show` extra saiu (R-28). A janela mostra o texto do erro seguido de `POWER_JOURNAL_OFF_TEXT`, como nos outros erros do diário;
+  - o texto do erro inesperado não começa mais nenhuma frase com "Por segurança" (fica só a de `POWER_JOURNAL_OFF_TEXT`) e ficou genérico: "Ocorreu um erro inesperado ao desfazer. Algumas alterações podem já ter sido desfeitas. Confira os ajustes nas Configurações do Windows. O diário fica desligado até você fechar e abrir o app de novo.";
+  - pendente anotado: os outros textos da aba 7 e da aba Energia ainda citam "plano de energia" (hoje é o único tipo de ajuste no diário). Quando o diário ganhar outros tipos (Fase 3), esses textos passam a ser montados a partir dos tipos que existem;
+  - testes: os ajudantes da aba 7 foram para `ChangesTabHelpers` (sem nenhum `test_`), base de `ChangesTabTests` (fatia 2b) e de `ChangesReviewFixTests` (FIX-P3-03-03). Saiu o truque do `setattr(..., None)`; um teste confere que a base não tem `test_`;
+  - `tests/test_index_audit_bridge.test_preview_is_not_an_import_conflicts_are_explicit` voltou a rodar fora do Windows: lá o teste troca `index_choices_bridge.norm` por uma chave com `ntpath` (no Windows usa a função real). O código do app não mudou.
+- Testes: `tests/test_change_journal_fix_p3_03_03.py`, `tests/test_change_journal_p3_03_fatia2b.py` e `tests/test_index_audit_bridge.py`.
 ### FIX-P3-01-01 · Ressalvas da revisão da PR #113 (perfil de hardware) — `concluído`
 - Dual channel com todos os módulos no mesmo canal, tipos de barramento que faltam, aviso de nobreak visto como bateria, erro do PowerShell sem texto cru e ajustes nos testes.
 - Critérios: os itens da issue #114.
