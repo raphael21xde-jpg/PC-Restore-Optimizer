@@ -55,8 +55,9 @@ class IndexAuditBridgeTests(unittest.TestCase):
         self.assertEqual(self.path.stat().st_mtime_ns, state)
 
     def test_preview_is_not_an_import_conflicts_are_explicit(self):
-        # FIX-P3-03-04: fora do Windows, a chave de comparação usa ntpath (sem mudar o app),
-        # para o teste rodar também no Linux; no Windows usa a função real.
+        # FIX-P3-03-04/05: no Linux o teste troca `index_choices_bridge.norm` por uma versão
+        # com `ntpath` (o caminho de teste é do Windows), sem mudar o app. A função real
+        # (`backup_core.norm`) só é testada neste teste quando ele roda no Windows.
         if os.name == 'nt':
             self._preview_is_not_an_import()
             return

@@ -517,7 +517,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - extra: `tests/test_index_audit_bridge.test_preview_is_not_an_import_conflicts_are_explicit` só roda no Windows (o caminho de teste é do Windows e `abspath` só vale lá).
 - Itens 5 e 6 da issue ficaram fora. A P3-03 fatia 2b-2 segue `pronto` e é a próxima.
 - Testes: `tests/test_change_journal_fix_p3_03_03.py` (erro inesperado depois de desfazer parte, aviso de desconhecido sem esconder o resultado, aba 7 com troca antiga, singular e plural).
-### FIX-P3-03-04 · Ressalvas da revisão da PR #133 (aviso único e textos do Desfazer tudo) — `concluído` (PR a preencher)
+### FIX-P3-03-04 · Ressalvas da revisão da PR #133 (aviso único e textos do Desfazer tudo) — `concluído` (PR #135)
 - Origem: issue #134 (revisão da PR #133, FIX-P3-03-03).
 - **Status:** `concluído` (branch `auto/FIX-P3-03-04-ressalvas-133`). Mudaram só `optimization_ui.py`, os testes (`tests/test_change_journal_fix_p3_03_03.py`, `tests/test_change_journal_p3_03_fatia2b.py`, `tests/test_index_audit_bridge.py`), este backlog e `docs/REGRAS.md` (R-28). `change_journal.py` não mudou. Nenhuma linha com o nome de uma trava foi tocada.
 - **Escolhas de design (opção mais segura):**
@@ -527,6 +527,16 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - testes: os ajudantes da aba 7 foram para `ChangesTabHelpers` (sem nenhum `test_`), base de `ChangesTabTests` (fatia 2b) e de `ChangesReviewFixTests` (FIX-P3-03-03). Saiu o truque do `setattr(..., None)`; um teste confere que a base não tem `test_`;
   - `tests/test_index_audit_bridge.test_preview_is_not_an_import_conflicts_are_explicit` voltou a rodar fora do Windows: lá o teste troca `index_choices_bridge.norm` por uma chave com `ntpath` (no Windows usa a função real). O código do app não mudou.
 - Testes: `tests/test_change_journal_fix_p3_03_03.py`, `tests/test_change_journal_p3_03_fatia2b.py` e `tests/test_index_audit_bridge.py`.
+### FIX-P3-03-05 · Ressalvas da revisão da PR #135 (texto do erro inesperado e aba 7) — `concluído` (PR #137)
+- Origem: issue #136 (revisão da PR #135, FIX-P3-03-04).
+- **Status:** `concluído` (branch `auto/FIX-P3-03-05-ressalvas-135`). Mudaram só `optimization_ui.py`, os testes (`tests/test_change_journal_fix_p3_03_05.py`, novo, `tests/test_change_journal_fix_p3_03_03.py`, `tests/test_change_journal_p3_03_fatia2b.py` e o comentário de `tests/test_index_audit_bridge.py`) e este backlog. `change_journal.py` não mudou. Nenhuma linha com o nome de uma trava foi tocada.
+- **Escolhas de design (opção mais segura):**
+  - o título do FIX-P3-03-04 passou a dizer "PR #135";
+  - erro inesperado no "Desfazer tudo": o texto ficou completo e a janela mostra só ele (uma frase sobre "desligado", sem "trocas de plano"): "Ocorreu um erro inesperado ao desfazer. Algumas alterações podem já ter sido desfeitas. O diário e os botões de troca e de desfazer ficam desligados até você fechar e abrir o app de novo. Depois disso, confira na aba "7  Alterações feitas" o que continua aplicado.";
+  - constante nova `CHANGES_TAB_LABEL` (rótulo da 7ª subaba), usada na aba e dentro do texto acima, para os dois nunca ficarem diferentes;
+  - `_journal_failed` ganhou `off_text` (padrão `POWER_JOURNAL_OFF_TEXT`); `None` mostra só a mensagem. Só o erro inesperado passa `None` (continua uma janela só, R-28); os outros erros do diário continuam terminando com `POWER_JOURNAL_OFF_TEXT`;
+  - o comentário de `tests/test_index_audit_bridge.py` explica que no Linux o teste troca `index_choices_bridge.norm` por uma versão com `ntpath` e que a função real (`backup_core.norm`) só é testada no Windows. Sem mudar a lógica.
+- Testes: `tests/test_change_journal_fix_p3_03_05.py` (texto aponta a aba 7 e fala "desligado" uma vez, rótulo da 7ª subaba, erro do diário de outra janela continua com `POWER_JOURNAL_OFF_TEXT`, uma janela só no erro inesperado), mais os dois testes de erro inesperado ajustados.
 ### FIX-P3-01-01 · Ressalvas da revisão da PR #113 (perfil de hardware) — `concluído`
 - Dual channel com todos os módulos no mesmo canal, tipos de barramento que faltam, aviso de nobreak visto como bateria, erro do PowerShell sem texto cru e ajustes nos testes.
 - Critérios: os itens da issue #114.

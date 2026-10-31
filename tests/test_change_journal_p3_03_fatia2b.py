@@ -177,6 +177,7 @@ class ChangesTabTests(ChangesTabHelpers):
         self.root.update()
         names = [panel.tabs.tab(t, 'text') for t in panel.tabs.tabs()]
         self.assertIn('7  Alterações feitas', names)
+        self.assertIn(ou.CHANGES_TAB_LABEL, names)
         self.assertEqual(self.fake.calls, [])
         self.assertEqual(self.restore_calls, [])
         text = self.changes(panel)
@@ -319,8 +320,13 @@ class ChangesTabTests(ChangesTabHelpers):
         # FIX-P3-03-03 (R-27): o texto diz que parte pode já ter mudado e desliga o diário.
         expected = ou.CHANGES_UNEXPECTED_ERROR_TEXT
         # FIX-P3-03-04 (R-28): uma janela só, com o título "Desfazer tudo".
-        self.assertEqual(self.messages,
-                         [('error', 'Desfazer tudo', expected + ' ' + ou.POWER_JOURNAL_OFF_TEXT)])
+        # FIX-P3-03-05: a janela mostra só o texto completo, que já aponta a aba 7.
+        self.assertEqual(self.messages, [('error', 'Desfazer tudo', expected)])
+        msg = self.messages[0][2]
+        self.assertNotIn(ou.POWER_JOURNAL_OFF_TEXT, msg)
+        self.assertNotIn('trocas de plano', msg)
+        self.assertIn(ou.CHANGES_TAB_LABEL, expected)
+        self.assertEqual(msg.count('desligad'), 1)
         self.assertEqual(panel.changes_status.get(), expected)
         self.assertNotIn('Fulano', ' '.join(m[2] for m in self.messages))
 

@@ -63,12 +63,16 @@ class ChangesReviewFixTests(f2b.ChangesTabHelpers):
         self.assertIn('fechar e abrir o app de novo', expected)
         self.assertEqual(panel.changes_status.get(), expected)
         # FIX-P3-03-04 (R-28): uma janela só, com o título "Desfazer tudo".
-        self.assertEqual(self.messages,
-                         [('error', 'Desfazer tudo', expected + ' ' + ou.POWER_JOURNAL_OFF_TEXT)])
-        # FIX-P3-03-04: sem "Por segurança" repetido e sem o tipo de ajuste fixo no texto.
-        self.assertNotIn('Por segurança', expected)
-        self.assertNotIn('plano de energia', expected)
-        self.assertEqual(self.messages[0][2].count('Por segurança'), 1)
+        # FIX-P3-03-05: a janela mostra só o texto completo (sem POWER_JOURNAL_OFF_TEXT).
+        self.assertEqual(self.messages, [('error', 'Desfazer tudo', expected)])
+        msg = self.messages[0][2]
+        self.assertNotIn(ou.POWER_JOURNAL_OFF_TEXT, msg)
+        self.assertNotIn('trocas de plano', msg)
+        self.assertIn(ou.CHANGES_TAB_LABEL, expected)
+        self.assertEqual(msg.count('desligad'), 1)
+        # FIX-P3-03-04: sem "Por segurança" e sem o tipo de ajuste fixo no texto.
+        self.assertNotIn('Por segurança', msg)
+        self.assertNotIn('plano de energia', msg)
         self.assertEqual(panel.journal_error, expected)
         shown = ' '.join(m[2] for m in self.messages)
         for text in (shown, panel.changes_status.get(), panel.power_status.get(),
