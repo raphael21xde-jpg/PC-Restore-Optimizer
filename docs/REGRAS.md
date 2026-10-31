@@ -10,8 +10,8 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 0 (última poda: 31/10/2026, pedido `regras-20261031-poda-r14-r23`, issue #125; a R-24 nasceu
-da separação da R-21 e não conta). A próxima poda é pedida quando chegarem 10 regras novas a partir da R-25.
+poda: 1 (R-25; última poda: 31/10/2026, pedido `regras-20261031-poda-r14-r23`, issue #125; a R-24 nasceu
+da separação da R-21 e não conta). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-25.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -39,4 +39,5 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-21 | Teste que confere "nenhum trabalho foi iniciado" compara a identidade do Job antes e depois da ação (`assertIs`), nunca exige que ele seja vazio (`_power_job is None`), porque leituras anteriores também criam Job. | Validação Windows da main 866ce6f (FIX-20261030-teste-sem-admin); separada da R-24 na poda de 31/10/2026 | 2026-10-30 |
 | R-22 | Juntada à **R-09** na poda de 31/10/2026 (confira a R-09). | Revisão da PR #115 (issue #116), FIX-P3-03-02 | 2026-10-31 |
 | R-23 | Juntada à **R-19** na poda de 31/10/2026 (confira a R-19). | Revisão da PR #124 (FIX-P3-03-02) | 2026-10-31 |
-| R-24 | Regra de processo: PR que mexe em tela (Tk) tem os testes de janela rodados na nuvem com o Python do uv + `xvfb-run` antes da revisão; o testador diz no veredito se eles rodaram ou foram ignorados. | Separada da R-21 (FIX-20261030-teste-sem-admin) na poda de 31/10/2026 | 2026-10-31 |
+| R-24 | Regra de processo: antes da revisão de qualquer PR, os testes de janela (Tk) rodam na nuvem com o Python do uv + `xvfb-run`; o testador diz no veredito se eles rodaram ou foram ignorados (e por quê). | Separada da R-21 (FIX-20261030-teste-sem-admin) na poda de 31/10/2026 | 2026-10-31 |
+| R-25 | Ao juntar ou separar regras numa poda, o texto novo não põe condição ("PR que mexe em X") que a regra antiga não tinha; quem revisa compara cada exigência antiga com a nova. | Revisão da PR #126 (poda de 31/10/2026) | 2026-10-31 |
