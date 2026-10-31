@@ -385,9 +385,12 @@ class ChangesTabTests(ChangesTabHelpers):
                         stack.extend(widget.winfo_children())
                         if widget.winfo_class() in ('TButton', 'Button'):
                             buttons.append(widget)
-                    self.assertEqual(buttons, [panel.btn_undo_all])
+                    # P3-03 fatia 2b-2: a aba 7 ganhou o "Conferir de novo" (só lê).
+                    self.assertCountEqual(buttons, [panel.btn_undo_all, panel.btn_recheck])
                     self.assertTrue(panel.btn_undo_all.instate(['disabled']))
+                    self.assertTrue(panel.btn_recheck.instate(['disabled']))
                     panel.undo_all_changes()
+                    panel.recheck_changes()
                     self.root.update()
                 self.assertEqual(self.fake.calls, [])
                 self.assertEqual(self.answers, [])

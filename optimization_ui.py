@@ -82,6 +82,22 @@ CHANGES_CONFIRM_TEXT = (
     'Desfazer {n} alteração(ões) feitas pelo app?\n\n'
     'O app desfaz da mais nova para a mais antiga; não cria ponto de restauração; '
     'se uma não puder ser desfeita, o app para ali.')
+# ---------- P3-03 fatia 2b-2: "Conferir de novo" (textos fixos, R-07) ----------
+CHANGES_RECHECK_TITLE = 'Conferir de novo'
+CHANGES_RECHECK_RUNNING_TEXT = 'Conferindo o valor atual de cada alteração (somente leitura)…'
+CHANGES_RECHECK_NOTHING_TEXT = 'Não há alteração aplicada ou sem confirmação para conferir.'
+CHANGES_RECHECK_FIXED_TEXT = ('Conferência concluída: {n} alteração(ões) tiveram o estado acertado '
+                              'no diário. Nada foi mudado no Windows.')
+CHANGES_RECHECK_SAME_TEXT = ('Conferência concluída: o diário já estava certo. '
+                             'Nada foi mudado no Windows.')
+CHANGES_RECHECK_OUTSIDE_TEXT = (' {n} ajuste(s) foram mudados por outro programa; '
+                                'o app não vai sobrescrever.')
+CHANGES_RECHECK_UNREADABLE_TEXT = (' Não foi possível ler o valor atual de {n} ajuste(s); '
+                                   'eles continuam como estavam.')
+CHANGES_RECHECK_ERROR_TEXT = (
+    'Ocorreu um erro inesperado ao conferir. Nada foi mudado no Windows. '
+    'O diário e os botões de aplicar e desfazer ajustes ficam desligados até você fechar e abrir '
+    'o app de novo.')
 _NOTHING_SAVED = ' Nada foi gravado.'
 _LEGACY_KNOWN_MESSAGES = {
     'Nenhuma alteração anterior registrada neste aplicativo.',
@@ -866,6 +882,9 @@ class OptimizationPanel(tk.Frame):
         buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(2,8))
         self.btn_undo_all=ttk.Button(buttons,text='Desfazer tudo',command=self.undo_all_changes)
         self.btn_undo_all.pack(side='left')
+        # P3-03 fatia 2b-2: só lê o valor atual de cada item e acerta o diário.
+        self.btn_recheck=ttk.Button(buttons,text='Conferir de novo',command=self.recheck_changes)
+        self.btn_recheck.pack(side='left',padx=(9,0))
         self.changes_status=tk.StringVar(value='')
         tk.Label(area,textvariable=self.changes_status,bg=BG,fg=AMBER,anchor='w',justify='left',
                  wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
@@ -1094,6 +1113,9 @@ class OptimizationPanel(tk.Frame):
         if hasattr(self,'btn_undo_all'):
             can_undo_all=usable and not busy and self._count_status('applied')>0
             self.btn_undo_all.state(['!disabled'] if can_undo_all else ['disabled'])
+            can_recheck=(usable and not busy
+                         and self._count_status('applied')+self._count_status('unknown')>0)
+            self.btn_recheck.state(['!disabled'] if can_recheck else ['disabled'])
             self._render_changes()
 
     def _journal_failed(self,message,title='Diário de alterações',off_text=POWER_JOURNAL_OFF_TEXT):
@@ -1338,6 +1360,61 @@ class OptimizationPanel(tk.Frame):
             message=CHANGES_UNEXPECTED_ERROR_TEXT
             self.changes_status.set(message)
             self._journal_failed(message,title='Desfazer tudo',off_text=None)
+
+    # ---------- P3-03 fatia 2b-2: conferir de novo ----------
+    def recheck_changes(self):
+        """Lê o valor atual de cada alteração numa thread (R-10) e acerta o diário.
+
+        Só lê: sem confirmação, sem administrador e sem ponto de restauração."""
+        if self.power_busy:
+            return
+        if self.journal is None or self.journal_error:
+            self._show('error',CHANGES_RECHECK_TITLE,self._journal_error_text())
+            return
+        if not self._count_status('applied')+self._count_status('unknown'):
+            self.changes_status.set(CHANGES_RECHECK_NOTHING_TEXT)
+            return
+        journal=self.journal
+        def work():
+            try:
+                result=journal.recheck()
+                outcome={'status':'done','changed':len(result['changed']),
+                         'outside':len(result['outside']),'unreadable':len(result['unreadable'])}
+            except JournalError as exc:
+                outcome={'status':'journal','message':str(exc)}
+            except Exception:
+                outcome={'status':'error'}
+            outcome.update(self._read_plans_work())
+            return outcome
+        self.changes_status.set(CHANGES_RECHECK_RUNNING_TEXT)
+        self._run_power_job(work,self._recheck_done)
+
+    def _recheck_done(self,outcome):
+        self._after_power_job(outcome)
+        status=outcome.get('status')
+        if status=='done':
+            changed=outcome.get('changed',0)
+            message=(CHANGES_RECHECK_FIXED_TEXT.format(n=changed) if changed
+                     else CHANGES_RECHECK_SAME_TEXT)
+            outside,unreadable=outcome.get('outside',0),outcome.get('unreadable',0)
+            if outside:
+                message+=CHANGES_RECHECK_OUTSIDE_TEXT.format(n=outside)
+            if unreadable:
+                message+=CHANGES_RECHECK_UNREADABLE_TEXT.format(n=unreadable)
+            self.changes_status.set(message)
+            self.note.set(message)
+            if outside or unreadable:
+                self._show('warning',CHANGES_RECHECK_TITLE,message)
+        elif status=='journal':
+            message=outcome.get('message','')
+            self.changes_status.set(message)
+            self._journal_failed(message,title=CHANGES_RECHECK_TITLE)
+        else:
+            # Mesmo padrão do "Desfazer tudo" (R-27/R-30): o diário em memória não é
+            # confiável; desliga até reabrir o app, com texto fixo (sem mensagem crua).
+            message=CHANGES_RECHECK_ERROR_TEXT
+            self.changes_status.set(message)
+            self._journal_failed(message,title=CHANGES_RECHECK_TITLE,off_text=None)
 
     def undo_legacy_plan(self):
         """Desfaz a troca feita pela versão antiga (``pcro-power-1``).

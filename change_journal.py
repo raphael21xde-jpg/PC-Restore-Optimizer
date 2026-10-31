@@ -21,6 +21,8 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
 - diário ilegível, de schema errado ou que seja link bloqueia tudo;
 - só valores simples (texto, número, sim/não, vazio), sem caminhos;
 - entradas nunca são apagadas, só mudam de estado;
+- P3-03 fatia 2b-2: "Conferir de novo" (``recheck``) só lê e acerta os estados
+  numa única gravação; um ``applied`` com valor estranho não vira ``unknown``;
 - FIX-P3-03-02: cada instância guarda o SHA-256 do arquivo que leu ou gravou;
   se outra janela do app (ou outro programa) mudou, apagou ou criou o arquivo
   depois disso, a instância recusa tudo e não sobrescreve nada. Uma falha ao
@@ -73,6 +75,7 @@ MSG_UNDO_NOT_NOTED = ('O ajuste foi desfeito no sistema, mas o diário não pôd
 MSG_UNDO_UNKNOWN_NOT_NOTED = ('O app tentou desfazer o ajuste no sistema, mas não conseguiu confirmar '
                               'e o diário não pôde ser anotado; confira manualmente e '
                               'feche e abra o app de novo.')
+NOTE_UNDO = 'desfazer'
 MSG_BATCH_SAVE_FAILED = 'Não foi possível gravar o diário; os ajustes deste lote foram desfeitos.'
 MSG_BATCH_SAVE_FAILED_CHECK = ('Não foi possível gravar o diário; confira manualmente: '
                                '{n} ajuste(s) não voltaram ao valor anterior.')
@@ -421,7 +424,9 @@ class ChangeJournal:
         if ok and same_value(current, entry['after']):
             return False, 'O ajuste não voltou ao valor anterior; ele continua aplicado.'
         try:
-            self._set(entry, 'unknown')
+            # P3-03 fatia 2b-2: a nota diz que o "unknown" veio de um desfazer, para o
+            # "Conferir de novo" saber que voltar ao valor anterior é "desfeita".
+            self._set(entry, 'unknown', note=NOTE_UNDO)
         except JournalError:
             raise JournalError(MSG_UNDO_UNKNOWN_NOT_NOTED) from None
         return False, 'Não foi possível confirmar que o ajuste voltou ao valor anterior; confira manualmente.'
@@ -476,6 +481,62 @@ class ChangeJournal:
                 status = 'unknown'
             self._set(entry, status)
             result.append((entry['id'], status))
+        return result
+
+    def recheck(self):
+        """P3-03 fatia 2b-2: "Conferir de novo". Só lê o valor atual e acerta o diário.
+
+        Nunca chama ``apply``/``revert`` nem cria ponto de restauração; uma leitura
+        por item. Só itens ``applied`` e ``unknown`` com adaptador e com valor
+        anterior diferente do novo são lidos. Regras (A = antes, N = novo):
+
+        - ``applied``: valor = A vira ``reverted``; = N não muda; outro valor não
+          muda e o id vai para ``outside`` (o app não sobrescreve);
+        - ``unknown``: valor = N vira ``applied``; = A vira ``reverted`` se veio de
+          um desfazer (nota ``desfazer``), senão ``failed``; outro continua ``unknown``;
+        - leitura com erro: nada muda e o id vai para ``unreadable``.
+
+        Todas as mudanças vão numa única gravação. Se ela falhar, os estados em
+        memória voltam ao que eram e o ``JournalError`` sobe (nada foi gravado).
+        Devolve ``{'changed': [(id, antigo, novo)], 'outside': [...], 'unreadable': [...]}``."""
+        self._check_disk_unchanged()
+        result = {'changed': [], 'outside': [], 'unreadable': []}
+        saved = []   # (entrada, cópia de antes) para voltar se a gravação falhar
+        for entry in self._entries:
+            status = entry['status']
+            if status not in ('applied', 'unknown') or entry['kind'] not in self._adapters:
+                continue
+            if same_value(entry['before'], entry['after']):
+                continue
+            ok, current = self._read(entry)
+            if not ok:
+                result['unreadable'].append(entry['id'])
+                continue
+            new = None
+            if status == 'applied':
+                if same_value(current, entry['before']):
+                    new = 'reverted'
+                elif not same_value(current, entry['after']):
+                    result['outside'].append(entry['id'])
+            elif same_value(current, entry['after']):
+                new = 'applied'
+            elif same_value(current, entry['before']):
+                # Na dúvida, "não aplicada" em vez de "desfeita".
+                new = 'reverted' if entry.get('note') == NOTE_UNDO else 'failed'
+            if new is None:
+                continue
+            saved.append((entry, dict(entry)))
+            entry['status'] = new
+            entry['updated'] = _now()
+            result['changed'].append((entry['id'], status, new))
+        if saved:
+            try:
+                self._persist()
+            except JournalError:
+                for entry, before in saved:
+                    entry.clear()
+                    entry.update(before)
+                raise
         return result
 
     def entries(self):
