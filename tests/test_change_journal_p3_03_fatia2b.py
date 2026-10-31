@@ -176,6 +176,8 @@ class ChangesTabTests(ChangesTabHelpers):
         panel = self.panel()
         self.root.update()
         names = [panel.tabs.tab(t, 'text') for t in panel.tabs.tabs()]
+        # De propósito: o rótulo por extenso pega uma mudança acidental da constante,
+        # e a constante garante que a aba e o texto do erro usam o mesmo rótulo.
         self.assertIn('7  Alterações feitas', names)
         self.assertIn(ou.CHANGES_TAB_LABEL, names)
         self.assertEqual(self.fake.calls, [])
