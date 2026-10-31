@@ -506,7 +506,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - Erros de `inspect_pc` não repetem o texto do PowerShell (R-07): "Inventário <item>: não foi possível ler." e "Energia: não foi possível ler os planos de energia.".
   - `optimization_engine._is_windows()` é o único ponto que lê `os.name`; os testes trocam essa função e um `threading` falso do módulo da tela, nunca `os.name` nem `threading.Thread` do processo todo.
   - Ficou de fora (ressalva): o `self.after` chamado de dentro da thread em `optimization_ui.scan`.
-### FIX-P2-09-10 · Ressalvas da revisão da PR #117 (cópia real) — `concluído` (PR #PRNUM)
+### FIX-P2-09-10 · Ressalvas da revisão da PR #117 (cópia real) — `concluído` (PR #130)
 - Linha contraditória no backlog, constante própria para o começo comum das mensagens de administrador e texto mais claro sobre a cópia anterior.
 - Critérios: os itens da issue #118.
 - **Feito (escolhas de design):**
