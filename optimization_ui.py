@@ -56,6 +56,21 @@ POWER_LEGACY_UNREADABLE_TEXT = (
 POWER_JOURNAL_OFF_TEXT = 'Por segurança, as trocas de plano e o Desfazer ficam desligados.'
 POWER_GENERIC_FAIL = ('O Windows não confirmou a operação. Confira o plano de energia nas '
                       'Configurações do Windows.')
+# ---------- P3-03 fatia 2b-1: aba "Alterações feitas" (textos fixos, R-07) ----------
+CHANGES_UNKNOWN_TEXT = ('{n} ajuste(s) com estado desconhecido. Confira o plano de energia nas '
+                        'Configurações do Windows. Por segurança, novas trocas ficam bloqueadas.')
+CHANGES_EMPTY_TEXT = 'Não há alteração aplicada pelo app para desfazer.'
+CHANGES_LEGACY_BLOCKED_TEXT = 'Por isso, o bloqueio continua: o app não libera novas trocas sozinho.'
+CHANGES_INTRO_TEXT = ('Aqui aparece tudo o que o app mudou no Windows, com o estado de cada '
+                      'alteração. Abrir esta aba só lê o diário: nenhum comando é executado.')
+CHANGES_ALL_UNDONE_TEXT = 'Todas as {n} alterações foram desfeitas.'
+CHANGES_STOPPED_TEXT = '{done} desfeita(s); {pending} continuam como estavam. Motivo: {reason}'
+CHANGES_DONE_BEFORE_ERROR_TEXT = '{n} alteração(ões) já foram desfeitas antes do erro. '
+CHANGES_CONFIRM_TEXT = (
+    'Desfazer {n} alteração(ões) feitas pelo app?\n\n'
+    'O app desfaz da mais nova para a mais antiga; não cria ponto de restauração; '
+    'se uma não puder ser desfeita, o app para ali.')
+_NOTHING_SAVED = ' Nada foi gravado.'
 _LEGACY_KNOWN_MESSAGES = {
     'Nenhuma alteração anterior registrada neste aplicativo.',
     'Registro de reversão está ilegível.',
@@ -223,9 +238,11 @@ class OptimizationPanel(tk.Frame):
         compare=ttk.Frame(self.tabs)
         firmware=ttk.Frame(self.tabs)
         stutters=ttk.Frame(self.tabs)
+        changes=ttk.Frame(self.tabs)
         for frame,name in ((diagnose,'1  Diagnóstico'),(monitor,'2  Temperaturas e sessões'),
                            (stutters,'3  Stutters / quadros'),(power,'4  Energia reversível'),
-                           (compare,'5  Benchmarks'),(firmware,'6  BIOS e drivers')):
+                           (compare,'5  Benchmarks'),(firmware,'6  BIOS e drivers'),
+                           (changes,'7  Alterações feitas')):
             self.tabs.add(frame,text=name)
         self._build_diagnostics(diagnose)
         self._build_monitor(monitor)
@@ -233,6 +250,7 @@ class OptimizationPanel(tk.Frame):
         self._build_power(power)
         self._build_benchmarks(compare)
         self._build_firmware(firmware)
+        self._build_changes(changes)
         tk.Label(outer,textvariable=self.note,bg=BG,fg=GREEN,anchor='w',
                  wraplength=900,justify='left',font=('Segoe UI',9)).pack(fill='x',pady=(10,1))
 
@@ -822,6 +840,20 @@ class OptimizationPanel(tk.Frame):
         self._write(self.power_text,'\n'.join(intro))
         self._update_power_buttons()
 
+    def _build_changes(self,parent):
+        """P3-03 fatia 2b-1: lista do diário e "Desfazer tudo". Montar só lê a memória."""
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        self.changes_frame=area
+        self._paragraph(area,'Alterações feitas pelo app',CHANGES_INTRO_TEXT)
+        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(2,8))
+        self.btn_undo_all=ttk.Button(buttons,text='Desfazer tudo',command=self.undo_all_changes)
+        self.btn_undo_all.pack(side='left')
+        self.changes_status=tk.StringVar(value='')
+        tk.Label(area,textvariable=self.changes_status,bg=BG,fg=AMBER,anchor='w',justify='left',
+                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
+        self.changes_text=self._text_area(area)
+        self._update_power_buttons()
+
     def _build_benchmarks(self,parent):
         area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
         self._paragraph(area,'Etapa 3: medir ganhos reais, sem promessas de FPS',
@@ -982,6 +1014,31 @@ class OptimizationPanel(tk.Frame):
     def _is_elevated(self):
         return is_process_elevated(self._elevated_probe)
 
+    def _count_status(self,status):
+        if self.journal is None or self.journal_error:
+            return 0
+        return sum(e['status']==status for e in self.journal.entries())
+
+    def _render_changes(self):
+        """Só lê a memória (diário já carregado e estado do registro antigo)."""
+        if not hasattr(self,'changes_text'):
+            return
+        if self.journal is None or self.journal_error:
+            lines=[self.journal_error or 'O diário de alterações não está disponível.',
+                   POWER_JOURNAL_OFF_TEXT]
+        else:
+            lines=list(self.journal.summary_lines())
+            unknown=self._count_status('unknown')
+            if unknown:
+                lines+=['',CHANGES_UNKNOWN_TEXT.format(n=unknown)]
+        if self.legacy_state=='pending':
+            lines+=['',POWER_LEGACY_PENDING_TEXT+' '+CHANGES_LEGACY_BLOCKED_TEXT]
+        elif self.legacy_state=='unreadable':
+            lines+=['',POWER_LEGACY_UNREADABLE_TEXT+' '+CHANGES_LEGACY_BLOCKED_TEXT]
+        elif self.legacy_state=='applied':
+            lines+=['',POWER_LEGACY_TEXT]
+        self._write(self.changes_text,'\n'.join(lines))
+
     def _last_applied_power(self):
         if self.journal is None:
             return None
@@ -994,7 +1051,8 @@ class OptimizationPanel(tk.Frame):
         busy=self.power_busy
         usable=self.journal is not None and not self.journal_error
         legacy=self.legacy_state!='none'
-        can_apply=usable and not busy and not legacy
+        unknown=self._count_status('unknown')
+        can_apply=usable and not busy and not legacy and not unknown
         can_revert=usable and not busy and self._last_applied_power() is not None
         self.btn_apply.state(['!disabled'] if can_apply else ['disabled'])
         if hasattr(self,'btn_refresh'):
@@ -1010,6 +1068,12 @@ class OptimizationPanel(tk.Frame):
             self.power_status.set(self.journal_error+' '+POWER_JOURNAL_OFF_TEXT)
         elif legacy:
             self.power_status.set(POWER_LEGACY_TEXT)
+        elif unknown:
+            self.power_status.set(CHANGES_UNKNOWN_TEXT.format(n=unknown))
+        if hasattr(self,'btn_undo_all'):
+            can_undo_all=usable and not busy and self._count_status('applied')>0
+            self.btn_undo_all.state(['!disabled'] if can_undo_all else ['disabled'])
+            self._render_changes()
 
     def _journal_failed(self,message):
         self.journal=None
@@ -1062,6 +1126,11 @@ class OptimizationPanel(tk.Frame):
             return
         if self.legacy_state!='none':
             self._show('warning','Plano de energia',POWER_LEGACY_TEXT)
+            return
+        unknown=self._count_status('unknown')
+        if unknown:
+            # Recusa antes de perguntar: um item sem confirmação bloqueia novas trocas.
+            self._show('warning','Plano de energia',CHANGES_UNKNOWN_TEXT.format(n=unknown))
             return
         if not self.plans or self.plan_box.current()<0:
             self._show('info','Energia','Clique em Atualizar primeiro.');return
@@ -1174,6 +1243,69 @@ class OptimizationPanel(tk.Frame):
         else:
             self.power_status.set(POWER_GENERIC_FAIL)
             self._show('error','Reverter energia',POWER_GENERIC_FAIL)
+
+    # ---------- P3-03 fatia 2b-1: desfazer tudo ----------
+    def undo_all_changes(self):
+        """Desfaz tudo o que está aplicado, do mais novo ao mais antigo, numa thread (R-10).
+
+        Não exige administrador e não cria ponto de restauração."""
+        if self.power_busy:
+            return
+        if self.journal is None or self.journal_error:
+            self._show('error','Desfazer tudo',(self.journal_error or 'O diário de alterações não está disponível.')
+                       +' '+POWER_JOURNAL_OFF_TEXT)
+            return
+        count=self._count_status('applied')
+        if not count:
+            self.changes_status.set(CHANGES_EMPTY_TEXT)
+            self._show('info','Desfazer tudo',CHANGES_EMPTY_TEXT)
+            return
+        if not self._ask('Desfazer tudo',CHANGES_CONFIRM_TEXT.format(n=count)):
+            self.changes_status.set('Desfazer tudo cancelado. Nada foi desfeito.')
+            return
+        journal=self.journal
+        def work():
+            try:
+                done,pending,reason=journal.undo_all()
+                outcome={'status':'done','done':len(done),'pending':len(pending),'reason':reason}
+            except JournalError as exc:
+                outcome={'status':'journal','message':str(exc),
+                         'done':len(getattr(exc,'done',None) or [])}
+            except Exception:
+                outcome={'status':'error'}
+            outcome.update(self._read_plans_work())
+            return outcome
+        self.changes_status.set('Desfazendo as alterações, da mais nova para a mais antiga…')
+        self._run_power_job(work,self._undo_all_done)
+
+    def _undo_all_done(self,outcome):
+        self._after_power_job(outcome)
+        status=outcome.get('status')
+        if status=='done':
+            done,pending=outcome.get('done',0),outcome.get('pending',0)
+            if pending:
+                message=CHANGES_STOPPED_TEXT.format(done=done,pending=pending,
+                                                    reason=outcome.get('reason') or POWER_GENERIC_FAIL)
+                self.changes_status.set(message)
+                self._show('warning','Desfazer tudo',message)
+            elif done:
+                message=CHANGES_ALL_UNDONE_TEXT.format(n=done)
+                self.changes_status.set(message)
+                self.note.set(message)
+            else:
+                self.changes_status.set(CHANGES_EMPTY_TEXT)
+        elif status=='journal':
+            message=outcome.get('message','')
+            done=outcome.get('done',0)
+            if done:
+                # R-19: algo já foi desfeito no sistema; nunca dizer "Nada foi gravado".
+                message=(CHANGES_DONE_BEFORE_ERROR_TEXT.format(n=done)
+                         +message.replace(_NOTHING_SAVED,'').strip())
+            self.changes_status.set(message)
+            self._journal_failed(message)
+        else:
+            self.changes_status.set(POWER_GENERIC_FAIL)
+            self._show('error','Desfazer tudo',POWER_GENERIC_FAIL)
 
     def undo_legacy_plan(self):
         """Desfaz a troca feita pela versão antiga (``pcro-power-1``).

@@ -436,12 +436,20 @@ class ChangeJournal:
         não pôde ser confirmado). Se o diário mudou por fora, recusa com
         ``JournalError`` antes de qualquer coisa; se a anotação de um item falhar
         depois de ele ter sido desfeito no sistema, o ``JournalError`` de ``undo``
-        sobe com o texto que diz isso (os itens anteriores já ficaram anotados)."""
+        sobe com o texto que diz isso (os itens anteriores já ficaram anotados).
+
+        P3-03 fatia 2b-1: um ``JournalError`` no meio do laço sobe com
+        ``exc.done`` (ids já desfeitos antes do erro), para a tela nunca dizer
+        "Nada foi gravado" depois de algo desfeito. O texto não muda."""
         self._check_disk_unchanged()
         applied = [e['id'] for e in reversed(self._entries) if e['status'] == 'applied']
         done = []
         for change_id in applied:
-            ok, reason = self.undo(change_id)
+            try:
+                ok, reason = self.undo(change_id)
+            except JournalError as exc:
+                exc.done = list(done)
+                raise
             if not ok:
                 pending = [i for i in applied if i not in done]
                 return done, pending, reason
