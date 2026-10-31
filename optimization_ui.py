@@ -67,11 +67,12 @@ CHANGES_ALL_UNDONE_TEXT = 'Todas as {n} alterações foram desfeitas.'
 # FIX-P3-03-03 (revisão da PR #131): singular, erro inesperado e onde fica o botão antigo.
 # FIX-P3-03-04: o texto do erro inesperado é genérico (vale para qualquer tipo de ajuste).
 # FIX-P3-03-05: o texto é completo (a janela não junta POWER_JOURNAL_OFF_TEXT) e aponta a aba 7.
+# FIX-P3-03-06: "aplicar e desfazer ajustes" (todos esses botões ficam desligados, R-30).
 CHANGES_TAB_LABEL = '7  Alterações feitas'
 CHANGES_ONE_UNDONE_TEXT = 'A alteração foi desfeita.'
 CHANGES_UNEXPECTED_ERROR_TEXT = (
     'Ocorreu um erro inesperado ao desfazer. Algumas alterações podem já ter sido desfeitas. '
-    'O diário e os botões de troca e de desfazer ficam desligados até você fechar e abrir '
+    'O diário e os botões de aplicar e desfazer ajustes ficam desligados até você fechar e abrir '
     'o app de novo. Depois disso, confira na aba "' + CHANGES_TAB_LABEL + '" o que '
     'continua aplicado.')
 CHANGES_LEGACY_WHERE_TEXT = 'O botão "Desfazer alteração antiga" fica na aba "4  Energia reversível".'
@@ -165,6 +166,8 @@ class OptimizationPanel(tk.Frame):
         self._power_job=None
         self.journal=None
         self.journal_error=''
+        # FIX-P3-03-06: frase de "desligado" que acompanha journal_error (None: o erro já diz).
+        self.journal_off_text=POWER_JOURNAL_OFF_TEXT
         self.legacy_state='none'
         self._load_change_journal()
         self.bench_journal=self.state_dir/'otimizacao-benchmarks.json'
@@ -851,7 +854,7 @@ class OptimizationPanel(tk.Frame):
                'Ao aplicar: o app cria antes um ponto de restauração do Windows e anota a troca no diário de alterações.',
                'Se um programa externo mudar o plano depois, o Desfazer não sobrescreve a escolha dele.']
         if self.journal_error:
-            intro=[self.journal_error,POWER_JOURNAL_OFF_TEXT]
+            intro=[self._journal_error_text()]
         self._write(self.power_text,'\n'.join(intro))
         self._update_power_buttons()
 
@@ -1039,8 +1042,9 @@ class OptimizationPanel(tk.Frame):
         if not hasattr(self,'changes_text'):
             return
         if self.journal is None or self.journal_error:
-            lines=[self.journal_error or 'O diário de alterações não está disponível.',
-                   POWER_JOURNAL_OFF_TEXT]
+            lines=[self.journal_error or 'O diário de alterações não está disponível.']
+            if self.journal_off_text is not None:
+                lines.append(self.journal_off_text)
         else:
             lines=list(self.journal.summary_lines())
             unknown=self._count_status('unknown')
@@ -1076,11 +1080,12 @@ class OptimizationPanel(tk.Frame):
         if legacy:
             if not self.btn_legacy.winfo_manager():
                 self.btn_legacy.pack(side='left',padx=(9,0))
-            self.btn_legacy.state(['disabled'] if busy else ['!disabled'])
+            # FIX-P3-03-06 (R-30): com o diário desligado, este botão também fica desligado.
+            self.btn_legacy.state(['disabled'] if busy or self.journal_error else ['!disabled'])
         elif self.btn_legacy.winfo_manager():
             self.btn_legacy.pack_forget()
         if self.journal_error:
-            self.power_status.set(self.journal_error+' '+POWER_JOURNAL_OFF_TEXT)
+            self.power_status.set(self._journal_error_text())
         elif legacy:
             self.power_status.set(POWER_LEGACY_TEXT)
         self.power_block.set(CHANGES_UNKNOWN_TEXT.format(n=unknown) if unknown else '')
@@ -1094,8 +1099,16 @@ class OptimizationPanel(tk.Frame):
         # off_text=None: o texto já é completo (já diz o que fica desligado).
         self.journal=None
         self.journal_error=message
+        self.journal_off_text=off_text
         self._update_power_buttons()
-        self._show('error',title,message if off_text is None else message+' '+off_text)
+        self._show('error',title,self._journal_error_text())
+
+    def _journal_error_text(self):
+        """Erro do diário + a frase de "desligado", só quando o erro ainda não diz isso."""
+        message=self.journal_error or 'O diário de alterações não está disponível.'
+        if self.journal_off_text is None:
+            return message
+        return message+' '+self.journal_off_text
 
     def _run_power_job(self,work,done):
         self.power_busy=True
@@ -1137,8 +1150,7 @@ class OptimizationPanel(tk.Frame):
         if self.power_busy:
             return
         if self.journal is None or self.journal_error:
-            self._show('error','Plano de energia',(self.journal_error or 'O diário de alterações não está disponível.')
-                       +' '+POWER_JOURNAL_OFF_TEXT)
+            self._show('error','Plano de energia',self._journal_error_text())
             return
         if self.legacy_state!='none':
             self._show('warning','Plano de energia',POWER_LEGACY_TEXT)
@@ -1220,8 +1232,7 @@ class OptimizationPanel(tk.Frame):
         if self.power_busy:
             return
         if self.journal is None or self.journal_error:
-            self._show('error','Reverter energia',(self.journal_error or 'O diário de alterações não está disponível.')
-                       +' '+POWER_JOURNAL_OFF_TEXT)
+            self._show('error','Reverter energia',self._journal_error_text())
             return
         change_id=self._last_applied_power()
         if change_id is None:
@@ -1268,8 +1279,7 @@ class OptimizationPanel(tk.Frame):
         if self.power_busy:
             return
         if self.journal is None or self.journal_error:
-            self._show('error','Desfazer tudo',(self.journal_error or 'O diário de alterações não está disponível.')
-                       +' '+POWER_JOURNAL_OFF_TEXT)
+            self._show('error','Desfazer tudo',self._journal_error_text())
             return
         count=self._count_status('applied')
         if not count:
@@ -1334,6 +1344,10 @@ class OptimizationPanel(tk.Frame):
         o atualiza, e só quando a troca antiga ainda está aplicada.
         """
         if self.power_busy:
+            return
+        if self.journal_error:
+            # FIX-P3-03-06: defesa dupla; o botão já fica desligado com o diário desligado.
+            self._show('error','Desfazer alteração antiga',self._journal_error_text())
             return
         self.legacy_state=legacy_power_pending(self.power_journal)
         if self.legacy_state=='none':
