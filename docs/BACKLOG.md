@@ -537,7 +537,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - `_journal_failed` ganhou `off_text` (padrão `POWER_JOURNAL_OFF_TEXT`); `None` mostra só a mensagem. Só o erro inesperado passa `None` (continua uma janela só, R-28); os outros erros do diário continuam terminando com `POWER_JOURNAL_OFF_TEXT`;
   - o comentário de `tests/test_index_audit_bridge.py` explica que no Linux o teste troca `index_choices_bridge.norm` por uma versão com `ntpath` e que a função real (`backup_core.norm`) só é testada no Windows. Sem mudar a lógica.
 - Testes: `tests/test_change_journal_fix_p3_03_05.py` (texto aponta a aba 7 e fala "desligado" uma vez, rótulo da 7ª subaba, erro do diário de outra janela continua com `POWER_JOURNAL_OFF_TEXT`, uma janela só no erro inesperado), mais os dois testes de erro inesperado ajustados.
-### FIX-P3-03-06 · Ressalvas da revisão da PR #137 (texto de "desligado" e botão antigo) — `concluído`
+### FIX-P3-03-06 · Ressalvas da revisão da PR #137 (texto de "desligado" e botão antigo) — `concluído` (PR #142)
 - Origem: issue #138 (revisão da PR #137, FIX-P3-03-05).
 - **Status:** `concluído` (branch `auto/FIX-P3-03-06-texto-desligado`). Mudaram só `optimization_ui.py`, os testes (`tests/test_change_journal_fix_p3_03_06.py`, novo, e um comentário em `tests/test_change_journal_p3_03_fatia2b.py`), este backlog e `docs/REGRAS.md` (R-30). `change_journal.py` não mudou. Nenhuma linha com o nome de uma trava foi tocada.
 - **Escolhas de design (opção mais segura):**
