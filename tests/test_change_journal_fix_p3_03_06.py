@@ -146,6 +146,18 @@ class FixP30307Tests(f2b.ChangesTabHelpers):
     unexpected_error = JournalOffTextTests.unexpected_error
 
     def test_legacy_refuses_when_journal_is_none(self):
+        """Defesa dupla de `undo_legacy_plan` (FIX-P3-03-08, issue #147).
+
+        O estado `journal=None` + `journal_error=''` é montado à mão: hoje o app não chega
+        nele. O `__init__` do painel começa assim, mas chama `_load_change_journal` logo em
+        seguida, antes de montar a tela; esse método deixa um diário válido ou `journal=None`
+        com `journal_error=str(exc)`, e todo `JournalError` de `change_journal.py` tem texto
+        fixo, nunca vazio. `_journal_failed` recebe o texto de um `JournalError` ou um texto
+        fixo do app (`CHANGES_UNEXPECTED_ERROR_TEXT`, `CHANGES_RECHECK_ERROR_TEXT`).
+        O teste fica porque `undo_legacy_plan` e `_update_power_buttons` testam
+        `journal is None or journal_error`: se um dia surgir um erro sem texto, o botão
+        antigo continua desligado e nada roda.
+        """
         self.write_journal(f2b._entry(1, 'applied', A, C))
         self.legacy_file().write_bytes(LEGACY_APPLIED)
         self.fake.current = C

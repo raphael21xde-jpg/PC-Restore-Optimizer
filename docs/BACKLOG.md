@@ -549,6 +549,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - comentário em `tests/test_change_journal_p3_03_fatia2b.py` explica que o rótulo da 7ª subaba escrito por extenso ao lado de `CHANGES_TAB_LABEL` é de propósito.
 - Testes: `tests/test_change_journal_fix_p3_03_06.py` (texto novo; "desligado" uma vez só na linha de status e na aba 7 depois do erro inesperado; introdução com diário ilegível na abertura continua com `POWER_JOURNAL_OFF_TEXT`; botão antigo desligado e `undo_legacy_plan` sem efeito depois do erro inesperado e do erro de outra janela).
 - **Correção (FIX-P3-03-07):** a introdução da aba 4 só é montada ao abrir o painel (`_build_power`); depois do erro inesperado ela **não** é redesenhada: a caixa de texto mostra a lista de planos lida de novo pelo Job, sem "desligado". O teste agora confere isso com `assertEqual`/`assertNotIn`.
+
 ### FIX-P3-03-07 · Ressalvas da revisão da PR #142 — `concluído`
 - Origem: issue #143 (ressalvas da revisão da PR #142, FIX-P3-03-06).
 - **Status:** `concluído` (branch `auto/FIX-P3-03-07-ressalvas-142`). Mudaram só `optimization_ui.py`, `tests/test_change_journal_fix_p3_03_06.py`, este backlog e `docs/REGRAS.md` (R-31). `change_journal.py` não mudou. Nenhuma linha com o nome de uma trava foi tocada.
@@ -558,6 +559,17 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - `_load_change_journal` volta `journal_off_text` a `POWER_JOURNAL_OFF_TEXT` sempre que (re)carrega o diário.
 - **Escolhas de design (opção mais segura):** não redesenhar a introdução depois do erro (a linha de status e a janela já avisam; mudar a caixa de texto apagaria a lista de planos lida); com o diário ausente o botão antigo também fica desligado (defesa dupla, como na FIX-P3-03-06); nenhum texto de interface mudou.
 - Testes: `tests/test_change_journal_fix_p3_03_06.py` (`test_unexpected_error_says_off_once_everywhere` reescrito; classe nova `FixP30307Tests`: diário `None` → `undo_legacy_plan` recusa sem rodar nada, sem perguntar, sem ponto de restauração e sem tocar o registro antigo; recarregar o diário (ilegível ou bom) depois do erro inesperado volta a frase padrão).
+
+### FIX-P3-03-08 · Ressalvas da revisão da PR #146 — `concluído`
+- Origem: issue #147 (ressalvas da revisão da PR #146, FIX-P3-03-07); junto foram os itens de documentação da issue #152 (revisão da PR #151, FIX-20261031-02).
+- **Status:** `concluído` (branch `auto/FIX-P3-03-08-ressalvas-146`). Só mudaram este backlog, `docs/REGRAS.md` (contador da poda e origem da R-31) e o docstring de um teste em `tests/test_change_journal_fix_p3_03_06.py`. Nenhum arquivo do app mudou; nenhuma trava foi tocada; nenhuma regra foi mudada nem apagada.
+- **O que mudou:**
+  - `docs/REGRAS.md`: o parágrafo da poda conta 7 regras novas (R-25 a R-31); a origem da R-31 cita a issue #143;
+  - `test_legacy_refuses_when_journal_is_none` ganhou um docstring: o estado `journal=None` + `journal_error=''` é montado à mão e hoje o app não chega nele (o `__init__` começa assim, mas `_load_change_journal` roda antes de montar a tela; todo `JournalError` e todo texto passado a `_journal_failed` tem texto). O teste fica como defesa dupla de `undo_legacy_plan`;
+  - este backlog: linhas em branco antes de `### FIX-P3-03-07` e de `### FIX-P3-01-01`; a FIX-20261031-02 cita a PR #151 no título e no status, e a linha "Testes:" cita o veredito do testador da suíte completa (issue #152).
+- **Escolhas de design (opção mais segura):** manter o teste do estado artificial (é barato e protege um botão que mexe no sistema) e só documentar; nenhum código do app nem texto de interface mudou.
+- Testes: `tests/test_change_journal_fix_p3_03_06.py` (só docstring mudou).
+
 ### FIX-20261031 · Teste do assistente intermitente (espera da gravação) — `concluído`
 - Origem: issue #139 (`tests/test_after_format_p2_11.WindowTests.test_reopen_shows_progress` falhou de vez em quando na main @18ea591).
 - **Causa:** no `setUp` de `WindowTests`, `track_tk_root` era registrado antes de `addCleanup(tmp.cleanup)`. As limpezas rodam na ordem inversa, então a pasta temporária era apagada antes de `release_tk` esperar as threads (só 1 s, `WORKER_JOIN_SECONDS`). Testes que clicam Feito/Pular e fecham a janela sem esperar a gravação do `ProgressSaver` podiam encontrar `progresso/` ainda sendo escrita (`test_reopen_shows_progress`, `test_save_failure_shown_without_full_path`, `test_skip_does_not_block`).
@@ -579,16 +591,17 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - **Para a próxima poda das regras:** a ressalva da revisão sobre a R-29 e a R-06 fica registrada aqui; `docs/REGRAS.md` não foi alterado (texto de regra existente não muda nesta fatia).
 - Testes: `tests/test_after_format_p2_11.py` (Python do uv com Tk + `xvfb-run`).
 
-### FIX-20261031-02 · Ressalvas da revisão da PR #144 — `concluído`
+### FIX-20261031-02 · Ressalvas da revisão da PR #144 — `concluído` (PR #151)
 - Origem: issue #145 (ressalvas da revisão da PR #144, FIX-20261031-01). O "Também pendente" da issue já foi feito na PR #148.
-- **Status:** `concluído` (branch `auto/FIX-20261031-02-ressalvas-144`). Só mudaram `tests/test_after_format_p2_11.py` e este backlog. Nenhum arquivo do app mudou; nenhuma trava foi tocada.
+- **Status:** `concluído` (PR #151, branch `auto/FIX-20261031-02-ressalvas-144`). Só mudaram `tests/test_after_format_p2_11.py` e este backlog. Nenhum arquivo do app mudou; nenhuma trava foi tocada.
 - **O que mudou:**
   - `WindowTests` ganhou o método `_show`, usado por `open()` e por `test_closing_cancels_job`: marca `self._opened = True` **antes** de chamar `show_after_format`. Se a chamada falhar no meio, o `_join_savers` do tearDown ainda espera os gravadores que já existirem.
   - Se a chamada falhar antes de criar `after_format_savers`, `_show` volta `_opened` a `False` e repassa o erro: o tearDown não quebra com `KeyError` e não há gravação para esperar. A leitura estrita `vars(self.root)['after_format_savers']` da FIX-20261031-01 continua (se o atributo mudar de nome com a janela aberta, o teste falha).
   - Testes novos: `test_failure_mid_open_still_waits_saver` (falha depois de criar o gravador → `_opened` fica `True` e o `join(10)` é chamado; falha no código antigo) e `test_failure_before_savers_needs_no_wait` (falha antes do gravador → `_opened` é `False` e `_join_savers` não levanta). Os dois trocam `show_after_format` por uma função falsa; nada real é chamado.
   - Prova da FIX-20261031: a citação ao relatório em `relatorios-claude/` (fora do git) foi trocada pela PR #144, com o resultado (20/20 e 10/10) escrito aqui.
 - **Escolhas de design (opção mais segura):** um único ponto (`_show`) marca a abertura, para os dois lugares não divergirem; voltar a `False` só quando o atributo dos gravadores não existe, para não perder a detecção de nome trocado.
-- Testes: `tests/test_after_format_p2_11.py` com o Python do uv (Tk 9.0) + `xvfb-run`: 73 testes, todos aprovados; a classe `WindowTests` 10 vezes seguidas (10/10).
+- Testes: `tests/test_after_format_p2_11.py` com o Python do uv (Tk 9.0) + `xvfb-run`: 73 testes, todos aprovados; a classe `WindowTests` 10 vezes seguidas (10/10). Suíte completa: [veredito do testador na PR #151](https://github.com/raphael21xde-jpg/PC-Restore-Optimizer/pull/151#issuecomment-6550209687).
+
 ### FIX-P3-01-01 · Ressalvas da revisão da PR #113 (perfil de hardware) — `concluído`
 - Dual channel com todos os módulos no mesmo canal, tipos de barramento que faltam, aviso de nobreak visto como bateria, erro do PowerShell sem texto cru e ajustes nos testes.
 - Critérios: os itens da issue #114.

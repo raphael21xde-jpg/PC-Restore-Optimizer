@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 6 (R-25, R-26, R-27, R-28, R-29 e R-30; última poda: 31/10/2026, pedido `regras-20261031-poda-r14-r23`, issue #125; a R-24 nasceu
+poda: 7 (R-25, R-26, R-27, R-28, R-29, R-30 e R-31; última poda: 31/10/2026, pedido `regras-20261031-poda-r14-r23`, issue #125; a R-24 nasceu
 da separação da R-21 e não conta). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-25.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
@@ -46,5 +46,5 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-28 | Um mesmo erro abre no máximo uma janela de aviso; função que já mostra a janela (ex.: `_journal_failed`) não é seguida de outro `_show` com o mesmo texto. | Revisão da PR #133 (issue #134), FIX-P3-03-04 | 2026-10-31 |
 | R-29 | Teste que dispara gravação em segundo plano espera essa gravação (join com prazo e assert) antes de apagar o TemporaryDirectory; a espera é registrada com addCleanup depois da limpeza da pasta (roda antes dela). | Issue #139, teste intermitente na main @18ea591 (FIX-20261031) | 2026-10-31 |
 | R-30 | Texto que diz o que fica desligado ou bloqueado lista só o que o código de fato desliga naquele estado; cada botão citado tem teste de "disabled" nesse estado. | Revisão da PR #137 (issue #138), FIX-P3-03-06 | 2026-10-31 |
-| R-31 | Teste de um critério de texto confere o texto que de fato aparece (assertEqual/assertIn); limite como assertLessEqual, que passa com o texto ausente, não basta. O backlog só diz que um lugar mostra um texto num estado se o código redesenha esse lugar nesse estado. | Revisão da PR #142 (FIX-P3-03-06) | 2026-10-31 |
+| R-31 | Teste de um critério de texto confere o texto que de fato aparece (assertEqual/assertIn); limite como assertLessEqual, que passa com o texto ausente, não basta. O backlog só diz que um lugar mostra um texto num estado se o código redesenha esse lugar nesse estado. | Revisão da PR #142 (FIX-P3-03-06), issue #143 | 2026-10-31 |
 | R-32 | Função que monta texto de tela a partir de um dict (relatório, JSON) só exibe textos que ela mesma gera (motivos, passos, rótulos); campo de texto livre vindo do dict é ignorado e regenerado. | Revisão da PR #150 (P3-06 fatia 1, c149e5e) | 2026-10-31 |
