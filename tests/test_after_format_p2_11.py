@@ -851,10 +851,20 @@ class WindowTests(unittest.TestCase):
         for key, saver in list(savers.items()):
             self.assertTrue(saver.join(10), f'gravação do progresso não terminou: {key}')
 
-    def open(self, manifest=None):
-        dlg = afu.show_after_format(self.root, manifest=manifest or self.manifest,
-                                    base=self.base, checker=lambda m, c: FAKE_CHECK)
+    def _show(self, **kwargs):
+        # FIX-20261031-02: marca a abertura ANTES da chamada; se ela falhar no
+        # meio, o tearDown ainda espera os gravadores que já existirem.
         self._opened = True
+        try:
+            return afu.show_after_format(self.root, **kwargs)
+        except BaseException:
+            if 'after_format_savers' not in vars(self.root):
+                self._opened = False  # caiu antes de criar os gravadores
+            raise
+
+    def open(self, manifest=None):
+        dlg = self._show(manifest=manifest or self.manifest,
+                         base=self.base, checker=lambda m, c: FAKE_CHECK)
         until = time.monotonic() + 5
         while dlg.after_format_state['busy'] and time.monotonic() < until:
             self.root.update()
@@ -992,13 +1002,38 @@ class WindowTests(unittest.TestCase):
             started.set()
             cancelled.wait(5)
             return FAKE_CHECK
-        dlg = afu.show_after_format(self.root, manifest=self.manifest, base=self.base,
-                                    checker=checker)
-        self._opened = True
+        dlg = self._show(manifest=self.manifest, base=self.base, checker=checker)
         self.assertTrue(started.wait(5))
         dlg.destroy()
         self.root.update()
         self.assertTrue(seen['event'].is_set())
+
+    def test_failure_mid_open_still_waits_saver(self):
+        # FIX-20261031-02: a abertura falha depois de criar o gravador; o
+        # tearDown (_join_savers) ainda tem de esperar a gravação.
+        saver = mock.Mock()
+        saver.join.return_value = True
+
+        def broken(app, **kwargs):
+            app.after_format_savers = {'k': saver}
+            raise RuntimeError('falha simulada no meio da abertura')
+        with mock.patch.object(afu, 'show_after_format', broken):
+            with self.assertRaises(RuntimeError):
+                self.open()
+        self.assertTrue(self._opened)
+        self._join_savers()
+        saver.join.assert_called_once_with(10)
+
+    def test_failure_before_savers_needs_no_wait(self):
+        # FIX-20261031-02: falha antes de existir o gravador: o tearDown não
+        # quebra (sem KeyError) e não há nada a esperar.
+        def broken(app, **kwargs):
+            raise RuntimeError('falha simulada antes do gravador')
+        with mock.patch.object(afu, 'show_after_format', broken):
+            with self.assertRaises(RuntimeError):
+                self.open()
+        self.assertFalse(self._opened)
+        self._join_savers()  # não levanta
 
     def test_same_backup_twice_one_window(self):
         dlg = self.open()
