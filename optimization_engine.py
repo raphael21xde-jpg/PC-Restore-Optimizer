@@ -26,8 +26,13 @@ class OptimizationError(RuntimeError):
     pass
 
 
+def _is_windows() -> bool:
+    """Único ponto que confere o sistema; os testes trocam esta função, não o global."""
+    return os.name == 'nt'
+
+
 def _run(command: list[str], timeout: int = 18) -> str:
-    if os.name != 'nt':
+    if not _is_windows():
         raise OptimizationError('Este recurso só funciona em computadores Windows.')
     try:
         result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8-sig',
@@ -88,8 +93,8 @@ def active_power_guid():
 def inspect_pc():
     """Read-only inventory; leaves unsupported values explicitly unknown."""
     result = {'timestamp': datetime.now(timezone.utc).isoformat(), 'status': 'leitura',
-              'windows': os.name == 'nt', 'hardware': {}, 'power': {}, 'checks': [], 'errors': []}
-    if os.name != 'nt':
+              'windows': _is_windows(), 'hardware': {}, 'power': {}, 'checks': [], 'errors': []}
+    if not _is_windows():
         result['errors'].append('Faça o diagnóstico no Windows em que pretende otimizar.')
         result['profile'] = build_profile(result['hardware'])
         return result
@@ -109,16 +114,17 @@ def inspect_pc():
     for key, code in queries.items():
         try:
             result['hardware'][key] = _ps(code)
-        except OptimizationError as exc:
-            result['errors'].append(f'Inventário {key}: {exc}')
+        except OptimizationError:
+            # R-07: o texto do PowerShell pode trazer caminho com nome do usuário.
+            result['errors'].append(f'Inventário {key}: não foi possível ler.')
     try:
         plans = available_power_plans()
         active = active_power_guid()
         result['power'] = {'plans': plans, 'active_guid': active}
         result['checks'].append({'type': 'power', 'state': 'observado',
                                  'message': 'Plano de energia detectado. Alterar pode aumentar consumo e calor, sem ganho garantido.'})
-    except OptimizationError as exc:
-        result['errors'].append(f'Energia: {exc}')
+    except OptimizationError:
+        result['errors'].append('Energia: não foi possível ler os planos de energia.')
 
     mem = _data_list(result['hardware'].get('ram'))
     for module in mem:
