@@ -61,14 +61,20 @@ DISK_TYPE_LABELS = {
     UNKNOWN: 'tipo não identificado',
 }
 # Get-PhysicalDisk: BusType numérico -> nome curto; só estes nomes saem no perfil.
-_BUS_NAMES = {1: 'SCSI', 3: 'ATA', 7: 'USB', 8: 'RAID', 10: 'SAS', 11: 'SATA', 12: 'SD',
-              15: 'virtual', 16: 'Spaces', 17: 'NVMe'}
-_BUS_TEXT = {'scsi': 'SCSI', 'ata': 'ATA', 'usb': 'USB', 'raid': 'RAID', 'sas': 'SAS',
-             'sata': 'SATA', 'sd': 'SD', 'file backed virtual': 'virtual',
+_BUS_NAMES = {1: 'SCSI', 3: 'ATA', 4: '1394', 6: 'Fibre Channel', 7: 'USB', 8: 'RAID',
+              9: 'iSCSI', 10: 'SAS', 11: 'SATA', 12: 'SD', 14: 'virtual', 15: 'virtual',
+              16: 'Spaces', 17: 'NVMe'}
+_BUS_TEXT = {'scsi': 'SCSI', 'ata': 'ATA', '1394': '1394', 'fibre channel': 'Fibre Channel',
+             'usb': 'USB', 'raid': 'RAID', 'iscsi': 'iSCSI', 'sas': 'SAS',
+             'sata': 'SATA', 'sd': 'SD', 'virtual': 'virtual', 'file backed virtual': 'virtual',
              'storage spaces': 'Spaces', 'spaces': 'Spaces', 'nvme': 'NVMe'}
-_EXTERNAL_BUSES = frozenset({'USB', 'virtual', 'Spaces'})
+# Externo, de rede ou virtual: nunca vira SSD/NVMe, mesmo que o MediaType diga SSD.
+_EXTERNAL_BUSES = frozenset({'USB', 'virtual', 'Spaces', '1394', 'Fibre Channel', 'iSCSI'})
 _MEDIA_NUMBERS = {3: DISK_HDD, 4: DISK_SSD}
 _MEDIA_TEXT = {'hdd': DISK_HDD, 'ssd': DISK_SSD}
+
+BATTERY_ONLY_WARNING = ('Aviso: só a bateria indicou notebook; se este é um PC de mesa com nobreak (UPS) '
+                        'ligado por USB, o app o trata como notebook por cuidado.')
 
 _PATHLIKE = re.compile(r'[a-z]:[\\/]|\\\\|[\\/](users|home)[\\/]|\\', re.I)
 
@@ -159,6 +165,8 @@ def _dual_channel(entries):
     channels = [_channel(item) for item in entries]
     if all(channels) and len(set(channels)) >= 2:
         return 'sim (confirmado)'
+    if all(channels):  # todos com canal e todos o mesmo: o dado lido aponta o contrário (R-26)
+        return 'não confirmado (módulos no mesmo canal)'
     return 'provável (não confirmado)'
 
 
@@ -266,6 +274,17 @@ def _form_factor(hardware):
     return UNKNOWN
 
 
+def _notebook_by_battery_only(hardware):
+    """True quando só a bateria fez o PC virar notebook (pode ser um nobreak USB)."""
+    if not isinstance(hardware, dict) or _form_factor(hardware) != 'notebook':
+        return False
+    entries = _items(hardware.get('pc'))
+    kind = _code(entries[0].get('PCSystemType')) if entries else None
+    if kind == 2 or any(c in NOTEBOOK_CHASSIS for c in _chassis_types(hardware)):
+        return False
+    return _battery(hardware) is True
+
+
 def _windows(hardware):
     entries = _items(hardware.get('os'))
     first = entries[0] if entries else {}
@@ -314,6 +333,7 @@ def build_profile(hardware):
         'gpus': _gpus(hardware),
         'ram': _ram(hardware),
         'form_factor': _form_factor(hardware),
+        'battery_only_notebook': _notebook_by_battery_only(hardware),
         'windows': _windows(hardware),
         'disks': _disks(hardware),
     }
@@ -374,6 +394,10 @@ def profile_lines(profile):
         lines.append('  Discos: não disponível')
     lines.extend([
         f'  Tipo de PC: {form}',
+    ])
+    if profile.get('battery_only_notebook') is True:
+        lines.append(f'  {BATTERY_ONLY_WARNING}')
+    lines.extend([
         f"  Windows: {_show(win.get('caption'))}" + (f" (versão {win['version']})" if win.get('version') else ''),
         f'  Classe: {TIER_LABELS[tier]}',
     ])

@@ -7,6 +7,7 @@ import re
 import subprocess
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import hardware_profile as hp
@@ -166,7 +167,8 @@ class DualChannelTests(unittest.TestCase):
 
     def test_same_channel_does_not_confirm(self):
         self.assertEqual(self._dual([(8, dict(DeviceLocator='ChannelA-DIMM0')),
-                                     (8, dict(DeviceLocator='ChannelA-DIMM1'))]), 'provável (não confirmado)')
+                                     (8, dict(DeviceLocator='ChannelA-DIMM1'))]),
+                         'não confirmado (módulos no mesmo canal)')
 
     def test_one_module_and_different_sizes(self):
         self.assertEqual(self._dual([(8, dict(DeviceLocator='ChannelA-DIMM0'))]), 'não (1 módulo)')
@@ -245,7 +247,7 @@ class EngineTests(unittest.TestCase):
         def boom(*args, **kwargs):
             raise AssertionError('comando real executado')
 
-        with mock.patch.object(oe.os, 'name', 'nt'), mock.patch.object(oe, '_ps', fake_ps), \
+        with mock.patch.object(oe, '_is_windows', return_value=True), mock.patch.object(oe, '_ps', fake_ps), \
                 mock.patch.object(oe, '_run', boom), mock.patch.object(subprocess, 'run', boom), \
                 mock.patch.object(subprocess, 'Popen', boom), \
                 mock.patch.object(oe, 'available_power_plans', return_value=[]), \
@@ -291,7 +293,7 @@ class EngineTests(unittest.TestCase):
 
         def boom(*args, **kwargs):
             raise AssertionError('comando executado')
-        with mock.patch.object(oe.os, 'name', 'posix'), mock.patch.object(oe, '_ps', boom), \
+        with mock.patch.object(oe, '_is_windows', return_value=False), mock.patch.object(oe, '_ps', boom), \
                 mock.patch.object(oe, '_run', boom), mock.patch.object(subprocess, 'run', boom):
             report = oe.inspect_pc()
         self.assertIn('disks', report['profile']['unknown'])
@@ -343,8 +345,9 @@ class ScanGuiTests(unittest.TestCase):
         ui, panel = self._panel()
         with mock.patch.object(ui.messagebox, 'askyesno', return_value=False) as ask, \
                 mock.patch.object(ui, 'inspect_pc') as inspect, \
-                mock.patch.object(ui.threading, 'Thread') as thread:
+                mock.patch.object(ui, 'threading', SimpleNamespace(Thread=mock.Mock())) as fake_threading:
             panel.scan()
+        thread = fake_threading.Thread
         ask.assert_called_once()
         self.assertEqual(ask.call_args.args[1], hp.SCAN_CONFIRMATION)
         inspect.assert_not_called()
@@ -364,9 +367,14 @@ class ScanGuiTests(unittest.TestCase):
         report = {'hardware': {}, 'power': {}, 'checks': [], 'errors': [], 'profile': hp.build_profile({})}
         with mock.patch.object(ui.messagebox, 'askyesno', return_value=True), \
                 mock.patch.object(ui, 'inspect_pc', return_value=report) as inspect, \
-                mock.patch.object(ui.threading, 'Thread', InlineThread):
+                mock.patch.object(ui, 'threading', SimpleNamespace(Thread=InlineThread)), \
+                mock.patch.object(panel, 'load_plans') as load_plans:
             panel.scan()
+            panel.update()
         inspect.assert_called_once_with()
+        self.assertIs(panel.running, False)
+        self.assertIn('PERFIL DO SEU PC', panel.report_text.get('1.0', 'end'))
+        load_plans.assert_called_once_with()
 
 
 if __name__ == '__main__':
