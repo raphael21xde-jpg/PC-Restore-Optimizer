@@ -496,9 +496,16 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - limite conhecido (ressalva 3 da revisão da PR #124): depois de um lote desfeito por falha de gravação, um item que já tinha sido anotado como `applied` continua `applied` no disco, embora o sistema tenha voltado ao valor anterior (o diário não pôde ser gravado). Ao reabrir, desfazer esse item é recusado com "O valor foi mudado por outro programa…", sem sobrescrever nada. Corrigir o histórico fica para a P3-03 fatia 2b;
   - limite anotado (ressalva 5): `id`/`batch` aceitam até 9 algarismos; um diário forjado com `999999999` faria o próximo número ter 10 algarismos e o diário ficaria ilegível na abertura seguinte. Falha para o lado seguro (bloqueia tudo) e não acontece em uso normal.
 - Testes: `tests/test_change_journal_fix_p3_03_02.py` (duas janelas, arquivo apagado/trocado/criado por fora, falha de gravação no meio do lote ou na 1ª gravação, outra janela gravando durante o desfazer, dígitos unicode, `prepared` → `failed`); `tests/test_change_journal_p3_03.py` e `tests/test_change_journal_p3_03_fatia2.py` passam a esperar `failed` no item interrompido que ficou no valor anterior.
-### FIX-P3-01-01 · Ressalvas da revisão da PR #113 (perfil de hardware) — `pronto`
+### FIX-P3-01-01 · Ressalvas da revisão da PR #113 (perfil de hardware) — `concluído`
 - Dual channel com todos os módulos no mesmo canal, tipos de barramento que faltam, aviso de nobreak visto como bateria, erro do PowerShell sem texto cru e ajustes nos testes.
 - Critérios: os itens da issue #114.
+- **`concluído`** (branch `auto/FIX-P3-01-01-ressalvas-perfil`). Testes: `tests/test_hardware_profile_fix_p3_01_01.py` (e ajustes em `tests/test_hardware_profile_p3_01_fatia2.py`).
+  - Escolhas de design (as mais seguras): todos os módulos com canal lido e todos no mesmo canal = "não confirmado (módulos no mesmo canal)" (R-26); se algum módulo não tem canal, continua "provável (não confirmado)", porque não dá para afirmar nada.
+  - Barramentos novos: 4 = 1394, 6 = Fibre Channel, 9 = iSCSI, 14 = virtual (também em texto); todos contam como "externo ou virtual", nunca SSD/NVMe, mesmo que o MediaType diga SSD.
+  - Notebook só pela bateria (PCSystemType diferente de 2 e nenhum gabinete de notebook): o PC continua tratado como notebook (por cuidado), o perfil grava `battery_only_notebook: true` e a tela mostra um aviso sobre nobreak (UPS) ligado por USB. Perfil antigo sem essa chave não mostra aviso.
+  - Erros de `inspect_pc` não repetem o texto do PowerShell (R-07): "Inventário <item>: não foi possível ler." e "Energia: não foi possível ler os planos de energia.".
+  - `optimization_engine._is_windows()` é o único ponto que lê `os.name`; os testes trocam essa função e um `threading` falso do módulo da tela, nunca `os.name` nem `threading.Thread` do processo todo.
+  - Ficou de fora (ressalva): o `self.after` chamado de dentro da thread em `optimization_ui.scan`.
 ### FIX-P2-09-10 · Ressalvas da revisão da PR #117 (cópia real) — `pronto`
 - Linha contraditória no backlog, constante própria para o começo comum das mensagens de administrador e texto mais claro sobre a cópia anterior.
 - Critérios: os itens da issue #118.
