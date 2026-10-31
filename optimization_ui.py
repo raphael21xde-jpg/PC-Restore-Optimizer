@@ -66,11 +66,14 @@ CHANGES_INTRO_TEXT = ('Aqui aparece tudo o que o app mudou no Windows, com o est
 CHANGES_ALL_UNDONE_TEXT = 'Todas as {n} alterações foram desfeitas.'
 # FIX-P3-03-03 (revisão da PR #131): singular, erro inesperado e onde fica o botão antigo.
 # FIX-P3-03-04: o texto do erro inesperado é genérico (vale para qualquer tipo de ajuste).
+# FIX-P3-03-05: o texto é completo (a janela não junta POWER_JOURNAL_OFF_TEXT) e aponta a aba 7.
+CHANGES_TAB_LABEL = '7  Alterações feitas'
 CHANGES_ONE_UNDONE_TEXT = 'A alteração foi desfeita.'
 CHANGES_UNEXPECTED_ERROR_TEXT = (
     'Ocorreu um erro inesperado ao desfazer. Algumas alterações podem já ter sido desfeitas. '
-    'Confira os ajustes nas Configurações do Windows. O diário fica desligado até você '
-    'fechar e abrir o app de novo.')
+    'O diário e os botões de troca e de desfazer ficam desligados até você fechar e abrir '
+    'o app de novo. Depois disso, confira na aba "' + CHANGES_TAB_LABEL + '" o que '
+    'continua aplicado.')
 CHANGES_LEGACY_WHERE_TEXT = 'O botão "Desfazer alteração antiga" fica na aba "4  Energia reversível".'
 CHANGES_STOPPED_TEXT = '{done} desfeita(s); {pending} continuam como estavam. Motivo: {reason}'
 CHANGES_DONE_BEFORE_ERROR_TEXT = '{n} alteração(ões) já foram desfeitas antes do erro. '
@@ -250,7 +253,7 @@ class OptimizationPanel(tk.Frame):
         for frame,name in ((diagnose,'1  Diagnóstico'),(monitor,'2  Temperaturas e sessões'),
                            (stutters,'3  Stutters / quadros'),(power,'4  Energia reversível'),
                            (compare,'5  Benchmarks'),(firmware,'6  BIOS e drivers'),
-                           (changes,'7  Alterações feitas')):
+                           (changes,CHANGES_TAB_LABEL)):
             self.tabs.add(frame,text=name)
         self._build_diagnostics(diagnose)
         self._build_monitor(monitor)
@@ -1086,12 +1089,13 @@ class OptimizationPanel(tk.Frame):
             self.btn_undo_all.state(['!disabled'] if can_undo_all else ['disabled'])
             self._render_changes()
 
-    def _journal_failed(self,message,title='Diário de alterações'):
+    def _journal_failed(self,message,title='Diário de alterações',off_text=POWER_JOURNAL_OFF_TEXT):
         # R-28: esta função já mostra a janela de erro; quem chama não abre outra.
+        # off_text=None: o texto já é completo (já diz o que fica desligado).
         self.journal=None
         self.journal_error=message
         self._update_power_buttons()
-        self._show('error',title,message+' '+POWER_JOURNAL_OFF_TEXT)
+        self._show('error',title,message if off_text is None else message+' '+off_text)
 
     def _run_power_job(self,work,done):
         self.power_busy=True
@@ -1321,7 +1325,7 @@ class OptimizationPanel(tk.Frame):
             # confiável, então não mostra contagem e desliga o diário até reabrir o app.
             message=CHANGES_UNEXPECTED_ERROR_TEXT
             self.changes_status.set(message)
-            self._journal_failed(message,title='Desfazer tudo')
+            self._journal_failed(message,title='Desfazer tudo',off_text=None)
 
     def undo_legacy_plan(self):
         """Desfaz a troca feita pela versão antiga (``pcro-power-1``).
