@@ -65,11 +65,12 @@ CHANGES_INTRO_TEXT = ('Aqui aparece tudo o que o app mudou no Windows, com o est
                       'alteração. Abrir esta aba só lê o diário: nenhum comando é executado.')
 CHANGES_ALL_UNDONE_TEXT = 'Todas as {n} alterações foram desfeitas.'
 # FIX-P3-03-03 (revisão da PR #131): singular, erro inesperado e onde fica o botão antigo.
+# FIX-P3-03-04: o texto do erro inesperado é genérico (vale para qualquer tipo de ajuste).
 CHANGES_ONE_UNDONE_TEXT = 'A alteração foi desfeita.'
 CHANGES_UNEXPECTED_ERROR_TEXT = (
     'Ocorreu um erro inesperado ao desfazer. Algumas alterações podem já ter sido desfeitas. '
-    'Confira o plano de energia nas Configurações do Windows. Por segurança, o diário fica '
-    'desligado até você fechar e abrir o app de novo.')
+    'Confira os ajustes nas Configurações do Windows. O diário fica desligado até você '
+    'fechar e abrir o app de novo.')
 CHANGES_LEGACY_WHERE_TEXT = 'O botão "Desfazer alteração antiga" fica na aba "4  Energia reversível".'
 CHANGES_STOPPED_TEXT = '{done} desfeita(s); {pending} continuam como estavam. Motivo: {reason}'
 CHANGES_DONE_BEFORE_ERROR_TEXT = '{n} alteração(ões) já foram desfeitas antes do erro. '
@@ -1085,11 +1086,12 @@ class OptimizationPanel(tk.Frame):
             self.btn_undo_all.state(['!disabled'] if can_undo_all else ['disabled'])
             self._render_changes()
 
-    def _journal_failed(self,message):
+    def _journal_failed(self,message,title='Diário de alterações'):
+        # R-28: esta função já mostra a janela de erro; quem chama não abre outra.
         self.journal=None
         self.journal_error=message
         self._update_power_buttons()
-        self._show('error','Diário de alterações',message+' '+POWER_JOURNAL_OFF_TEXT)
+        self._show('error',title,message+' '+POWER_JOURNAL_OFF_TEXT)
 
     def _run_power_job(self,work,done):
         self.power_busy=True
@@ -1319,8 +1321,7 @@ class OptimizationPanel(tk.Frame):
             # confiável, então não mostra contagem e desliga o diário até reabrir o app.
             message=CHANGES_UNEXPECTED_ERROR_TEXT
             self.changes_status.set(message)
-            self._journal_failed(message)
-            self._show('error','Desfazer tudo',message)
+            self._journal_failed(message,title='Desfazer tudo')
 
     def undo_legacy_plan(self):
         """Desfaz a troca feita pela versão antiga (``pcro-power-1``).

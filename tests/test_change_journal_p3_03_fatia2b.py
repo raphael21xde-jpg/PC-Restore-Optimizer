@@ -103,8 +103,12 @@ class UndoAllEngineTests(SafetyNet):
         self.assertEqual(getattr(caught.exception, 'done', []), [])
 
 
-@unittest.skipIf(NO_DISPLAY, 'Sem Tk ou sem tela gráfica')
-class ChangesTabTests(SafetyNet):
+class ChangesTabHelpers(SafetyNet):
+    """Só ajudantes (nenhum ``test_``): base das classes de teste da aba 7.
+
+    FIX-P3-03-04: as classes de teste herdam daqui, e não umas das outras, para não
+    rodar testes herdados duas vezes.
+    """
     # Ajudantes reaproveitados da fatia 2a (sem herdar os testes dela).
     journal_file = f2.PowerPanelTests.journal_file
     legacy_file = f2.PowerPanelTests.legacy_file
@@ -163,6 +167,9 @@ class ChangesTabTests(SafetyNet):
         panel.btn_undo_all.invoke()
         self.wait_idle(panel)
 
+
+@unittest.skipIf(NO_DISPLAY, 'Sem Tk ou sem tela gráfica')
+class ChangesTabTests(ChangesTabHelpers):
     # ---------- abrir a aba ----------
     def test_tab_lists_summary_without_commands(self):
         self.write_journal(_entry(1, 'reverted', A, B), _entry(2, 'applied', A, C))
@@ -311,7 +318,9 @@ class ChangesTabTests(SafetyNet):
             self.undo_all(panel)
         # FIX-P3-03-03 (R-27): o texto diz que parte pode já ter mudado e desliga o diário.
         expected = ou.CHANGES_UNEXPECTED_ERROR_TEXT
-        self.assertEqual(self.messages[-1], ('error', 'Desfazer tudo', expected))
+        # FIX-P3-03-04 (R-28): uma janela só, com o título "Desfazer tudo".
+        self.assertEqual(self.messages,
+                         [('error', 'Desfazer tudo', expected + ' ' + ou.POWER_JOURNAL_OFF_TEXT)])
         self.assertEqual(panel.changes_status.get(), expected)
         self.assertNotIn('Fulano', ' '.join(m[2] for m in self.messages))
 

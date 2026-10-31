@@ -41,8 +41,8 @@ def _buttons(frame):
 
 
 @unittest.skipIf(NO_DISPLAY, 'Sem Tk ou sem tela gráfica')
-class ChangesReviewFixTests(f2b.ChangesTabTests):
-    """Reaproveita o painel e os ajudantes da fatia 2b (os testes dela também rodam aqui)."""
+class ChangesReviewFixTests(f2b.ChangesTabHelpers):
+    """Reaproveita o painel e os ajudantes da fatia 2b (sem herdar os testes dela)."""
 
     # ---------- 1. erro inesperado no meio do "Desfazer tudo" ----------
     def test_unexpected_error_after_partial_undo_warns_and_disables_journal(self):
@@ -62,7 +62,13 @@ class ChangesReviewFixTests(f2b.ChangesTabTests):
         self.assertIn('Algumas alterações podem já ter sido desfeitas', expected)
         self.assertIn('fechar e abrir o app de novo', expected)
         self.assertEqual(panel.changes_status.get(), expected)
-        self.assertIn(('error', 'Desfazer tudo', expected), self.messages)
+        # FIX-P3-03-04 (R-28): uma janela só, com o título "Desfazer tudo".
+        self.assertEqual(self.messages,
+                         [('error', 'Desfazer tudo', expected + ' ' + ou.POWER_JOURNAL_OFF_TEXT)])
+        # FIX-P3-03-04: sem "Por segurança" repetido e sem o tipo de ajuste fixo no texto.
+        self.assertNotIn('Por segurança', expected)
+        self.assertNotIn('plano de energia', expected)
+        self.assertEqual(self.messages[0][2].count('Por segurança'), 1)
         self.assertEqual(panel.journal_error, expected)
         shown = ' '.join(m[2] for m in self.messages)
         for text in (shown, panel.changes_status.get(), panel.power_status.get(),
@@ -130,10 +136,12 @@ class ChangesReviewFixTests(f2b.ChangesTabTests):
         self.assertEqual(panel.changes_status.get(), 'Todas as 2 alterações foram desfeitas.')
 
 
-# Os testes herdados da fatia 2b já rodam no próprio arquivo dela.
-for _name in [n for n in dir(f2b.ChangesTabTests) if n.startswith('test_')]:
-    if _name not in ChangesReviewFixTests.__dict__:
-        setattr(ChangesReviewFixTests, _name, None)
+class HelpersHaveNoTestsTests(unittest.TestCase):
+    """FIX-P3-03-04: a base de ajudantes não pode trazer testes (senão rodam duas vezes)."""
+
+    def test_helpers_base_has_no_tests(self):
+        self.assertEqual([n for n in dir(f2b.ChangesTabHelpers) if n.startswith('test_')], [])
+        self.assertFalse(issubclass(ChangesReviewFixTests, f2b.ChangesTabTests))
 
 
 if __name__ == '__main__':

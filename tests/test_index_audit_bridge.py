@@ -1,4 +1,5 @@
 """Focused tests: reuse existing indexed choices without re-scanning drives."""
+import ntpath
 import os
 import sqlite3
 import json
@@ -7,10 +8,11 @@ from contextlib import closing
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from index_audit_bridge import read_saved_index_choices
 from completeness_audit_ui_v068 import format_index_readiness_note
+import index_choices_bridge
 from index_choices_bridge import preview_import, apply_imported_choices, read_index_choices
 from inventory_index import FileMetadataIndex
 
@@ -52,8 +54,17 @@ class IndexAuditBridgeTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.path.stat().st_mtime_ns, state)
 
-    @unittest.skipUnless(os.name == 'nt', 'caminho Windows: abspath só vale no Windows')
     def test_preview_is_not_an_import_conflicts_are_explicit(self):
+        # FIX-P3-03-04: fora do Windows, a chave de comparação usa ntpath (sem mudar o app),
+        # para o teste rodar também no Linux; no Windows usa a função real.
+        if os.name == 'nt':
+            self._preview_is_not_an_import()
+            return
+        with patch.object(index_choices_bridge, 'norm',
+                          lambda value: ntpath.normcase(ntpath.normpath(str(value)))):
+            self._preview_is_not_an_import()
+
+    def _preview_is_not_an_import(self):
         app = SimpleNamespace(
             choices={r"c:\games\osu!\skins": "keep"},
             personal_paths=set(), busy=False, deep_scan_running=False,
