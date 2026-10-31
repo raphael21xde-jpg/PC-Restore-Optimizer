@@ -599,6 +599,16 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 ### P3-06 · BIOS: só orientação — `pronto` (depois de P3-01)
 - Verifica XMP/EXPO, Resizable BAR e versão da BIOS, só lendo.
 - Mostra o passo a passo por fabricante. **Nunca altera.**
+- **Fatia 1 — `concluído`** (branch `auto/P3-06-bios-orientacao`): novo `bios_guidance.py` (funções puras, sem Tk, sem comandos, sem importar outros módulos do projeto); `inspect_pc()` devolve `bios_guidance` (também fora do Windows) usando só o que já lia (RAM `Speed`/`ConfiguredClockSpeed`, `Win32_BaseBoard.Manufacturer`, `Win32_BIOS` `SMBIOSBIOSVersion`/`ReleaseDate`), sem consulta nova; a aba "1 Diagnóstico" mostra a seção "BIOS — SÓ ORIENTAÇÃO" logo depois de "PERFIL DO SEU PC", sempre com a frase "O app nunca altera a BIOS". Testes: `tests/test_bios_guidance_p3_06.py`.
+  - Escolhas de design (31/10/2026, as mais seguras):
+    - XMP/EXPO "provavelmente desligado (ou limitado pelo processador/placa)" quando qualquer módulo tem velocidade configurada menor que a informada; "provavelmente ligado" só quando todos os módulos têm os dois valores e a configurada é maior; o resto (valores faltando, iguais, 0, texto, bool, NaN, mistos, lista vazia) é "não confirmado". Nunca "ligado" se algum dado aponta o contrário;
+    - família da placa só pelo fabricante: ASUS, MSI (Micro-Star), Gigabyte, ASRock; notebook ou marca de PC pronto (Dell, HP, Lenovo, Acer, Positivo, Samsung...) = "notebook ou PC de marca", com aviso de que muitas dessas BIOS não têm XMP/EXPO e de consultar o manual do fabricante; o resto = "não identificado";
+    - guarda só família, versão e ano da BIOS; nunca modelo da placa, número de série ou nome do PC; versão com cara de caminho, com mais de 40 caracteres ou com caracteres fora de letras/números/espaço/`._-()` é descartada; ano só de "/Date(ms)/" ou "AAAAMMDD...", entre 1990 e o ano atual;
+    - na tela, entrada estranha vira "não confirmado"/"não identificado"/"não disponível", nunca erro; só são exibidos os motivos que o próprio módulo gera;
+    - Resizable BAR: "não verificado nesta versão", só passo a passo (inclui "não mude o CSM nem o modo de inicialização");
+    - não recomenda atualizar a BIOS: só "se for atualizar, use o site oficial do fabricante; atualizar BIOS tem risco"; sem link nem download;
+    - passo a passo genérico (DEL/F2; ASUS "AI Tweaker / D.O.C.P / EXPO", MSI "OC / XMP / EXPO", Gigabyte "Tweaker / XMP / EXPO", ASRock "OC Tweaker / XMP / EXPO"), "na dúvida, saia sem salvar" e, no fim, "se o PC não ligar, limpe a CMOS seguindo o manual da placa"; as linhas "verificar"/"manual" que `inspect_pc()` já gerava ficaram iguais.
+- **Fatia 2 — `pronto`**: ler o estado do Resizable BAR só lendo (consulta a definir, sem administrador e sem alterar nada) e um botão "Ver passo a passo" separado na aba.
 ### P3-07 · Check-up de segurança (somente leitura) — `pronto` (depois de P3-01)
 - **Pedido do Raphael em 23/10/2026.** Procura sinais de minerador escondido e de programas suspeitos. **Não é antivírus:** o app nunca apaga, nunca encerra processos, nunca muda o Defender e nunca coloca nada em quarentena. Se achar algo, explica e recomenda a "Verificação offline" do Defender e uma segunda opinião (Malwarebytes, só do site oficial).
 - **O que olha (só leitura):**
