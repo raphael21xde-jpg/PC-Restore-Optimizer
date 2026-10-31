@@ -833,9 +833,16 @@ class WindowTests(unittest.TestCase):
         track_tk_root(self, self.root)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
+        # FIX-20261031 (R-29): registrada depois da limpeza da pasta, roda antes dela;
+        # espera a gravação em segundo plano antes de apagar a pasta temporária.
+        self.addCleanup(self._join_savers)
         self.tmp = Path(tmp.name)
         self.base = self.tmp / 'progresso'
         self.manifest = _backup(self.tmp / 'E')
+
+    def _join_savers(self):
+        for key, saver in list(getattr(self.root, 'after_format_savers', {}).items()):
+            self.assertTrue(saver.join(10), f'gravação do progresso não terminou: {key}')
 
     def open(self, manifest=None):
         dlg = afu.show_after_format(self.root, manifest=manifest or self.manifest,
@@ -874,7 +881,11 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(dlg.after_format_status['restaurar'].get(), 'Pendente')
         dlg.after_format_buttons['discos']['Feito'].invoke()  # de novo: volta a pendente
         self.assertEqual(dlg.after_format_status['discos'].get(), 'Pendente')
+        saver = self.root.after_format_savers[dlg.after_format_state['key']]
         dlg.destroy()
+        self.assertTrue(saver.join(5))  # FIX-20261031: espera a 2ª gravação
+        again = af.load_progress(self.manifest, self.base)
+        self.assertEqual(again['steps']['discos'], af.PENDING)
 
     def test_each_open_calls_right_window(self):
         dlg = self.open()
