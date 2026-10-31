@@ -20,11 +20,20 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
 - item pendente (``prepared``) ou desconhecido (``unknown``) bloqueia lotes novos;
 - diário ilegível, de schema errado ou que seja link bloqueia tudo;
 - só valores simples (texto, número, sim/não, vazio), sem caminhos;
-- entradas nunca são apagadas, só mudam de estado.
+- entradas nunca são apagadas, só mudam de estado;
+- FIX-P3-03-02: cada instância guarda o SHA-256 do arquivo que leu ou gravou;
+  se outra janela do app (ou outro programa) mudou, apagou ou criou o arquivo
+  depois disso, a instância recusa tudo e não sobrescreve nada. Uma falha ao
+  gravar também deixa a instância recusando tudo até o app ser reaberto;
+- se a gravação falha no meio de um lote, o app desfaz pelo adaptador o que já
+  tinha aplicado nesse lote (do mais novo ao mais antigo), sem gravar mais nada.
+  Limite conhecido: entre a conferência e a troca do arquivo há uma janela de
+  milissegundos; o app não tranca o arquivo.
 """
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import math
 import os
@@ -41,6 +50,7 @@ MAX_BATCH = 100
 
 _KEY_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.\-]{0,79}$')
 _DRIVE_RE = re.compile(r'^[A-Za-z]:')
+_NUMBER_RE = re.compile(r'[0-9]{1,9}')
 _ENTRY_FIELDS = ('id', 'batch', 'kind', 'key', 'before', 'after', 'status', 'created', 'updated')
 
 STATUS_TEXT = {
@@ -53,6 +63,19 @@ STATUS_TEXT = {
 
 MSG_CHANGED_OUTSIDE = ('O valor foi mudado por outro programa depois do ajuste; '
                        'o app não vai sobrescrever.')
+MSG_OTHER_WINDOW = ('O diário de alterações foi alterado por outra janela do app; '
+                    'feche e abra o app de novo. Nada foi gravado.')
+MSG_SAVE_FAILED_BEFORE = ('O diário de alterações não pôde ser gravado da última vez; '
+                          'feche e abra o app de novo. Nada foi gravado.')
+MSG_BATCH_SAVE_FAILED_NONE = 'Não foi possível gravar o diário; nenhum ajuste foi aplicado.'
+MSG_UNDO_NOT_NOTED = ('O ajuste foi desfeito no sistema, mas o diário não pôde ser anotado; '
+                      'feche e abra o app de novo.')
+MSG_UNDO_UNKNOWN_NOT_NOTED = ('O app tentou desfazer o ajuste no sistema, mas não conseguiu confirmar '
+                              'e o diário não pôde ser anotado; confira manualmente e '
+                              'feche e abra o app de novo.')
+MSG_BATCH_SAVE_FAILED = 'Não foi possível gravar o diário; os ajustes deste lote foram desfeitos.'
+MSG_BATCH_SAVE_FAILED_CHECK = ('Não foi possível gravar o diário; confira manualmente: '
+                               '{n} ajuste(s) não voltaram ao valor anterior.')
 
 
 class JournalError(Exception):
@@ -90,6 +113,11 @@ def same_value(a, b) -> bool:
     return type(a) is type(b) and a == b
 
 
+def _valid_number(text) -> bool:
+    """Só algarismos ASCII (nada de '²' ou '١'), de 1 a 9 casas."""
+    return isinstance(text, str) and _NUMBER_RE.fullmatch(text) is not None
+
+
 def _valid_key(key) -> bool:
     return isinstance(key, str) and bool(_KEY_RE.match(key))
 
@@ -100,6 +128,8 @@ def _valid_entry(entry) -> bool:
     if any(f not in entry for f in _ENTRY_FIELDS):
         return False
     if not all(isinstance(entry[f], str) for f in ('id', 'batch', 'kind', 'created', 'updated')):
+        return False
+    if not (_valid_number(entry['id']) and _valid_number(entry['batch'])):
         return False
     if entry['status'] not in STATUSES or not _valid_key(entry['key']):
         return False
@@ -124,6 +154,9 @@ class ChangeJournal:
             raise JournalError('Falta a função que cria o ponto de restauração.')
         self._adapters = dict(adapters)
         self._restore_point = create_restore_point
+        self._disk_digest = None   # SHA-256 do arquivo como esta instância o deixou
+        self._stale = False        # True: outra janela mudou o diário ou a gravação falhou
+        self._stale_message = ''
         self._entries = self._load()
 
     # ---------- arquivo ----------
@@ -131,9 +164,11 @@ class ChangeJournal:
         if os.path.islink(self._path):
             raise JournalError('O diário de alterações é um atalho (link); por segurança, nada será feito.')
         if not self._path.exists():
+            self._disk_digest = None
             return []
         try:
-            data = json.loads(self._path.read_text(encoding='utf-8'))
+            raw = self._path.read_bytes()
+            data = json.loads(raw.decode('utf-8'))
         except (OSError, UnicodeDecodeError, ValueError):
             raise JournalError('O diário de alterações está ilegível; por segurança, nada será feito.') from None
         if not isinstance(data, dict) or data.get('schema') != SCHEMA:
@@ -144,11 +179,44 @@ class ChangeJournal:
         ids = [e['id'] for e in entries]
         if len(set(ids)) != len(ids):
             raise JournalError('O diário de alterações está ilegível; por segurança, nada será feito.')
+        self._disk_digest = hashlib.sha256(raw).hexdigest()
         return entries
+
+    def _current_disk_digest(self):
+        """SHA-256 do arquivo agora; None se não existe; '?' se não deu para ler."""
+        try:
+            return hashlib.sha256(self._path.read_bytes()).hexdigest()
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return '?'
+
+    def _mark_stale(self, message):
+        if not self._stale:
+            self._stale = True
+            self._stale_message = message
+
+    def _check_disk_unchanged(self):
+        """Recusa se o arquivo não é mais o que esta instância leu ou gravou."""
+        if self._stale:
+            raise JournalError(self._stale_message)
+        if self._current_disk_digest() != self._disk_digest:
+            self._mark_stale(MSG_OTHER_WINDOW)
+            raise JournalError(MSG_OTHER_WINDOW)
+
+    def _persist(self):
+        """Grava; qualquer falha deixa esta instância recusando tudo."""
+        try:
+            self._save()
+        except JournalError:
+            self._mark_stale(MSG_SAVE_FAILED_BEFORE)
+            raise
 
     def _save(self):
         if os.path.islink(self._path):
+            self._mark_stale(MSG_SAVE_FAILED_BEFORE)
             raise JournalError('O diário de alterações virou um atalho (link); por segurança, nada será gravado.')
+        self._check_disk_unchanged()
         payload = json.dumps({'schema': SCHEMA, 'entries': self._entries},
                              ensure_ascii=False, indent=2).encode('utf-8')
         tmp = self._path.with_name(f'.{self._path.name}.{uuid.uuid4().hex}.tmp')
@@ -168,10 +236,13 @@ class ChangeJournal:
             os.replace(tmp, self._path)
         except JournalError:
             self._discard_tmp(tmp)
+            self._mark_stale(MSG_SAVE_FAILED_BEFORE)
             raise
         except OSError:
             self._discard_tmp(tmp)
+            self._mark_stale(MSG_SAVE_FAILED_BEFORE)
             raise JournalError('Não foi possível gravar o diário de alterações.') from None
+        self._disk_digest = hashlib.sha256(payload).hexdigest()
 
     @staticmethod
     def _discard_tmp(tmp):
@@ -187,7 +258,7 @@ class ChangeJournal:
         entry['updated'] = _now()
         if note:
             entry['note'] = note
-        self._save()
+        self._persist()
 
     def _find(self, change_id):
         for entry in self._entries:
@@ -203,11 +274,11 @@ class ChangeJournal:
             return False, None
 
     def _next_id(self):
-        numbers = [int(e['id']) for e in self._entries if e['id'].isdigit()]
+        numbers = [int(e['id']) for e in self._entries if _valid_number(e['id'])]
         return str(max(numbers, default=0) + 1)
 
     def _next_batch(self):
-        numbers = [int(e['batch']) for e in self._entries if e['batch'].isdigit()]
+        numbers = [int(e['batch']) for e in self._entries if _valid_number(e['batch'])]
         return str(max(numbers, default=0) + 1)
 
     def _check_batch(self, changes):
@@ -245,7 +316,11 @@ class ChangeJournal:
 
     # ---------- API ----------
     def apply_batch(self, changes):
-        """Aplica um lote; devolve a lista de ids. Recusa com ``BatchRefused``."""
+        """Aplica um lote; devolve a lista de ids. Recusa com ``BatchRefused``.
+
+        Se o diário mudou por fora, recusa com ``JournalError`` antes de criar o
+        ponto de restauração ou chamar qualquer adaptador."""
+        self._check_disk_unchanged()
         self._check_batch(changes)
         if os.path.islink(self._path):
             raise JournalError('O diário de alterações virou um atalho (link); por segurança, nada será feito.')
@@ -258,46 +333,66 @@ class ChangeJournal:
 
         batch = self._next_batch()
         done = []
-        for change in changes:
-            entry = {'id': self._next_id(), 'batch': batch, 'kind': change['kind'],
-                     'key': change['key'], 'before': None, 'after': change['after'],
-                     'status': 'prepared', 'created': _now(), 'updated': _now()}
-            ok, before = self._read(entry)
-            if not ok or not is_simple_value(before):
-                self._rollback(done)
-                raise BatchRefused('Não foi possível ler o valor atual de um ajuste; '
-                                   'os ajustes deste lote foram desfeitos.')
-            entry['before'] = before
-            self._entries.append(entry)
-            self._save()
-            try:
-                self._adapters[entry['kind']].apply(entry['key'], entry['after'])
-                applied_ok = True
-            except Exception:
-                applied_ok = False
-            if applied_ok:
-                ok, current = self._read(entry)
-                applied_ok = ok and same_value(current, entry['after'])
-            if not applied_ok:
-                if self._rollback_one(entry):
-                    self._set(entry, 'failed')
-                else:
-                    self._set(entry, 'unknown')
-                self._rollback(done)
-                raise BatchRefused('Um ajuste não foi confirmado; os ajustes deste lote foram desfeitos.')
-            self._set(entry, 'applied')
-            done.append(entry)
+        touched = []   # itens deste lote em que o adaptador já foi chamado
+        try:
+            for change in changes:
+                entry = {'id': self._next_id(), 'batch': batch, 'kind': change['kind'],
+                         'key': change['key'], 'before': None, 'after': change['after'],
+                         'status': 'prepared', 'created': _now(), 'updated': _now()}
+                ok, before = self._read(entry)
+                if not ok or not is_simple_value(before):
+                    self._rollback(done)
+                    raise BatchRefused('Não foi possível ler o valor atual de um ajuste; '
+                                       'os ajustes deste lote foram desfeitos.')
+                entry['before'] = before
+                self._entries.append(entry)
+                self._persist()
+                touched.append(entry)
+                try:
+                    self._adapters[entry['kind']].apply(entry['key'], entry['after'])
+                    applied_ok = True
+                except Exception:
+                    applied_ok = False
+                if applied_ok:
+                    ok, current = self._read(entry)
+                    applied_ok = ok and same_value(current, entry['after'])
+                if not applied_ok:
+                    if self._rollback_one(entry):
+                        self._set(entry, 'failed')
+                    else:
+                        self._set(entry, 'unknown')
+                    self._rollback(done)
+                    raise BatchRefused('Um ajuste não foi confirmado; os ajustes deste lote foram desfeitos.')
+                self._set(entry, 'applied')
+                done.append(entry)
+        except JournalError:
+            # O diário não pôde ser gravado: desfaz pelo adaptador, sem gravar mais nada.
+            self._mark_stale(MSG_SAVE_FAILED_BEFORE)
+            if not touched:
+                raise BatchRefused(MSG_BATCH_SAVE_FAILED_NONE) from None
+            not_back = self._rollback(touched, persist=False)
+            if not_back:
+                raise BatchRefused(MSG_BATCH_SAVE_FAILED_CHECK.format(n=not_back)) from None
+            raise BatchRefused(MSG_BATCH_SAVE_FAILED) from None
         return [e['id'] for e in done]
 
-    def _rollback(self, done):
-        for entry in reversed(done):
-            if self._rollback_one(entry):
-                self._set(entry, 'failed')
-            else:
-                self._set(entry, 'unknown')
+    def _rollback(self, entries, persist=True):
+        """Desfaz do mais novo ao mais antigo; devolve quantos não voltaram.
+
+        Com ``persist=False`` só chama o adaptador e não grava o diário."""
+        not_back = 0
+        for entry in reversed(entries):
+            back = self._rollback_one(entry)
+            not_back += not back
+            if persist:
+                self._set(entry, 'failed' if back else 'unknown')
+        return not_back
 
     def undo(self, change_id):
-        """Desfaz um item aplicado; devolve (ok, motivo)."""
+        """Desfaz um item aplicado; devolve (ok, motivo).
+
+        Se o diário mudou por fora, recusa com ``JournalError`` sem chamar o adaptador."""
+        self._check_disk_unchanged()
         entry = self._find(change_id)
         if entry is None:
             return False, 'Essa alteração não está no diário.'
@@ -315,18 +410,34 @@ class ChangeJournal:
         except Exception:
             pass
         ok, current = self._read(entry)
+        # O adaptador já foi chamado: se a anotação falhar, a mensagem diz o que
+        # mudou no sistema e nunca "Nada foi gravado" (R-19).
         if ok and same_value(current, entry['before']):
-            self._set(entry, 'reverted')
+            try:
+                self._set(entry, 'reverted')
+            except JournalError:
+                raise JournalError(MSG_UNDO_NOT_NOTED) from None
             return True, ''
         if ok and same_value(current, entry['after']):
             return False, 'O ajuste não voltou ao valor anterior; ele continua aplicado.'
-        self._set(entry, 'unknown')
+        try:
+            self._set(entry, 'unknown')
+        except JournalError:
+            raise JournalError(MSG_UNDO_UNKNOWN_NOT_NOTED) from None
         return False, 'Não foi possível confirmar que o ajuste voltou ao valor anterior; confira manualmente.'
 
     def undo_all(self):
         """Desfaz do mais novo para o mais antigo; para na primeira falha.
 
-        Devolve (ids desfeitos, ids que continuam aplicados, motivo)."""
+        Devolve (ids desfeitos, ``pending``, motivo). ``pending`` são os ids que
+        estavam aplicados e não foram desfeitos agora: o que falhou (primeiro da
+        lista) e os mais antigos, que nem foram tentados. Eles continuam no
+        estado em que estavam (``applied``, ou ``unknown`` se o próprio desfazer
+        não pôde ser confirmado). Se o diário mudou por fora, recusa com
+        ``JournalError`` antes de qualquer coisa; se a anotação de um item falhar
+        depois de ele ter sido desfeito no sistema, o ``JournalError`` de ``undo``
+        sobe com o texto que diz isso (os itens anteriores já ficaram anotados)."""
+        self._check_disk_unchanged()
         applied = [e['id'] for e in reversed(self._entries) if e['status'] == 'applied']
         done = []
         for change_id in applied:
@@ -340,14 +451,17 @@ class ChangeJournal:
     def recover_interrupted(self):
         """Confere itens ``prepared`` sem aplicar nem desfazer nada.
 
+        Valor atual igual ao anterior vira ``failed`` (o ajuste não chegou a
+        valer); igual ao novo vira ``applied``; o resto vira ``unknown``.
         Devolve lista de (id, novo estado)."""
+        self._check_disk_unchanged()
         result = []
         for entry in self._entries:
             if entry['status'] != 'prepared':
                 continue
             ok, current = self._read(entry) if entry['kind'] in self._adapters else (False, None)
             if ok and same_value(current, entry['before']):
-                status = 'reverted'
+                status = 'failed'
             elif ok and same_value(current, entry['after']):
                 status = 'applied'
             else:
