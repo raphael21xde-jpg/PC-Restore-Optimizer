@@ -373,6 +373,9 @@ class PowerPanelTests(SafetyNet):
         self.admin['value'] = False
         panel = self.panel()
         self.choose(panel, B)
+        # choose() já leu os planos (um Job de leitura); o Aplicar não pode
+        # iniciar nenhum Job novo.
+        job_antes = panel._power_job
         panel.btn_apply.invoke()
         self.wait_idle(panel)
         self.assertEqual(self.fake.setactive(), [])
@@ -383,7 +386,7 @@ class PowerPanelTests(SafetyNet):
         self.assertEqual(kind, 'warning')
         self.assertIn('Executar como administrador', text)
         self.assertIn('nunca pede', text)
-        self.assertIsNone(panel._power_job)
+        self.assertIs(panel._power_job, job_antes)
 
     def test_restore_point_refused_explains_and_changes_nothing(self):
         self.restore_ok['value'] = False
@@ -732,11 +735,12 @@ class PowerPanelTests(SafetyNet):
         panel = self.panel()
         panel.power_busy = True
         before = list(self.fake.calls)
+        job_antes = panel._power_job
         panel.load_plans()
         time.sleep(0.1)
         self.root.update()
         self.assertEqual(self.fake.calls, before)
-        self.assertIsNone(panel._power_job)
+        self.assertIs(panel._power_job, job_antes)
         panel.power_busy = False
 
     def test_failed_refresh_keeps_previous_plans(self):
