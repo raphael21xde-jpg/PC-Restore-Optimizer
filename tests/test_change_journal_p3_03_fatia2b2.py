@@ -262,6 +262,29 @@ class RecheckEngineTests(SafetyNet):
         self.assertIn('Nada foi gravado', str(again.exception))
 
 
+    def test_interrupt_mid_loop_restores_memory(self):
+        # FIX-P3-03-09: exceção fora de Exception (ex.: KeyboardInterrupt) no meio do
+        # laço não pode deixar a 1ª entrada mudada só na memória.
+        self.adapter = CountingAdapter({'k1': 'A', 'k2': 'N'})
+        self.write(_raw(1, 'applied', 'A', 'N'), _raw(2, 'applied', 'A', 'N'))
+        raw = self.path.read_bytes()
+        journal = self.open()
+        before = journal.entries()
+        original = journal._read
+
+        def read(entry):
+            if entry['id'] == '2':
+                raise KeyboardInterrupt
+            return original(entry)
+        with mock.patch.object(journal, '_read', side_effect=read):
+            with self.assertRaises(KeyboardInterrupt):
+                journal.recheck()
+        self.assertEqual(journal.entries(), before)
+        self.assertEqual(self.path.read_bytes(), raw)
+        self.assertEqual(self.adapter.calls, {'read': 1, 'apply': 0, 'revert': 0})
+        self.assertEqual(self.restore_calls, [])
+
+
 class RecheckTabHelpers(f2b.ChangesTabHelpers):
     def recheck(self, panel):
         panel.btn_recheck.invoke()
@@ -321,8 +344,26 @@ class RecheckTabTests(RecheckTabHelpers):
         self.assertEqual(panel.changes_status.get(), ou.CHANGES_RECHECK_SAME_TEXT)
         self.fake.current = C  # outro programa trocou o plano
         self.recheck(panel)
-        expected = ou.CHANGES_RECHECK_SAME_TEXT + ou.CHANGES_RECHECK_OUTSIDE_TEXT.format(n=1)
+        # FIX-P3-03-09 (R-33): com item mudado por fora, a frase é neutra + aviso.
+        expected = (ou.CHANGES_RECHECK_NONE_CHANGED_TEXT
+                    + ou.CHANGES_RECHECK_OUTSIDE_TEXT.format(n=1))
         self.assertEqual(panel.changes_status.get(), expected)
+        self.assertNotIn('já estava certo', panel.changes_status.get())
+        self.assertEqual(self.messages, [('warning', ou.CHANGES_RECHECK_TITLE, expected)])
+        self.assertEqual([e['status'] for e in self.entries()], ['applied'])
+        self.assertEqual(self.fake.setactive(), [])
+
+    def test_unreadable_item_text_and_one_warning(self):
+        # FIX-P3-03-09 (R-33): item ilegível não pode virar "o diário já estava certo".
+        self.write_journal(_entry(1, 'applied', A, B))
+        self.fake.current = B
+        panel = self.panel()
+        self.fake.active_error = OSError('C:\\Users\\Fulano\\erro cru')
+        self.recheck(panel)
+        expected = (ou.CHANGES_RECHECK_NONE_CHANGED_TEXT
+                    + ou.CHANGES_RECHECK_UNREADABLE_TEXT.format(n=1))
+        self.assertEqual(panel.changes_status.get(), expected)
+        self.assertNotIn('já estava certo', panel.changes_status.get())
         self.assertEqual(self.messages, [('warning', ou.CHANGES_RECHECK_TITLE, expected)])
         self.assertEqual([e['status'] for e in self.entries()], ['applied'])
         self.assertEqual(self.fake.setactive(), [])
@@ -384,6 +425,9 @@ class RecheckTabTests(RecheckTabHelpers):
         self.assertTrue(threads)
         for thread in threads:
             self.assertIsNot(thread, threading.main_thread())
+        # FIX-P3-03-09: o Job também tem de chegar ao resultado certo.
+        self.assertEqual(panel.changes_status.get(), ou.CHANGES_RECHECK_SAME_TEXT)
+        self.assertEqual(self.messages, [])
         self.assertEqual(self.fake.setactive(), [])
 
 

@@ -91,6 +91,9 @@ CHANGES_RECHECK_FIXED_TEXT = ('Conferência concluída: {n} alteração(ões) ti
                               'no diário. Nada foi mudado no Windows.')
 CHANGES_RECHECK_SAME_TEXT = ('Conferência concluída: o diário já estava certo. '
                              'Nada foi mudado no Windows.')
+# FIX-P3-03-09 (R-33): frase neutra quando algum item ficou ilegível ou foi mudado por fora.
+CHANGES_RECHECK_NONE_CHANGED_TEXT = ('Conferência concluída: nenhum estado precisou mudar. '
+                                     'Nada foi mudado no Windows.')
 CHANGES_RECHECK_OUTSIDE_TEXT = (' {n} ajuste(s) foram mudados por outro programa; '
                                 'o app não vai sobrescrever.')
 CHANGES_RECHECK_UNREADABLE_TEXT = (' Não foi possível ler o valor atual de {n} ajuste(s); '
@@ -1396,9 +1399,14 @@ class OptimizationPanel(tk.Frame):
         status=outcome.get('status')
         if status=='done':
             changed=outcome.get('changed',0)
-            message=(CHANGES_RECHECK_FIXED_TEXT.format(n=changed) if changed
-                     else CHANGES_RECHECK_SAME_TEXT)
             outside,unreadable=outcome.get('outside',0),outcome.get('unreadable',0)
+            # R-33: "o diário já estava certo" só quando todos os itens foram conferidos.
+            if changed:
+                message=CHANGES_RECHECK_FIXED_TEXT.format(n=changed)
+            elif not outside and not unreadable:
+                message=CHANGES_RECHECK_SAME_TEXT
+            else:
+                message=CHANGES_RECHECK_NONE_CHANGED_TEXT
             if outside:
                 message+=CHANGES_RECHECK_OUTSIDE_TEXT.format(n=outside)
             if unreadable:
