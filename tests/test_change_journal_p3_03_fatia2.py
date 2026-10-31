@@ -534,7 +534,7 @@ class PowerPanelTests(SafetyNet):
                 mock.patch.object(panel.journal, 'undo_all', side_effect=_forbidden):
             self.apply(panel, C)
         recover.assert_called_once_with()
-        self.assertEqual([e['status'] for e in self.entries()], ['reverted', 'applied'])
+        self.assertEqual([e['status'] for e in self.entries()], ['failed', 'applied'])
         self.assertEqual(self.fake.current, C)
         self.assertEqual(self.fake.setactive(), [('powercfg', '/setactive', C)])
         self.assertEqual(len(self.restore_calls), 1)

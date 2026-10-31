@@ -481,9 +481,18 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - Origem: validação Windows da `main` @866ce6f (29/10/2026): `test_without_admin_change_is_refused_and_explained` falhou em `assertIsNone(panel._power_job)`.
 - Causa: desde a PR #121 a escolha do plano já lê os planos num Job de leitura, então `_power_job` não fica vazio; o app estava certo (sem administrador o Aplicar volta antes de iniciar a troca).
 - **Feito** (branch `auto/FIX-20261030-teste-sem-admin`, só teste): o teste guarda o Job antes de clicar em Aplicar e confere que continua o mesmo (`assertIs`); `test_load_plans_while_busy_runs_nothing` passou a comparar do mesmo jeito. `optimization_ui.py` não mudou. Regra nova: R-21.
-### FIX-P3-03-02 · Ressalvas da revisão da PR #115 (diário de alterações) — `pronto` (antes da P3-03 fatia 2b)
+### FIX-P3-03-02 · Ressalvas da revisão da PR #115 (diário de alterações) — `concluído` (antes da P3-03 fatia 2b)
 - Duas instâncias no mesmo diário podem perder entradas; falha de gravação no meio do lote não desfaz o que já foi aplicado; número com dígito unicode dá erro cru.
 - Critérios: os itens da issue #116.
+- **Status:** `concluído` (branch `auto/FIX-P3-03-02-diario-concorrencia`). Só `change_journal.py` e testes mudaram; a tela de otimização já mostrava o erro novo pelo `except JournalError` que existia, então o fluxo dela não mudou. Nenhuma linha com o nome de uma trava foi tocada.
+- **Escolhas de design (opção mais segura):**
+  - cada instância guarda o SHA-256 dos bytes do diário que leu (`_load`) ou gravou (`_save`), `None` se o arquivo não existia; antes de gravar, e no começo de `apply_batch`, `undo`, `undo_all` e `recover_interrupted`, relê o arquivo. Se ele mudou, foi apagado ou foi criado por outro, recusa com "O diário de alterações foi alterado por outra janela do app; feche e abra de novo. Nada foi gravado." **antes** do ponto de restauração e de qualquer chamada ao adaptador, e não sobrescreve o arquivo;
+  - qualquer falha de gravação deixa a instância "velha" (`_stale`): tudo passa a ser recusado até o app ser reaberto. Quando a causa foi outra janela, a recusa repete a mensagem acima; quando foi uma falha de disco, usa "O diário de alterações não pôde ser gravado da última vez; feche e abra o app de novo. Nada foi gravado.", para não afirmar que foi outra janela (espírito da R-19);
+  - gravação falhando no meio do lote: o app desfaz pelo adaptador, do mais novo ao mais antigo, todo item do lote em que o adaptador já foi chamado (`_rollback(..., persist=False)`, sem gravar mais nada) e recusa com "Não foi possível gravar o diário; os ajustes deste lote foram desfeitos." ou, se algum não voltou, "Não foi possível gravar o diário; confira manualmente: N ajuste(s) não voltaram ao valor anterior.";
+  - `id` e `batch` só com algarismos ASCII, 1 a 9 casas (`re.fullmatch(r'[0-9]{1,9}')`); fora disso o diário é ilegível (`JournalError`), nunca `ValueError` cru;
+  - item interrompido (`prepared`) cujo valor atual é o anterior vira `failed` ("não aplicada"), não `reverted`: o ajuste não chegou a valer, não foi desfeito pelo usuário;
+  - limite conhecido: entre a conferência e a troca do arquivo há alguns milissegundos sem tranca; não se usa trava de arquivo do sistema.
+- Testes: `tests/test_change_journal_fix_p3_03_02.py` (duas janelas, arquivo apagado/trocado/criado por fora, falha de gravação no meio do lote, dígitos unicode, `prepared` → `failed`); `tests/test_change_journal_p3_03.py` e `tests/test_change_journal_p3_03_fatia2.py` passam a esperar `failed` no item interrompido que ficou no valor anterior.
 ### FIX-P3-01-01 · Ressalvas da revisão da PR #113 (perfil de hardware) — `pronto`
 - Dual channel com todos os módulos no mesmo canal, tipos de barramento que faltam, aviso de nobreak visto como bateria, erro do PowerShell sem texto cru e ajustes nos testes.
 - Critérios: os itens da issue #114.

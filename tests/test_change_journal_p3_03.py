@@ -346,7 +346,7 @@ class RecoveryTests(Base):
         self.assertEqual(self.calls, [])
 
     def test_recover_three_outcomes(self):
-        for current, expected in (('equilibrado', 'reverted'), ('alto', 'applied'), ('economia', 'unknown')):
+        for current, expected in (('equilibrado', 'failed'), ('alto', 'applied'), ('economia', 'unknown')):
             with self.subTest(current=current):
                 self.path.unlink(missing_ok=True)
                 self.calls.clear()
