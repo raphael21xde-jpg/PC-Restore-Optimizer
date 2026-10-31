@@ -537,6 +537,16 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - `_journal_failed` ganhou `off_text` (padrão `POWER_JOURNAL_OFF_TEXT`); `None` mostra só a mensagem. Só o erro inesperado passa `None` (continua uma janela só, R-28); os outros erros do diário continuam terminando com `POWER_JOURNAL_OFF_TEXT`;
   - o comentário de `tests/test_index_audit_bridge.py` explica que no Linux o teste troca `index_choices_bridge.norm` por uma versão com `ntpath` e que a função real (`backup_core.norm`) só é testada no Windows. Sem mudar a lógica.
 - Testes: `tests/test_change_journal_fix_p3_03_05.py` (texto aponta a aba 7 e fala "desligado" uma vez, rótulo da 7ª subaba, erro do diário de outra janela continua com `POWER_JOURNAL_OFF_TEXT`, uma janela só no erro inesperado), mais os dois testes de erro inesperado ajustados.
+### FIX-20261031 · Teste do assistente intermitente (espera da gravação) — `concluído`
+- Origem: issue #139 (`tests/test_after_format_p2_11.WindowTests.test_reopen_shows_progress` falhou de vez em quando na main @18ea591).
+- **Causa:** no `setUp` de `WindowTests`, `track_tk_root` era registrado antes de `addCleanup(tmp.cleanup)`. As limpezas rodam na ordem inversa, então a pasta temporária era apagada antes de `release_tk` esperar as threads (só 1 s, `WORKER_JOIN_SECONDS`). Testes que clicam Feito/Pular e fecham a janela sem esperar a gravação do `ProgressSaver` podiam encontrar `progresso/` ainda sendo escrita (`test_reopen_shows_progress`, `test_save_failure_shown_without_full_path`, `test_skip_does_not_block`).
+- **Status:** `concluído` (branch `auto/FIX-20261031-espera-gravacao-teste`). Só mudaram `tests/test_after_format_p2_11.py`, este backlog e `docs/REGRAS.md` (R-29). Nenhum arquivo do app mudou; nenhuma trava foi tocada.
+- **Feito:**
+  - método novo `WindowTests._join_savers`: para cada gravador em `self.root.after_format_savers`, `assertTrue(saver.join(10))` (o `join` do `ProgressSaver` devolve `True`/`False`);
+  - no `setUp`, `addCleanup(self._join_savers)` registrado **depois** de `addCleanup(tmp.cleanup)`, então roda antes de apagar a pasta;
+  - `test_reopen_shows_progress`: depois do 2º `destroy()`, espera o gravador (`join(5)` com assert) e confere com `af.load_progress` que "discos" voltou a `pendente` no arquivo.
+- **Escolhas de design (opção mais segura):** corrigir só no teste (sem pôr espera no `destroy()` do app e sem aumentar `WORKER_JOIN_SECONDS`); a espera sempre tem prazo e assert, nunca é sem limite.
+- Testes: `tests/test_after_format_p2_11.py` (Python do uv com Tk + `xvfb-run`): `test_reopen_shows_progress` 20 vezes seguidas e a classe `WindowTests` 10 vezes seguidas, todas aprovadas.
 ### FIX-P3-01-01 · Ressalvas da revisão da PR #113 (perfil de hardware) — `concluído`
 - Dual channel com todos os módulos no mesmo canal, tipos de barramento que faltam, aviso de nobreak visto como bateria, erro do PowerShell sem texto cru e ajustes nos testes.
 - Critérios: os itens da issue #114.

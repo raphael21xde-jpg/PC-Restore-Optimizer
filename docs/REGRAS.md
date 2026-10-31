@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 4 (R-25, R-26, R-27 e R-28; última poda: 31/10/2026, pedido `regras-20261031-poda-r14-r23`, issue #125; a R-24 nasceu
+poda: 5 (R-25, R-26, R-27, R-28 e R-29; última poda: 31/10/2026, pedido `regras-20261031-poda-r14-r23`, issue #125; a R-24 nasceu
 da separação da R-21 e não conta). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-25.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
@@ -44,3 +44,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-26 | Diagnóstico nunca diz "provável" ou "sim" quando o dado lido aponta o contrário (ex.: todos os módulos no mesmo canal); nesse caso diz "não confirmado" e o motivo. | Revisão da PR #113 (issue #114), FIX-P3-01-01 | 2026-10-31 |
 | R-27 | Erro inesperado no meio de um lote (desfazer tudo ou aplicar vários) nunca mostra só a mensagem genérica: diz que parte pode já ter mudado no sistema e desliga o diário até reabrir o app. | Revisão da PR #131 (issue #132), FIX-P3-03-03 | 2026-10-31 |
 | R-28 | Um mesmo erro abre no máximo uma janela de aviso; função que já mostra a janela (ex.: `_journal_failed`) não é seguida de outro `_show` com o mesmo texto. | Revisão da PR #133 (issue #134), FIX-P3-03-04 | 2026-10-31 |
+| R-29 | Teste que dispara gravação em segundo plano espera essa gravação (join com prazo e assert) antes de apagar o TemporaryDirectory; a espera é registrada com addCleanup depois da limpeza da pasta (roda antes dela). | Issue #139, teste intermitente na main @18ea591 (FIX-20261031) | 2026-10-31 |
