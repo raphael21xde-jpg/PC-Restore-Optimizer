@@ -152,8 +152,10 @@ class FixP30307Tests(f2b.ChangesTabHelpers):
         nele. O `__init__` do painel começa assim, mas chama `_load_change_journal` logo em
         seguida, antes de montar a tela; esse método deixa um diário válido ou `journal=None`
         com `journal_error=str(exc)`, e todo `JournalError` de `change_journal.py` tem texto
-        fixo, nunca vazio. `_journal_failed` recebe o texto de um `JournalError` ou um texto
-        fixo do app (`CHANGES_UNEXPECTED_ERROR_TEXT`, `CHANGES_RECHECK_ERROR_TEXT`).
+        fixo, nunca vazio. `_journal_failed` recebe o texto de um `JournalError`, um texto
+        fixo do app (`CHANGES_UNEXPECTED_ERROR_TEXT`, `CHANGES_RECHECK_ERROR_TEXT`) ou, no
+        "Desfazer tudo" parcial, `CHANGES_DONE_BEFORE_ERROR_TEXT` seguido do texto do erro
+        (também nunca vazio, porque começa com o texto fixo).
         O teste fica porque `undo_legacy_plan` e `_update_power_buttons` testam
         `journal is None or journal_error`: se um dia surgir um erro sem texto, o botão
         antigo continua desligado e nada roda.

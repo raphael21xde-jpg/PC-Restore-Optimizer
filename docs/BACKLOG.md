@@ -564,7 +564,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - Origem: issue #147 (ressalvas da revisão da PR #146, FIX-P3-03-07); junto foram os itens de documentação da issue #152 (revisão da PR #151, FIX-20261031-02).
 - **Status:** `concluído` (branch `auto/FIX-P3-03-08-ressalvas-146`). Só mudaram este backlog, `docs/REGRAS.md` (contador da poda e origem da R-31) e o docstring de um teste em `tests/test_change_journal_fix_p3_03_06.py`. Nenhum arquivo do app mudou; nenhuma trava foi tocada; nenhuma regra foi mudada nem apagada.
 - **O que mudou:**
-  - `docs/REGRAS.md`: o parágrafo da poda conta 7 regras novas (R-25 a R-31); a origem da R-31 cita a issue #143;
+  - `docs/REGRAS.md`: o parágrafo da poda conta 8 regras novas (R-25 a R-32); a issue #147 pedia 7 (R-25 a R-31) porque foi escrita antes de a R-32 (PR #150) existir; a origem da R-31 cita a issue #143;
   - `test_legacy_refuses_when_journal_is_none` ganhou um docstring: o estado `journal=None` + `journal_error=''` é montado à mão e hoje o app não chega nele (o `__init__` começa assim, mas `_load_change_journal` roda antes de montar a tela; todo `JournalError` e todo texto passado a `_journal_failed` tem texto). O teste fica como defesa dupla de `undo_legacy_plan`;
   - este backlog: linhas em branco antes de `### FIX-P3-03-07` e de `### FIX-P3-01-01`; a FIX-20261031-02 cita a PR #151 no título e no status, e a linha "Testes:" cita o veredito do testador da suíte completa (issue #152).
 - **Escolhas de design (opção mais segura):** manter o teste do estado artificial (é barato e protege um botão que mexe no sistema) e só documentar; nenhum código do app nem texto de interface mudou.
