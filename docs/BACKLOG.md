@@ -527,7 +527,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - testes: os ajudantes da aba 7 foram para `ChangesTabHelpers` (sem nenhum `test_`), base de `ChangesTabTests` (fatia 2b) e de `ChangesReviewFixTests` (FIX-P3-03-03). Saiu o truque do `setattr(..., None)`; um teste confere que a base não tem `test_`;
   - `tests/test_index_audit_bridge.test_preview_is_not_an_import_conflicts_are_explicit` voltou a rodar fora do Windows: lá o teste troca `index_choices_bridge.norm` por uma chave com `ntpath` (no Windows usa a função real). O código do app não mudou.
 - Testes: `tests/test_change_journal_fix_p3_03_03.py`, `tests/test_change_journal_p3_03_fatia2b.py` e `tests/test_index_audit_bridge.py`.
-### FIX-P3-03-05 · Ressalvas da revisão da PR #135 (texto do erro inesperado e aba 7) — `concluído` (PR a preencher)
+### FIX-P3-03-05 · Ressalvas da revisão da PR #135 (texto do erro inesperado e aba 7) — `concluído` (PR #137)
 - Origem: issue #136 (revisão da PR #135, FIX-P3-03-04).
 - **Status:** `concluído` (branch `auto/FIX-P3-03-05-ressalvas-135`). Mudaram só `optimization_ui.py`, os testes (`tests/test_change_journal_fix_p3_03_05.py`, novo, `tests/test_change_journal_fix_p3_03_03.py`, `tests/test_change_journal_p3_03_fatia2b.py` e o comentário de `tests/test_index_audit_bridge.py`) e este backlog. `change_journal.py` não mudou. Nenhuma linha com o nome de uma trava foi tocada.
 - **Escolhas de design (opção mais segura):**
