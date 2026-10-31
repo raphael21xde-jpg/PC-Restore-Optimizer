@@ -108,18 +108,21 @@ MSG_INCOMPLETO = ('A cópia não terminou conferida em todos os destinos: veja o
                   'relatório. Trate o backup como não verificado.')
 MSG_SEM_RELATORIO = ('A cópia foi feita e conferida (SHA-256), mas o relatório '
                      'não pôde ser montado.')
-MSG_ADMIN = ('Cópia recusada: o aplicativo está rodando como administrador. '
-             'Assim os arquivos copiados ficariam com permissões de '
-             'administrador e seu usuário normal poderia não conseguir abrir '
-             'ou alterar esses arquivos. Feche o aplicativo e abra de novo '
-             'como usuário normal: abra pelo atalho normal, sem usar '
-             "'Executar como administrador'. Nada foi copiado nem gravado no "
-             'destino.')
+# FIX-P2-09-10: common start of both administrator refusals, so neither one
+# is built by cutting the other.
+MSG_ADMIN_INICIO = ('Cópia recusada: o aplicativo está rodando como '
+                    'administrador. Assim os arquivos copiados ficariam com '
+                    'permissões de administrador e seu usuário normal poderia '
+                    'não conseguir abrir ou alterar esses arquivos. Feche o '
+                    'aplicativo e abra de novo como usuário normal: abra pelo '
+                    "atalho normal, sem usar 'Executar como administrador'.")
+MSG_ADMIN = MSG_ADMIN_INICIO + ' Nada foi copiado nem gravado no destino.'
 # FIX-P2-09-09 (R-19): used when the executor already ran in this flow, so the
 # refusal cannot claim that nothing was copied.
-MSG_ADMIN_INCERTO = (MSG_ADMIN.split(' Nada foi')[0]
-                     + ' A cópia anterior pode ter ficado incompleta: '
-                     'trate-a como não verificada.')
+MSG_ADMIN_INCERTO = (MSG_ADMIN_INICIO
+                     + ' Nesta tentativa nada novo foi copiado. Confira o '
+                     'relatório da cópia anterior para saber como ela '
+                     'terminou; sem relatório, trate-a como não verificada.')
 MSG_INESPERADO = ('Aconteceu um erro inesperado. Trate a cópia como não '
                   'verificada e faça a prévia de novo.')
 

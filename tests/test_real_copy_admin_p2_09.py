@@ -210,12 +210,34 @@ class AdminFlowTests(Base):
         self.assertClean(text)
         self.assertNotIn(os.path.expanduser('~'), text)
         self.assertNotIn('Nada foi', text)
-        self.assertTrue(text.endswith('A cópia anterior pode ter ficado '
-                                      'incompleta: trate-a como não verificada.'))
-        start = rcf.MSG_ADMIN.split(' Nada foi')[0]
-        self.assertTrue(text.startswith(start))
+        self.assertTrue(text.endswith(
+            'Nesta tentativa nada novo foi copiado. Confira o relatório da '
+            'cópia anterior para saber como ela terminou; sem relatório, '
+            'trate-a como não verificada.'))
+        self.assertNotIn('pode ter ficado incompleta', text)
+        self.assertTrue(text.startswith(rcf.MSG_ADMIN_INICIO))
         for word in FORBIDDEN_POSITIVE + ('elevat', 'UAC', 'IsUserAnAdmin'):
             self.assertNotIn(word, text)
+
+    def test_admin_messages_share_their_own_start_constant(self):
+        # FIX-P2-09-10: both admin messages are built from MSG_ADMIN_INICIO,
+        # not by cutting MSG_ADMIN with split().
+        start = rcf.MSG_ADMIN_INICIO
+        self.assertNotIn('Nada foi', start)
+        self.assertNotIn('Nada foi', rcf.MSG_ADMIN_INCERTO)
+        self.assertTrue(rcf.MSG_ADMIN.startswith(start))
+        self.assertTrue(rcf.MSG_ADMIN_INCERTO.startswith(start))
+        self.assertEqual(
+            rcf.MSG_ADMIN,
+            'Cópia recusada: o aplicativo está rodando como administrador. '
+            'Assim os arquivos copiados ficariam com permissões de '
+            'administrador e seu usuário normal poderia não conseguir abrir '
+            'ou alterar esses arquivos. Feche o aplicativo e abra de novo '
+            'como usuário normal: abra pelo atalho normal, sem usar '
+            "'Executar como administrador'. Nada foi copiado nem gravado no "
+            'destino.')
+        code = (ROOT / 'real_copy_flow.py').read_text(encoding='utf-8')
+        self.assertNotIn("split(' Nada foi')", code)
 
 
 class AdminCodeShapeTests(unittest.TestCase):
