@@ -567,17 +567,28 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - no `setUp`, `addCleanup(self._join_savers)` registrado **depois** de `addCleanup(tmp.cleanup)`, então roda antes de apagar a pasta;
   - `test_reopen_shows_progress`: depois do 2º `destroy()`, espera o gravador (`join(5)` com assert) e confere com `af.load_progress` que "discos" voltou a `pendente` no arquivo.
 - **Escolhas de design (opção mais segura):** corrigir só no teste (sem pôr espera no `destroy()` do app e sem aumentar `WORKER_JOIN_SECONDS`); a espera sempre tem prazo e assert, nunca é sem limite.
-- Testes: `tests/test_after_format_p2_11.py` (Python do uv com Tk + `xvfb-run`): `test_reopen_shows_progress` 20 vezes seguidas (20/20) e a classe `WindowTests` 10 vezes seguidas (10/10), todas aprovadas — na [PR #140](https://github.com/raphael21xde-jpg/PC-Restore-Optimizer/pull/140); repetido na FIX-20261031-01 com o mesmo 20/20 e 10/10 (relatório `relatorios-claude/20261031-1904-fix-20261031-01.md`, fora do git).
+- Testes: `tests/test_after_format_p2_11.py` (Python do uv com Tk + `xvfb-run`): `test_reopen_shows_progress` 20 vezes seguidas (20/20) e a classe `WindowTests` 10 vezes seguidas (10/10), todas aprovadas — na [PR #140](https://github.com/raphael21xde-jpg/PC-Restore-Optimizer/pull/140); repetido na FIX-20261031-01 ([PR #144](https://github.com/raphael21xde-jpg/PC-Restore-Optimizer/pull/144)): de novo `test_reopen_shows_progress` 20/20 e `WindowTests` 10/10, todas aprovadas.
 ### FIX-20261031-01 · Ressalvas da revisão da PR #140 — `concluído` (PR #144)
 - Origem: issue #141 (ressalvas da revisão da PR #140, FIX-20261031).
 - **Status:** `concluído` (PR #144, branch `auto/FIX-20261031-01-ressalvas-140`). Só mudaram `tests/test_after_format_p2_11.py` e este backlog. Nenhum arquivo do app mudou; nenhuma trava foi tocada.
 - **O que mudou:**
   - `WindowTests._join_savers` não usa mais `getattr(self.root, 'after_format_savers', {})`, que passava calado se o atributo mudasse de nome. Agora o `setUp` faz `self._opened = False`; `open()` (e o único teste que chama `show_after_format` direto, `test_closing_cancels_job`) marca `True`. Se a janela abriu, o atributo é lido com `vars(self.root)['after_format_savers']` (falta = `KeyError`) e cada gravador continua com `assertTrue(saver.join(10))`; se não abriu, não espera nada.
   - Prova manual (fora do commit): com o atributo renomeado de propósito em `after_format_ui.py`, `test_reopen_shows_progress` falhou com `KeyError: 'after_format_savers'`; a mudança foi desfeita.
-  - Números de 20/20 e 10/10 da FIX-20261031 agora citam a PR #140 e o relatório.
+  - Números de 20/20 e 10/10 da FIX-20261031 agora citam a PR #140 e a PR #144 (a citação ao relatório fora do git saiu na FIX-20261031-02).
 - **Escolhas de design (opção mais segura):** marcar a abertura no próprio teste em vez de conferir `hasattr`, para que só o caso "janela não abriu" (ex.: `test_cancel_manifest_choice_opens_nothing`) dispense o gravador.
 - **Para a próxima poda das regras:** a ressalva da revisão sobre a R-29 e a R-06 fica registrada aqui; `docs/REGRAS.md` não foi alterado (texto de regra existente não muda nesta fatia).
 - Testes: `tests/test_after_format_p2_11.py` (Python do uv com Tk + `xvfb-run`).
+
+### FIX-20261031-02 · Ressalvas da revisão da PR #144 — `concluído`
+- Origem: issue #145 (ressalvas da revisão da PR #144, FIX-20261031-01). O "Também pendente" da issue já foi feito na PR #148.
+- **Status:** `concluído` (branch `auto/FIX-20261031-02-ressalvas-144`). Só mudaram `tests/test_after_format_p2_11.py` e este backlog. Nenhum arquivo do app mudou; nenhuma trava foi tocada.
+- **O que mudou:**
+  - `WindowTests` ganhou o método `_show`, usado por `open()` e por `test_closing_cancels_job`: marca `self._opened = True` **antes** de chamar `show_after_format`. Se a chamada falhar no meio, o `_join_savers` do tearDown ainda espera os gravadores que já existirem.
+  - Se a chamada falhar antes de criar `after_format_savers`, `_show` volta `_opened` a `False` e repassa o erro: o tearDown não quebra com `KeyError` e não há gravação para esperar. A leitura estrita `vars(self.root)['after_format_savers']` da FIX-20261031-01 continua (se o atributo mudar de nome com a janela aberta, o teste falha).
+  - Testes novos: `test_failure_mid_open_still_waits_saver` (falha depois de criar o gravador → `_opened` fica `True` e o `join(10)` é chamado; falha no código antigo) e `test_failure_before_savers_needs_no_wait` (falha antes do gravador → `_opened` é `False` e `_join_savers` não levanta). Os dois trocam `show_after_format` por uma função falsa; nada real é chamado.
+  - Prova da FIX-20261031: a citação ao relatório em `relatorios-claude/` (fora do git) foi trocada pela PR #144, com o resultado (20/20 e 10/10) escrito aqui.
+- **Escolhas de design (opção mais segura):** um único ponto (`_show`) marca a abertura, para os dois lugares não divergirem; voltar a `False` só quando o atributo dos gravadores não existe, para não perder a detecção de nome trocado.
+- Testes: `tests/test_after_format_p2_11.py` com o Python do uv (Tk 9.0) + `xvfb-run`: 73 testes, todos aprovados; a classe `WindowTests` 10 vezes seguidas (10/10).
 ### FIX-P3-01-01 · Ressalvas da revisão da PR #113 (perfil de hardware) — `concluído`
 - Dual channel com todos os módulos no mesmo canal, tipos de barramento que faltam, aviso de nobreak visto como bateria, erro do PowerShell sem texto cru e ajustes nos testes.
 - Critérios: os itens da issue #114.
