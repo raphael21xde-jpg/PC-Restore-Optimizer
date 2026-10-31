@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 2 (R-25 e R-26; última poda: 31/10/2026, pedido `regras-20261031-poda-r14-r23`, issue #125; a R-24 nasceu
+poda: 3 (R-25, R-26 e R-27; última poda: 31/10/2026, pedido `regras-20261031-poda-r14-r23`, issue #125; a R-24 nasceu
 da separação da R-21 e não conta). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-25.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
@@ -42,3 +42,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-24 | Regra de processo: antes da revisão de qualquer PR, e de novo no commit que vai para o merge, os testes de janela (Tk) rodam na nuvem com o Python do uv + `xvfb-run`; o testador confirma no veredito que rodaram e dá o motivo de cada teste ignorado. | Separada da R-21 (FIX-20261030-teste-sem-admin) na poda de 31/10/2026 | 2026-10-31 |
 | R-25 | Ao juntar ou separar regras numa poda, o texto novo não põe condição nem exceção ("PR que mexe em X", "ou foram ignorados") e não troca um verbo ou momento por outro mais estreito (tocar→gravar, merge→revisão) em relação à regra antiga; quem revisa compara cada exigência antiga com a nova. | Revisão da PR #126 (poda de 31/10/2026) | 2026-10-31 |
 | R-26 | Diagnóstico nunca diz "provável" ou "sim" quando o dado lido aponta o contrário (ex.: todos os módulos no mesmo canal); nesse caso diz "não confirmado" e o motivo. | Revisão da PR #113 (issue #114), FIX-P3-01-01 | 2026-10-31 |
+| R-27 | Erro inesperado no meio de um lote (desfazer tudo ou aplicar vários) nunca mostra só a mensagem genérica: diz que parte pode já ter mudado no sistema e desliga o diário até reabrir o app. | Revisão da PR #131 (issue #132), FIX-P3-03-03 | 2026-10-31 |

@@ -64,6 +64,13 @@ CHANGES_LEGACY_BLOCKED_TEXT = 'Por isso, o bloqueio continua: o app não libera 
 CHANGES_INTRO_TEXT = ('Aqui aparece tudo o que o app mudou no Windows, com o estado de cada '
                       'alteração. Abrir esta aba só lê o diário: nenhum comando é executado.')
 CHANGES_ALL_UNDONE_TEXT = 'Todas as {n} alterações foram desfeitas.'
+# FIX-P3-03-03 (revisão da PR #131): singular, erro inesperado e onde fica o botão antigo.
+CHANGES_ONE_UNDONE_TEXT = 'A alteração foi desfeita.'
+CHANGES_UNEXPECTED_ERROR_TEXT = (
+    'Ocorreu um erro inesperado ao desfazer. Algumas alterações podem já ter sido desfeitas. '
+    'Confira o plano de energia nas Configurações do Windows. Por segurança, o diário fica '
+    'desligado até você fechar e abrir o app de novo.')
+CHANGES_LEGACY_WHERE_TEXT = 'O botão "Desfazer alteração antiga" fica na aba "4  Energia reversível".'
 CHANGES_STOPPED_TEXT = '{done} desfeita(s); {pending} continuam como estavam. Motivo: {reason}'
 CHANGES_DONE_BEFORE_ERROR_TEXT = '{n} alteração(ões) já foram desfeitas antes do erro. '
 CHANGES_CONFIRM_TEXT = (
@@ -831,6 +838,10 @@ class OptimizationPanel(tk.Frame):
         self.power_status=tk.StringVar(value='')
         tk.Label(area,textvariable=self.power_status,bg=BG,fg=AMBER,anchor='w',justify='left',
                  wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
+        # FIX-P3-03-03: aviso de bloqueio separado, para não esconder o resultado acima.
+        self.power_block=tk.StringVar(value='')
+        tk.Label(area,textvariable=self.power_block,bg=BG,fg=AMBER,anchor='w',justify='left',
+                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
         self.power_text=self._text_area(area)
         intro=['Nenhum plano consultado. Clique em Atualizar.',
                'Ao aplicar: o app cria antes um ponto de restauração do Windows e anota a troca no diário de alterações.',
@@ -1036,7 +1047,7 @@ class OptimizationPanel(tk.Frame):
         elif self.legacy_state=='unreadable':
             lines+=['',POWER_LEGACY_UNREADABLE_TEXT+' '+CHANGES_LEGACY_BLOCKED_TEXT]
         elif self.legacy_state=='applied':
-            lines+=['',POWER_LEGACY_TEXT]
+            lines+=['',POWER_LEGACY_TEXT+' '+CHANGES_LEGACY_WHERE_TEXT]
         self._write(self.changes_text,'\n'.join(lines))
 
     def _last_applied_power(self):
@@ -1068,8 +1079,7 @@ class OptimizationPanel(tk.Frame):
             self.power_status.set(self.journal_error+' '+POWER_JOURNAL_OFF_TEXT)
         elif legacy:
             self.power_status.set(POWER_LEGACY_TEXT)
-        elif unknown:
-            self.power_status.set(CHANGES_UNKNOWN_TEXT.format(n=unknown))
+        self.power_block.set(CHANGES_UNKNOWN_TEXT.format(n=unknown) if unknown else '')
         if hasattr(self,'btn_undo_all'):
             can_undo_all=usable and not busy and self._count_status('applied')>0
             self.btn_undo_all.state(['!disabled'] if can_undo_all else ['disabled'])
@@ -1289,7 +1299,8 @@ class OptimizationPanel(tk.Frame):
                 self.changes_status.set(message)
                 self._show('warning','Desfazer tudo',message)
             elif done:
-                message=CHANGES_ALL_UNDONE_TEXT.format(n=done)
+                message=(CHANGES_ONE_UNDONE_TEXT if done==1
+                         else CHANGES_ALL_UNDONE_TEXT.format(n=done))
                 self.changes_status.set(message)
                 self.note.set(message)
             else:
@@ -1304,8 +1315,12 @@ class OptimizationPanel(tk.Frame):
             self.changes_status.set(message)
             self._journal_failed(message)
         else:
-            self.changes_status.set(POWER_GENERIC_FAIL)
-            self._show('error','Desfazer tudo',POWER_GENERIC_FAIL)
+            # R-27: no meio do lote algo pode já ter mudado; o diário em memória não é
+            # confiável, então não mostra contagem e desliga o diário até reabrir o app.
+            message=CHANGES_UNEXPECTED_ERROR_TEXT
+            self.changes_status.set(message)
+            self._journal_failed(message)
+            self._show('error','Desfazer tudo',message)
 
     def undo_legacy_plan(self):
         """Desfaz a troca feita pela versão antiga (``pcro-power-1``).

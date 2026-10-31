@@ -309,8 +309,10 @@ class ChangesTabTests(SafetyNet):
         with mock.patch.object(panel.journal, 'undo_all',
                                side_effect=RuntimeError('C:\\Users\\Fulano\\erro cru')):
             self.undo_all(panel)
-        self.assertEqual(self.messages[-1], ('error', 'Desfazer tudo', ou.POWER_GENERIC_FAIL))
-        self.assertEqual(panel.changes_status.get(), ou.POWER_GENERIC_FAIL)
+        # FIX-P3-03-03 (R-27): o texto diz que parte pode já ter mudado e desliga o diário.
+        expected = ou.CHANGES_UNEXPECTED_ERROR_TEXT
+        self.assertEqual(self.messages[-1], ('error', 'Desfazer tudo', expected))
+        self.assertEqual(panel.changes_status.get(), expected)
         self.assertNotIn('Fulano', ' '.join(m[2] for m in self.messages))
 
     # ---------- estado desconhecido ----------

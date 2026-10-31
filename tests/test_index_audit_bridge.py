@@ -1,4 +1,5 @@
 """Focused tests: reuse existing indexed choices without re-scanning drives."""
+import os
 import sqlite3
 import json
 import tempfile
@@ -51,6 +52,7 @@ class IndexAuditBridgeTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.path.stat().st_mtime_ns, state)
 
+    @unittest.skipUnless(os.name == 'nt', 'caminho Windows: abspath só vale no Windows')
     def test_preview_is_not_an_import_conflicts_are_explicit(self):
         app = SimpleNamespace(
             choices={r"c:\games\osu!\skins": "keep"},
