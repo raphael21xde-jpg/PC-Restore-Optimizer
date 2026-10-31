@@ -117,7 +117,8 @@ class ChangesReviewFixTests(f2b.ChangesTabHelpers):
         self.assertIn('"4  Energia reversível"', ou.CHANGES_LEGACY_WHERE_TEXT)
         text = self.changes(panel)
         self.assertIn(ou.POWER_LEGACY_TEXT + ' ' + ou.CHANGES_LEGACY_WHERE_TEXT, text)
-        self.assertEqual(_buttons(panel.changes_frame), [panel.btn_undo_all])
+        # P3-03 fatia 2b-2: a aba 7 ganhou o "Conferir de novo" (só lê).
+        self.assertCountEqual(_buttons(panel.changes_frame), [panel.btn_undo_all, panel.btn_recheck])
         self.assertNotIn(panel.btn_legacy, _buttons(panel.changes_frame))
         self.assertEqual(self.fake.calls, [])
         self.assertEqual(self.restore_calls, [])
