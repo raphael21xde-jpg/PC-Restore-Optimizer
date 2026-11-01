@@ -2145,27 +2145,37 @@ class App(tk.Tk):
         """Salva juntando com o que outra janela gravou (FIX-P3-06-09).
 
         Devolve None quando salvou, ou um aviso curto (sem caminhos) para a
-        barra de status quando não salvou ou quando houve conflito."""
+        barra de status quando não salvou ou quando houve conflito em decisões
+        do usuário (FIX-P3-06-10). O aviso de "não salvou" fica guardado em
+        `_choices_last_warning` para a pergunta ao fechar o app."""
         name=self.local_state.name
         try:
             mine=self._choices_doc()
             base=getattr(self,'_choices_base',None)
             status,_merged,conflicts=choices_store.save_merged(self.local_state, mine, base, lock_timeout=0)
         except OSError:
-            self._choices_unsaved=True
-            return f'Não foi possível salvar as escolhas em {name} agora. Elas serão salvas na próxima mudança.'
+            warning=f'Não foi possível salvar as escolhas em {name} agora. Elas serão salvas na próxima mudança.'
+            status=None
         if status=='ocupado':
             # mantém a base: a próxima gravação leva esta diferença junto
+            warning='Escolhas não salvas agora: outra janela está gravando. Serão salvas na próxima mudança.'
+        elif status=='ilegivel':
+            # o app nunca conserta, apaga, troca ou renomeia esse arquivo sozinho
+            warning=(f'O arquivo {name} está danificado e não foi alterado. As escolhas desta janela '
+                     'não estão sendo salvas. Feche o app e peça ajuda, ou renomeie esse arquivo '
+                     'para o app criar um novo.')
+        if status!='ok':
             self._choices_unsaved=True
-            return 'Escolhas não salvas agora: outra janela está gravando. Serão salvas na próxima mudança.'
-        if status=='ilegivel':
-            self._choices_unsaved=True
-            return f'O arquivo {name} não pôde ser lido e não foi alterado. As escolhas desta janela não foram salvas.'
+            self._choices_last_warning=warning
+            return warning
         self._choices_base=mine
         self._choices_unsaved=False
-        if conflicts:
-            return (f'Escolhas salvas junto com as de outra janela. Em {len(conflicts)} item(ns) '
-                    'as duas janelas discordavam; ficou a opção mais segura.')
+        self._choices_last_warning=None
+        decisions=choices_store.decision_conflicts(conflicts)
+        if decisions:
+            return (f'Escolhas salvas junto com as de outra janela. Em {len(decisions)} item(ns) '
+                    'as janelas discordavam: o arquivo guardou a opção mais segura, mas esta '
+                    'janela continua com as suas escolhas. Feche e abra o app para ver tudo junto.')
         return None
 
     def import_previous_choices(self):
@@ -2241,10 +2251,12 @@ class App(tk.Tk):
                 return
         self.optimizer_panel.shutdown_capture()
         self._save_choices()
-        if getattr(self,'_choices_unsaved',False) and not messagebox.askyesno('Escolhas não salvas',
-                'As últimas escolhas não foram salvas (outra janela está gravando). Fechar mesmo assim?',
-                default='no', parent=self):
-            return
+        if getattr(self,'_choices_unsaved',False):
+            warning=(getattr(self,'_choices_last_warning',None)
+                     or 'As últimas escolhas não foram salvas.')
+            if not messagebox.askyesno('Escolhas não salvas', f'{warning}\n\nFechar mesmo assim?',
+                                       default='no', parent=self):
+                return
         self.destroy()
 
 

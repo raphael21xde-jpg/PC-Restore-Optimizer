@@ -220,7 +220,8 @@ class SaveMergedTests(unittest.TestCase):
         for thread in threads:
             thread.start()
         for thread in threads:
-            thread.join()
+            thread.join(timeout=30)
+            self.assertFalse(thread.is_alive(), 'thread presa: a trava não foi liberada')
         self.assertEqual(errors, [])
         data = self._read()
         self.assertEqual(len(data['choices']), 40)
@@ -252,8 +253,11 @@ class SaveChoicesSourceTests(unittest.TestCase):
                         init.index('self._choices_base=self._choices_doc()'))
 
     def test_quit_question_text(self):
-        self.assertIn('As últimas escolhas não foram salvas (outra janela está gravando). '
-                      'Fechar mesmo assim?', self._body('_quit'))
+        # FIX-P3-06-10: a pergunta repete o último aviso e o padrão é "Não"
+        body = self._body('_quit')
+        self.assertIn("getattr(self,'_choices_last_warning',None)", body)
+        self.assertIn("f'{warning}\\n\\nFechar mesmo assim?'", body)
+        self.assertIn("default='no'", body)
 
 
 class AppTkTests(unittest.TestCase):
