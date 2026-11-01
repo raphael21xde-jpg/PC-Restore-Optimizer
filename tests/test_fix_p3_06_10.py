@@ -32,10 +32,10 @@ BUSY = 'Escolhas não salvas agora: outra janela está gravando. Serão salvas n
 
 def _unreadable(name):
     # FIX-P3-06-11: texto neutro ('ilegivel' junta causas diferentes, R-37)
-    return (f'O arquivo {name} não pôde ser lido agora (pode estar danificado ou em uso) '
-            'e não foi alterado. As escolhas desta janela não estão sendo salvas. Feche o '
-            'app e abra de novo mais tarde; se o aviso continuar, peça ajuda ou renomeie '
-            'esse arquivo para o app criar um novo.')
+    return (f'As escolhas desta janela não estão sendo salvas e se perdem ao fechar o app. '
+            f'O arquivo {name} não pôde ser lido agora (pode estar danificado ou em uso) '
+            'e não foi alterado. Tente de novo mais tarde (feche e abra o app); se o aviso '
+            'continuar, peça ajuda ou renomeie esse arquivo para o app criar um novo.')
 
 
 # FIX-P3-06-11: a pergunta diz que as últimas escolhas se perdem
