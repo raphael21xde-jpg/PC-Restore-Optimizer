@@ -61,9 +61,10 @@ class RebarStateTests(unittest.TestCase):
         self.assertEqual(state, bg.REBAR_ON)
         self.assertEqual(reason, bg.REBAR_REASON_ON)
 
-    def test_several_gpus_one_large_is_on(self):
+    def test_several_gpus_only_one_large_is_mixed(self):
+        # FIX-P3-06-13 (R-38): antes bastava uma placa; agora todas precisam concordar.
         value = [{'Sizes': [256 * MIB, 16 * MIB]}, {'Sizes': [16 * 1024 ** 3]}]
-        self.assertEqual(bg.rebar_state(value)[0], bg.REBAR_ON)
+        self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_MIXED))
         self.assertEqual(bg.rebar_state({'Sizes': [512 * MIB]})[0], bg.REBAR_ON)
 
     def test_all_up_to_256_mib_is_not_confirmed(self):
@@ -85,6 +86,50 @@ class RebarStateTests(unittest.TestCase):
                 self.assertIn(reason, (bg.REBAR_REASON_DEFAULT, bg.REBAR_REASON_SMALL))
                 self.assertNotIn('desligado', reason.lower())
 
+    def test_integrated_256_mib_and_dedicated_8_gib_is_mixed(self):
+        value = [{'Sizes': [256 * MIB, 16 * MIB]}, {'Sizes': [8 * 1024 ** 3, 32 * MIB]}]
+        self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_MIXED))
+
+    def test_two_dedicated_above_256_mib_is_on(self):
+        value = [{'Sizes': [8 * 1024 ** 3]}, {'Sizes': [16 * MIB, 512 * MIB]}]
+        self.assertEqual(bg.rebar_state(value), (bg.REBAR_ON, bg.REBAR_REASON_ON))
+
+    def test_dedicated_and_gpu_without_sizes_is_mixed(self):
+        for other in ({}, {'Sizes': None}, {'Sizes': []}, {'Sizes': 'x'}, {'Sizes': {'value': []}}):
+            with self.subTest(other=other):
+                value = [{'Sizes': [8 * 1024 ** 3]}, other]
+                self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_MIXED))
+
+    def test_dedicated_and_non_dict_item_is_mixed(self):
+        for other in (None, 'texto', 42, [8 * 1024 ** 3]):
+            with self.subTest(other=other):
+                value = [{'Sizes': [8 * 1024 ** 3]}, other]
+                self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_MIXED))
+
+    def test_all_gpus_small_is_small(self):
+        value = [{'Sizes': [256 * MIB]}, {'Sizes': [16 * MIB, 128 * MIB]}]
+        self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_SMALL))
+
+    def test_single_large_gpu_is_on(self):
+        self.assertEqual(bg.rebar_state(_bar(8 * 1024 ** 3)), (bg.REBAR_ON, bg.REBAR_REASON_ON))
+        self.assertEqual(bg.rebar_state({'Sizes': [8 * 1024 ** 3]}), (bg.REBAR_ON, bg.REBAR_REASON_ON))
+
+    def test_lines_accept_mixed_reason(self):
+        text = _text({'rebar': bg.REBAR_UNKNOWN, 'rebar_reason': bg.REBAR_REASON_MIXED})
+        self.assertIn('Resizable BAR: não confirmado', text)
+        self.assertIn(bg.REBAR_REASON_MIXED, text)
+        self.assertIn(bg.REBAR_REASON_MIXED, bg._REBAR_REASONS[bg.REBAR_UNKNOWN])
+        text = _text({'rebar': bg.REBAR_ON, 'rebar_reason': bg.REBAR_REASON_MIXED})
+        self.assertNotIn(bg.REBAR_REASON_MIXED, text)
+
+    def test_mixed_reason_wording(self):
+        self.assertEqual(bg.REBAR_REASON_MIXED,
+                         'As placas de vídeo do PC não informam a mesma coisa (por exemplo, vídeo integrado '
+                         'e placa dedicada, ou uma delas sem informação); não dá para confirmar o Resizable BAR.')
+        self.assertEqual(bg.REBAR_REASON_ON,
+                         'O Windows informa, para cada placa de vídeo, uma janela de memória maior que 256 MiB; '
+                         'isso costuma indicar Resizable BAR ligado.')
+
     def test_never_says_off(self):
         for value in (None, _bar(16 * MIB), _bar(512 * MIB), 'x'):
             with self.subTest(value=value):
@@ -94,6 +139,44 @@ class RebarStateTests(unittest.TestCase):
                 self.assertNotIn('desligad', guidance['rebar_reason'].lower())
         for label in bg.REBAR_LABELS.values():
             self.assertNotIn('desligad', label)
+
+
+class PowerShellWrappedTests(unittest.TestCase):
+    """FIX-P3-06-13: ConvertTo-Json do PowerShell 5.1 pode embrulhar listas em {"value": [...]}."""
+
+    def test_wrapped_gpu_list_is_on(self):
+        value = json.loads('{"value": [{"Sizes": [8589934592]}], "Count": 1}')
+        self.assertEqual(bg.rebar_state(value), (bg.REBAR_ON, bg.REBAR_REASON_ON))
+
+    def test_wrapped_sizes_is_on(self):
+        value = json.loads('[{"Sizes": {"value": [8589934592], "Count": 1}}]')
+        self.assertEqual(bg.rebar_state(value), (bg.REBAR_ON, bg.REBAR_REASON_ON))
+
+    def test_wrapped_strange_is_default_without_exception(self):
+        for value in ({'value': []}, {'value': 'x'}, {'value': None}, {'value': {'Sizes': [8 * 1024 ** 3]}},
+                      [{'Sizes': {'value': 'x'}}]):
+            with self.subTest(value=value):
+                self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_DEFAULT))
+
+    def test_ps_list(self):
+        self.assertEqual(bg._ps_list([1, 2]), [1, 2])
+        self.assertEqual(bg._ps_list({'value': [1], 'Count': 1}), [1])
+        for value in (None, 'x', 3, {}, {'value': 'x'}, {'Sizes': [1]}):
+            with self.subTest(value=value):
+                self.assertEqual(bg._ps_list(value), [])
+
+    def test_inspect_pc_with_wrapped_output_is_on(self):
+        def fake_ps(code, timeout=22):
+            if 'Win32_DeviceMemoryAddress' in code:
+                return json.loads('{"value": [{"Sizes": {"value": [8589934592], "Count": 1}}], "Count": 1}')
+            return None
+        with mock.patch.object(oe, '_is_windows', return_value=True), \
+                mock.patch.object(oe, '_ps', side_effect=fake_ps), \
+                mock.patch.object(oe, '_run', _forbidden), \
+                mock.patch.object(oe, 'available_power_plans', side_effect=oe.OptimizationError('x')), \
+                mock.patch.object(subprocess, 'run', _forbidden):
+            report = oe.inspect_pc()
+        self.assertEqual(report['bios_guidance']['rebar'], bg.REBAR_ON)
 
 
 class GuidanceRebarTests(unittest.TestCase):
@@ -201,7 +284,8 @@ class InspectGpuBarTests(unittest.TestCase):
                 mock.patch.object(oe, '_ps', side_effect=fake_ps), \
                 mock.patch.object(oe, 'available_power_plans', side_effect=oe.OptimizationError('x')):
             report = oe.inspect_pc()
-        self.assertIn('Inventário gpu_bar: não foi possível ler.', report['errors'])
+        self.assertIn('Inventário Resizable BAR (placa de vídeo): não foi possível ler.', report['errors'])
+        self.assertFalse([e for e in report['errors'] if 'gpu_bar' in e])
         self.assertNotIn('FULANO-SECRETO', json.dumps(report, ensure_ascii=False))
         self.assertEqual(report['bios_guidance']['rebar'], bg.REBAR_UNKNOWN)
 
@@ -274,6 +358,90 @@ class UiWiringTests(unittest.TestCase):
             self.assertNotIn(forbidden, code)
 
 
+class _FakeWidget:
+    def __init__(self, *args, **kwargs):
+        self.kwargs = kwargs
+
+    def pack(self, *args, **kwargs):
+        return None
+
+    def configure(self, *args, **kwargs):
+        return None
+
+    def yview(self, *args):
+        return None
+
+    def set(self, *args):
+        return None
+
+
+class _FakeToplevel(_FakeWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.alive = True
+        self.destroyed = 0
+
+    def title(self, *args):
+        return None
+
+    def winfo_exists(self):
+        return self.alive
+
+    def destroy(self):
+        self.destroyed += 1
+        self.alive = False
+
+
+class _FakeButton(_FakeWidget):
+    created = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _FakeButton.created.append(self)
+
+
+class ShowBiosStepsWithoutTkTests(unittest.TestCase):
+    """R-18 sem Tk: executa show_bios_steps (lido com ast) com tk/ttk falsos."""
+
+    def setUp(self):
+        import ast
+        import types
+        tree = ast.parse((ROOT / 'optimization_ui.py').read_text(encoding='utf-8'))
+        node = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'show_bios_steps')
+        module = ast.Module(body=[node], type_ignores=[])
+        _FakeButton.created = []
+        fake_tk = types.SimpleNamespace(Toplevel=_FakeToplevel, Frame=_FakeWidget, Text=_FakeWidget)
+        fake_ttk = types.SimpleNamespace(Scrollbar=_FakeWidget, Button=_FakeButton)
+        namespace = {'tk': fake_tk, 'ttk': fake_ttk, 'BG': '#000', 'PANEL': '#111', 'TEXT': '#fff',
+                     'bios_steps_text': bg.bios_steps_text}
+        exec(compile(module, 'optimization_ui.py', 'exec'), namespace)
+        self.show = namespace['show_bios_steps']
+        self.panel = types.SimpleNamespace(report={'bios_guidance': {}}, _write=lambda *a: None)
+
+    def test_opening_again_closes_previous(self):
+        first = self.show(self.panel)
+        second = self.show(self.panel)
+        self.assertIsNot(first, second)
+        self.assertEqual(first.destroyed, 1)
+        self.assertEqual(second.destroyed, 0)
+        self.assertIs(self.panel._bios_steps_window, second)
+
+    def test_previous_already_closed_is_not_destroyed_again(self):
+        first = self.show(self.panel)
+        first.alive = False
+        second = self.show(self.panel)
+        self.assertEqual(first.destroyed, 0)
+        self.assertIs(self.panel._bios_steps_window, second)
+
+    def test_close_button_destroys_window(self):
+        window = self.show(self.panel)
+        close = [b for b in _FakeButton.created if b.kwargs.get('text') == 'Fechar']
+        self.assertEqual(len(close), 1)
+        close[0].kwargs['command']()
+        self.assertEqual(window.destroyed, 1)
+        self.assertFalse(window.winfo_exists())
+
+
 @unittest.skipIf(NO_DISPLAY, 'Sem Tk ou sem tela gráfica')
 class StepsButtonTests(unittest.TestCase):
     def setUp(self):
@@ -332,6 +500,29 @@ class StepsButtonTests(unittest.TestCase):
         window.destroy()
         self.root.update()
         self.assertEqual(self.root.tk.call('after', 'info'), before)
+
+    def test_opening_again_closes_previous_window(self):
+        with mock.patch.object(self.panel, 'load_plans', lambda: None):
+            self.panel._scan_finished(self._report())
+        first = self.panel.show_bios_steps()
+        second = self.panel.show_bios_steps()
+        self.root.update()
+        self.assertEqual(first.winfo_exists(), 0)
+        self.assertEqual(second.winfo_exists(), 1)
+        self.assertIs(self.panel._bios_steps_window, second)
+        second.destroy()
+
+    def test_close_button_closes_window(self):
+        from tkinter import ttk
+        with mock.patch.object(self.panel, 'load_plans', lambda: None):
+            self.panel._scan_finished(self._report())
+        window = self.panel.show_bios_steps()
+        buttons = [w for w in window.winfo_children()
+                   if isinstance(w, ttk.Button) and w.cget('text') == 'Fechar']
+        self.assertEqual(len(buttons), 1)
+        buttons[0].invoke()
+        self.root.update()
+        self.assertEqual(window.winfo_exists(), 0)
 
     def test_without_report_does_nothing(self):
         self.assertIsNone(self.panel.show_bios_steps())

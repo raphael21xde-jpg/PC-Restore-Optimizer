@@ -31,6 +31,8 @@ _GPU_BAR_QUERY = ('ConvertTo-Json -Depth 3 -InputObject @(Get-CimInstance Win32_
                   'ForEach-Object { [pscustomobject]@{ Sizes = @(Get-CimAssociatedInstance -InputObject $_ '
                   '-ResultClassName Win32_DeviceMemoryAddress | ForEach-Object { '
                   '[decimal]$_.EndingAddress - [decimal]$_.StartingAddress + 1 }) } })')
+# FIX-P3-06-13: nome para leigos nas mensagens de erro do inventário (o resto usa a chave).
+_INVENTORY_LABELS = {'gpu_bar': 'Resizable BAR (placa de vídeo)'}
 
 
 class OptimizationError(RuntimeError):
@@ -133,7 +135,7 @@ def inspect_pc():
             result['hardware'][key] = _ps(code)
         except OptimizationError:
             # R-07: o texto do PowerShell pode trazer caminho com nome do usuário.
-            result['errors'].append(f'Inventário {key}: não foi possível ler.')
+            result['errors'].append(f'Inventário {_INVENTORY_LABELS.get(key, key)}: não foi possível ler.')
     try:
         plans = available_power_plans()
         active = active_power_guid()
