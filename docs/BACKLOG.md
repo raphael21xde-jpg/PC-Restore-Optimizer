@@ -673,11 +673,24 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - Escolhas de design (as mais seguras): as ressalvas 3 e 4 da #150 são registradas como já resolvidas, sem mexer em `docs/REGRAS.md`; o teste acha a linha pelo rótulo, não pela posição; sem regra nova.
 ### FIX-P3-06-04 · Ressalvas da PR #160 (citações da R-34 depois da poda) — `concluído`
 - Branch `auto/FIX-P3-06-04-ressalvas-160`. Ressalvas não bloqueantes da revisão da PR #160 (veredito @2089a95004b9). Nada disso muda o que o app faz:
-  1. **Citações da R-34 em `bios_guidance.py`** (docstring e comentário de `_off_reason_ok`): passam a dizer "R-32 (antiga R-34)", porque a R-34 foi juntada à R-32 na poda de 01/11/2026.
+  1. **Citações da R-34 em `bios_guidance.py`** (docstring e comentário em `bios_guidance_lines`): passam a dizer "R-32 (antiga R-34)", porque a R-34 foi juntada à R-32 na poda de 01/11/2026.
   2. **`_reason_after_label` no teste do FIX-P3-06-02:** se o rótulo for a última linha, dá falha clara (AssertionError) em vez de IndexError.
 - Regra nova R-35 (citações antigas atualizadas no mesmo commit da poda).
 - Testes: `tests/test_bios_guidance_fix_p3_06_02.py` (listas sintéticas; um teste lê `bios_guidance.py` e confere que não sobrou citação solta da R-34).
 - Escolhas de design (as mais seguras): "R-32 (antiga R-34)" para manter a busca pela regra antiga; a conferência de citações vale só para `bios_guidance.py`, porque os registros históricos citam a R-34 de propósito.
+### FIX-P3-06-05 · Ressalvas das PRs #159 e #162 — `concluído`
+- Branch `auto/FIX-P3-06-05-ressalvas-159-162`. Ressalvas não bloqueantes das revisões das PRs #159 e #162. Nada disso muda o que o app faz:
+  1. **Allowlist da exportação conferida contra as consultas:** teste novo `test_allowlist_covers_query_columns` roda `inspect_pc()` com o PowerShell simulado, lê as colunas de cada `Select-Object` e confere que todas estão em `_EXPORT_COLUMNS`; a única exceção declarada é `board.Product` (só aparece na tela). Coluna nova lida sem entrar na allowlist faz o teste falhar.
+  2. **Diagnóstico simulado e depois exportado:** teste novo `test_inspect_then_export_has_no_identifiers` (PowerShell simulado devolve modelo da placa, modelo do PC, números de série e nomes sintéticos) confere que nenhum deles aparece no arquivo, inclusive em `profile`, `bios_guidance`, `checks` e `errors`.
+  3. **Forma da citação em `bios_guidance.py`:** "R-32 (antiga R-34)" virou "(R-32, antiga R-34)" na docstring e no comentário em `bios_guidance_lines` (só texto).
+  4. **Citação de regra juntada em qualquer `.py`:** `tests/test_rule_citations.py` lê em `docs/REGRAS.md` as regras juntadas ("Juntada à **R-x**") e procura citações delas em todos os `.py` versionados (`git ls-files`); só aceita "antiga R-<nº>". O teste antigo de `tests/test_bios_guidance_fix_p3_06_02.py` monta o padrão em código e a mensagem diz "antiga R-34", para não ser acusado.
+  5. **Backlog do FIX-P3-06-04:** passa a dizer "comentário em `bios_guidance_lines`" (onde o comentário de fato está).
+  6. Linha em branco duplicada removida de `tests/test_export_fix_p3_06_01.py`.
+- Testes: `tests/test_export_fix_p3_06_01.py` (PowerShell simulado, `TemporaryDirectory`), `tests/test_rule_citations.py` (lê arquivos do repositório, não grava nada).
+- Escolhas de design (as mais seguras): a chave de cada consulta é achada por um marcador devolvido pelo PowerShell simulado (não pela ordem); consulta sem `Select-Object` faz o teste falhar (hoje todas têm); o padrão da regra é montado em código para o teste não acusar a si mesmo; sem `git`, o teste de citações é ignorado com motivo; sem regra nova.
+### FIX-P3-06-06 · Arquivo temporário de nome fixo em `_atomic_json` — `pronto`
+- Ressalva 3 da revisão da PR #159: `_atomic_json` (em `optimization_engine.py`) grava sempre em `<nome>.tmp`, de nome fixo; duas gravações ao mesmo tempo no mesmo arquivo usariam o mesmo temporário, e um `.tmp` velho de uma gravação interrompida fica na pasta.
+- Aceite: temporário de nome único na mesma pasta (ex.: `tempfile.NamedTemporaryFile(dir=..., delete=False)`), apagado se a gravação falhar; testes só em `TemporaryDirectory`.
 ### P3-07 · Check-up de segurança (somente leitura) — `pronto` (depois de P3-01)
 - **Pedido do Raphael em 23/10/2026.** Procura sinais de minerador escondido e de programas suspeitos. **Não é antivírus:** o app nunca apaga, nunca encerra processos, nunca muda o Defender e nunca coloca nada em quarentena. Se achar algo, explica e recomenda a "Verificação offline" do Defender e uma segunda opinião (Malwarebytes, só do site oficial).
 - **O que olha (só leitura):**
