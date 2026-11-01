@@ -63,9 +63,11 @@ class CommandTests(unittest.TestCase):
         cmd = r'"C:\Program Files\App\app.exe" --token=SEGREDO /min'
         self.assertEqual(sc.executable_from_command(cmd), r'C:\Program Files\App\app.exe')
 
-    def test_unquoted_with_spaces_until_exe(self):
+    def test_unquoted_with_spaces_until_exe_is_empty(self):
+        # FIX-P3-07-01 (R-43): sem aspas fechadas, espaço no executável = vazio (pode ser argumento).
         cmd = r'C:\Program Files (x86)\Outro App\run.exe -background SEGREDO'
-        self.assertEqual(sc.executable_from_command(cmd), r'C:\Program Files (x86)\Outro App\run.exe')
+        self.assertEqual(sc.executable_from_command(cmd), '')
+        self.assertEqual(sc.executable_from_command(r'C:\x\run.exe -background SEGREDO'), r'C:\x\run.exe')
 
     def test_script_and_first_token(self):
         self.assertEqual(sc.executable_from_command(r'C:\x\a.vbs arg'), r'C:\x\a.vbs')
@@ -147,6 +149,7 @@ class AutostartTests(unittest.TestCase):
         states = [i['state'] for i in items]
         self.assertEqual(states, [sc.STATE_OK, sc.STATE_SUSPECT, sc.STATE_ATTENTION,
                                   sc.STATE_ATTENTION, sc.STATE_ATTENTION])
+        self.assertEqual(items[1]['path'], '')  # sem aspas e com espaço: nada é mostrado (R-43)
         self.assertEqual(items[2]['reason'], sc.REASON_SHORTCUT)
         self.assertEqual(items[3]['reason'], sc.REASON_SCRIPT)
 
@@ -367,6 +370,13 @@ SECRET_COMMANDS = (
     r'powershell -WindowStyle Hidden -token=SEGREDO123 -File C:\x\a.ps1',
     r'C:\Tools\app --token=SEGREDO123 C:\a.exe',
     r'C:\Tools\app,SEGREDO123',
+    # PR #183, segunda revisão (R-43): segredo posicional, sem -, / ou =
+    r'"C:\Tools\app SEGREDO123 C:\a.exe',
+    r'C:\Tools\app SEGREDO123 C:\a.exe',
+    r'C:\Program Files\App\run SEGREDO123 C:\Program Files\App\a.exe',
+    r'C:\Tools\app "SEGREDO123" C:\a.exe',
+    r'C:\Tools\app user:SEGREDO123 C:\a.js',
+    r'node SEGREDO123 C:\x\a.js',
 )
 
 
@@ -394,9 +404,13 @@ class FixRessalvas181Tests(unittest.TestCase):
         self.assertNotIn('token', text)
 
     def test_malformed_commands_give_only_the_executable(self):
-        self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[0]), r'C:\Program Files\App\a.exe')
-        self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[1]), r'C:\Program Files\App\app.exe')
-        self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[2]), r'C:\Program Files\App\app.exe')
+        # Sem aspas fechadas e com espaço até a extensão: vazio (R-43).
+        self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[0]), '')
+        self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[1]), '')
+        self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[2]), '')
+        self.assertEqual(sc.executable_from_command(r'"C:\App\a.exe --token=SEGREDO123'), r'C:\App\a.exe')
+        self.assertEqual(sc.executable_from_command(r'C:\App\app.exe--token=SEGREDO123'), r'C:\App\app.exe')
+        self.assertEqual(sc.executable_from_command(r'C:\App\app.exe/token SEGREDO123'), r'C:\App\app.exe')
         self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[3]), 'ferramenta')
         self.assertEqual(sc.executable_from_command('a=b'), '')
         self.assertEqual(sc.executable_from_command('"sem extensao --token=SEGREDO123'), '')
@@ -417,8 +431,22 @@ class FixRessalvas181Tests(unittest.TestCase):
     def test_normal_paths_with_spaces_still_work(self):
         self.assertEqual(sc.executable_from_command(r'"C:\Program Files (x86)\A B\a.exe" -x'),
                          r'C:\Program Files (x86)\A B\a.exe')
-        self.assertEqual(sc.executable_from_command(r'C:\Program Files\A B\a.exe /min'),
-                         r'C:\Program Files\A B\a.exe')
+        # Sem aspas, caminho com espaço passa a vazio ("atenção", sem "Onde:"): escolha mais segura.
+        self.assertEqual(sc.executable_from_command(r'C:\Program Files\A B\a.exe /min'), '')
+        self.assertEqual(sc.executable_from_command(r'C:\Program Files\x\a.exe'), '')
+
+    def test_positional_secret_not_ok_and_not_on_screen(self):
+        cmd = r'C:\Program Files\App\run SEGREDO123 C:\Program Files\App\a.exe'
+        item = sc.classify_autostart([{'source': 'run_user', 'name': 'X', 'command': cmd}], ENV)[0]
+        self.assertEqual(item['state'], sc.STATE_ATTENTION)
+        lines = sc.checkup_lines({'autostart': [item], 'processes': [], 'unchecked': 0, 'errors': []}, ENV)
+        self.assertFalse(any('Onde:' in line for line in lines))
+        self.assertNotIn('SEGREDO', '\n'.join(lines))
+
+    def test_processes_with_spaces_unchanged(self):
+        procs = [{'Name': 'a.exe', 'ExecutablePath': r'C:\Program Files\A B\a.exe'}]
+        item = sc.classify_processes(procs, ENV)['items'][0]
+        self.assertEqual((item['state'], item['path']), (sc.STATE_OK, r'C:\Program Files\A B\a.exe'))
 
     def test_malformed_command_in_program_files_is_never_ok(self):
         entries = [{'source': 'run_user', 'name': 'X', 'command': cmd} for cmd in SECRET_COMMANDS[:3]]
@@ -503,6 +531,17 @@ class FixRessalvas181Tests(unittest.TestCase):
         text = '\n'.join(sc.checkup_lines({'autostart': [], 'processes': out['items'],
                                            'unchecked': 0, 'errors': []}, ENV))
         self.assertIn('suspeito 1', text)
+
+    def test_nt_prefix_with_dot_components_or_unicode_space_is_never_ok(self):
+        for path in (r'\\?\C:\Temp\..\Windows\System32\svchost.exe',
+                     r'\\?\C:\Windows\System32\.\svchost.exe',
+                     r'\??\C:\Windows\System32\..\System32\svchost.exe',
+                     '\\\\?\\C:\\Windows\\System32\\svchost.exe\u3000'):
+            with self.subTest(path=path):
+                self.assertEqual(sc.classify_path('svchost.exe', path, ENV)[0], sc.STATE_SUSPECT)
+        self.assertEqual(sc.classify_path('a.exe', r'\\?\C:\Program Files\A\..\A\a.exe', ENV)[0],
+                         sc.STATE_ATTENTION)
+        self.assertEqual(sc.classify_path('a.exe', 'C:\\Program Files\\A\\a.exe\u3000', ENV)[0], sc.STATE_OK)
 
     def test_strip_nt_prefix(self):
         self.assertEqual(sc._strip_nt_prefix(r'\\?\C:\a.exe'), r'C:\a.exe')

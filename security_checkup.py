@@ -246,12 +246,31 @@ def executable_from_command(cmd) -> str:
             return _only_if_not_argument(text[1:end].strip())
         # Aspa sem fechar: o resto pode ter argumentos; só fica o que termina numa extensão.
         found = _COMMAND_EXE.match(text[1:])
-        return _only_if_not_argument(found.group(1).strip()) if found else ''
+        return _only_if_not_argument(_no_space(found.group(1).strip())) if found else ''
     found = _COMMAND_EXE.match(text)
     if found:
-        return _only_if_not_argument(found.group(1).strip())
+        return _only_if_not_argument(_no_space(found.group(1).strip()))
     # Sem extensão conhecida: só o primeiro pedaço.
     return _only_if_not_argument(text.split()[0])
+
+
+def _command_guess(cmd) -> str:
+    """Trecho até a primeira extensão, sem as travas de argumento: só para classificar, nunca mostrado."""
+    if not isinstance(cmd, str):
+        return ''
+    text = cmd.strip().lstrip('"')
+    found = _COMMAND_EXE.match(text)
+    return found.group(1).strip() if found else ''
+
+
+def _no_space(exe) -> str:
+    """Sem aspas fechadas, o executável não pode ter espaço (R-43).
+
+    A busca pela extensão pode atravessar argumentos até um segundo caminho
+    (ex.: ``app SEGREDO C:\\a.exe``); como não dá para saber onde termina o
+    executável, nada é mostrado e o item fica "atenção".
+    """
+    return '' if any(ch.isspace() for ch in exe) else exe
 
 
 def _only_if_not_argument(exe) -> str:
@@ -279,10 +298,20 @@ def _command_is_malformed(cmd, exe) -> bool:
 
 
 def _nt_literal_end(path) -> bool:
-    """Com \\\\?\\ ou \\??\\ o Windows não tira espaço nem ponto do fim: é outro arquivo."""
-    if not isinstance(path, str):
+    """Caminho com \\\\?\\ ou \\??\\ que o Windows não normaliza: nunca pode dar OK.
+
+    Com esses prefixos o Windows não tira espaço (qualquer um, inclusive Unicode)
+    nem ponto do fim e não resolve os pedaços "." e "..": é outro arquivo, e
+    comparar o caminho normalizado daria uma pasta que não é a de verdade.
+    """
+    if not isinstance(path, str) or not path:
         return False
-    return bool(_NT_PREFIX.match(path.lstrip())) and path[-1:] in (' ', '.', '\t')
+    found = _NT_PREFIX.match(path.lstrip())
+    if not found:
+        return False
+    if path[-1].isspace() or path[-1] == '.':
+        return True
+    return any(part in ('.', '..') for part in re.split(r'[\\/]', path.lstrip()[found.end():]))
 
 
 def _strip_nt_prefix(path):
@@ -393,6 +422,11 @@ def classify_autostart(entries, env=None):
         command = entry.get('command')
         exe = executable_from_command(command)
         state, reason = classify_path(None, exe, env)
+        if not exe:
+            # Nada é mostrado, mas um nome de sistema fora da pasta do Windows continua suspeito.
+            guess = _command_guess(command)
+            if guess and classify_path(None, guess, env)[0] == STATE_SUSPECT:
+                state, reason = STATE_SUSPECT, REASON_SYSTEM_NAME
         if state == STATE_OK and _command_is_malformed(command, exe):
             state, reason = STATE_ATTENTION, REASON_NOT_FULL_PATH
         if state == STATE_OK and ntpath.basename(_key(exe)) in SCRIPT_HOSTS:
