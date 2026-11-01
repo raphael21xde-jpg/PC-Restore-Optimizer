@@ -154,7 +154,7 @@ class AutostartTests(unittest.TestCase):
         self.assertEqual(items[3]['reason'], sc.REASON_SCRIPT)
 
     def test_code_runners_in_system32_are_attention(self):
-        # R-46 (revisão da PR #189): rundll32 e regsvr32 rodam o que vem nos argumentos.
+        # R-45 (revisão da PR #189): rundll32 e regsvr32 rodam o que vem nos argumentos.
         for exe in ('rundll32.exe', 'regsvr32.exe', 'mshta.exe', 'cscript.exe', 'pwsh.exe'):
             with self.subTest(exe=exe):
                 entries = [{'source': 'run_all', 'name': 'X',
@@ -865,7 +865,7 @@ class ScheduledTaskTests(unittest.TestCase):
                 self.assertNotIn(word, text.lower())
 
     def test_microsoft_folder_code_runners_in_system32_are_shown(self):
-        # R-46: em \Microsoft\ esses programas não somem; ficam "atenção".
+        # R-45: em \Microsoft\ esses programas não somem; ficam "atenção".
         for exe in ('powershell.exe', 'pwsh.exe', 'cmd.exe', 'wscript.exe', 'cscript.exe', 'mshta.exe',
                     'rundll32.exe', 'regsvr32.exe'):
             with self.subTest(exe=exe):

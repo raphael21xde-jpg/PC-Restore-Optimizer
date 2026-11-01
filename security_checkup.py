@@ -60,7 +60,7 @@ EXPLORER = 'explorer.exe'
 SCRIPT_EXTENSIONS = ('.vbs', '.ps1', '.js', '.bat', '.cmd')
 SHORTCUT_EXTENSIONS = ('.lnk', '.url')
 # Programas do Windows que rodam o código que vem nos argumentos (um script, um
-# comando ou uma biblioteca). Como os argumentos não são lidos, nunca dão OK (R-46).
+# comando ou uma biblioteca). Como os argumentos não são lidos, nunca dão OK (R-45).
 SCRIPT_HOSTS = ('wscript.exe', 'cscript.exe', 'mshta.exe', 'powershell.exe', 'pwsh.exe', 'cmd.exe',
                 'rundll32.exe', 'regsvr32.exe')
 
@@ -561,7 +561,7 @@ def _classify_task(row, env):
     runs_code = ntpath.basename(_key(exe.strip())) in SCRIPT_HOSTS
     if in_ms:
         if state == STATE_OK and runs_code:
-            # R-46: sem ler os argumentos, não dá para esconder nem dar OK.
+            # R-45: sem ler os argumentos, não dá para esconder nem dar OK.
             return STATE_ATTENTION, REASON_SCRIPT_HOST, exe
         if state == STATE_OK:
             return None
@@ -713,7 +713,7 @@ def _effective(item, env):
     new_state, new_reason = classify_path(name, path, env)
     if (new_state == STATE_OK and item.get('source') != 'process' and isinstance(path, str)
             and ntpath.basename(_key(path.strip())) in SCRIPT_HOSTS):
-        # R-46: inicialização e tarefas não têm os argumentos lidos; nunca OK.
+        # R-45: inicialização e tarefas não têm os argumentos lidos; nunca OK.
         new_state, new_reason = STATE_ATTENTION, REASON_SCRIPT_HOST
     if _ORDER[new_state] < _ORDER[state]:
         return new_state, new_reason
