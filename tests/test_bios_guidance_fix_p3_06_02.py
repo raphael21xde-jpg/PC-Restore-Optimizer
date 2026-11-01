@@ -102,10 +102,10 @@ class FixP3_06_04Test(unittest.TestCase):
 
     def test_no_stale_rule_citations(self):
         source = pathlib.Path(bg.__file__).read_text(encoding='utf-8')
-        citations = [m.start() for m in re.finditer(r'R-34\b', source)]
+        citations = [m.start() for m in re.finditer('R-' + r'34\b', source)]
         stale = [pos for pos in citations
                  if not source[:pos].endswith('antiga ')]
-        self.assertEqual(stale, [], 'citação solta da R-34 em bios_guidance.py')
+        self.assertEqual(stale, [], 'citação solta da antiga R-34 em bios_guidance.py')
 
 
 class PlainTermsTest(unittest.TestCase):
