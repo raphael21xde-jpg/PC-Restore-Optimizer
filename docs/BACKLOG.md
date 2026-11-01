@@ -643,6 +643,17 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
     - não recomenda atualizar a BIOS: "O app não pede para atualizar a BIOS. Se você decidir atualizar, use só o site oficial do fabricante; atualizar BIOS tem risco"; sem link nem download;
     - passo a passo genérico (DEL/F2, e para placa não identificada ou PC de marca "DEL ou F2 (ou a tecla indicada na tela de abertura)"; ASUS "AI Tweaker / D.O.C.P / EXPO", MSI "OC / XMP / EXPO", Gigabyte "Tweaker / XMP / EXPO", ASRock "OC Tweaker / XMP / EXPO"), "na dúvida, saia sem salvar" e, no fim, "se o PC não ligar, limpe a CMOS seguindo o manual da placa"; as linhas "verificar"/"manual" que `inspect_pc()` já gerava ficaram iguais.
 - **Fatia 2 — `pronto`**: ler o estado do Resizable BAR só lendo (consulta a definir, sem administrador e sem alterar nada) e um botão "Ver passo a passo" separado na aba.
+### FIX-P3-06-02 · Ressalvas da revisão da PR #150 (BIOS só orientação) — `concluído`
+- Branch `auto/FIX-P3-06-02-ressalvas-150`. As 5 ressalvas da revisão da PR #150 (P3-06 fatia 1) e o que foi feito:
+  1. **Motivo de "desligado" com números adulterados era exibido:** o padrão `_REASON_OFF` aceitava qualquer número (ex.: "configurada a 9999 MT/s e o módulo informa 1 MT/s"). Agora ele captura os dois números e o ajudante novo `_off_reason_ok()` só aceita se `0 < configurada < informada` e a configurada não for a metade exata da informada; senão a tela mostra o motivo padrão de "desligado". JSON ruim nunca gera erro (regra nova R-34).
+  2. **Docstrings desatualizadas:** a do módulo e a de `xmp_state` agora dizem "algum abaixo e nenhum acima" e citam `REASON_MIXED` (módulos diferentes) e `REASON_UNITS` (metade exata).
+  3. **Termos técnicos sem explicação no passo a passo:** os termos ficaram, mas explicados: "UEFI (o nome atual da BIOS)", "Above 4G Decoding (opção que deixa a placa de vídeo usar mais memória)", "CSM (modo de compatibilidade antigo)" e "limpe a CMOS (volta a BIOS ao padrão de fábrica, pelo botão ou jumper descrito no manual)".
+  4. **Faltava teste de ida e volta:** o motivo que `xmp_state` gera (módulos 2400/3200) passa por `bios_guidance_lines` e aparece igual (`assertEqual`).
+  5. **Modelo da placa/PC no JSON exportado:** fica no item próprio FIX-P3-06-01 (logo abaixo), sem mudança aqui.
+  - Escolhas de design (as mais seguras): número com casas decimais continua aceito se for coerente; "iguais", "configurada 0" e "informada 0" também viram o motivo padrão; os termos técnicos não foram removidos, porque a pessoa precisa achá-los na tela da BIOS. Os testes antigos que conferem "limpe a CMOS" e "Não mude o CSM" continuam valendo sem mudança.
+  - Testes: `tests/test_bios_guidance_fix_p3_06_02.py` (dicts sintéticos, sem comando, sem Tk).
+### FIX-P3-06-01 · Revisar o que o JSON exportado leva (modelo da placa/PC) — `pronto`
+- Registro da revisão da PR #150: conferir se a tela e o JSON exportado do diagnóstico levam o modelo da placa (`Win32_BaseBoard.Product`) e do PC (`Win32_ComputerSystem.Model`), lidos desde antes do P3-06, e se devem sair. Não implementado.
 ### P3-07 · Check-up de segurança (somente leitura) — `pronto` (depois de P3-01)
 - **Pedido do Raphael em 23/10/2026.** Procura sinais de minerador escondido e de programas suspeitos. **Não é antivírus:** o app nunca apaga, nunca encerra processos, nunca muda o Defender e nunca coloca nada em quarentena. Se achar algo, explica e recomenda a "Verificação offline" do Defender e uma segunda opinião (Malwarebytes, só do site oficial).
 - **O que olha (só leitura):**
@@ -660,8 +671,6 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - Só ajustes da lista segura do `CLAUDE.md`, cada um com aplicar e desfazer.
 - **Nunca** desligar Defender ou Windows Update.
 ### P3-05 · Ajustes avançados (com confirmação) — `pronto` (depois de P3-04)
-### FIX-P3-06-01 · Revisar o que o JSON exportado leva (modelo da placa/PC) — `pronto`
-- Registro da revisão da PR #150: conferir se a tela e o JSON exportado do diagnóstico levam o modelo da placa (`Win32_BaseBoard.Product`) e do PC (`Win32_ComputerSystem.Model`), lidos desde antes do P3-06, e se devem sair. Não implementado.
 
 ### ✅ Validação do Raphael — M3
 Issue "Validar M3": rodar o check-up de segurança, medir, aplicar os ajustes seguros, medir de novo e desfazer tudo, no PC dele.

@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 9 (R-25, R-26, R-27, R-28, R-29, R-30, R-31, R-32 e R-33; última poda: 31/10/2026, pedido `regras-20261031-poda-r14-r23`, issue #125; a R-24 nasceu
+poda: 10 (R-25, R-26, R-27, R-28, R-29, R-30, R-31, R-32, R-33 e R-34; última poda: 31/10/2026, pedido `regras-20261031-poda-r14-r23`, issue #125; a R-24 nasceu
 da separação da R-21 e não conta). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-25.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
@@ -49,3 +49,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-31 | Teste de um critério de texto confere o texto que de fato aparece (assertEqual/assertIn); limite como assertLessEqual, que passa com o texto ausente, não basta. O backlog só diz que um lugar mostra um texto num estado se o código redesenha esse lugar nesse estado. | Revisão da PR #142 (FIX-P3-03-06), issue #143 | 2026-10-31 |
 | R-32 | Função que monta texto de tela a partir de um dict (relatório, JSON) só exibe textos que ela mesma gera (motivos, passos, rótulos); campo de texto livre vindo do dict é ignorado e regenerado. | Revisão da PR #150 (P3-06 fatia 1, c149e5e) | 2026-10-31 |
 | R-33 | Texto de "tudo certo" só aparece quando todos os itens foram de fato conferidos; com item ilegível ou mudado por fora, a frase é neutra e vem seguida do aviso. | Revisão da PR #148 (issue #149), FIX-P3-03-09 | 2026-10-31 |
+| R-34 | Texto de tela aceito por padrão (regex) a partir de um dict só é exibido se os valores dentro dele forem coerentes com o estado mostrado (ex.: configurada < informada para "desligado"); senão, vira o texto padrão. | Revisão da PR #150 (P3-06 fatia 1, 0d9bf999b191) | 2026-10-31 |

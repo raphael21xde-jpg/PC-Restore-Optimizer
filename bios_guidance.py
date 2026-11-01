@@ -9,10 +9,17 @@ Windows informa da memória, se identifica a família da placa e o ano da BIOS
 e se mostra um passo a passo para a pessoa conferir sozinha.
 
 Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
-- "provavelmente desligado": algum módulo com velocidade configurada menor que
-  a informada pelo módulo (pode ser limite do processador/placa);
+- "provavelmente desligado": algum abaixo e nenhum acima, isto é, algum módulo
+  com velocidade configurada menor que a informada pelo módulo (pode ser limite
+  do processador/placa) e nenhum com a configurada maior; módulos uns abaixo e
+  outros acima viram "não confirmado" com REASON_MIXED (módulos diferentes), e
+  configurada exatamente metade da informada vira "não confirmado" com
+  REASON_UNITS (metade exata, MHz x MT/s);
 - "provavelmente ligado": só quando todos os módulos têm os dois valores e a
   configurada é maior; o resto é "não confirmado";
+- na tela, o motivo de "desligado" com números só é exibido se os números forem
+  coerentes (0 < configurada < informada e não metade exata); senão vira o
+  motivo padrão (R-34);
 - Resizable BAR: não verificado nesta versão, só passo a passo;
 - guarda só família da placa, versão e ano da BIOS; nunca modelo da placa,
   número de série ou nome do PC;
@@ -63,8 +70,8 @@ _ACCEPTED_REASONS = {
 
 _PATHLIKE = re.compile(r'[\\/:]|%|~')
 _VERSION_OK = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 ._()\-]*$')
-_REASON_OFF = re.compile(r'^A memória está configurada a \d{1,6}(\.\d+)? MT/s e o módulo informa '
-                         r'\d{1,6}(\.\d+)? MT/s\. O perfil XMP/EXPO pode estar desligado, ou o '
+_REASON_OFF = re.compile(r'^A memória está configurada a (\d{1,6}(?:\.\d+)?) MT/s e o módulo informa '
+                         r'(\d{1,6}(?:\.\d+)?) MT/s\. O perfil XMP/EXPO pode estar desligado, ou o '
                          r'processador/placa limita a velocidade\.$')
 _DATE_MS = re.compile(r'^/Date\((-?\d{1,15})\)/$')
 _DATE_DIGITS = re.compile(r'^(\d{4})(\d{2})(\d{2})')
@@ -103,7 +110,12 @@ def _manufacturer(value):
 
 
 def xmp_state(ram):
-    """(estado, motivo) a partir de Win32_PhysicalMemory (Speed, ConfiguredClockSpeed)."""
+    """(estado, motivo) a partir de Win32_PhysicalMemory (Speed, ConfiguredClockSpeed).
+
+    "Desligado" só com algum abaixo e nenhum acima; uns abaixo e outros acima é
+    "não confirmado" com REASON_MIXED (módulos diferentes), e configurada metade
+    exata da informada é "não confirmado" com REASON_UNITS (metade exata).
+    """
     modules = _items(ram)
     if not modules:
         return XMP_UNKNOWN, _DEFAULT_REASONS[XMP_UNKNOWN]
@@ -124,6 +136,24 @@ def xmp_state(ram):
     if len(complete) == len(pairs) and len(above) == len(pairs):
         return XMP_ON, _DEFAULT_REASONS[XMP_ON]
     return XMP_UNKNOWN, _DEFAULT_REASONS[XMP_UNKNOWN]
+
+
+def _off_reason_ok(reason):
+    """True só se o motivo de "desligado" tem o formato gerado e números coerentes.
+
+    Coerente: 0 < configurada < informada e configurada * 2 != informada (a metade
+    exata é "não confirmado" em xmp_state). Nunca lança erro.
+    """
+    if not isinstance(reason, str):
+        return False
+    match = _REASON_OFF.match(reason)
+    if not match:
+        return False
+    try:
+        configured, speed = float(match.group(1)), float(match.group(2))
+    except (TypeError, ValueError):
+        return False
+    return 0 < configured < speed and configured * 2 != speed
 
 
 def board_family(board, bios, form_factor):
@@ -197,7 +227,8 @@ def _steps(family):
     if family in ('desconhecido', 'oem'):
         key = 'DEL ou F2 (ou a tecla indicada na tela de abertura)'
     steps = ['Salve seus trabalhos e reinicie o PC.',
-             f'Assim que a tela acender, aperte várias vezes a tecla {key} para entrar na BIOS (UEFI).']
+             f'Assim que a tela acender, aperte várias vezes a tecla {key} para entrar na BIOS ou '
+             'UEFI (o nome atual da BIOS).']
     if family == 'oem':
         steps.append('Muitas BIOS de notebook e de PCs de marca (Dell, HP, Lenovo, Acer, Positivo, '
                      'Samsung...) não têm XMP/EXPO nem Resizable BAR. Consulte o manual do '
@@ -207,12 +238,13 @@ def _steps(family):
                      '"Desligado/Auto".')
     steps.extend([
         'Resizable BAR (também chamado "Re-Size BAR" ou "Smart Access Memory"): costuma ficar em '
-        '"Avançado" > "PCI" ou "PCIe" e depende de "Above 4G Decoding". Não mude o CSM nem o '
-        'modo de inicialização: isso pode impedir o Windows de abrir.',
+        '"Avançado" > "PCI" ou "PCIe" e depende de Above 4G Decoding (opção que deixa a '
+        'placa de vídeo usar mais memória). Não mude o CSM (modo de compatibilidade antigo) '
+        'nem o modo de inicialização: isso pode impedir o Windows de abrir.',
         'Se não tiver certeza, saia sem salvar (Esc e depois "Sair sem salvar"). Qualquer mudança '
         'é por sua conta; o app não faz nenhuma.',
-        'Se o PC não ligar depois de uma mudança, limpe a CMOS seguindo o manual da placa-mãe '
-        '(isso volta a BIOS ao padrão).',
+        'Se o PC não ligar depois de uma mudança, limpe a CMOS (volta a BIOS ao padrão de '
+        'fábrica, pelo botão ou jumper descrito no manual).',
     ])
     return steps
 
@@ -243,8 +275,9 @@ def bios_guidance_lines(guidance):
     state = guidance.get('xmp') if guidance.get('xmp') in XMP_LABELS else XMP_UNKNOWN
     reason = guidance.get('xmp_reason')
     # R-32: só aceita os motivos que este módulo gera; qualquer outro texto vira o padrão.
+    # R-34: o motivo de "desligado" com números só vale se os números forem coerentes.
     if not (isinstance(reason, str) and (reason in _ACCEPTED_REASONS[state]
-                                         or (state == XMP_OFF and _REASON_OFF.match(reason)))):
+                                         or (state == XMP_OFF and _off_reason_ok(reason)))):
         reason = _DEFAULT_REASONS[state]
     family = guidance.get('family') if guidance.get('family') in FAMILY_LABELS else 'desconhecido'
     version = _version(guidance.get('bios_version')) or 'não disponível'
