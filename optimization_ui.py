@@ -26,6 +26,8 @@ from restore_jobs import Job
 from ui_timers import WindowTimers
 from hardware_profile import profile_lines, SCAN_CONFIRMATION
 from bios_guidance import bios_guidance_lines, bios_steps_text
+import security_checkup as checkup_engine
+from security_checkup import CHECKUP_CONFIRMATION
 from atomic_write import atomic_write_text
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
@@ -33,6 +35,10 @@ from stutter_deep import study_csv, study_text
 from optimization_monitor import (KEYS, LABELS, read_afterburner_log, find_afterburner_logs,
                                   poll_nvidia, combine, summarized, new_session, append_sample,
                                   finish_session, session_comparison)
+
+# ---------- P3-07 fatia 1: check-up de segurança (só leitura) ----------
+CHECKUP_FAILED_TEXT = ('O check-up de segurança não pôde ser concluído. Nada foi mudado, '
+                       'encerrado ou tirado do lugar. Tente de novo mais tarde.')
 
 # ---------- P3-03 fatia 2a: textos da troca de plano (sem caminhos, R-07) ----------
 POWER_ADMIN_TEXT = (
@@ -236,6 +242,9 @@ class OptimizationPanel(tk.Frame):
         self.report=None
         self.plans=[]
         self.running=False
+        # P3-07: consulta do check-up em andamento (Job) e janela aberta.
+        self._checkup_job=None
+        self._checkup_window=None
         self.scenario=tk.StringVar(value='Counter-Strike 2 | mesmo mapa, resolução e ajustes')
         self.phase=tk.StringVar(value='antes')
         self.plan_choice=tk.StringVar(value='')
@@ -318,6 +327,9 @@ class OptimizationPanel(tk.Frame):
         self.btn_bios_steps=ttk.Button(actions,text='Ver passo a passo',command=self.show_bios_steps)
         self.btn_bios_steps.pack(side='left',padx=(9,0))
         self.btn_bios_steps.configure(state='disabled')
+        # P3-07 fatia 1: check-up só de leitura (inicialização e processos), em janela própria.
+        self.btn_checkup=ttk.Button(actions,text='Check-up de segurança',command=self.security_checkup)
+        self.btn_checkup.pack(side='left',padx=(9,0))
         self.report_text=self._text_area(area)
         self._write(self.report_text,'Nenhuma análise executada. Clique em “Analisar este PC”.\n\n'
                     'Princípio do estudo Honest: avaliar Windows, GPU, firmware e resultados com benchmarks.\n'
@@ -1042,6 +1054,60 @@ class OptimizationPanel(tk.Frame):
         self._write(txt,bios_steps_text(self.report.get('bios_guidance') or {}))
         ttk.Button(window,text='Fechar',command=window.destroy).pack(anchor='e',padx=12,pady=(0,12))
         self._bios_steps_window=window
+        return window
+
+    def security_checkup(self):
+        """P3-07: pergunta antes; a consulta (só leitura) roda num Job e volta por WindowTimers."""
+        if self._checkup_job is not None:
+            return
+        if not self._ask('Check-up de segurança',CHECKUP_CONFIRMATION):
+            self.note.set('Check-up cancelado. Nada foi lido nem alterado.')
+            return
+        self.btn_checkup.configure(state='disabled')
+        self.note.set('Fazendo o check-up de segurança (só leitura)...')
+        job=Job(lambda cancelled,progress:checkup_engine.read_checkup())
+        self._checkup_job=job
+        def poll():
+            outcome=job.poll()
+            if outcome is None:
+                self._timers.after(80,poll)
+                return
+            self._checkup_job=None
+            kind,value=outcome
+            if kind=='done':
+                self._checkup_finished(value)
+            else:
+                self._checkup_failed()
+        self._timers.after(10,poll)
+
+    def _checkup_finished(self,result):
+        self.btn_checkup.configure(state='normal')
+        self.note.set('Check-up de segurança concluído. Nada foi mudado.')
+        self.show_checkup(result)
+
+    def _checkup_failed(self):
+        # R-07: nunca a mensagem original (pode ter caminho com nome de usuário).
+        self.btn_checkup.configure(state='normal')
+        self.note.set('O check-up de segurança não pôde ser concluído. Nada foi mudado.')
+        self._show('warning','Check-up de segurança',CHECKUP_FAILED_TEXT)
+
+    def show_checkup(self,result):
+        """Janela só de leitura com o resultado do check-up (sem botão de mudar nada)."""
+        old=getattr(self,'_checkup_window',None)
+        if old is not None and old.winfo_exists():
+            old.destroy()
+        window=tk.Toplevel(self)
+        window.title('Check-up de segurança (só leitura)')
+        window.configure(bg=BG)
+        holder=tk.Frame(window,bg=PANEL);holder.pack(fill='both',expand=True,padx=12,pady=(12,6))
+        txt=tk.Text(holder,bg=PANEL,fg=TEXT,relief='flat',bd=0,wrap='word',
+                    font=('Segoe UI',10),padx=14,pady=12,width=90,height=26)
+        scroll=ttk.Scrollbar(holder,orient='vertical',command=txt.yview)
+        txt.configure(yscrollcommand=scroll.set)
+        scroll.pack(side='right',fill='y');txt.pack(side='left',fill='both',expand=True)
+        self._write(txt,'\n'.join(checkup_engine.checkup_lines(result)))
+        ttk.Button(window,text='Fechar',command=window.destroy).pack(anchor='e',padx=12,pady=(0,12))
+        self._checkup_window=window
         return window
 
     def export_report(self):

@@ -1,0 +1,487 @@
+"""P3-07 fatia 1: check-up de segurança, somente leitura.
+
+Olha os programas que abrem com o Windows (chaves Run/RunOnce e pastas de
+Inicialização) e os processos em execução, e marca cada item como OK,
+atenção ou suspeito, com o motivo em português simples.
+
+Regras desta fatia:
+- só lê: nada é mudado, encerrado ou tirado do lugar, e não pede administrador;
+- da linha de comando de um programa só fica o executável (argumentos podem
+  ter senhas ou tokens); dos processos só o nome e o caminho do executável;
+- a pasta do usuário vira %USERPROFILE% e a de outros usuários vira
+  "<outro usuário>";
+- na dúvida o item fica "atenção", nunca "OK";
+- as funções são puras e recebem os dados já lidos; o PowerShell real só é
+  usado por ``read_checkup`` quando nenhum ``ps`` é passado (importado na hora,
+  de ``optimization_engine``).
+"""
+from __future__ import annotations
+
+import ntpath
+import os
+import re
+
+STATE_OK = 'OK'
+STATE_ATTENTION = 'atenção'
+STATE_SUSPECT = 'suspeito'
+_STATES = (STATE_OK, STATE_ATTENTION, STATE_SUSPECT)
+
+CHECKUP_CONFIRMATION = (
+    'O check-up vai só ler a lista de programas que abrem com o Windows e dos programas '
+    'abertos agora (processos), com o lugar de onde cada um roda.\n\n'
+    'Nada é mudado, encerrado ou tirado do lugar, e não precisa de administrador. '
+    'Pode levar alguns segundos.\n\nContinuar?')
+
+NEVER_CHANGES = ('O app só olha: não muda, não encerra e não tira nada do lugar. '
+                 'Este check-up não substitui um programa de segurança.')
+RECOMMENDATION = (
+    'Recomendação: abra a Segurança do Windows, entre em "Opções de verificação" e faça a '
+    '"Verificação offline do Microsoft Defender" (o PC reinicia para isso; salve antes o que '
+    'estiver aberto). Para uma segunda opinião, use o Malwarebytes, baixado só do site oficial.')
+NOT_CERTAIN = ('"Suspeito" não é certeza de problema: é um sinal para conferir. '
+               '"Atenção" quer dizer que vale a pena saber o que é.')
+ALL_CLEAR = 'Nos itens conferidos não apareceu nenhum sinal de alerta.'
+NOT_ALL_CHECKED = ('Nenhum item conferido ficou como atenção ou suspeito, mas o check-up '
+                   'não conseguiu conferir tudo (veja acima).')
+
+# Nomes de programas do Windows que só deveriam rodar de System32/SysWOW64.
+SYSTEM_NAMES = ('svchost.exe', 'csrss.exe', 'lsass.exe', 'winlogon.exe', 'services.exe',
+                'smss.exe', 'dllhost.exe', 'conhost.exe', 'taskhostw.exe', 'rundll32.exe')
+# O explorer.exe fica direto na pasta do Windows (ou em SysWOW64).
+EXPLORER = 'explorer.exe'
+SCRIPT_EXTENSIONS = ('.vbs', '.ps1', '.js', '.bat', '.cmd')
+SHORTCUT_EXTENSIONS = ('.lnk', '.url')
+# Programas do Windows que abrem scripts: o script em si não é conferido.
+SCRIPT_HOSTS = ('wscript.exe', 'cscript.exe', 'mshta.exe', 'powershell.exe', 'pwsh.exe', 'cmd.exe')
+
+REASON_OK = 'ok'
+REASON_SYSTEM_NAME = 'system_name'
+REASON_TEMP = 'temp'
+REASON_APPDATA = 'appdata'
+REASON_PROGRAMDATA = 'programdata'
+REASON_DRIVE_ROOT = 'drive_root'
+REASON_SCRIPT = 'script'
+REASON_SCRIPT_HOST = 'script_host'
+REASON_SHORTCUT = 'shortcut'
+REASON_STARTUP_FILE = 'startup_file'
+REASON_UNREADABLE = 'unreadable'
+REASON_NOT_FULL_PATH = 'not_full_path'
+REASON_OTHER_PLACE = 'other_place'
+
+REASON_TEXTS = {
+    REASON_OK: 'Fica numa pasta de programas do Windows (Windows ou Arquivos de Programas).',
+    REASON_SYSTEM_NAME: ('Tem o nome de um programa do próprio Windows, mas não está na pasta do '
+                         'Windows. Programas indesejados costumam se disfarçar assim.'),
+    REASON_TEMP: 'Roda de uma pasta temporária. Programas comuns quase nunca rodam de lá.',
+    REASON_APPDATA: ('Roda da pasta AppData. Alguns programas comuns ficam lá (como navegadores '
+                     'e apps de conversa), mas é também onde programas indesejados se escondem.'),
+    REASON_PROGRAMDATA: ('Roda da pasta ProgramData. Alguns programas comuns usam essa pasta, '
+                         'mas ela também é usada por programas indesejados.'),
+    REASON_DRIVE_ROOT: 'Fica direto na raiz de uma unidade (como C:\\), lugar incomum para um programa.',
+    REASON_SCRIPT: 'É um script (arquivo de comandos) que abre direto, sem um programa instalado por trás.',
+    REASON_SCRIPT_HOST: 'Abre um script por meio de um programa do Windows; o app não confere o que o script faz.',
+    REASON_SHORTCUT: 'É um atalho na pasta Inicialização; o app não confere para onde ele aponta.',
+    REASON_STARTUP_FILE: 'É um arquivo colocado direto na pasta Inicialização.',
+    REASON_UNREADABLE: 'O caminho veio vazio ou não pôde ser lido.',
+    REASON_NOT_FULL_PATH: 'O caminho completo não está escrito; o app não confere de onde ele abre.',
+    REASON_OTHER_PLACE: 'Fica fora das pastas de programas do Windows (Windows ou Arquivos de Programas).',
+}
+ADVICE_TEXTS = {
+    STATE_SUSPECT: ('Não mexa no arquivo por conta própria. Faça a verificação recomendada '
+                    'no fim desta lista.'),
+    STATE_ATTENTION: ('Confira se você reconhece este programa. Se não reconhecer, faça a '
+                      'verificação recomendada no fim desta lista.'),
+}
+
+SOURCE_TEXTS = {
+    'run_user': 'registro, só este usuário',
+    'runonce_user': 'registro, só este usuário, abre uma vez',
+    'run_all': 'registro, todos os usuários',
+    'runonce_all': 'registro, todos os usuários, abre uma vez',
+    'startup_user': 'pasta Inicialização deste usuário',
+    'startup_all': 'pasta Inicialização de todos os usuários',
+}
+_STARTUP_SOURCES = ('startup_user', 'startup_all')
+
+ERROR_TEXTS = {
+    'run': 'Programas que abrem com o Windows (registro): não foi possível ler.',
+    'run_part': 'Não foi possível ler parte das chaves do registro de inicialização.',
+    'startup': 'Pastas de Inicialização: não foi possível ler.',
+    'startup_part': 'Não foi possível ler parte das pastas de Inicialização.',
+    'processes': 'Processos em execução: não foi possível ler.',
+}
+ERROR_GENERIC = 'Parte do check-up: não foi possível ler.'
+
+RUN_KEYS = (
+    r'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
+    r'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
+    r'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run',
+    r'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce',
+    r'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run',
+    r'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce',
+)
+# Só leitura. Cada chave é lida em separado: uma chave negada vira {Error} e
+# não derruba as outras. As propriedades PS* são as que o PowerShell acrescenta.
+RUN_QUERY = (
+    '$keys=@(' + ','.join("'" + key + "'" for key in RUN_KEYS) + '); '
+    "$skip=@('PSPath','PSParentPath','PSChildName','PSDrive','PSProvider'); "
+    '$out=foreach($k in $keys){ if(Test-Path -LiteralPath $k){ '
+    'try{ $p=Get-ItemProperty -LiteralPath $k; '
+    'foreach($prop in $p.PSObject.Properties){ if($skip -notcontains $prop.Name){ '
+    '[pscustomobject]@{Key=$k;Name=$prop.Name;Command=[string]$prop.Value} } } } '
+    'catch{ [pscustomobject]@{Key=$k;Error=$true} } } }; '
+    'ConvertTo-Json -InputObject @($out) -Compress')
+# Só nome e extensão dos arquivos: o caminho da pasta (com o nome do usuário) não sai.
+STARTUP_QUERY = (
+    "$dirs=@([Environment]::GetFolderPath('Startup'),[Environment]::GetFolderPath('CommonStartup')); "
+    '$out=foreach($i in 0..1){ $d=$dirs[$i]; if($d -and (Test-Path -LiteralPath $d)){ '
+    'try{ Get-ChildItem -LiteralPath $d -File -Force | ForEach-Object { '
+    '[pscustomobject]@{Scope=$i;Name=$_.Name;Extension=$_.Extension} } } '
+    'catch{ [pscustomobject]@{Scope=$i;Error=$true} } } }; '
+    'ConvertTo-Json -InputObject @($out) -Compress')
+PROCESS_QUERY = ('Get-CimInstance Win32_Process | Select-Object Name,ExecutablePath | '
+                 'ConvertTo-Json -Compress')
+
+_DRIVE_PATH = re.compile(r'^[a-z]:\\')
+_DRIVE_ROOT_FILE = re.compile(r'^[a-z]:\\[^\\]+$')
+_ENV_VAR = re.compile(r'%([^%]+)%')
+_OTHER_USER = re.compile(r'([A-Za-z]:[\\/]Users[\\/])([^\\/"]+)', re.IGNORECASE)
+_KEEP_USERS = ('public', 'default', 'default user', 'all users', '<outro usuário>')
+_COMMAND_EXE = re.compile(r'^(.*?\.(?:exe|bat|cmd|vbs|ps1|js))(?=\s|,|$)', re.IGNORECASE)
+_CONTROL = re.compile(r'[\x00-\x1f\x7f]')
+MAX_NAME = 80
+
+
+def _env(env):
+    return os.environ if env is None else env
+
+
+def _env_get(env, name):
+    wanted = name.lower()
+    for key, value in env.items():
+        if isinstance(key, str) and key.lower() == wanted and isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _as_list(value):
+    """Saída do ConvertTo-Json: None, um objeto, uma lista ou {"value": [...]} (PS 5.1)."""
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        inner = value.get('value')
+        if isinstance(inner, list):
+            return inner
+        return [value]
+    if isinstance(value, list):
+        return value
+    return []
+
+
+def sanitize_path(path, env=None) -> str:
+    """Esconde nomes de usuário: a pasta do usuário vira %USERPROFILE%; outras, <outro usuário>.
+
+    Compara sem diferenciar maiúsculas (R-01), mas mantém a grafia original do resto.
+    """
+    if not isinstance(path, str):
+        return ''
+    env = _env(env)
+    text = path
+    profile = _env_get(env, 'USERPROFILE')
+    if profile:
+        base = profile.strip().rstrip('\\/')
+        if base:
+            pattern = r'[\\/]'.join(re.escape(part) for part in re.split(r'[\\/]', base))
+            text = re.sub('(?i)' + pattern + r'(?=[\\/"\s]|$)', lambda m: '%USERPROFILE%', text)
+
+    def other(match):
+        if match.group(2).strip().lower() in _KEEP_USERS:
+            return match.group(0)
+        return match.group(1) + '<outro usuário>'
+    return _OTHER_USER.sub(other, text)
+
+
+def _clean_name(value, env) -> str:
+    if not isinstance(value, str):
+        return ''
+    text = _CONTROL.sub(' ', sanitize_path(value, env)).strip()
+    return text[:MAX_NAME] + ('...' if len(text) > MAX_NAME else '')
+
+
+def executable_from_command(cmd) -> str:
+    """Só o executável de uma linha de comando; os argumentos são descartados."""
+    if not isinstance(cmd, str):
+        return ''
+    text = cmd.strip()
+    if not text:
+        return ''
+    if text.startswith('"'):
+        end = text.find('"', 1)
+        inner = text[1:end] if end > 0 else text[1:]
+        return inner.strip()
+    found = _COMMAND_EXE.match(text)
+    if found:
+        return found.group(1).strip()
+    return text.split()[0]
+
+
+def _expand(path, env):
+    def repl(match):
+        value = _env_get(env, match.group(1))
+        return value if value else match.group(0)
+    return _ENV_VAR.sub(repl, path)
+
+
+def _key(path):
+    return ntpath.normcase(ntpath.normpath(path))
+
+
+def _under(norm, base):
+    if not base:
+        return False
+    root = _key(base).rstrip('\\')
+    return bool(root) and norm.startswith(root + '\\')
+
+
+def classify_path(name, path, env=None):
+    """Devolve (estado, motivo) para um executável. Na dúvida, "atenção"; nunca OK."""
+    env = _env(env)
+    if not isinstance(path, str) or not path.strip():
+        return STATE_ATTENTION, REASON_UNREADABLE
+    norm = _key(_expand(path.strip(), env))
+    base = ntpath.basename(norm)
+    claimed = name.strip().lower() if isinstance(name, str) else ''
+    if not _DRIVE_PATH.match(norm) and not norm.startswith('\\\\'):
+        return STATE_ATTENTION, REASON_NOT_FULL_PATH
+    system_root = _env_get(env, 'SystemRoot') or _env_get(env, 'windir') or 'C:\\Windows'
+    root_key = _key(system_root).rstrip('\\')
+    parent = ntpath.dirname(norm)
+    if base in SYSTEM_NAMES or claimed in SYSTEM_NAMES:
+        if parent not in (root_key + '\\system32', root_key + '\\syswow64') or base != (claimed or base):
+            return STATE_SUSPECT, REASON_SYSTEM_NAME
+    if base == EXPLORER or claimed == EXPLORER:
+        if parent not in (root_key, root_key + '\\syswow64') or base != (claimed or base):
+            return STATE_SUSPECT, REASON_SYSTEM_NAME
+    if ntpath.splitext(norm)[1] in SCRIPT_EXTENSIONS:
+        return STATE_ATTENTION, REASON_SCRIPT
+    if ('\\temp\\' in norm or '\\tmp\\' in norm
+            or _under(norm, _env_get(env, 'TEMP')) or _under(norm, _env_get(env, 'TMP'))):
+        return STATE_ATTENTION, REASON_TEMP
+    if ('\\appdata\\' in norm or _under(norm, _env_get(env, 'LOCALAPPDATA'))
+            or _under(norm, _env_get(env, 'APPDATA'))):
+        return STATE_ATTENTION, REASON_APPDATA
+    if re.match(r'^[a-z]:\\programdata\\', norm) or _under(norm, _env_get(env, 'ProgramData')):
+        return STATE_ATTENTION, REASON_PROGRAMDATA
+    if _DRIVE_ROOT_FILE.match(norm):
+        return STATE_ATTENTION, REASON_DRIVE_ROOT
+    program_dirs = (system_root, _env_get(env, 'ProgramFiles') or 'C:\\Program Files',
+                    _env_get(env, 'ProgramFiles(x86)') or 'C:\\Program Files (x86)',
+                    _env_get(env, 'ProgramW6432'))
+    if any(_under(norm, folder) for folder in program_dirs):
+        return STATE_OK, REASON_OK
+    return STATE_ATTENTION, REASON_OTHER_PLACE
+
+
+def _item(source, name, path, state, reason, env, count=1):
+    return {'source': source, 'name': _clean_name(name, env), 'path': sanitize_path(path, env),
+            'state': state, 'reason': reason, 'count': count}
+
+
+def classify_autostart(entries, env=None):
+    """Classifica as entradas de inicialização (chaves Run/RunOnce e pastas de Inicialização)."""
+    env = _env(env)
+    items = []
+    for entry in _as_list(entries):
+        if not isinstance(entry, dict):
+            continue
+        source = entry.get('source')
+        name = entry.get('name')
+        if source in _STARTUP_SOURCES:
+            ext = entry.get('extension')
+            ext = ext.lower() if isinstance(ext, str) else ''
+            if ext in SHORTCUT_EXTENSIONS:
+                reason = REASON_SHORTCUT
+            elif ext in SCRIPT_EXTENSIONS:
+                reason = REASON_SCRIPT
+            else:
+                reason = REASON_STARTUP_FILE
+            items.append(_item(source, name, '', STATE_ATTENTION, reason, env))
+            continue
+        exe = executable_from_command(entry.get('command'))
+        state, reason = classify_path(None, exe, env)
+        if state == STATE_OK and ntpath.basename(_key(exe)) in SCRIPT_HOSTS:
+            state, reason = STATE_ATTENTION, REASON_SCRIPT_HOST
+        items.append(_item(source, name, exe, state, reason, env))
+    return items
+
+
+def classify_processes(procs, env=None):
+    """Agrupa processos iguais (nome + caminho). Sem caminho = "não conferido"."""
+    env = _env(env)
+    grouped = {}
+    unchecked = 0
+    for proc in _as_list(procs):
+        if not isinstance(proc, dict):
+            continue
+        name = proc.get('Name')
+        path = proc.get('ExecutablePath')
+        if not isinstance(path, str) or not path.strip():
+            unchecked += 1
+            continue
+        key = ((name or '').lower() if isinstance(name, str) else '', _key(path))
+        if key in grouped:
+            grouped[key]['count'] += 1
+            continue
+        state, reason = classify_path(name, path, env)
+        grouped[key] = _item('process', name, path, state, reason, env)
+    return {'items': list(grouped.values()), 'unchecked': unchecked}
+
+
+def _run_entries(raw):
+    entries, failed = [], False
+    for row in _as_list(raw):
+        if not isinstance(row, dict):
+            continue
+        key = row.get('Key') if isinstance(row.get('Key'), str) else ''
+        if row.get('Error'):
+            failed = True
+            continue
+        once = key.lower().endswith('runonce')
+        scope = 'user' if key.upper().startswith('HKCU') else 'all'
+        entries.append({'source': ('runonce_' if once else 'run_') + scope,
+                        'name': row.get('Name'), 'command': row.get('Command')})
+    return entries, failed
+
+
+def _startup_entries(raw):
+    entries, failed = [], False
+    for row in _as_list(raw):
+        if not isinstance(row, dict):
+            continue
+        if row.get('Error'):
+            failed = True
+            continue
+        name = row.get('Name')
+        if isinstance(name, str) and name.strip().lower() == 'desktop.ini':
+            continue
+        entries.append({'source': 'startup_all' if row.get('Scope') == 1 else 'startup_user',
+                        'name': name, 'extension': row.get('Extension')})
+    return entries, failed
+
+
+def read_checkup(ps=None, env=None):
+    """Faz as três consultas (só leitura) e classifica. Erro vira código, nunca texto do sistema."""
+    if ps is None:
+        from optimization_engine import _ps as ps  # noqa: PLC0415 - preguiçoso de propósito
+    env = _env(env)
+    errors = []
+    entries = []
+    try:
+        found, failed = _run_entries(ps(RUN_QUERY))
+        entries.extend(found)
+        if failed:
+            errors.append('run_part')
+    except Exception:  # noqa: BLE001 - R-07: a mensagem original não é guardada
+        errors.append('run')
+    try:
+        found, failed = _startup_entries(ps(STARTUP_QUERY))
+        entries.extend(found)
+        if failed:
+            errors.append('startup_part')
+    except Exception:  # noqa: BLE001
+        errors.append('startup')
+    processes = {'items': [], 'unchecked': 0}
+    try:
+        processes = classify_processes(ps(PROCESS_QUERY), env)
+    except Exception:  # noqa: BLE001
+        errors.append('processes')
+    return {'autostart': classify_autostart(entries, env), 'processes': processes['items'],
+            'unchecked': processes['unchecked'], 'errors': errors}
+
+
+_ORDER = {STATE_SUSPECT: 0, STATE_ATTENTION: 1, STATE_OK: 2}
+
+
+def _safe_state(item):
+    state = item.get('state')
+    return state if state in _STATES else STATE_ATTENTION
+
+
+def _safe_reason(item, state):
+    reason = item.get('reason')
+    if reason not in REASON_TEXTS or (state == STATE_OK) != (reason == REASON_OK):
+        return REASON_OTHER_PLACE if state != STATE_OK else REASON_OK
+    return reason
+
+
+def _item_lines(item, env, with_count=False):
+    state = _safe_state(item)
+    reason = _safe_reason(item, state)
+    name = _clean_name(item.get('name'), env) or 'sem nome'
+    count = item.get('count')
+    if with_count and isinstance(count, int) and not isinstance(count, bool) and count > 1:
+        name += f' ({count} abertos)'
+    source = SOURCE_TEXTS.get(item.get('source'))
+    lines = [f'  [{state}] {name}' + (f' — {source}' if source else '')]
+    path = sanitize_path(item.get('path'), env)
+    if path:
+        lines.append('      Onde: ' + path)
+    lines.append('      Motivo: ' + REASON_TEXTS[reason])
+    if state in ADVICE_TEXTS:
+        lines.append('      O que fazer: ' + ADVICE_TEXTS[state])
+    return lines, state
+
+
+def checkup_lines(result, env=None):
+    """Texto da janela. Só mostra textos gerados aqui (R-32); nome e caminho são limpos de novo."""
+    env = _env(env)
+    result = result if isinstance(result, dict) else {}
+    errors = [e for e in _as_list(result.get('errors'))]
+    counts = {STATE_OK: 0, STATE_ATTENTION: 0, STATE_SUSPECT: 0}
+    lines = ['CHECK-UP DE SEGURANÇA — SÓ LEITURA', NEVER_CHANGES, '']
+
+    def section(title, items, with_count, empty_text):
+        lines.append(title)
+        valid = [i for i in _as_list(items) if isinstance(i, dict)]
+        valid.sort(key=lambda i: _ORDER[_safe_state(i)])
+        for item in valid:
+            item_lines, state = _item_lines(item, env, with_count)
+            lines.extend(item_lines)
+            counts[state] += 1
+        if not valid and empty_text:
+            lines.append('  ' + empty_text)
+        lines.append('')
+        return len(valid)
+
+    autostart_failed = 'run' in errors and 'startup' in errors
+    section('PROGRAMAS QUE ABREM COM O WINDOWS', result.get('autostart'), False,
+            None if autostart_failed else 'Nenhum programa encontrado nas chaves e pastas de inicialização.')
+    processes_shown = section('PROCESSOS EM EXECUÇÃO', result.get('processes'), True,
+                              None if 'processes' in errors else 'Nenhum processo foi informado.')
+    unchecked = result.get('unchecked')
+    unchecked = unchecked if isinstance(unchecked, int) and not isinstance(unchecked, bool) and unchecked > 0 else 0
+    if unchecked:
+        lines.insert(len(lines) - 1, f'  {unchecked} processos não puderam ser conferidos (o Windows não '
+                                     'informou de onde eles rodam). Isso é comum em processos do próprio Windows.')
+    if errors:
+        lines.append('CONSULTAS INCOMPLETAS:')
+        texts = []
+        for code in errors:
+            text = ERROR_TEXTS.get(code, ERROR_GENERIC) if isinstance(code, str) else ERROR_GENERIC
+            if text not in texts:
+                texts.append(text)
+        lines.extend('  • ' + text for text in texts)
+        lines.append('')
+    lines.append(f'RESUMO: OK {counts[STATE_OK]} · atenção {counts[STATE_ATTENTION]} · '
+                 f'suspeito {counts[STATE_SUSPECT]} · não conferidos {unchecked}')
+    flagged = counts[STATE_ATTENTION] + counts[STATE_SUSPECT]
+    if flagged or errors:
+        lines.append('')
+        if flagged:
+            lines.append(NOT_CERTAIN)
+        lines.append(RECOMMENDATION)
+    elif not unchecked and processes_shown:
+        lines.append(ALL_CLEAR)
+    else:
+        lines.append(NOT_ALL_CHECKED)
+    return lines
