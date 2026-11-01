@@ -688,9 +688,15 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   6. Linha em branco duplicada removida de `tests/test_export_fix_p3_06_01.py`.
 - Testes: `tests/test_export_fix_p3_06_01.py` (PowerShell simulado, `TemporaryDirectory`), `tests/test_rule_citations.py` (lê arquivos do repositório, não grava nada).
 - Escolhas de design (as mais seguras): a chave de cada consulta é achada por um marcador devolvido pelo PowerShell simulado (não pela ordem); consulta sem `Select-Object` faz o teste falhar (hoje todas têm); o padrão da regra é montado em código para o teste não acusar a si mesmo; sem `git`, o teste de citações é ignorado com motivo; sem regra nova.
-### FIX-P3-06-06 · Arquivo temporário de nome fixo em `_atomic_json` — `pronto`
+### FIX-P3-06-06 · Arquivo temporário de nome fixo em `_atomic_json` — `concluído`
 - Ressalva 3 da revisão da PR #159: `_atomic_json` (em `optimization_engine.py`) grava sempre em `<nome>.tmp`, de nome fixo; duas gravações ao mesmo tempo no mesmo arquivo usariam o mesmo temporário, e um `.tmp` velho de uma gravação interrompida fica na pasta.
 - Aceite: temporário de nome único na mesma pasta (ex.: `tempfile.NamedTemporaryFile(dir=..., delete=False)`), apagado se a gravação falhar; testes só em `TemporaryDirectory`.
+- Branch `auto/FIX-P3-06-06-atomic-json-tmp`. Feito: `_atomic_json` grava num temporário de nome único (`.<nome>.<aleatório>.tmp`) na mesma pasta do destino, com `fsync` e `os.replace`; se qualquer passo falhar (inclusive o `os.replace`), apaga só o temporário desta chamada e relança o erro original. Chamadores e outras funções sem mudança.
+- Testes: `tests/test_atomic_json_fix_p3_06_06.py` (só `TemporaryDirectory`; `os.replace` simulado para a falha).
+- Escolhas de design (as mais seguras): nunca apagar `.tmp` de outras gravações (um `<nome>.tmp` velho fica onde está); limpeza também em `BaseException` (ex.: Ctrl+C), sempre relançando; sem regra nova.
+### FIX-P3-06-07 · Temporário de nome fixo em `optimization_ui.py` e `optimization_bench.py` — `pronto`
+- Mesmo problema do FIX-P3-06-06 em outros dois lugares: `optimization_ui.py:357` e `optimization_bench.py:138` montam o temporário com `with_suffix('.tmp')` (nome fixo).
+- Aceite: o mesmo do FIX-P3-06-06 (temporário de nome único na mesma pasta, apagado se a gravação falhar, sem mexer em `.tmp` alheios); testes só em `TemporaryDirectory`.
 ### P3-07 · Check-up de segurança (somente leitura) — `pronto` (depois de P3-01)
 - **Pedido do Raphael em 23/10/2026.** Procura sinais de minerador escondido e de programas suspeitos. **Não é antivírus:** o app nunca apaga, nunca encerra processos, nunca muda o Defender e nunca coloca nada em quarentena. Se achar algo, explica e recomenda a "Verificação offline" do Defender e uma segunda opinião (Malwarebytes, só do site oficial).
 - **O que olha (só leitura):**

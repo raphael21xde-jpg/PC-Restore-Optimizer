@@ -153,12 +153,25 @@ def inspect_pc():
 
 def _atomic_json(path: Path, data: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + '.tmp')
-    with temporary.open('w', encoding='utf-8') as stream:
-        json.dump(data, stream, indent=2, ensure_ascii=False)
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    # FIX-P3-06-06: temporário de nome único na mesma pasta do destino (o
+    # os.replace fica no mesmo volume). Se algo falhar, apaga só o temporário
+    # desta chamada; nunca mexe em .tmp de outras gravações.
+    stream = tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=path.parent,
+                                         prefix='.' + path.name + '.', suffix='.tmp',
+                                         delete=False)
+    temporary = Path(stream.name)
+    try:
+        with stream:
+            json.dump(data, stream, indent=2, ensure_ascii=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def safe_change_power_plan(target: str, journal_path: Path):
