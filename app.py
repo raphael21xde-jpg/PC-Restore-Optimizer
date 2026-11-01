@@ -160,6 +160,7 @@ class App(tk.Tk):
         # FIX-P3-06-09: base para juntar com o que outra janela gravar depois.
         self._choices_base=self._choices_doc()
         self._choices_unsaved=False
+        self._choices_last_warning=None  # FIX-P3-06-11: último aviso de "não salvou"
         self._tree_roots()
         self.refresh_browser()
         self.refresh_history()
@@ -2161,9 +2162,12 @@ class App(tk.Tk):
             warning='Escolhas não salvas agora: outra janela está gravando. Serão salvas na próxima mudança.'
         elif status=='ilegivel':
             # o app nunca conserta, apaga, troca ou renomeia esse arquivo sozinho
-            warning=(f'O arquivo {name} está danificado e não foi alterado. As escolhas desta janela '
-                     'não estão sendo salvas. Feche o app e peça ajuda, ou renomeie esse arquivo '
-                     'para o app criar um novo.')
+            # FIX-P3-06-11: 'ilegivel' junta JSON estragado, link simbólico e erro de
+            # leitura (arquivo bom preso por antivírus/OneDrive): texto neutro (R-37)
+            warning=(f'O arquivo {name} não pôde ser lido agora (pode estar danificado ou em uso) '
+                     'e não foi alterado. As escolhas desta janela não estão sendo salvas. Feche o '
+                     'app e abra de novo mais tarde; se o aviso continuar, peça ajuda ou renomeie '
+                     'esse arquivo para o app criar um novo.')
         if status!='ok':
             self._choices_unsaved=True
             self._choices_last_warning=warning
@@ -2254,7 +2258,9 @@ class App(tk.Tk):
         if getattr(self,'_choices_unsaved',False):
             warning=(getattr(self,'_choices_last_warning',None)
                      or 'As últimas escolhas não foram salvas.')
-            if not messagebox.askyesno('Escolhas não salvas', f'{warning}\n\nFechar mesmo assim?',
+            question=(f'{warning}\n\nSe fechar agora, essas últimas escolhas não serão salvas. '
+                      'Fechar mesmo assim?')
+            if not messagebox.askyesno('Escolhas não salvas', question,
                                        default='no', parent=self):
                 return
         self.destroy()

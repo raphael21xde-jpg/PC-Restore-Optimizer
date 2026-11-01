@@ -3,8 +3,8 @@
 - O aviso de conflito conta só as decisões do usuário (Manter / Não preservar)
   e diz onde ficou cada uma: no arquivo, a opção mais segura; nesta janela, a
   escolha dela.
-- O aviso de arquivo danificado é claro e o app nunca conserta, apaga ou
-  renomeia esse arquivo sozinho.
+- O aviso de arquivo que não pôde ser lido é claro (neutro desde o
+  FIX-P3-06-11) e o app nunca conserta, apaga ou renomeia esse arquivo sozinho.
 - Ao fechar com escolhas pendentes, a pergunta repete o último aviso.
 
 Funciona sem Tk: `_save_choices` e `_quit` são lidos de app.py (ast) e rodam
@@ -31,9 +31,15 @@ BUSY = 'Escolhas não salvas agora: outra janela está gravando. Serão salvas n
 
 
 def _unreadable(name):
-    return (f'O arquivo {name} está danificado e não foi alterado. As escolhas desta janela '
-            'não estão sendo salvas. Feche o app e peça ajuda, ou renomeie esse arquivo '
-            'para o app criar um novo.')
+    # FIX-P3-06-11: texto neutro ('ilegivel' junta causas diferentes, R-37)
+    return (f'O arquivo {name} não pôde ser lido agora (pode estar danificado ou em uso) '
+            'e não foi alterado. As escolhas desta janela não estão sendo salvas. Feche o '
+            'app e abra de novo mais tarde; se o aviso continuar, peça ajuda ou renomeie '
+            'esse arquivo para o app criar um novo.')
+
+
+# FIX-P3-06-11: a pergunta diz que as últimas escolhas se perdem
+QUIT_TAIL = '\n\nSe fechar agora, essas últimas escolhas não serão salvas. Fechar mesmo assim?'
 
 
 def _doc(**kw):
@@ -177,7 +183,7 @@ class QuitTests(unittest.TestCase):
         fake, destroyed = self._fake(BUSY, True, BUSY)
         ask = self._run(fake, True)
         self.assertEqual(destroyed, [True])
-        self.assertEqual(ask.call_args.args[1], f'{BUSY}\n\nFechar mesmo assim?')
+        self.assertEqual(ask.call_args.args[1], BUSY + QUIT_TAIL)
         self.assertEqual(ask.call_args.kwargs.get('default'), 'no')
 
     def test_pending_and_no_keeps_window(self):
@@ -190,7 +196,7 @@ class QuitTests(unittest.TestCase):
         text = _unreadable('preferencias.json')
         fake, destroyed = self._fake(text, True, text)
         ask = self._run(fake, False)
-        self.assertEqual(ask.call_args.args[1], f'{text}\n\nFechar mesmo assim?')
+        self.assertEqual(ask.call_args.args[1], text + QUIT_TAIL)
         self.assertEqual(destroyed, [])
 
     def test_no_pending_closes_without_asking(self):
