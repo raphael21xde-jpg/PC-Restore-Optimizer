@@ -19,7 +19,7 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
   configurada é maior; o resto é "não confirmado";
 - na tela, o motivo de "desligado" com números só é exibido se os números forem
   coerentes (0 < configurada < informada e não metade exata); senão vira o
-  motivo padrão (R-32 (antiga R-34));
+  motivo padrão (R-32, antiga R-34);
 - Resizable BAR: não verificado nesta versão, só passo a passo;
 - guarda só família da placa, versão e ano da BIOS; nunca modelo da placa,
   número de série ou nome do PC;
@@ -275,7 +275,7 @@ def bios_guidance_lines(guidance):
     state = guidance.get('xmp') if guidance.get('xmp') in XMP_LABELS else XMP_UNKNOWN
     reason = guidance.get('xmp_reason')
     # R-32: só aceita os motivos que este módulo gera; qualquer outro texto vira o padrão.
-    # R-32 (antiga R-34): o motivo de "desligado" com números só vale se os números forem coerentes.
+    # (R-32, antiga R-34): o motivo de "desligado" com números só vale se os números forem coerentes.
     if not (isinstance(reason, str) and (reason in _ACCEPTED_REASONS[state]
                                          or (state == XMP_OFF and _off_reason_ok(reason)))):
         reason = _DEFAULT_REASONS[state]
