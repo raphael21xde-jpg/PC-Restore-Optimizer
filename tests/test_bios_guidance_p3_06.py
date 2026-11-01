@@ -153,7 +153,7 @@ class GuidanceTests(unittest.TestCase):
         self.assertEqual(guidance['family'], 'asus')
         self.assertEqual(guidance['bios_version'], '2803')
         self.assertEqual(guidance['bios_year'], 2020)
-        self.assertEqual(guidance['rebar'], 'nao_verificado')
+        self.assertEqual(guidance['rebar'], bg.REBAR_UNKNOWN)
         self.assertTrue(guidance['steps'])
         self.assertIn('limpe a CMOS', guidance['steps'][-1])
         self.assertTrue(any('AI Tweaker' in s and 'D.O.C.P' in s for s in guidance['steps']))
@@ -281,7 +281,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(guidance['family'], 'desconhecido')
         self.assertIsNone(guidance['bios_version'])
         self.assertIsNone(guidance['bios_year'])
-        self.assertEqual(guidance['rebar'], 'nao_verificado')
+        self.assertEqual(guidance['rebar'], bg.REBAR_UNKNOWN)
 
     def test_inspect_on_simulated_windows_uses_existing_queries(self):
         hardware = _hardware()
@@ -300,7 +300,7 @@ class EngineTests(unittest.TestCase):
                 mock.patch.object(oe, 'available_power_plans', side_effect=oe.OptimizationError('x')), \
                 mock.patch.object(subprocess, 'run', _forbidden):
             report = oe.inspect_pc()
-        self.assertEqual(len(calls), 10)  # nenhuma consulta nova
+        self.assertEqual(len(calls), 11)  # fatia 2: só a consulta gpu_bar a mais
         guidance = report['bios_guidance']
         self.assertEqual((guidance['xmp'], guidance['family'], guidance['bios_year']),
                          (bg.XMP_OFF, 'asus', 2020))

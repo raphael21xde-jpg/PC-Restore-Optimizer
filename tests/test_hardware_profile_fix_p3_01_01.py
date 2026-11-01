@@ -147,7 +147,7 @@ class ErrorTextTests(unittest.TestCase):
         inventory = [e for e in report['errors'] if e.startswith('Inventário ')]
         self.assertTrue(inventory)
         for error in inventory:
-            self.assertRegex(error, r'^Inventário [a-z]+: não foi possível ler\.$')
+            self.assertRegex(error, r'^Inventário [a-z_]+: não foi possível ler\.$')  # P3-06 fatia 2: gpu_bar
 
 
 class IsWindowsTests(unittest.TestCase):

@@ -24,6 +24,15 @@ GUID_PATTERN = re.compile(r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a
 BALANCED_GUID = '381b4222-f694-41f0-9685-ff5bb260df2e'
 
 
+# P3-06 fatia 2: só leitura e sem administrador. Para cada placa de vídeo, só o
+# TAMANHO de cada intervalo de memória (fim - início + 1, em bytes). Endereços,
+# PNPDeviceID e nomes não saem do PowerShell.
+_GPU_BAR_QUERY = ('ConvertTo-Json -Depth 3 -InputObject @(Get-CimInstance Win32_VideoController | '
+                  'ForEach-Object { [pscustomobject]@{ Sizes = @(Get-CimAssociatedInstance -InputObject $_ '
+                  '-ResultClassName Win32_DeviceMemoryAddress | ForEach-Object { '
+                  '[decimal]$_.EndingAddress - [decimal]$_.StartingAddress + 1 }) } })')
+
+
 class OptimizationError(RuntimeError):
     pass
 
@@ -48,6 +57,8 @@ def _run(command: list[str], timeout: int = 18) -> str:
 
 
 def _ps(code: str, timeout=22):
+    if not _is_windows():
+        raise OptimizationError('Este recurso só funciona em computadores Windows.')
     program = shutil.which('powershell.exe') or shutil.which('pwsh.exe')
     if not program:
         raise OptimizationError('PowerShell não foi encontrado.')
@@ -114,6 +125,8 @@ def inspect_pc():
         'chassis': 'Get-CimInstance Win32_SystemEnclosure | Select-Object ChassisTypes | ConvertTo-Json -Depth 3',
         'battery': 'Get-CimInstance Win32_Battery | Select-Object BatteryStatus | ConvertTo-Json -Depth 3',
         'disks': 'Get-PhysicalDisk | Select-Object MediaType,BusType,Size | ConvertTo-Json -Depth 3',
+        # P3-06 fatia 2: fica só na memória (fora de _EXPORT_COLUMNS); o arquivo leva só o estado.
+        'gpu_bar': _GPU_BAR_QUERY,
     }
     for key, code in queries.items():
         try:
@@ -146,7 +159,7 @@ def inspect_pc():
     result['unmeasured'] = ['temperatura CPU/GPU (disponível separadamente no monitoramento em tempo real se os sensores responderem)', 'consumo neste relatório estático', 'estabilidade de memória',
                             'versões compatíveis de perfis BIOS', 'FPS de jogo', 'latência DWM']
     result['profile'] = build_profile(result['hardware'])
-    # P3-06: só orientação; usa o que já foi lido, sem consulta nova.
+    # P3-06: só orientação; usa o que já foi lido (fatia 2: mais o gpu_bar).
     result['bios_guidance'] = build_bios_guidance(result['hardware'], result['profile'])
     return result
 

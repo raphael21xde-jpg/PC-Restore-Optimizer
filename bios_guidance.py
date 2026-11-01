@@ -20,7 +20,10 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
 - na tela, o motivo de "desligado" com números só é exibido se os números forem
   coerentes (0 < configurada < informada e não metade exata); senão vira o
   motivo padrão (R-32, antiga R-34);
-- Resizable BAR: não verificado nesta versão, só passo a passo;
+- Resizable BAR (fatia 2): "provavelmente ligado" só se algum intervalo de
+  memória da placa de vídeo (lido pelo Windows, só o tamanho) passa de 256 MiB;
+  o resto é "não confirmado" com motivo deste módulo. Nunca diz "desligado"
+  (janela pequena também acontece com placa sem suporte ou driver antigo);
 - guarda só família da placa, versão e ano da BIOS; nunca modelo da placa,
   número de série ou nome do PC;
 - não recomenda atualizar a BIOS e não traz link nem download.
@@ -67,6 +70,27 @@ _ACCEPTED_REASONS = {
     XMP_ON: {_DEFAULT_REASONS[XMP_ON]},
     XMP_UNKNOWN: {_DEFAULT_REASONS[XMP_UNKNOWN], REASON_MIXED, REASON_UNITS},
 }
+
+REBAR_ON = 'provavelmente_ligado'
+REBAR_UNKNOWN = 'nao_confirmado'
+REBAR_LABELS = {
+    REBAR_ON: 'provavelmente ligado',
+    REBAR_UNKNOWN: 'não confirmado',
+}
+REBAR_REASON_ON = ('O Windows informa uma janela de memória da placa de vídeo maior que 256 MiB; '
+                   'isso costuma indicar Resizable BAR ligado.')
+REBAR_REASON_SMALL = ('As janelas de memória da placa de vídeo que o Windows informa têm até 256 MiB; '
+                      'isso não basta para confirmar o Resizable BAR.')
+REBAR_REASON_DEFAULT = ('O Windows não informou a janela de memória da placa de vídeo; '
+                        'não dá para saber.')
+_REBAR_REASONS = {
+    REBAR_ON: {REBAR_REASON_ON},
+    REBAR_UNKNOWN: {REBAR_REASON_DEFAULT, REBAR_REASON_SMALL},
+}
+_REBAR_DEFAULTS = {REBAR_ON: REBAR_REASON_ON, REBAR_UNKNOWN: REBAR_REASON_DEFAULT}
+_BAR_LIMIT = 256 * 1024 ** 2
+# Acima de 1 TiB não é janela de placa de vídeo real; é dado estranho e é ignorado.
+_BAR_MAX = 1024 ** 4
 
 _PATHLIKE = re.compile(r'[\\/:]|%|~')
 _VERSION_OK = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 ._()\-]*$')
@@ -136,6 +160,37 @@ def xmp_state(ram):
     if len(complete) == len(pairs) and len(above) == len(pairs):
         return XMP_ON, _DEFAULT_REASONS[XMP_ON]
     return XMP_UNKNOWN, _DEFAULT_REASONS[XMP_UNKNOWN]
+
+
+def _bar_size(value):
+    """Tamanho inteiro entre 1 byte e 1 TiB; bool, texto, NaN, fração e o resto viram None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            return None
+        value = int(value)
+    return value if 0 < value <= _BAR_MAX else None
+
+
+def rebar_state(gpu_bar):
+    """(estado, motivo) a partir dos tamanhos dos intervalos de memória das placas de vídeo.
+
+    Entrada: dict ou lista de dicts {"Sizes": [bytes, ...]} (um por placa). Algum
+    intervalo maior que 256 MiB é "provavelmente ligado"; o resto é "não confirmado".
+    Nunca devolve "desligado" e nunca lança erro.
+    """
+    sizes = []
+    for gpu in _items(gpu_bar):
+        values = gpu.get('Sizes')
+        if not isinstance(values, list):
+            values = [values]
+        sizes.extend(size for size in map(_bar_size, values) if size is not None)
+    if not sizes:
+        return REBAR_UNKNOWN, REBAR_REASON_DEFAULT
+    if any(size > _BAR_LIMIT for size in sizes):
+        return REBAR_ON, REBAR_REASON_ON
+    return REBAR_UNKNOWN, REBAR_REASON_SMALL
 
 
 def _off_reason_ok(reason):
@@ -257,15 +312,35 @@ def build_bios_guidance(hardware, profile):
     family = board_family(hardware.get('board'), hardware.get('bios'), profile.get('form_factor'))
     bios = _items(hardware.get('bios'))
     first = bios[0] if bios else {}
+    rebar, rebar_reason = rebar_state(hardware.get('gpu_bar'))
     return {
         'xmp': state,
         'xmp_reason': reason,
         'family': family,
         'bios_version': _version(first.get('SMBIOSBIOSVersion')),
         'bios_year': bios_release_year(first.get('ReleaseDate')),
-        'rebar': 'nao_verificado',
+        'rebar': rebar,
+        'rebar_reason': rebar_reason,
         'steps': _steps(family),
     }
+
+
+def _family(guidance):
+    family = guidance.get('family') if isinstance(guidance, dict) else None
+    return family if isinstance(family, str) and family in FAMILY_LABELS else 'desconhecido'
+
+
+def bios_steps_text(guidance):
+    """Texto da janela "Ver passo a passo"; sempre regenerado pela família (R-32).
+
+    O campo ``steps`` do dict é ignorado de propósito. Sem link e sem download.
+    """
+    family = _family(guidance)
+    lines = ['Passo a passo para conferir na BIOS',
+             f'{NEVER_CHANGES} Aqui só mostramos como conferir; qualquer mudança é sua.',
+             f'Fabricante da placa: {FAMILY_LABELS[family]}', '']
+    lines.extend(f'{number}. {step}' for number, step in enumerate(_steps(family), 1))
+    return '\n'.join(lines)
 
 
 def bios_guidance_lines(guidance):
@@ -279,7 +354,13 @@ def bios_guidance_lines(guidance):
     if not (isinstance(reason, str) and (reason in _ACCEPTED_REASONS[state]
                                          or (state == XMP_OFF and _off_reason_ok(reason)))):
         reason = _DEFAULT_REASONS[state]
-    family = guidance.get('family') if guidance.get('family') in FAMILY_LABELS else 'desconhecido'
+    family = _family(guidance)
+    rebar = guidance.get('rebar')
+    rebar = rebar if isinstance(rebar, str) and rebar in REBAR_LABELS else REBAR_UNKNOWN
+    rebar_reason = guidance.get('rebar_reason')
+    # R-32: só aceita os motivos de Resizable BAR que este módulo gera.
+    if not (isinstance(rebar_reason, str) and rebar_reason in _REBAR_REASONS[rebar]):
+        rebar_reason = _REBAR_DEFAULTS[rebar]
     version = _version(guidance.get('bios_version')) or 'não disponível'
     year = _year(guidance.get('bios_year'))
     # R-32: o passo a passo é sempre regenerado; guidance['steps'] é ignorado.
@@ -290,7 +371,8 @@ def bios_guidance_lines(guidance):
              f'    {reason}',
              f'  Fabricante da placa: {FAMILY_LABELS[family]}',
              f"  BIOS: versão {version} | ano {year if year is not None else 'não disponível'}",
-             '  Resizable BAR: não verificado nesta versão (veja abaixo como conferir).',
+             f'  Resizable BAR: {REBAR_LABELS[rebar]} (veja abaixo como conferir).',
+             f'    {rebar_reason}',
              '  O app não pede para atualizar a BIOS. Se você decidir atualizar, use só o site oficial do '
              'fabricante; atualizar BIOS tem risco (faltar energia no meio pode impedir o PC de ligar).',
              '  Como conferir na BIOS:']

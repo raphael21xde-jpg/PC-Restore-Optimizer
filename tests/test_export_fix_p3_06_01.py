@@ -147,7 +147,7 @@ class InspectQueriesTests(unittest.TestCase):
                 patch.object(oe, '_ps', side_effect=fake_ps), \
                 patch.object(oe, 'available_power_plans', side_effect=oe.OptimizationError('x')):
             oe.inspect_pc()
-        self.assertEqual(len(calls), 10)
+        self.assertEqual(len(calls), 11)  # P3-06 fatia 2: gpu_bar
         for code in calls:
             self.assertNotIn('Model', code)
         self.assertTrue(any('Win32_ComputerSystem' in c and 'PCSystemType' in c for c in calls))
@@ -155,6 +155,8 @@ class InspectQueriesTests(unittest.TestCase):
 
 # Coluna lida na tela, mas que de propósito não vai para o arquivo exportado.
 _SCREEN_ONLY = {('board', 'Product')}
+# Consulta inteira que fica só na memória (o JSON leva só o estado avaliado).
+_NOT_EXPORTED = {'gpu_bar'}
 _SELECT = re.compile(r'Select-Object\s+([\w\s,]+?)\s*(?:\||$)')
 
 
@@ -196,8 +198,11 @@ def _missing_columns(key, code):
 class AllowlistTests(unittest.TestCase):
     def test_allowlist_covers_query_columns(self):
         queries = _queries_by_key()
-        self.assertEqual(set(queries), set(oe._EXPORT_COLUMNS))
+        # P3-06 fatia 2: gpu_bar é lido, mas de propósito não vai para o arquivo.
+        self.assertEqual(set(queries), set(oe._EXPORT_COLUMNS) | _NOT_EXPORTED)
         for key, code in queries.items():
+            if key in _NOT_EXPORTED:
+                continue
             with self.subTest(key=key):
                 missing = _missing_columns(key, code)
                 self.assertIsNotNone(missing, f'consulta {key} sem Select-Object')
