@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 3 (última poda: 01/11/2026, pedido `regras-20261101-poda-r25-r34`, issue #157). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-35.
+poda: 5 (última poda: 01/11/2026, pedido `regras-20261101-poda-r25-r34`, issue #157). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-35.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -53,3 +53,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-36 | Aviso de junção ou conflito entre janelas diz onde ficou cada decisão (no arquivo × nesta janela) e conta só as decisões do usuário; nunca afirma que "ficou" a opção mais segura se a janela que mostra o aviso continua usando outra. | Revisão da PR #167 (FIX-P3-06-09, bbb1199ffc7f), issue #168 | 2026-11-01 |
 | R-37 | Aviso que nomeia a causa (danificado, ocupado, sem permissão) só a afirma quando o código distinguiu essa causa; se um mesmo status junta causas diferentes, o texto é neutro ("não pôde ser lido") e a orientação vale para todas. | Revisão da PR #169 (FIX-P3-06-10, 720d150d116f) | 2026-11-01 |
 | R-38 | Diagnóstico com vários aparelhos do mesmo tipo (placas de vídeo, módulos, discos) avalia cada um; só diz "provável" ou "sim" se todos apontam isso; se algum discorda ou não informa, diz "não confirmado" e o motivo. | Revisão da PR #175 (P3-06 fatia 2), issue #176, FIX-P3-06-13 | 2026-11-01 |
+| R-39 | Quando um comportamento já descrito no backlog muda, a frase antiga é reescrita (pode dizer "antes: ..."); nunca um remendo entre parênteses que a contradiz; grep no texto antigo e atualizar tudo no mesmo commit. | Revisão da PR #177 (FIX-P3-06-13), issue #178, FIX-P3-06-14 | 2026-11-01 |
