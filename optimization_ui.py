@@ -25,7 +25,7 @@ from elevation_guard import is_process_elevated
 from restore_jobs import Job
 from ui_timers import WindowTimers
 from hardware_profile import profile_lines, SCAN_CONFIRMATION
-from bios_guidance import bios_guidance_lines
+from bios_guidance import bios_guidance_lines, bios_steps_text
 from atomic_write import atomic_write_text
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
@@ -314,6 +314,10 @@ class OptimizationPanel(tk.Frame):
         self.btn_scan=ttk.Button(actions,text='Analisar este PC',style='Primary.TButton',command=self.scan)
         self.btn_scan.pack(side='left',padx=(0,9))
         ttk.Button(actions,text='Exportar diagnóstico JSON',command=self.export_report).pack(side='left')
+        # P3-06 fatia 2: só abre uma janela de leitura; liga depois do primeiro diagnóstico.
+        self.btn_bios_steps=ttk.Button(actions,text='Ver passo a passo',command=self.show_bios_steps)
+        self.btn_bios_steps.pack(side='left',padx=(9,0))
+        self.btn_bios_steps.configure(state='disabled')
         self.report_text=self._text_area(area)
         self._write(self.report_text,'Nenhuma análise executada. Clique em “Analisar este PC”.\n\n'
                     'Princípio do estudo Honest: avaliar Windows, GPU, firmware e resultados com benchmarks.\n'
@@ -1016,7 +1020,29 @@ class OptimizationPanel(tk.Frame):
                       '','Nenhuma configuração modificada.'])
         self._write(self.report_text,'\n'.join(lines))
         self.note.set('Diagnóstico concluído. Não foi aplicado qualquer ajuste.')
+        self.btn_bios_steps.configure(state='normal')
         self.load_plans()
+
+    def show_bios_steps(self):
+        """Janela só de leitura com o passo a passo da BIOS (sem link, sem download, sem timer)."""
+        if not self.report:
+            return None
+        old=getattr(self,'_bios_steps_window',None)
+        if old is not None and old.winfo_exists():
+            old.destroy()
+        window=tk.Toplevel(self)
+        window.title('BIOS — passo a passo (só orientação)')
+        window.configure(bg=BG)
+        holder=tk.Frame(window,bg=PANEL);holder.pack(fill='both',expand=True,padx=12,pady=(12,6))
+        txt=tk.Text(holder,bg=PANEL,fg=TEXT,relief='flat',bd=0,wrap='word',
+                    font=('Segoe UI',10),padx=14,pady=12,width=80,height=22)
+        scroll=ttk.Scrollbar(holder,orient='vertical',command=txt.yview)
+        txt.configure(yscrollcommand=scroll.set)
+        scroll.pack(side='right',fill='y');txt.pack(side='left',fill='both',expand=True)
+        self._write(txt,bios_steps_text(self.report.get('bios_guidance') or {}))
+        ttk.Button(window,text='Fechar',command=window.destroy).pack(anchor='e',padx=12,pady=(0,12))
+        self._bios_steps_window=window
+        return window
 
     def export_report(self):
         if not self.report:
