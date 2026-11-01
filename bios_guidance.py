@@ -61,7 +61,7 @@ REASON_MIXED = 'Os módulos de memória informam velocidades diferentes; não d�
 REASON_UNITS = ('A velocidade configurada é metade da informada pelo módulo; pode ser só diferença '
                 'de unidade (MHz e MT/s), então não dá para saber.')
 # Motivos que a tela aceita para cada estado (R-32); o de "desligado" com números
-# é conferido por _REASON_OFF.
+# é conferido por _off_reason_ok() (padrão _REASON_OFF + números coerentes).
 _ACCEPTED_REASONS = {
     XMP_OFF: {_DEFAULT_REASONS[XMP_OFF]},
     XMP_ON: {_DEFAULT_REASONS[XMP_ON]},

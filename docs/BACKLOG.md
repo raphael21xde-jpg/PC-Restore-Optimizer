@@ -641,15 +641,17 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
     - na tela, entrada estranha vira "não confirmado"/"não identificado"/"não disponível", nunca erro; só são exibidos os motivos que o próprio módulo gera, e o passo a passo é sempre regenerado pela família (o campo `steps` do relatório é ignorado) — regra R-32;
     - Resizable BAR: "não verificado nesta versão", só passo a passo (inclui "não mude o CSM nem o modo de inicialização");
     - não recomenda atualizar a BIOS: "O app não pede para atualizar a BIOS. Se você decidir atualizar, use só o site oficial do fabricante; atualizar BIOS tem risco"; sem link nem download;
-    - passo a passo genérico (DEL/F2, e para placa não identificada ou PC de marca "DEL ou F2 (ou a tecla indicada na tela de abertura)"; ASUS "AI Tweaker / D.O.C.P / EXPO", MSI "OC / XMP / EXPO", Gigabyte "Tweaker / XMP / EXPO", ASRock "OC Tweaker / XMP / EXPO"), "na dúvida, saia sem salvar" e, no fim, "se o PC não ligar, limpe a CMOS seguindo o manual da placa"; as linhas "verificar"/"manual" que `inspect_pc()` já gerava ficaram iguais.
+    - passo a passo genérico (DEL/F2, e para placa não identificada ou PC de marca "DEL ou F2 (ou a tecla indicada na tela de abertura)"; ASUS "AI Tweaker / D.O.C.P / EXPO", MSI "OC / XMP / EXPO", Gigabyte "Tweaker / XMP / EXPO", ASRock "OC Tweaker / XMP / EXPO"), "na dúvida, saia sem salvar" e, no fim, "Se o PC não ligar depois de uma mudança, limpe a CMOS (volta a BIOS ao padrão de fábrica, pelo botão ou jumper descrito no manual)"; as linhas "verificar"/"manual" que `inspect_pc()` já gerava ficaram iguais.
 - **Fatia 2 — `pronto`**: ler o estado do Resizable BAR só lendo (consulta a definir, sem administrador e sem alterar nada) e um botão "Ver passo a passo" separado na aba.
 ### FIX-P3-06-02 · Ressalvas da revisão da PR #150 (BIOS só orientação) — `concluído`
-- Branch `auto/FIX-P3-06-02-ressalvas-150`. As 5 ressalvas da revisão da PR #150 (P3-06 fatia 1) e o que foi feito:
-  1. **Motivo de "desligado" com números adulterados era exibido:** o padrão `_REASON_OFF` aceitava qualquer número (ex.: "configurada a 9999 MT/s e o módulo informa 1 MT/s"). Agora ele captura os dois números e o ajudante novo `_off_reason_ok()` só aceita se `0 < configurada < informada` e a configurada não for a metade exata da informada; senão a tela mostra o motivo padrão de "desligado". JSON ruim nunca gera erro (regra nova R-34).
+- Branch `auto/FIX-P3-06-02-ressalvas-150`. As 5 ressalvas e a observação 6 da revisão da PR #150 (P3-06 fatia 1, veredito @0d9bf999b191) e o que foi feito:
+  1. **Motivo de "desligado" com números adulterados era exibido:** o padrão `_REASON_OFF` aceitava qualquer número (ex.: "configurada a 9999 MT/s e o módulo informa 1 MT/s"). Agora ele captura os dois números e o ajudante novo `_off_reason_ok()` só aceita se `0 < configurada < informada` e a configurada não for a metade exata da informada; senão a tela mostra o motivo padrão de "desligado". JSON ruim nunca gera erro (regra nova R-34, juntada depois à R-32 na poda de 01/11/2026).
   2. **Docstrings desatualizadas:** a do módulo e a de `xmp_state` agora dizem "algum abaixo e nenhum acima" e citam `REASON_MIXED` (módulos diferentes) e `REASON_UNITS` (metade exata).
-  3. **Termos técnicos sem explicação no passo a passo:** os termos ficaram, mas explicados: "UEFI (o nome atual da BIOS)", "Above 4G Decoding (opção que deixa a placa de vídeo usar mais memória)", "CSM (modo de compatibilidade antigo)" e "limpe a CMOS (volta a BIOS ao padrão de fábrica, pelo botão ou jumper descrito no manual)".
-  4. **Faltava teste de ida e volta:** o motivo que `xmp_state` gera (módulos 2400/3200) passa por `bios_guidance_lines` e aparece igual (`assertEqual`).
-  5. **Modelo da placa/PC no JSON exportado:** fica no item próprio FIX-P3-06-01 (logo abaixo), sem mudança aqui.
+  3. **Posição do FIX-P3-06-01 no backlog** (parecia parte do P3-05): sem mudança nesta fatia; já está resolvida, o FIX-P3-06-01 fica logo depois do P3-06 e deste FIX-P3-06-02.
+  4. **Contador da poda em `docs/REGRAS.md`** (continuava em "6"): resolvido pela poda de 01/11/2026 (issue #157); o contador está em 0 e a próxima poda conta a partir da R-35.
+  5. **Termos técnicos sem explicação no passo a passo:** os termos ficaram, mas explicados: "UEFI (o nome atual da BIOS)", "Above 4G Decoding (opção que deixa a placa de vídeo usar mais memória)", "CSM (modo de compatibilidade antigo)" e "limpe a CMOS (volta a BIOS ao padrão de fábrica, pelo botão ou jumper descrito no manual)".
+  6. **Observação: modelo da placa/PC no JSON exportado:** fica no item próprio FIX-P3-06-01 (logo abaixo), sem mudança aqui.
+  - Teste extra da fatia (não era ressalva da #150): ida e volta, o motivo que `xmp_state` gera (módulos 2400/3200) passa por `bios_guidance_lines` e aparece igual (`assertEqual`).
   - Escolhas de design (as mais seguras): número com casas decimais continua aceito se for coerente; "iguais", "configurada 0" e "informada 0" também viram o motivo padrão; os termos técnicos não foram removidos, porque a pessoa precisa achá-los na tela da BIOS. Os testes antigos que conferem "limpe a CMOS" e "Não mude o CSM" continuam valendo sem mudança.
   - Testes: `tests/test_bios_guidance_fix_p3_06_02.py` (dicts sintéticos, sem comando, sem Tk).
 ### FIX-P3-06-01 · Revisar o que o JSON exportado leva (modelo da placa/PC) — `concluído` (branch `auto/FIX-P3-06-01-json-sem-modelo`)
@@ -662,6 +664,13 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   - bateria: `None` e `[]` ("o Windows não listou bateria") são mantidos e lista com item estranho ("não sei") sai, para o perfil calculado do arquivo ser igual ao da tela;
   - o `export_diagnostics` do `app.py` não muda (é outro relatório, fora desta fatia).
 - Testes: `tests/test_export_fix_p3_06_01.py` (dicts sintéticos, `TemporaryDirectory`, PowerShell simulado, sem Tk).
+### FIX-P3-06-03 · Ressalvas da PR #155 — `concluído`
+- Branch `auto/FIX-P3-06-03-ressalvas-155` (issue #156). Ressalvas não bloqueantes da revisão da PR #155 (veredito @6c8f7ff47034). Nada disso muda o que o app faz:
+  1. **Lista de ressalvas do FIX-P3-06-02:** trocada pela lista real da revisão da #150 (5 ressalvas + observação 6). O "teste de ida e volta" passou a ser citado como teste extra da fatia.
+  2. **Texto antigo da CMOS no P3-06 fatia 1:** agora cita o texto que o app mostra, copiado de `bios_guidance.py` (R-31).
+  3. **Comentário em `bios_guidance.py`:** diz que o motivo de "desligado" é conferido por `_off_reason_ok()` (padrão `_REASON_OFF` + números coerentes). Nenhuma linha de código mudou.
+  4. **Testes de ida e volta sem `lines[3]`:** em `tests/test_bios_guidance_fix_p3_06_02.py`, a linha do motivo é achada pelo rótulo "Perfil de memória (XMP/EXPO):" (a linha seguinte) e o teste confere que o motivo aparece uma vez só.
+- Escolhas de design (as mais seguras): as ressalvas 3 e 4 da #150 são registradas como já resolvidas, sem mexer em `docs/REGRAS.md`; o teste acha a linha pelo rótulo, não pela posição; sem regra nova.
 ### P3-07 · Check-up de segurança (somente leitura) — `pronto` (depois de P3-01)
 - **Pedido do Raphael em 23/10/2026.** Procura sinais de minerador escondido e de programas suspeitos. **Não é antivírus:** o app nunca apaga, nunca encerra processos, nunca muda o Defender e nunca coloca nada em quarentena. Se achar algo, explica e recomenda a "Verificação offline" do Defender e uma segunda opinião (Malwarebytes, só do site oficial).
 - **O que olha (só leitura):**
