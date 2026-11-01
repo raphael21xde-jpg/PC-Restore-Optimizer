@@ -66,14 +66,27 @@ class OffReasonNumbersTest(unittest.TestCase):
         state, reason = bg.xmp_state(ram)
         self.assertEqual(state, bg.XMP_OFF)
         lines = bg.bios_guidance_lines({'xmp': state, 'xmp_reason': reason})
-        shown = lines[3].strip()
-        self.assertEqual(shown, reason)
+        self.assertEqual(_reason_after_label(lines), reason)
+        self.assertEqual(sum(line.strip() == reason for line in lines), 1)
 
     def test_round_trip_from_build_bios_guidance(self):
         hardware = {'ram': [{'Speed': 3200, 'ConfiguredClockSpeed': 2400}]}
         guidance = bg.build_bios_guidance(hardware, {})
         lines = bg.bios_guidance_lines(guidance)
-        self.assertEqual(lines[3].strip(), guidance['xmp_reason'])
+        reason = guidance['xmp_reason']
+        self.assertEqual(_reason_after_label(lines), reason)
+        self.assertEqual(sum(line.strip() == reason for line in lines), 1)
+
+
+_XMP_LABEL = 'Perfil de memória (XMP/EXPO):'
+
+
+def _reason_after_label(lines):
+    """Acha a linha do perfil de memória pelo rótulo e devolve a seguinte (o motivo)."""
+    for index, line in enumerate(lines):
+        if line.strip().startswith(_XMP_LABEL):
+            return lines[index + 1].strip()
+    raise AssertionError('linha do perfil de memória não encontrada')
 
 
 class PlainTermsTest(unittest.TestCase):
