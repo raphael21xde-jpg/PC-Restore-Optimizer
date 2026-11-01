@@ -5,6 +5,7 @@ Only the Power tab can request a reversible power-plan change after confirmation
 """
 from __future__ import annotations
 import json
+import ntpath
 import os
 from pathlib import Path
 import threading
@@ -115,6 +116,21 @@ _LEGACY_KNOWN_MESSAGES = {
 
 BG='#0C1220'; PANEL='#192438'; TEXT='#EFF4FF'; MUTED='#9CAAC0'; ACCENT='#9C85FF';
 GREEN='#5DDEB1'; AMBER='#F3BE67'; BORDER='#2B3952'
+
+
+def _error_text(exc):
+    """FIX-P3-06-08: texto de erro para a tela, sem caminhos pessoais.
+
+    OSError vira "nome-do-arquivo: TipoDoErro" (só o nome, nunca a pasta, que
+    pode ter o nome do usuário); ValueError é texto escrito pelo próprio app e
+    aparece inteiro; qualquer outro erro mostra só o tipo.
+    """
+    if isinstance(exc, OSError):
+        name = ntpath.basename(str(exc.filename)) if exc.filename else ''
+        return (name or 'arquivo') + ': ' + type(exc).__name__
+    if isinstance(exc, ValueError):
+        return str(exc)
+    return type(exc).__name__
 
 
 def looks_like_presentmon_installer(path):
@@ -839,7 +855,7 @@ class OptimizationPanel(tk.Frame):
                  'min_fps':round(1000/result['worst_ms'],2),'max_fps':round(1000/result['median_frametime_ms'],2)}
         try:insert_run(self.bench_journal,scenario,phase,metrics)
         except (OSError,ValueError) as exc:
-            messagebox.showerror('Comparador','Falha ao registrar: '+str(exc));return
+            messagebox.showerror('Comparador','Falha ao registrar: '+_error_text(exc));return
         self.note.set('Benchmark de quadros incluído; confira o comparador de FPS e 1% low.')
         self.capture_status.set('Registrado como '+phase.upper()+' no comparador de benchmarks.')
 
@@ -1490,7 +1506,7 @@ class OptimizationPanel(tk.Frame):
             self.note.set('Benchmark incluído. Nenhum ajuste de Windows realizado.')
             self.refresh_bench()
         except Exception as exc:
-            messagebox.showerror('Importar benchmark',str(exc))
+            messagebox.showerror('Importar benchmark',_error_text(exc))
 
     def refresh_bench(self):
         scenario=' '.join(self.scenario.get().strip().split())
