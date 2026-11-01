@@ -41,7 +41,7 @@ from recovery_kit import create_plan, load_plan, summarize_plan
 from optimization_ui import OptimizationPanel
 from reinstall_audit import audit_backup, audit_text
 from backup_core import atomic_json
-from atomic_write import atomic_write_text
+import choices_store  # FIX-P3-06-09: grava com atomic_write_text dentro da trava
 from transfer_engine import TransferMeter, time_text
 from workflow_ui import build_overview, build_preservation, build_installation
 from choice_migration import merge_preferences
@@ -157,6 +157,9 @@ class App(tk.Tk):
         self._restore_choices()
         self._build()
         self._rehydrate_selected_catalog()
+        # FIX-P3-06-09: base para juntar com o que outra janela gravar depois.
+        self._choices_base=self._choices_doc()
+        self._choices_unsaved=False
         self._tree_roots()
         self.refresh_browser()
         self.refresh_history()
@@ -624,8 +627,8 @@ class App(tk.Tk):
             self.backup_btn.state(['disabled'])
             self.review_feedback.set('Escolhas alteradas. Recalcule o plano antes de copiar.')
         self._update_choices()
-        self._save_choices()
-        self.status.set('Escolhas atualizadas. Gere novamente a revisão antes do backup.')
+        warning=self._save_choices()
+        self.status.set(warning or 'Escolhas atualizadas. Gere novamente a revisão antes do backup.')
         self._refresh_home_metrics()
         if hasattr(self, 'refresh_scan_groups') and hasattr(self, 'tabs') and self.tabs.select()==str(self.home):
             self.refresh_scan_groups()
@@ -2120,24 +2123,50 @@ class App(tk.Tk):
         self.busy=False;self.status.set('Falha: '+error)
         messagebox.showerror('Operação interrompida',error)
 
+    def _choices_doc(self):
+        """Estado de escolhas desta janela, como vai para o arquivo (cópia solta)."""
+        doc={'choices':self.choices,'format_disks':[d for d in DISKS if self.format_vars[d].get()],
+             'destination':self.dest.get(), 'catalog_choices':self.catalog_choices,
+             'auto_save_paths':sorted(self.auto_save_paths),
+             'approved_catalog_paths':self.approved_catalog_paths,
+             'personal_paths':sorted(self.personal_paths),
+             'browser_keep_paths':sorted(self.browser_keep_paths),
+             'browser_vaults':self.browser_vaults, 'retained_discoveries':self.retained_discoveries,
+             'cleanup_candidates':sorted(self.cleanup_candidates),
+             'catalog_snapshots':{key:{field: item.get(field) for field in
+                 ('kind','name','category','paths','possible_paths','install_location',
+                  'registry_id','edition','publisher','version','observed_volumes')}
+                 for key, item in self.catalog_items.items()
+                 if self.catalog_choices.get(key) in ('keep','skip')}}
+        # cópia solta: a base não pode mudar junto com os dicionários da janela
+        return json.loads(json.dumps(doc))
+
     def _save_choices(self):
+        """Salva juntando com o que outra janela gravou (FIX-P3-06-09).
+
+        Devolve None quando salvou, ou um aviso curto (sem caminhos) para a
+        barra de status quando não salvou ou quando houve conflito."""
+        name=self.local_state.name
         try:
-            doc={'choices':self.choices,'format_disks':[d for d in DISKS if self.format_vars[d].get()],
-                 'destination':self.dest.get(), 'catalog_choices':self.catalog_choices,
-                 'auto_save_paths':sorted(self.auto_save_paths),
-                 'approved_catalog_paths':self.approved_catalog_paths,
-                 'personal_paths':sorted(self.personal_paths),
-                 'browser_keep_paths':sorted(self.browser_keep_paths),
-                 'browser_vaults':self.browser_vaults, 'retained_discoveries':self.retained_discoveries,
-                 'cleanup_candidates':sorted(self.cleanup_candidates),
-                 'catalog_snapshots':{key:{field: item.get(field) for field in
-                     ('kind','name','category','paths','possible_paths','install_location',
-                      'registry_id','edition','publisher','version','observed_volumes')}
-                     for key, item in self.catalog_items.items()
-                     if self.catalog_choices.get(key) in ('keep','skip')}}
-            # FIX-P3-06-08: temporário de nome único, apagado se a gravação falhar.
-            atomic_write_text(self.local_state, json.dumps(doc,indent=2))
-        except OSError:pass
+            mine=self._choices_doc()
+            base=getattr(self,'_choices_base',None)
+            status,_merged,conflicts=choices_store.save_merged(self.local_state, mine, base, lock_timeout=0)
+        except OSError:
+            self._choices_unsaved=True
+            return f'Não foi possível salvar as escolhas em {name} agora. Elas serão salvas na próxima mudança.'
+        if status=='ocupado':
+            # mantém a base: a próxima gravação leva esta diferença junto
+            self._choices_unsaved=True
+            return 'Escolhas não salvas agora: outra janela está gravando. Serão salvas na próxima mudança.'
+        if status=='ilegivel':
+            self._choices_unsaved=True
+            return f'O arquivo {name} não pôde ser lido e não foi alterado. As escolhas desta janela não foram salvas.'
+        self._choices_base=mine
+        self._choices_unsaved=False
+        if conflicts:
+            return (f'Escolhas salvas junto com as de outra janela. Em {len(conflicts)} item(ns) '
+                    'as duas janelas discordavam; ficou a opção mais segura.')
+        return None
 
     def import_previous_choices(self):
         """Import a user's old choices, not backups or destructive disk settings."""
@@ -2211,7 +2240,12 @@ class App(tk.Tk):
                                      'Não foi possível finalizar a sessão com segurança. Tente Parar e salvar sessão.')
                 return
         self.optimizer_panel.shutdown_capture()
-        self._save_choices();self.destroy()
+        self._save_choices()
+        if getattr(self,'_choices_unsaved',False) and not messagebox.askyesno('Escolhas não salvas',
+                'As últimas escolhas não foram salvas (outra janela está gravando). Fechar mesmo assim?',
+                default='no', parent=self):
+            return
+        self.destroy()
 
 
 if __name__=='__main__':

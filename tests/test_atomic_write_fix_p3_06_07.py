@@ -131,7 +131,8 @@ class NoFixedTmpNameInSourceTests(unittest.TestCase):
             source = (ROOT / name).read_text(encoding='utf-8')
             self.assertNotIn("with_suffix('.tmp')", source, name)
             self.assertNotIn("with_suffix('.json.tmp')", source, name)
-            self.assertIn('atomic_write_text', source, name)
+            # FIX-P3-06-09: app.py grava via choices_store (que usa atomic_write_text).
+            self.assertIn('choices_store' if name == 'app.py' else 'atomic_write_text', source, name)
 
 
 class UiSaveMonitorSourceTests(unittest.TestCase):
