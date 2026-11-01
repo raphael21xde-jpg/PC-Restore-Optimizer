@@ -221,6 +221,7 @@ class CheckupButtonTests(unittest.TestCase):
             self.panel.security_checkup()
         read.assert_not_called()
         self.assertEqual(self.asked[0][1], sc.CHECKUP_CONFIRMATION)
+        self.assertIn('tarefas agendadas', self.asked[0][1])  # P3-07 fatia 2
         self.assertIsNone(self.panel._checkup_job)
         self.assertIsNone(getattr(self.panel, '_checkup_window', None))
         self.assertFalse(self.panel.btn_checkup.instate(['disabled']))

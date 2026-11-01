@@ -1,16 +1,19 @@
-"""P3-07 fatia 1: check-up de segurança, somente leitura.
+"""P3-07: check-up de segurança, somente leitura.
 
 Olha os programas que abrem com o Windows (chaves Run/RunOnce e pastas de
-Inicialização) e os processos em execução, e marca cada item como OK,
-atenção ou suspeito, com o motivo em português simples.
+Inicialização), as tarefas agendadas (fatia 2) e os processos em execução, e
+marca cada item como OK, atenção ou suspeito, com o motivo em português simples.
 
 Regras desta fatia:
 - só lê: nada é mudado, encerrado ou tirado do lugar, e não pede administrador;
 - da linha de comando de um programa só fica o executável (argumentos podem
   ter senhas ou tokens); dos processos só o nome e o caminho do executável;
+  das tarefas agendadas só a pasta, o nome e o executável (os argumentos nem
+  são pedidos ao Windows);
 - a pasta do usuário vira %USERPROFILE%, a de outros usuários vira
   "<outro usuário>" e o nome do usuário (palavra inteira) vira %USERNAME%,
-  só no texto mostrado: a classificação usa o caminho original;
+  só no texto mostrado: a classificação usa o caminho original; um SID
+  (como S-1-5-21-...) vira <SID>;
 - na dúvida o item fica "atenção", nunca "OK";
 - as funções são puras e recebem os dados já lidos; o PowerShell real só é
   usado por ``read_checkup`` quando nenhum ``ps`` é passado (importado na hora,
@@ -28,8 +31,8 @@ STATE_SUSPECT = 'suspeito'
 _STATES = (STATE_OK, STATE_ATTENTION, STATE_SUSPECT)
 
 CHECKUP_CONFIRMATION = (
-    'O check-up vai só ler a lista de programas que abrem com o Windows e dos programas '
-    'abertos agora (processos), com o lugar de onde cada um roda.\n\n'
+    'O check-up vai só ler a lista de programas que abrem com o Windows, das tarefas '
+    'agendadas e dos programas abertos agora (processos), com o lugar de onde cada um roda.\n\n'
     'Nada é mudado, encerrado ou tirado do lugar, e não precisa de administrador. '
     'Pode levar alguns segundos.\n\nContinuar?')
 
@@ -41,6 +44,9 @@ RECOMMENDATION = (
     'estiver aberto). Para uma segunda opinião, use o Malwarebytes, baixado só do site oficial.')
 NOT_CERTAIN = ('"Suspeito" não é certeza de problema: é um sinal para conferir. '
                '"Atenção" quer dizer que vale a pena saber o que é.')
+TASKS_NOTE = 'Sem administrador, o Windows pode não mostrar algumas tarefas.'
+TASKS_EMPTY = ('Nenhuma tarefa agendada para mostrar (as da Microsoft que rodam da pasta do '
+               'Windows não aparecem).')
 ALL_CLEAR = 'Nos itens conferidos não apareceu nenhum sinal de alerta.'
 NOT_ALL_CHECKED = ('Nenhum item conferido ficou como atenção ou suspeito, mas o check-up '
                    'não conseguiu conferir tudo (veja acima).')
@@ -68,6 +74,8 @@ REASON_STARTUP_FILE = 'startup_file'
 REASON_UNREADABLE = 'unreadable'
 REASON_NOT_FULL_PATH = 'not_full_path'
 REASON_OTHER_PLACE = 'other_place'
+REASON_COM_HANDLER = 'com_handler'
+REASON_MS_FOLDER_OUTSIDE = 'ms_folder_outside'
 
 REASON_TEXTS = {
     REASON_OK: 'Fica numa pasta de programas do Windows (Windows ou Arquivos de Programas).',
@@ -86,6 +94,10 @@ REASON_TEXTS = {
     REASON_UNREADABLE: 'O caminho veio vazio ou não pôde ser lido.',
     REASON_NOT_FULL_PATH: 'O caminho completo não está escrito; o app não confere de onde ele abre.',
     REASON_OTHER_PLACE: 'Fica fora das pastas de programas do Windows (Windows ou Arquivos de Programas).',
+    REASON_COM_HANDLER: ('A tarefa abre um componente do Windows em vez de um arquivo de programa; '
+                         'o app não confere o que esse componente faz.'),
+    REASON_MS_FOLDER_OUTSIDE: ('Está na pasta de tarefas da Microsoft, mas roda de fora da pasta do '
+                               'Windows.'),
 }
 ADVICE_TEXTS = {
     STATE_SUSPECT: ('Não mexa no arquivo por conta própria. Faça a verificação recomendada '
@@ -101,6 +113,7 @@ SOURCE_TEXTS = {
     'runonce_all': 'registro, todos os usuários, abre uma vez',
     'startup_user': 'pasta Inicialização deste usuário',
     'startup_all': 'pasta Inicialização de todos os usuários',
+    'task': 'tarefa agendada',
 }
 _STARTUP_SOURCES = ('startup_user', 'startup_all')
 
@@ -110,6 +123,7 @@ ERROR_TEXTS = {
     'startup': 'Pastas de Inicialização: não foi possível ler.',
     'startup_part': 'Não foi possível ler parte das pastas de Inicialização.',
     'processes': 'Processos em execução: não foi possível ler.',
+    'tasks': 'Tarefas agendadas: não foi possível ler.',
 }
 ERROR_GENERIC = 'Parte do check-up: não foi possível ler.'
 
@@ -144,6 +158,16 @@ STARTUP_QUERY = (
 PROCESS_QUERY = ('Get-CimInstance Win32_Process -Property Name,ExecutablePath | '
                  'Select-Object Name,ExecutablePath | ConvertTo-Json -Compress')
 
+# Só a pasta, o nome e o executável de cada ação; Arguments e WorkingDirectory
+# nem são pedidos (podem ter senha ou token). Ação COM não tem arquivo: Com=$true.
+TASK_QUERY = (
+    '$out=foreach($t in @(Get-ScheduledTask)){ foreach($a in @($t.Actions)){ '
+    '[pscustomobject]@{TaskPath=[string]$t.TaskPath;TaskName=[string]$t.TaskName;'
+    'Execute=[string]$a.Execute;'
+    "Com=($a.CimClass.CimClassName -eq 'MSFT_TaskComHandlerAction')} } }; "
+    'ConvertTo-Json -InputObject @($out) -Compress')
+MS_TASK_FOLDER = '\\microsoft\\'
+
 _DRIVE_PATH = re.compile(r'^[a-z]:\\')
 _DRIVE_ROOT_FILE = re.compile(r'^[a-z]:\\[^\\]+$')
 _ENV_VAR = re.compile(r'%([^%]+)%')
@@ -156,6 +180,7 @@ _KEEP_USERS = ('public', 'default', 'default user', 'all users', '<outro usuári
 # A extensão termina quando não vem letra, número ou "_" colado (app.exe--token=X vira app.exe).
 _COMMAND_EXE = re.compile(r'^(.*?\.(?:exe|bat|cmd|vbs|ps1|js))(?![A-Za-z0-9_])', re.IGNORECASE)
 _NT_PREFIX = re.compile(r'^(?:\\\\\?\\|\\\?\?\\)(UNC\\)?', re.IGNORECASE)
+_SID = re.compile(r'(?<![A-Za-z0-9])S-1-\d+(?:-\d+)+(?![0-9])', re.IGNORECASE)
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 MAX_NAME = 80
 
@@ -207,7 +232,7 @@ def sanitize_path(path, env=None) -> str:
             return match.group(0)
         return match.group(1) + '<outro usuário>'
     text = _OTHER_USER.sub(other, text)
-    return _hide_user_name(text, env)
+    return _SID.sub('<SID>', _hide_user_name(text, env))
 
 
 def _hide_user_name(text, env):
@@ -328,6 +353,9 @@ def _strip_nt_prefix(path):
 def _expand(path, env):
     def repl(match):
         value = _env_get(env, match.group(1))
+        if not value and match.group(1).lower() in ('windir', 'systemroot'):
+            # As tarefas do Windows usam %windir%; as duas variáveis são a mesma pasta.
+            value = _env_get(env, 'SystemRoot') or _env_get(env, 'windir')
         return value if value else match.group(0)
     return _ENV_VAR.sub(repl, path)
 
@@ -458,6 +486,122 @@ def classify_processes(procs, env=None):
     return {'items': list(grouped.values()), 'unchecked': unchecked}
 
 
+def _task_executable(execute) -> str:
+    """O executável de uma ação de tarefa, só quando dá para ter certeza de onde termina (R-40).
+
+    O campo já deveria ser só o caminho. Devolve '' (nada é mostrado) se tiver aspa
+    no meio ou sem fechar, espaço sem aspas fechadas, algo depois da extensão
+    (ex.: ``a.exe --token=X``), nenhuma extensão conhecida ou pedaço que parece argumento.
+    """
+    if not isinstance(execute, str):
+        return ''
+    text = execute.strip()
+    if text.startswith('"'):
+        if len(text) < 2 or not text.endswith('"') or text.count('"') != 2:
+            return ''
+        inner = text[1:-1]
+        if inner != inner.strip():
+            return ''
+    else:
+        if '"' in text or any(ch.isspace() for ch in text):
+            return ''
+        inner = text
+    found = _COMMAND_EXE.match(inner)
+    if not found or found.group(1) != inner:
+        return ''
+    return _only_if_not_argument(inner)
+
+
+def _in_ms_folder(task_path) -> bool:
+    if not isinstance(task_path, str):
+        return False
+    return ('\\' + task_path.strip().lstrip('\\')).lower().startswith(MS_TASK_FOLDER)
+
+
+def _task_name(task_path, task_name) -> str:
+    folder = task_path if isinstance(task_path, str) else ''
+    name = task_name if isinstance(task_name, str) else ''
+    if folder and name and not folder.endswith('\\'):
+        folder += '\\'
+    return folder + name
+
+
+def _outside_windows_folder(exe, env) -> bool:
+    norm = _key(_expand(_strip_nt_prefix(exe.strip()), env))
+    if not _DRIVE_PATH.match(norm) and not norm.startswith('\\\\'):
+        return False
+    system_root = _env_get(env, 'SystemRoot') or _env_get(env, 'windir') or 'C:\\Windows'
+    return not _under(norm, system_root)
+
+
+def _classify_task(row, env):
+    """(estado, motivo, executável mostrado) de uma ação; None quando a tarefa não aparece."""
+    execute = row.get('Execute')
+    in_ms = _in_ms_folder(row.get('TaskPath'))
+    if row.get('Com') is True and not (isinstance(execute, str) and execute.strip()):
+        # Ação COM não tem arquivo: fora da pasta da Microsoft fica "atenção", nunca OK.
+        return None if in_ms else (STATE_ATTENTION, REASON_COM_HANDLER, '')
+    exe = _task_executable(execute)
+    if not exe:
+        empty = not (isinstance(execute, str) and execute.strip())
+        state, reason = STATE_ATTENTION, (REASON_UNREADABLE if empty else REASON_NOT_FULL_PATH)
+        guess = _command_guess(execute)
+        if guess and classify_path(None, guess, env)[0] == STATE_SUSPECT:
+            state, reason = STATE_SUSPECT, REASON_SYSTEM_NAME
+        return state, reason, ''
+    state, reason = classify_path(None, exe, env)
+    if in_ms:
+        if state == STATE_OK:
+            return None
+        if _outside_windows_folder(exe, env):
+            base = ntpath.basename(_key(exe.strip()))
+            system = base in SYSTEM_NAMES or base == EXPLORER
+            state = STATE_SUSPECT if system else STATE_ATTENTION
+            reason = REASON_MS_FOLDER_OUTSIDE
+        return state, reason, exe
+    if state != STATE_SUSPECT and ntpath.basename(_key(exe.strip())) in SCRIPT_HOSTS:
+        state, reason = STATE_ATTENTION, REASON_SCRIPT_HOST
+    return state, reason, exe
+
+
+def classify_tasks(rows, env=None):
+    """Classifica as ações das tarefas agendadas (dados já lidos).
+
+    O nome da tarefa não conta como nome de programa. Tarefa da pasta da Microsoft
+    só aparece se o executável não der OK. Tarefas iguais (mesmo nome e mesmo
+    executável) aparecem uma vez.
+    """
+    env = _env(env)
+    grouped = {}
+    for row in _as_list(rows):
+        if not isinstance(row, dict):
+            continue
+        found = _classify_task(row, env)
+        if found is None:
+            continue
+        state, reason, exe = found
+        name = _task_name(row.get('TaskPath'), row.get('TaskName'))
+        execute = row.get('Execute') if isinstance(row.get('Execute'), str) else ''
+        key = (name.lower(), _key(_strip_nt_prefix(execute.strip())) if execute.strip() else '',
+               row.get('Com') is True)
+        if key in grouped:
+            grouped[key]['count'] += 1
+            continue
+        grouped[key] = _item('task', name, exe, state, reason, env)
+    return list(grouped.values())
+
+
+def _task_entries(raw):
+    """Linhas da consulta das tarefas: só os quatro campos pedidos, nada mais."""
+    rows = []
+    for row in _as_list(raw):
+        if not isinstance(row, dict):
+            continue
+        rows.append({'TaskPath': row.get('TaskPath'), 'TaskName': row.get('TaskName'),
+                     'Execute': row.get('Execute'), 'Com': row.get('Com') is True})
+    return rows
+
+
 def _run_entries(raw):
     entries, failed = [], False
     for row in _as_list(raw):
@@ -491,7 +635,7 @@ def _startup_entries(raw):
 
 
 def read_checkup(ps=None, env=None):
-    """Faz as três consultas (só leitura) e classifica. Erro vira código, nunca texto do sistema."""
+    """Faz as quatro consultas (só leitura) e classifica. Erro vira código, nunca texto do sistema."""
     if ps is None:
         from optimization_engine import _ps as ps  # noqa: PLC0415 - preguiçoso de propósito
     env = _env(env)
@@ -511,12 +655,17 @@ def read_checkup(ps=None, env=None):
             errors.append('startup_part')
     except Exception:  # noqa: BLE001
         errors.append('startup')
+    tasks = []
+    try:
+        tasks = classify_tasks(_task_entries(ps(TASK_QUERY)), env)
+    except Exception:  # noqa: BLE001
+        errors.append('tasks')
     processes = {'items': [], 'unchecked': 0}
     try:
         processes = classify_processes(ps(PROCESS_QUERY), env)
     except Exception:  # noqa: BLE001
         errors.append('processes')
-    return {'autostart': classify_autostart(entries, env), 'processes': processes['items'],
+    return {'autostart': classify_autostart(entries, env), 'tasks': tasks, 'processes': processes['items'],
             'unchecked': processes['unchecked'], 'errors': errors}
 
 
@@ -596,6 +745,8 @@ def checkup_lines(result, env=None):
     autostart_failed = 'run' in errors and 'startup' in errors
     section('PROGRAMAS QUE ABREM COM O WINDOWS', result.get('autostart'), False,
             None if autostart_failed else 'Nenhum programa encontrado nas chaves e pastas de inicialização.')
+    section('TAREFAS AGENDADAS', result.get('tasks'), False, None if 'tasks' in errors else TASKS_EMPTY)
+    lines.insert(len(lines) - 1, '  ' + TASKS_NOTE)
     processes_shown = section('PROCESSOS EM EXECUÇÃO', result.get('processes'), True,
                               None if 'processes' in errors else 'Nenhum processo foi informado.')
     unchecked = result.get('unchecked')

@@ -195,20 +195,22 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(out['items'], [])
 
 
-def _fake_ps(run=None, startup=None, procs=None, fail=()):
+def _fake_ps(run=None, startup=None, procs=None, fail=(), tasks=None):
     calls = []
 
     def ps(code, timeout=22):
         calls.append(code)
         if 'Win32_Process' in code:
             kind = 'processes'
+        elif 'Get-ScheduledTask' in code:
+            kind = 'tasks'
         elif 'GetFolderPath' in code:
             kind = 'startup'
         else:
             kind = 'run'
         if kind in fail:
             raise RuntimeError(r'Acesso negado: C:\Users\Fulano Silva\NTUSER.DAT')
-        return {'run': run, 'startup': startup, 'processes': procs}[kind]
+        return {'run': run, 'startup': startup, 'processes': procs, 'tasks': tasks}[kind]
     ps.calls = calls
     return ps
 
@@ -226,7 +228,7 @@ class ReadCheckupTests(unittest.TestCase):
     def test_queries_are_read_only(self):
         ps = _fake_ps()
         sc.read_checkup(ps, ENV)
-        self.assertEqual(len(ps.calls), 3)
+        self.assertEqual(len(ps.calls), 4)
         code = '\n'.join(ps.calls)
         for key in (r'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
                     r'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
@@ -331,7 +333,7 @@ class ReadCheckupTests(unittest.TestCase):
         import optimization_engine as oe
         with mock.patch.object(oe, '_ps', return_value=None) as ps:
             sc.read_checkup(env=ENV)
-        self.assertEqual(ps.call_count, 3)
+        self.assertEqual(ps.call_count, 4)
 
 
 class SourceTests(unittest.TestCase):
@@ -598,3 +600,253 @@ class FixRessalvas181Tests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def _task(path, name, execute='', com=False):
+    return {'TaskPath': path, 'TaskName': name, 'Execute': execute, 'Com': com}
+
+
+class ScheduledTaskTests(unittest.TestCase):
+    """P3-07 fatia 2: tarefas agendadas, só com dados simulados e ``ps`` falso."""
+
+    def setUp(self):
+        for name in ('run', 'Popen', 'check_output', 'call'):
+            patcher = mock.patch.object(subprocess, name, side_effect=_forbidden)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _one(self, row):
+        items = sc.classify_tasks([row], ENV)
+        self.assertEqual(len(items), 1, items)
+        return items[0]
+
+    def _text(self, result):
+        return '\n'.join(sc.checkup_lines(result, ENV))
+
+    def test_program_files_is_ok(self):
+        for execute in (r'"C:\Program Files\App\app.exe"', r'"C:\Program Files (x86)\App\app.exe"',
+                        r'%ProgramFiles%\App\app.exe', r'"%ProgramFiles(x86)%\App\app.exe"'):
+            with self.subTest(execute=execute):
+                item = self._one(_task('\\', 'Atualizador', execute))
+                self.assertEqual(item['state'], sc.STATE_OK)
+        item = self._one(_task('\\', 'Atualizador', r'"C:\Program Files\App\app.exe"'))
+        self.assertEqual((item['state'], item['reason']), (sc.STATE_OK, sc.REASON_OK))
+        self.assertEqual(item['source'], 'task')
+        self.assertEqual(item['path'], r'C:\Program Files\App\app.exe')
+
+    def test_unquoted_path_with_space_shows_nothing(self):
+        # R-40: sem aspas fechadas, um espaço pode separar argumentos; nada é mostrado.
+        item = self._one(_task('\\', 'Atualizador', r'C:\Program Files\App\app.exe'))
+        self.assertEqual((item['state'], item['reason'], item['path']),
+                         (sc.STATE_ATTENTION, sc.REASON_NOT_FULL_PATH, ''))
+
+    def test_appdata_and_temp_are_attention(self):
+        cases = ((r'%LOCALAPPDATA%\Coisa\coisa.exe', sc.REASON_APPDATA),
+                 (r'C:\Users\Fulano\AppData\Local\Coisa\coisa.exe', sc.REASON_APPDATA),
+                 (r'C:\Windows\Temp\x.exe', sc.REASON_TEMP),
+                 (r'%TEMP%\x.exe', sc.REASON_TEMP))
+        for execute, reason in cases:
+            with self.subTest(execute=execute):
+                item = self._one(_task('\\', 'Coisa', execute))
+                self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, reason))
+
+    def test_svchost_outside_system32_is_suspect(self):
+        item = self._one(_task('\\', 'Servico', r'%APPDATA%\svchost.exe'))
+        self.assertEqual((item['state'], item['reason']), (sc.STATE_SUSPECT, sc.REASON_SYSTEM_NAME))
+
+    def test_task_name_is_not_program_name(self):
+        item = self._one(_task('\\', 'svchost.exe', r'"C:\Program Files\App\app.exe"'))
+        self.assertEqual(item['state'], sc.STATE_OK)
+        text = self._text({'tasks': [item], 'processes': [], 'errors': []})
+        self.assertIn('[OK] \\svchost.exe — tarefa agendada', text)
+
+    def test_microsoft_folder_in_system32_is_hidden(self):
+        rows = [_task('\\Microsoft\\Windows\\Defrag\\', 'ScheduledDefrag', r'%windir%\system32\defrag.exe'),
+                _task('\\Microsoft\\Windows\\X\\', 'Y', r'C:\Windows\System32\svchost.exe'),
+                _task('\\Microsoft\\Office\\', 'Z', r'"C:\Program Files\Microsoft Office\root\a.exe"')]
+        self.assertEqual(sc.classify_tasks(rows, ENV), [])
+        result = sc.read_checkup(_fake_ps(tasks=rows), ENV)
+        self.assertEqual(result['tasks'], [])
+        text = self._text(result)
+        self.assertNotIn('Defrag', text)
+        self.assertIn(sc.TASKS_EMPTY, text)
+        self.assertIn('RESUMO: OK 0 · atenção 0 · suspeito 0', text)
+
+    def test_microsoft_folder_outside_windows_is_shown(self):
+        item = self._one(_task('\\Microsoft\\Windows\\Defrag\\', 'ScheduledDefrag', r'%APPDATA%\defrag.exe'))
+        self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_MS_FOLDER_OUTSIDE))
+        item = self._one(_task('\\microsoft\\Windows\\X\\', 'Y', r'"C:\Users\Fulano Silva\AppData\svchost.exe"'))
+        self.assertEqual((item['state'], item['reason']), (sc.STATE_SUSPECT, sc.REASON_MS_FOLDER_OUTSIDE))
+        text = self._text({'tasks': [item], 'processes': [], 'errors': []})
+        self.assertIn(sc.REASON_TEXTS[sc.REASON_MS_FOLDER_OUTSIDE], text)
+        self.assertIn('[suspeito] \\microsoft\\Windows\\X\\Y — tarefa agendada', text)
+        self.assertNotIn('Fulano', text)
+
+    def test_microsoft_folder_inside_windows_keeps_own_reason(self):
+        item = self._one(_task('\\Microsoft\\Windows\\X\\', 'Y', r'C:\Windows\Temp\a.exe'))
+        self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_TEMP))
+
+    def test_com_handler_is_attention_without_where(self):
+        item = self._one(_task('\\', 'ComTarefa', '', com=True))
+        self.assertEqual((item['state'], item['reason'], item['path']),
+                         (sc.STATE_ATTENTION, sc.REASON_COM_HANDLER, ''))
+        text = self._text({'tasks': [item], 'processes': [], 'errors': []})
+        self.assertIn('[atenção] \\ComTarefa — tarefa agendada', text)
+        self.assertNotIn('Onde:', text)
+        self.assertIn(sc.REASON_TEXTS[sc.REASON_COM_HANDLER], text)
+        # COM na pasta da Microsoft não aparece.
+        self.assertEqual(sc.classify_tasks([_task('\\Microsoft\\Windows\\A\\', 'B', '', com=True)], ENV), [])
+
+    def test_secret_after_or_glued_to_execute_never_shown(self):
+        commands = (r'C:\Program Files\App\a.exe --token=SEGREDO123',
+                    r'"C:\Program Files\App\a.exe" --token=SEGREDO123',
+                    r'"C:\Program Files\App\a.exe --token=SEGREDO123',
+                    r'C:\Tools\a.exe--token=SEGREDO123',
+                    r'C:\Tools\a.exeSEGREDO123',
+                    r'C:\Tools\a"SEGREDO123".exe',
+                    r'C:\Tools\a.exe,SEGREDO123',
+                    r'C:\Tools\app SEGREDO123 C:\a.exe',
+                    r'"C:\Tools\--token=SEGREDO123.exe"',
+                    r'C:\Tools\ferramentaSEGREDO123')
+        for execute in commands:
+            with self.subTest(execute=execute):
+                rows = [_task('\\', 'Tarefa', execute), _task('\\Microsoft\\Windows\\A\\', 'B', execute)]
+                items = sc.classify_tasks(rows, ENV)
+                self.assertNotIn('SEGREDO123', repr(items))
+                for item in items:
+                    self.assertEqual((item['state'], item['reason'], item['path']),
+                                     (sc.STATE_ATTENTION, sc.REASON_NOT_FULL_PATH, ''))
+                result = sc.read_checkup(_fake_ps(tasks=rows), ENV)
+                self.assertNotIn('SEGREDO123', repr(result))
+                self.assertNotIn('SEGREDO123', self._text(result))
+
+    def test_malformed_system_name_outside_windows_is_suspect(self):
+        item = self._one(_task('\\', 'T', r'C:\Users\Fulano Silva\svchost.exe --token=SEGREDO123'))
+        self.assertEqual((item['state'], item['reason'], item['path']),
+                         (sc.STATE_SUSPECT, sc.REASON_SYSTEM_NAME, ''))
+
+    def test_script_host_is_attention(self):
+        for execute in (r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+                        r'%windir%\System32\wscript.exe', 'cmd.exe'):
+            with self.subTest(execute=execute):
+                item = self._one(_task('\\', 'Script', execute))
+                self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_SCRIPT_HOST))
+
+    def test_sid_user_profile_and_user_name_hidden(self):
+        sid = 'S-1-5-21-1111111111-2222222222-3333333333-1001'
+        rows = [_task('\\Fulano Silva\\', 'Sync-' + sid, '"C:\\Users\\Fulano Silva\\AppData\\Local\\' + sid + '\\a.exe"'),
+                _task('\\', 'OneDrive ' + sid, r'"D:\Fulano Silva\x.exe"')]
+        items = sc.classify_tasks(rows, ENV)
+        self.assertEqual(len(items), 2)
+        text = self._text(sc.read_checkup(_fake_ps(tasks=rows), ENV))
+        for leak in (sid, '1111111111', 'Fulano', 'Silva'):
+            self.assertNotIn(leak, repr(items))
+            self.assertNotIn(leak, text)
+        self.assertIn(r'\%USERNAME%\Sync-<SID>', text)
+        self.assertIn(r'%USERPROFILE%\AppData\Local\<SID>\a.exe', text)
+        self.assertIn(r'D:\%USERNAME%\x.exe', text)
+        # A troca só muda o texto: a classificação continua a mesma.
+        self.assertEqual(items[0]['state'], sc.STATE_ATTENTION)
+
+    def test_same_task_shown_once(self):
+        row = _task('\\', 'Repetida', r'%LOCALAPPDATA%\r\r.exe')
+        other = _task('\\', 'Repetida', r'%LOCALAPPDATA%\r\outro.exe')
+        items = sc.classify_tasks([row, dict(row), other], ENV)
+        self.assertEqual(len(items), 2)
+        text = self._text({'tasks': items, 'processes': [], 'errors': []})
+        self.assertEqual(text.count('Onde: %LOCALAPPDATA%\\r\\r.exe\n'), 1)
+
+    def test_fake_ok_in_dict_is_reclassified(self):
+        result = {'tasks': [{'source': 'task', 'name': '\\T', 'path': r'C:\Users\Fulano Silva\AppData\svchost.exe',
+                             'state': sc.STATE_OK, 'reason': sc.REASON_OK},
+                            {'source': 'task', 'name': '\\Com', 'path': '', 'state': sc.STATE_OK,
+                             'reason': sc.REASON_OK}],
+                  'processes': [], 'errors': []}
+        text = self._text(result)
+        self.assertNotIn('[OK]', text)
+        self.assertIn('[suspeito] \\T', text)
+        self.assertIn('[atenção] \\Com', text)
+        self.assertIn('RESUMO: OK 0 · atenção 1 · suspeito 1', text)
+
+    def test_query_does_not_ask_arguments(self):
+        self.assertIn('Get-ScheduledTask', sc.TASK_QUERY)
+        self.assertIn('ConvertTo-Json -InputObject @($out) -Compress', sc.TASK_QUERY)
+        self.assertIn('MSFT_TaskComHandlerAction', sc.TASK_QUERY)
+        for forbidden in ('Arguments', 'WorkingDirectory', 'Disable-ScheduledTask', 'Unregister',
+                          'Set-ScheduledTask', 'Stop-ScheduledTask', 'Start-ScheduledTask', 'RunAs'):
+            self.assertNotIn(forbidden, sc.TASK_QUERY)
+        ps = _fake_ps()
+        sc.read_checkup(ps, ENV)
+        self.assertEqual(sum('Get-ScheduledTask' in code for code in ps.calls), 1)
+
+    def test_task_entries_keep_only_asked_fields(self):
+        raw = {'value': [{'TaskPath': '\\', 'TaskName': 'A', 'Execute': r'C:\a.exe', 'Com': False,
+                          'Arguments': '--token=SEGREDO123'}, None, 'x']}
+        self.assertEqual(sc._task_entries(raw), [_task('\\', 'A', r'C:\a.exe')])
+        self.assertNotIn('SEGREDO123', repr(sc._task_entries(raw)))
+        self.assertEqual(sc._task_entries(None), [])
+        self.assertEqual(sc._task_entries(_task('\\', 'B', '', 'sim')), [_task('\\', 'B', '')])
+
+    def test_query_failure_keeps_other_sections(self):
+        run = [{'Key': r'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run', 'Name': 'Bom',
+                'Command': r'"C:\Program Files\Bom\bom.exe"'}]
+        procs = [{'Name': 'bom.exe', 'ExecutablePath': r'C:\Program Files\Bom\bom.exe'}]
+        result = sc.read_checkup(_fake_ps(run, None, procs, fail=('tasks',)), ENV)
+        self.assertEqual(result['errors'], ['tasks'])
+        self.assertEqual(result['tasks'], [])
+        self.assertEqual(len(result['autostart']), 1)
+        self.assertEqual(len(result['processes']), 1)
+        text = self._text(result)
+        self.assertIn(sc.ERROR_TEXTS['tasks'], text)
+        self.assertIn('não foi possível ler', text)
+        self.assertNotIn('Acesso negado', text)
+        self.assertNotIn('NTUSER', text)
+        self.assertNotIn(sc.TASKS_EMPTY, text)
+        self.assertIn(sc.RECOMMENDATION, text)
+        self.assertNotIn(sc.ALL_CLEAR, text)
+        for title in ('PROGRAMAS QUE ABREM COM O WINDOWS', 'TAREFAS AGENDADAS', 'PROCESSOS EM EXECUÇÃO'):
+            self.assertIn(title, text)
+        self.assertIn('[OK] Bom', text)
+        self.assertIn('[OK] bom.exe', text)
+
+    def test_section_order_note_and_summary(self):
+        tasks = [_task('\\', 'Boa', r'"C:\Program Files\Boa\boa.exe"'),
+                 _task('\\', 'Ruim', r'%TEMP%\ruim.exe')]
+        procs = [{'Name': 'bom.exe', 'ExecutablePath': r'C:\Program Files\Bom\bom.exe'}]
+        lines = sc.checkup_lines(sc.read_checkup(_fake_ps(procs=procs, tasks=tasks), ENV), ENV)
+        a = lines.index('PROGRAMAS QUE ABREM COM O WINDOWS')
+        t = lines.index('TAREFAS AGENDADAS')
+        p = lines.index('PROCESSOS EM EXECUÇÃO')
+        self.assertLess(a, t)
+        self.assertLess(t, p)
+        section = lines[t:p]
+        self.assertIn('  ' + sc.TASKS_NOTE, section)
+        self.assertEqual(sc.TASKS_NOTE, 'Sem administrador, o Windows pode não mostrar algumas tarefas.')
+        self.assertTrue(any('[atenção] \\Ruim — tarefa agendada' in line for line in section))
+        self.assertTrue(any('[OK] \\Boa — tarefa agendada' in line for line in section))
+        self.assertIn('RESUMO: OK 2 · atenção 1 · suspeito 0 · não conferidos 0', lines)
+        self.assertIn(sc.RECOMMENDATION, lines)
+
+    def test_all_clear_with_ok_tasks(self):
+        tasks = [_task('\\', 'Boa', r'"C:\Program Files\Boa\boa.exe"')]
+        procs = [{'Name': 'bom.exe', 'ExecutablePath': r'C:\Program Files\Bom\bom.exe'}]
+        text = self._text(sc.read_checkup(_fake_ps(procs=procs, tasks=tasks), ENV))
+        self.assertIn(sc.ALL_CLEAR, text)
+
+    def test_confirmation_mentions_tasks_and_no_forbidden_words(self):
+        self.assertIn('tarefas agendadas', sc.CHECKUP_CONFIRMATION)
+        self.assertIn('não precisa de administrador', sc.CHECKUP_CONFIRMATION)
+        texts = [sc.TASKS_NOTE, sc.TASKS_EMPTY, sc.ERROR_TEXTS['tasks'], sc.SOURCE_TEXTS['task'],
+                 sc.REASON_TEXTS[sc.REASON_COM_HANDLER], sc.REASON_TEXTS[sc.REASON_MS_FOLDER_OUTSIDE]]
+        for text in texts:
+            for word in FORBIDDEN_WORDS:
+                self.assertNotIn(word, text.lower())
+
+    def test_strange_rows_do_not_break(self):
+        rows = [None, 5, 'x', {}, {'TaskPath': 7, 'TaskName': None, 'Execute': ['a'], 'Com': 'True'}]
+        items = sc.classify_tasks(rows, ENV)
+        for item in items:
+            self.assertNotEqual(item['state'], sc.STATE_OK)
+        self.assertEqual(sc.classify_tasks(None, ENV), [])
+        self.assertEqual(sc.classify_tasks({'value': []}, ENV), [])
+        self.assertIsInstance(self._text({'tasks': items, 'errors': []}), str)
