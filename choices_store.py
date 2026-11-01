@@ -120,6 +120,18 @@ def merge_choices(base, mine, disk):
     return merged, conflicts
 
 
+def decision_conflicts(conflicts) -> list:
+    """Só os conflitos em decisões do usuário (`choices` e `catalog_choices`).
+
+    Função pura: serve para o aviso contar só o que o usuário decidiu (Manter /
+    Não preservar), e não fotos do catálogo ou cofres de navegador.
+    """
+    if not isinstance(conflicts, (list, tuple)):
+        return []
+    return [item for item in conflicts
+            if isinstance(item, tuple) and len(item) == 2 and item[0] in DECISION_MAPS]
+
+
 def _read_disk(path: Path):
     """Devolve ('ausente', None), ('ok', dict) ou ('ilegivel', None)."""
     if path.is_symlink():

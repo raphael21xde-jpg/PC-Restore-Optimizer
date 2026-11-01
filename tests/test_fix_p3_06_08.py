@@ -84,7 +84,11 @@ class SaveChoicesTests(unittest.TestCase):
         fake = self._fake()
         fake.local_state.write_text('{"antigo": true}', encoding='utf-8')
         with mock.patch.object(atomic_write.os, 'replace', side_effect=OSError('falha')):
-            self.app.App._save_choices(fake)  # sem erro: OSError vira aviso
+            warning = self.app.App._save_choices(fake)  # sem erro: OSError vira aviso
+        self.assertEqual(warning, 'Não foi possível salvar as escolhas em preferencias.json '
+                                  'agora. Elas serão salvas na próxima mudança.')
+        self.assertTrue(fake._choices_unsaved)
+        self.assertEqual(fake._choices_last_warning, warning)  # FIX-P3-06-10
         self.assertEqual(fake.local_state.read_text(encoding='utf-8'), '{"antigo": true}')
         self.assertEqual(_leftovers(self.folder, '.tmp'), [])
 
