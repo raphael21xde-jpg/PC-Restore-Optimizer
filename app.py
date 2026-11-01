@@ -41,6 +41,7 @@ from recovery_kit import create_plan, load_plan, summarize_plan
 from optimization_ui import OptimizationPanel
 from reinstall_audit import audit_backup, audit_text
 from backup_core import atomic_json
+from atomic_write import atomic_write_text
 from transfer_engine import TransferMeter, time_text
 from workflow_ui import build_overview, build_preservation, build_installation
 from choice_migration import merge_preferences
@@ -2134,8 +2135,8 @@ class App(tk.Tk):
                       'registry_id','edition','publisher','version','observed_volumes')}
                      for key, item in self.catalog_items.items()
                      if self.catalog_choices.get(key) in ('keep','skip')}}
-            tmp=self.local_state.with_suffix('.json.tmp');tmp.write_text(json.dumps(doc,indent=2),encoding='utf-8')
-            tmp.replace(self.local_state)
+            # FIX-P3-06-08: temporário de nome único, apagado se a gravação falhar.
+            atomic_write_text(self.local_state, json.dumps(doc,indent=2))
         except OSError:pass
 
     def import_previous_choices(self):

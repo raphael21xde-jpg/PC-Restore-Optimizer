@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 from statistics import mean, median
 from datetime import datetime, timezone
-from atomic_write import atomic_write_text
+from atomic_write import atomic_write_text, exclusive_lock
 
 FPS_KEYS = ('fps', 'framerate', 'framespersecond', 'avgfps', 'averagefps')
 FT_KEYS = ('frametime', 'frametimems', 'msbetweenpresents', 'frametimeduration', 'msbetweenframestarts', 'presentdurationms')
@@ -128,16 +128,22 @@ def insert_run(journal: Path, scenario: str, phase: str, metrics: dict):
         raise ValueError('Identifique o jogo e o cenário (até 100 caracteres).')
     if phase not in ('antes','depois'):
         raise ValueError('Fase inválida.')
+    # FIX-P3-06-08: trava para duas janelas não perderem registros uma da outra;
+    # o histórico é relido dentro da trava.
     try:
-        data=json.loads(journal.read_text(encoding='utf-8')) if journal.exists() else {'schema':'pcro-bench-1','runs':[]}
-    except (OSError,ValueError) as exc:
-        raise ValueError('Histórico de benchmarks ilegível; nenhuma alteração.') from exc
-    if data.get('schema')!='pcro-bench-1' or not isinstance(data.get('runs'),list):
-        raise ValueError('Histórico desconhecido; nenhuma alteração.')
-    data['runs'].append({'scenario': scenario, 'phase': phase, 'metrics': metrics,
-                         'timestamp':datetime.now(timezone.utc).isoformat()})
-    # FIX-P3-06-07: temporário de nome único, apagado se a gravação falhar.
-    atomic_write_text(journal, json.dumps(data,ensure_ascii=False,indent=2))
+        with exclusive_lock(journal):
+            try:
+                data=json.loads(journal.read_text(encoding='utf-8')) if journal.exists() else {'schema':'pcro-bench-1','runs':[]}
+            except (OSError,ValueError) as exc:
+                raise ValueError('Histórico de benchmarks ilegível; nenhuma alteração.') from exc
+            if data.get('schema')!='pcro-bench-1' or not isinstance(data.get('runs'),list):
+                raise ValueError('Histórico desconhecido; nenhuma alteração.')
+            data['runs'].append({'scenario': scenario, 'phase': phase, 'metrics': metrics,
+                                 'timestamp':datetime.now(timezone.utc).isoformat()})
+            # FIX-P3-06-07: temporário de nome único, apagado se a gravação falhar.
+            atomic_write_text(journal, json.dumps(data,ensure_ascii=False,indent=2))
+    except TimeoutError as exc:
+        raise ValueError('Histórico de benchmarks em uso por outra janela; nenhuma alteração.') from exc
     return data
 
 

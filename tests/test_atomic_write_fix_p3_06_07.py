@@ -126,9 +126,11 @@ class NoFixedTmpNameInSourceTests(unittest.TestCase):
     o temporário de nome fixo."""
 
     def test_ui_and_bench_do_not_use_fixed_tmp_name(self):
-        for name in ('optimization_ui.py', 'optimization_bench.py'):
+        # FIX-P3-06-08: app.py (`_save_choices`) também entra na conferência.
+        for name in ('optimization_ui.py', 'optimization_bench.py', 'app.py'):
             source = (ROOT / name).read_text(encoding='utf-8')
             self.assertNotIn("with_suffix('.tmp')", source, name)
+            self.assertNotIn("with_suffix('.json.tmp')", source, name)
             self.assertIn('atomic_write_text', source, name)
 
 
