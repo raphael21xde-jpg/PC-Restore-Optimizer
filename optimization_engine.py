@@ -6,6 +6,7 @@ explicit user confirmation by the GUI and is journaled for reversal.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -107,7 +108,8 @@ def inspect_pc():
         'board': 'Get-CimInstance Win32_BaseBoard | Select-Object Manufacturer,Product | ConvertTo-Json -Depth 3',
         'bios': 'Get-CimInstance Win32_BIOS | Select-Object Manufacturer,SMBIOSBIOSVersion,ReleaseDate | ConvertTo-Json -Depth 3',
         'os': 'Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber | ConvertTo-Json -Depth 3',
-        'pc': 'Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,PCSystemType | ConvertTo-Json -Depth 3',
+        # FIX-P3-06-01: sem Model (nada usa e pode trazer o nome do PC).
+        'pc': 'Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,PCSystemType | ConvertTo-Json -Depth 3',
         # P3-01 fatia 2: só leitura; nada de número de série nem nome do disco.
         'chassis': 'Get-CimInstance Win32_SystemEnclosure | Select-Object ChassisTypes | ConvertTo-Json -Depth 3',
         'battery': 'Get-CimInstance Win32_Battery | Select-Object BatteryStatus | ConvertTo-Json -Depth 3',
@@ -360,9 +362,70 @@ def legacy_power_pending(journal_path) -> str:
     return 'unreadable'
 
 
+# FIX-P3-06-01: colunas de hardware que podem sair no JSON exportado (allowlist).
+# São só as que o perfil (hardware_profile) e a orientação de BIOS (bios_guidance)
+# usam. O modelo da placa (Product) fica só na tela, para ajudar a achar o manual.
+_EXPORT_COLUMNS = {
+    'cpu': ('Name', 'NumberOfCores', 'NumberOfLogicalProcessors'),
+    'gpu': ('Name', 'DriverVersion'),
+    'ram': ('Capacity', 'Speed', 'ConfiguredClockSpeed', 'Manufacturer', 'DeviceLocator', 'BankLabel'),
+    'board': ('Manufacturer',),
+    'bios': ('Manufacturer', 'SMBIOSBIOSVersion', 'ReleaseDate'),
+    'os': ('Caption', 'Version', 'BuildNumber'),
+    'pc': ('Manufacturer', 'PCSystemType'),
+    'chassis': ('ChassisTypes',),
+    'battery': ('BatteryStatus',),
+    'disks': ('MediaType', 'BusType', 'Size'),
+}
+
+
+_DROP = object()
+
+
+def _export_columns(key, value, columns):
+    """Dict ou lista de dicts só com as colunas permitidas; outro valor vira _DROP.
+
+    Bateria: None ou [] quer dizer "o Windows não listou bateria" e é mantido; lista
+    com item que não é dict quer dizer "não sei" e sai (o perfil lê o mesmo nos dois).
+    """
+    def keep(item):
+        return {name: copy.deepcopy(item[name]) for name in columns if name in item}
+    if key == 'battery' and (value is None or value == []):
+        return copy.deepcopy(value)
+    if isinstance(value, dict):
+        return keep(value)
+    if isinstance(value, list):
+        if key == 'battery' and not all(isinstance(item, dict) for item in value):
+            return _DROP
+        items = [keep(item) for item in value if isinstance(item, dict)]
+        return items if items else _DROP
+    return _DROP
+
+
+def exportable_report(report: dict) -> dict:
+    """Cópia do relatório para salvar em arquivo, sem modelo da placa/PC nem colunas extras.
+
+    O relatório original não é alterado (a tela continua mostrando a placa-mãe).
+    """
+    if not isinstance(report, dict):
+        return {}
+    result = {key: copy.deepcopy(value) for key, value in report.items() if key != 'hardware'}
+    if 'hardware' not in report or not isinstance(report['hardware'], dict):
+        return result
+    hardware = {}
+    for key, columns in _EXPORT_COLUMNS.items():
+        if key not in report['hardware']:
+            continue
+        filtered = _export_columns(key, report['hardware'][key], columns)
+        if filtered is not _DROP:
+            hardware[key] = filtered
+    result['hardware'] = hardware
+    return result
+
+
 def export_snapshot(report: dict, filename: Path):
     filename = Path(filename)
     if filename.suffix.lower() != '.json':
         raise OptimizationError('O relatório deve ser salvo como .json.')
-    _atomic_json(filename, report)
+    _atomic_json(filename, exportable_report(report))
     return filename
