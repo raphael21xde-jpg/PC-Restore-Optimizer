@@ -243,16 +243,28 @@ def executable_from_command(cmd) -> str:
     if text.startswith('"'):
         end = text.find('"', 1)
         if end > 0:
-            return text[1:end].strip()
+            return _only_if_not_argument(text[1:end].strip())
         # Aspa sem fechar: o resto pode ter argumentos; só fica o que termina numa extensão.
         found = _COMMAND_EXE.match(text[1:])
-        return found.group(1).strip() if found else ''
+        return _only_if_not_argument(found.group(1).strip()) if found else ''
     found = _COMMAND_EXE.match(text)
     if found:
-        return found.group(1).strip()
-    first = text.split()[0]
-    # Sem extensão conhecida: um pedaço com "=" pode ser um argumento (ex.: --token=...).
-    return '' if '=' in first else first
+        return _only_if_not_argument(found.group(1).strip())
+    # Sem extensão conhecida: só o primeiro pedaço.
+    return _only_if_not_argument(text.split()[0])
+
+
+def _only_if_not_argument(exe) -> str:
+    """Devolve '' se algum pedaço (separado por espaço) parece argumento (R-40, R-42).
+
+    A busca pela extensão pode atravessar espaços até um segundo caminho
+    (ex.: ``prog --token=X C:\\a.exe``); um pedaço que começa com "-" ou "/", ou que
+    tem "=" ou ",", pode ser senha ou token, e nunca é mostrado. O item vira "atenção".
+    """
+    for piece in exe.split():
+        if piece[:1] in ('-', '/') or '=' in piece or ',' in piece:
+            return ''
+    return exe
 
 
 def _command_is_malformed(cmd, exe) -> bool:
@@ -264,6 +276,13 @@ def _command_is_malformed(cmd, exe) -> bool:
         return text.find('"', 1) < 0
     rest = text[len(exe):] if text.lower().startswith(exe.lower()) else ''
     return bool(rest) and not rest[0].isspace() and rest[0] != ','
+
+
+def _nt_literal_end(path) -> bool:
+    """Com \\\\?\\ ou \\??\\ o Windows não tira espaço nem ponto do fim: é outro arquivo."""
+    if not isinstance(path, str):
+        return False
+    return bool(_NT_PREFIX.match(path.lstrip())) and path[-1:] in (' ', '.', '\t')
 
 
 def _strip_nt_prefix(path):
@@ -300,7 +319,19 @@ def classify_path(name, path, env=None):
     env = _env(env)
     if not isinstance(path, str) or not path.strip():
         return STATE_ATTENTION, REASON_UNREADABLE
-    norm = _key(_expand(_strip_nt_prefix(path.strip()), env))
+    state, reason = _classify_clean(name, _strip_nt_prefix(path.strip()), env)
+    if state == STATE_OK and _nt_literal_end(path):
+        # Ex.: "\\\\?\\C:\\Windows\\System32\\svchost.exe " não é o svchost do Windows.
+        base = ntpath.basename(_key(path.strip()))
+        claimed = name.strip().lower() if isinstance(name, str) else ''
+        if base in SYSTEM_NAMES or claimed in SYSTEM_NAMES or EXPLORER in (base, claimed):
+            return STATE_SUSPECT, REASON_SYSTEM_NAME
+        return STATE_ATTENTION, REASON_OTHER_PLACE
+    return state, reason
+
+
+def _classify_clean(name, path, env):
+    norm = _key(_expand(path, env))
     base = ntpath.basename(norm)
     claimed = name.strip().lower() if isinstance(name, str) else ''
     if not _DRIVE_PATH.match(norm) and not norm.startswith('\\\\'):
@@ -383,7 +414,8 @@ def classify_processes(procs, env=None):
         if not isinstance(path, str) or not path.strip():
             unchecked += 1
             continue
-        key = ((name or '').lower() if isinstance(name, str) else '', _key(_strip_nt_prefix(path.strip())))
+        key = ((name or '').lower() if isinstance(name, str) else '', _key(_strip_nt_prefix(path.strip())),
+               _nt_literal_end(path))
         if key in grouped:
             grouped[key]['count'] += 1
             continue

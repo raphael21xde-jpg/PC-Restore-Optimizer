@@ -362,6 +362,11 @@ SECRET_COMMANDS = (
     r'C:\Program Files\App\app.exe/token SEGREDO123',         # barra colada
     r'ferramenta --token=SEGREDO123',                         # sem extensão, com "="
     r'"C:\Program Files\App\app.exe" --token=SEGREDO123',     # aspas normais
+    # PR #183 (R-42): segredo antes de um segundo caminho com extensão, ou com vírgula
+    r'"sem extensao --token=SEGREDO123 C:\a.exe',
+    r'powershell -WindowStyle Hidden -token=SEGREDO123 -File C:\x\a.ps1',
+    r'C:\Tools\app --token=SEGREDO123 C:\a.exe',
+    r'C:\Tools\app,SEGREDO123',
 )
 
 
@@ -396,6 +401,24 @@ class FixRessalvas181Tests(unittest.TestCase):
         self.assertEqual(sc.executable_from_command('a=b'), '')
         self.assertEqual(sc.executable_from_command('"sem extensao --token=SEGREDO123'), '')
         self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[4]), r'C:\Program Files\App\app.exe')
+
+    def test_secret_before_second_path_gives_empty(self):
+        for cmd in SECRET_COMMANDS[5:]:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(sc.executable_from_command(cmd), '')
+        entries = [{'source': 'run_user', 'name': 'X', 'command': cmd} for cmd in SECRET_COMMANDS[5:]]
+        for item in sc.classify_autostart(entries, ENV):
+            self.assertEqual(item['state'], sc.STATE_ATTENTION)
+            self.assertEqual(item['path'], '')
+        text = '\n'.join(sc.checkup_lines({'autostart': sc.classify_autostart(entries, ENV),
+                                           'processes': [], 'unchecked': 0, 'errors': []}, ENV))
+        self.assertNotIn('SEGREDO', text)
+
+    def test_normal_paths_with_spaces_still_work(self):
+        self.assertEqual(sc.executable_from_command(r'"C:\Program Files (x86)\A B\a.exe" -x'),
+                         r'C:\Program Files (x86)\A B\a.exe')
+        self.assertEqual(sc.executable_from_command(r'C:\Program Files\A B\a.exe /min'),
+                         r'C:\Program Files\A B\a.exe')
 
     def test_malformed_command_in_program_files_is_never_ok(self):
         entries = [{'source': 'run_user', 'name': 'X', 'command': cmd} for cmd in SECRET_COMMANDS[:3]]
@@ -462,6 +485,24 @@ class FixRessalvas181Tests(unittest.TestCase):
         self.assertEqual(sc.classify_path('svchost.exe', r'\\?\C:\Temp\svchost.exe', ENV)[0], sc.STATE_SUSPECT)
         self.assertEqual(sc.classify_path('a.exe', r'\??\C:\Temp\a.exe', ENV)[0], sc.STATE_ATTENTION)
         self.assertNotEqual(sc.classify_path('a.exe', r'\\?\UNC\srv\share\a.exe', ENV)[0], sc.STATE_OK)
+
+    def test_nt_prefix_with_trailing_space_or_dot_is_never_ok(self):
+        for path in (r'\\?\C:\Windows\System32\svchost.exe ', r'\??\C:\Windows\System32\svchost.exe.',
+                     r'\\?\C:\Windows\System32\svchost.exe . '):
+            with self.subTest(path=path):
+                self.assertEqual(sc.classify_path('svchost.exe', path, ENV)[0], sc.STATE_SUSPECT)
+        self.assertEqual(sc.classify_path('a.exe', r'\\?\C:\Program Files\A\a.exe ', ENV)[0],
+                         sc.STATE_ATTENTION)
+        self.assertEqual(sc.classify_path('a.exe', r'\\?\C:\Program Files\A\a.exe', ENV)[0], sc.STATE_OK)
+
+    def test_trailing_space_prefixed_process_not_grouped_with_ok(self):
+        procs = [{'Name': 'svchost.exe', 'ExecutablePath': r'C:\Windows\System32\svchost.exe'},
+                 {'Name': 'svchost.exe', 'ExecutablePath': '\\\\?\\C:\\Windows\\System32\\svchost.exe '}]
+        out = sc.classify_processes(procs, ENV)
+        self.assertEqual(sorted(i['state'] for i in out['items']), [sc.STATE_OK, sc.STATE_SUSPECT])
+        text = '\n'.join(sc.checkup_lines({'autostart': [], 'processes': out['items'],
+                                           'unchecked': 0, 'errors': []}, ENV))
+        self.assertIn('suspeito 1', text)
 
     def test_strip_nt_prefix(self):
         self.assertEqual(sc._strip_nt_prefix(r'\\?\C:\a.exe'), r'C:\a.exe')
