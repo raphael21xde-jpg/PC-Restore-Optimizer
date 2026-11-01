@@ -264,7 +264,7 @@ def _command_guess(cmd) -> str:
 
 
 def _no_space(exe) -> str:
-    """Sem aspas fechadas, o executável não pode ter espaço (R-43).
+    """Sem aspas fechadas, o executável não pode ter espaço (R-40).
 
     A busca pela extensão pode atravessar argumentos até um segundo caminho
     (ex.: ``app SEGREDO C:\\a.exe``); como não dá para saber onde termina o
@@ -274,7 +274,7 @@ def _no_space(exe) -> str:
 
 
 def _only_if_not_argument(exe) -> str:
-    """Devolve '' se algum pedaço (separado por espaço) parece argumento (R-40, R-42).
+    """Devolve '' se algum pedaço (separado por espaço) parece argumento (R-40).
 
     A busca pela extensão pode atravessar espaços até um segundo caminho
     (ex.: ``prog --token=X C:\\a.exe``); um pedaço que começa com "-" ou "/", ou que
