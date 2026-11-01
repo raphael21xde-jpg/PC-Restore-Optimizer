@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 from statistics import mean, median
 from datetime import datetime, timezone
+from atomic_write import atomic_write_text
 
 FPS_KEYS = ('fps', 'framerate', 'framespersecond', 'avgfps', 'averagefps')
 FT_KEYS = ('frametime', 'frametimems', 'msbetweenpresents', 'frametimeduration', 'msbetweenframestarts', 'presentdurationms')
@@ -135,9 +136,8 @@ def insert_run(journal: Path, scenario: str, phase: str, metrics: dict):
         raise ValueError('Histórico desconhecido; nenhuma alteração.')
     data['runs'].append({'scenario': scenario, 'phase': phase, 'metrics': metrics,
                          'timestamp':datetime.now(timezone.utc).isoformat()})
-    temp=journal.with_suffix('.tmp')
-    temp.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8')
-    temp.replace(journal)
+    # FIX-P3-06-07: temporário de nome único, apagado se a gravação falhar.
+    atomic_write_text(journal, json.dumps(data,ensure_ascii=False,indent=2))
     return data
 
 

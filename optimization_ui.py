@@ -25,6 +25,7 @@ from restore_jobs import Job
 from ui_timers import WindowTimers
 from hardware_profile import profile_lines, SCAN_CONFIRMATION
 from bios_guidance import bios_guidance_lines
+from atomic_write import atomic_write_text
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
 from stutter_deep import study_csv, study_text
@@ -354,9 +355,8 @@ class OptimizationPanel(tk.Frame):
         src=self.afterburner_path.get().strip()
         if not src:
             return
-        tmp=self.afterburner_config.with_suffix('.tmp')
-        tmp.write_text(json.dumps({'hml':src},ensure_ascii=False),encoding='utf-8')
-        tmp.replace(self.afterburner_config)
+        # FIX-P3-06-07: temporário de nome único, apagado se a gravação falhar.
+        atomic_write_text(self.afterburner_config, json.dumps({'hml':src},ensure_ascii=False))
 
     def find_monitor_source(self):
         found=find_afterburner_logs()
