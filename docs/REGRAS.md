@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 0 (última poda: 01/11/2026, pedido `regras-20261101-poda-r25-r34`, issue #157). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-35.
+poda: 1 (última poda: 01/11/2026, pedido `regras-20261101-poda-r25-r34`, issue #157). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-35.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -49,3 +49,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-32 | Função que monta texto de tela a partir de um dict (relatório, JSON) só exibe textos que ela mesma gera (motivos, passos, rótulos); campo de texto livre vindo do dict é ignorado e regenerado. Texto de tela aceito por padrão (regex) a partir de um dict só é exibido se os valores dentro dele forem coerentes com o estado mostrado (ex.: configurada < informada para "desligado"); senão, vira o texto padrão. | Revisão da PR #150 (P3-06 fatia 1, c149e5e); juntada com a R-34 (revisão da PR #150, 0d9bf999b191) na poda de 01/11/2026 | 2026-10-31 |
 | R-33 | Texto de "tudo certo" só aparece quando todos os itens foram de fato conferidos; com item ilegível ou mudado por fora, a frase é neutra e vem seguida do aviso. | Revisão da PR #148 (issue #149), FIX-P3-03-09 | 2026-10-31 |
 | R-34 | Juntada à **R-32** na poda de 01/11/2026 (confira a R-32). | Revisão da PR #150 (P3-06 fatia 1, 0d9bf999b191) | 2026-10-31 |
+| R-35 | Ao juntar ou renumerar regras numa poda, procure (grep) as citações "R-<nº>" antigas no código, nos testes e no backlog e atualize-as no mesmo commit da poda. | Revisão da PR #160 (FIX-P3-06-03, 2089a95004b9) | 2026-11-01 |

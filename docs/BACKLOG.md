@@ -671,6 +671,13 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   3. **Comentário em `bios_guidance.py`:** diz que o motivo de "desligado" é conferido por `_off_reason_ok()` (padrão `_REASON_OFF` + números coerentes). Nenhuma linha de código mudou.
   4. **Testes de ida e volta sem `lines[3]`:** em `tests/test_bios_guidance_fix_p3_06_02.py`, a linha do motivo é achada pelo rótulo "Perfil de memória (XMP/EXPO):" (a linha seguinte) e o teste confere que o motivo aparece uma vez só.
 - Escolhas de design (as mais seguras): as ressalvas 3 e 4 da #150 são registradas como já resolvidas, sem mexer em `docs/REGRAS.md`; o teste acha a linha pelo rótulo, não pela posição; sem regra nova.
+### FIX-P3-06-04 · Ressalvas da PR #160 (citações da R-34 depois da poda) — `concluído`
+- Branch `auto/FIX-P3-06-04-ressalvas-160`. Ressalvas não bloqueantes da revisão da PR #160 (veredito @2089a95004b9). Nada disso muda o que o app faz:
+  1. **Citações da R-34 em `bios_guidance.py`** (docstring e comentário de `_off_reason_ok`): passam a dizer "R-32 (antiga R-34)", porque a R-34 foi juntada à R-32 na poda de 01/11/2026.
+  2. **`_reason_after_label` no teste do FIX-P3-06-02:** se o rótulo for a última linha, dá falha clara (AssertionError) em vez de IndexError.
+- Regra nova R-35 (citações antigas atualizadas no mesmo commit da poda).
+- Testes: `tests/test_bios_guidance_fix_p3_06_02.py` (listas sintéticas; um teste lê `bios_guidance.py` e confere que não sobrou citação solta da R-34).
+- Escolhas de design (as mais seguras): "R-32 (antiga R-34)" para manter a busca pela regra antiga; a conferência de citações vale só para `bios_guidance.py`, porque os registros históricos citam a R-34 de propósito.
 ### P3-07 · Check-up de segurança (somente leitura) — `pronto` (depois de P3-01)
 - **Pedido do Raphael em 23/10/2026.** Procura sinais de minerador escondido e de programas suspeitos. **Não é antivírus:** o app nunca apaga, nunca encerra processos, nunca muda o Defender e nunca coloca nada em quarentena. Se achar algo, explica e recomenda a "Verificação offline" do Defender e uma segunda opinião (Malwarebytes, só do site oficial).
 - **O que olha (só leitura):**
