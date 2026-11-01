@@ -652,8 +652,16 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
   5. **Modelo da placa/PC no JSON exportado:** fica no item próprio FIX-P3-06-01 (logo abaixo), sem mudança aqui.
   - Escolhas de design (as mais seguras): número com casas decimais continua aceito se for coerente; "iguais", "configurada 0" e "informada 0" também viram o motivo padrão; os termos técnicos não foram removidos, porque a pessoa precisa achá-los na tela da BIOS. Os testes antigos que conferem "limpe a CMOS" e "Não mude o CSM" continuam valendo sem mudança.
   - Testes: `tests/test_bios_guidance_fix_p3_06_02.py` (dicts sintéticos, sem comando, sem Tk).
-### FIX-P3-06-01 · Revisar o que o JSON exportado leva (modelo da placa/PC) — `pronto`
-- Registro da revisão da PR #150: conferir se a tela e o JSON exportado do diagnóstico levam o modelo da placa (`Win32_BaseBoard.Product`) e do PC (`Win32_ComputerSystem.Model`), lidos desde antes do P3-06, e se devem sair. Não implementado.
+### FIX-P3-06-01 · Revisar o que o JSON exportado leva (modelo da placa/PC) — `concluído` (branch `auto/FIX-P3-06-01-json-sem-modelo`)
+- Registro da revisão da PR #150: conferir se a tela e o JSON exportado do diagnóstico levam o modelo da placa (`Win32_BaseBoard.Product`) e do PC (`Win32_ComputerSystem.Model`), lidos desde antes do P3-06, e se devem sair.
+- **O que mudou:** o "Exportar inventário" da aba de otimização grava `optimization_engine.exportable_report(report)`, uma cópia em que `hardware` só leva as colunas da allowlist `_EXPORT_COLUMNS` (as que o perfil e a orientação de BIOS usam). O modelo da placa e o modelo do PC não vão para o arquivo. A consulta `pc` deixou de pedir `Model` (continuam 10 consultas). A tela não mudou: segue mostrando "Placa-mãe: fabricante modelo" a partir do relatório original, que não é alterado.
+- Escolhas de design (as mais seguras):
+  - parar de ler `Model`: nada no app usa;
+  - `Product` continua sendo lido, mas só aparece na tela (ajuda a achar o manual da placa); no arquivo, só o fabricante;
+  - allowlist em vez de denylist: coluna nova ou desconhecida nunca vaza por engano; chave de hardware desconhecida, ou valor que não é dict nem lista de dicts, sai sem erro; `hardware` que não é dict sai do arquivo; as chaves de topo fora de `hardware` ficam iguais;
+  - bateria: `None` e `[]` ("o Windows não listou bateria") são mantidos e lista com item estranho ("não sei") sai, para o perfil calculado do arquivo ser igual ao da tela;
+  - o `export_diagnostics` do `app.py` não muda (é outro relatório, fora desta fatia).
+- Testes: `tests/test_export_fix_p3_06_01.py` (dicts sintéticos, `TemporaryDirectory`, PowerShell simulado, sem Tk).
 ### P3-07 · Check-up de segurança (somente leitura) — `pronto` (depois de P3-01)
 - **Pedido do Raphael em 23/10/2026.** Procura sinais de minerador escondido e de programas suspeitos. **Não é antivírus:** o app nunca apaga, nunca encerra processos, nunca muda o Defender e nunca coloca nada em quarentena. Se achar algo, explica e recomenda a "Verificação offline" do Defender e uma segunda opinião (Malwarebytes, só do site oficial).
 - **O que olha (só leitura):**
