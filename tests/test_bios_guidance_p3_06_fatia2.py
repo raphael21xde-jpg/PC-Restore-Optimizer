@@ -110,6 +110,19 @@ class RebarStateTests(unittest.TestCase):
         value = [{'Sizes': [256 * MIB]}, {'Sizes': [16 * MIB, 128 * MIB]}]
         self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_SMALL))
 
+    def test_small_and_gpu_without_data_is_mixed(self):
+        # FIX-P3-06-14: placa pequena junto de placa sem dado não vira SMALL (a sem dado pode ser a grande).
+        for value in ([{'Sizes': [256 * MIB]}, {}],
+                      [{'Sizes': [16 * MIB]}, None],
+                      [{'Sizes': [128 * MIB]}, {'Sizes': {'value': []}}]):
+            with self.subTest(value=value):
+                state, reason = bg.rebar_state(value)
+                self.assertEqual((state, reason), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_MIXED))
+                self.assertNotIn('desligado', reason.lower())
+
+    def test_all_gpus_without_data_is_default(self):
+        self.assertEqual(bg.rebar_state([{}, None]), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_DEFAULT))
+
     def test_single_large_gpu_is_on(self):
         self.assertEqual(bg.rebar_state(_bar(8 * 1024 ** 3)), (bg.REBAR_ON, bg.REBAR_REASON_ON))
         self.assertEqual(bg.rebar_state({'Sizes': [8 * 1024 ** 3]}), (bg.REBAR_ON, bg.REBAR_REASON_ON))

@@ -23,8 +23,9 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
 - Resizable BAR (fatia 2, FIX-P3-06-13): cada placa de vídeo é avaliada
   sozinha pelo tamanho dos intervalos de memória lidos pelo Windows. "Provavelmente
   ligado" só se TODAS as placas têm algum intervalo maior que 256 MiB; se as placas
-  discordam ou alguma não informa, é "não confirmado" com REBAR_REASON_MIXED (R-38);
-  o resto é "não confirmado" com motivo deste módulo. Aceita o formato
+  discordam ou alguma não informa (inclusive pequena + sem dado, FIX-P3-06-14), é
+  "não confirmado" com REBAR_REASON_MIXED (R-38); todas até 256 MiB é "não
+  confirmado" com REBAR_REASON_SMALL; todas sem dado, REBAR_REASON_DEFAULT. Aceita o formato
   {"value": [...]} do ConvertTo-Json do PowerShell 5.1. Nunca diz "desligado"
   (janela pequena também acontece com placa sem suporte ou driver antigo);
 - guarda só família da placa, versão e ano da BIOS; nunca modelo da placa,
@@ -210,10 +211,12 @@ def rebar_state(gpu_bar):
     Entrada: dict ou lista de dicts {"Sizes": [bytes, ...]} (um por placa); a lista e
     o Sizes também podem vir como {"value": [...]} (PowerShell 5.1). Cada placa é
     avaliada sozinha (R-38): "provavelmente ligado" só se todas têm algum intervalo
-    maior que 256 MiB; se uma tem e outra não (ou não informa), é "não confirmado"
-    com REBAR_REASON_MIXED; o resto é "não confirmado". Nunca devolve "desligado"
-    e nunca lança erro.
+    maior que 256 MiB; se as placas discordam ou alguma não informa (inclusive uma
+    pequena junto de uma sem dado), é "não confirmado" com REBAR_REASON_MIXED; todas
+    pequenas é "não confirmado" com REBAR_REASON_SMALL; todas sem dado é "não
+    confirmado" com REBAR_REASON_DEFAULT. Nunca devolve "desligado" e nunca lança erro.
     """
+    # dict sem 'value' = uma placa só; com 'value' = lista embrulhada pelo PowerShell 5.1
     if isinstance(gpu_bar, dict) and 'value' not in gpu_bar:
         gpus = [gpu_bar]
     else:
@@ -221,9 +224,9 @@ def rebar_state(gpu_bar):
     states = [_gpu_bar_state(gpu) for gpu in gpus]
     if states and all(state == _GPU_ON for state in states):
         return REBAR_ON, REBAR_REASON_ON
-    if _GPU_ON in states:
+    if len(set(states)) > 1:
         return REBAR_UNKNOWN, REBAR_REASON_MIXED
-    if _GPU_SMALL in states:
+    if states and all(state == _GPU_SMALL for state in states):
         return REBAR_UNKNOWN, REBAR_REASON_SMALL
     return REBAR_UNKNOWN, REBAR_REASON_DEFAULT
 
