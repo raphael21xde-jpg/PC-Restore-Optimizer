@@ -745,7 +745,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 ### FIX-P3-07-01 · Ressalvas da PR #181 (argumentos e nome de usuário no check-up) — `concluído`
 - Issue #182. Branch `auto/FIX-P3-07-01-ressalvas-181`. PR #183 (reprovada duas vezes e corrigida no mesmo branch).
 - O que mudou no check-up de segurança:
-  - **Argumentos:** da linha de comando de um programa que abre com o Windows só aparece o executável. Ele pode ter espaço só se veio entre aspas fechadas. Sem aspas, ou com aspa sem fechar, se o trecho até a extensão tiver qualquer espaço, nada é mostrado e o item fica "atenção" (R-43). Também não é mostrado nada se algum pedaço começa com `-` ou `/`, ou tem `=` ou `,`. Argumento colado no executável é cortado (`app.exe--token=X` vira `app.exe`).
+  - **Argumentos:** da linha de comando de um programa que abre com o Windows só aparece o executável. Ele pode ter espaço só se veio entre aspas fechadas. Sem aspas, ou com aspa sem fechar, se o trecho até a extensão tiver qualquer espaço, nada é mostrado e o item fica "atenção" (R-40). Também não é mostrado nada se algum pedaço começa com `-` ou `/`, ou tem `=` ou `,`. Argumento colado no executável é cortado (`app.exe--token=X` vira `app.exe`).
   - **Comando malformado nunca é OK:** aspa sem fechar ou algo colado logo depois do executável deixa o item como "atenção", mesmo em `Program Files`.
   - **Nome do usuário:** também some de `Documents and Settings\<nome>` e `\\servidor\users\<nome>` (vira `<outro usuário>`), e o nome do usuário, como palavra inteira, vira `%USERNAME%` (ex.: `D:\<nome>\` e `<nome> - atalho.lnk`).
   - **Prefixos `\\?\` e `\??\`:** são tirados antes de comparar (`\\?\UNC\` vira `\\`). Com esses prefixos, caminho com pedaço `.` ou `..`, ou que termina em espaço (qualquer um, inclusive Unicode) ou ponto, nunca é OK: fica "suspeito" se o nome é de programa do Windows, senão "atenção"; e não é agrupado com o mesmo caminho sem prefixo.
@@ -759,6 +759,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - Regras novas: R-40, R-42 e R-43 (a R-41 ficou reservada para o FIX-P3-06-15 e entrou na PR #184).
 - Testes: classe `FixRessalvas181Tests` em `tests/test_security_checkup_p3_07.py`. O segredo `SEGREDO123` é testado em 15 formatos, no retorno da função e no texto da tela. Também há testes do nome do usuário, dos prefixos `\\?\`/`\??\`, do singular/plural, da consulta e do dict com OK falso.
 - Ressalva 7 (fatia 1 marcada `concluído` antes do merge e da validação no Windows): só registrada; segue o padrão dos FIX anteriores (o item vai `concluído` na própria PR, e a validação no Windows fica no "Validar M3").
+- Poda de 01/11/2026 (issue #187): R-42 e R-43 juntadas à R-40.
 
 ### FIX-P3-06-15 · Ressalvas de texto da PR #179 (Validar M3 e R-31) — `concluído` (branch `auto/FIX-P3-06-15-textos-validar-m3`)
 - Issue #180. Três trocas de texto em `docs/BACKLOG.md`, sem código: no "Validar M3", trocar "desativar ou ignorar esses adaptadores" por "ignorar (não é preciso desativar nada); se quiser testar, desative só com outra placa de vídeo funcionando e com a tela ligada nela"; na fatia 2 do P3-06, a frase "Por placa: ... = 'não confirmado' com o motivo padrão" vira "Por placa: ... = placa 'sem dado'; nunca exceção."; no "Validar M3", trocar o nome `REBAR_REASON_MIXED` pelo texto que aparece na tela ("As placas de vídeo do PC não informam a mesma coisa...").
@@ -769,6 +770,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - Issue #185. Só texto, sem código. No "Validar M3", o passo dos adaptadores virtuais diz que o caso é esperado e não precisa de FIX (ignorar os adaptadores). Diz também o risco de desativar: tela preta sem outra placa ligada, e a conexão cai se for o adaptador da Área de Trabalho Remota em uso. E diz o que fazer depois e como desfazer: analisar de novo e reativar. No FIX-P3-06-15 e no FIX-P3-07-01, a frase da R-41 reservada passou do presente ("fica") para "ficou reservado e entrou na PR #184" (R-39). Em `docs/REGRAS.md`, a R-41 foi para o lugar dela, entre a R-40 e a R-42.
 - Regra nova: R-44. O contador de regras novas chegou a 10 (R-35 a R-44).
 - Escolha (a mais segura): a orientação padrão continua sendo ignorar; desativar só aparece como opção, com a condição segura, o risco e como desfazer.
+- Poda de 01/11/2026 (issue #187): R-42 e R-43 juntadas à R-40; R-44 juntada à R-41.
 
 ### P3-07 · Check-up de segurança (somente leitura) — `em andamento` (depois de P3-01)
 - **Pedido do Raphael em 23/10/2026.** Procura sinais de minerador escondido e de programas suspeitos. **Não é antivírus:** o app nunca apaga, nunca encerra processos, nunca muda o Defender e nunca coloca nada em quarentena. Se achar algo, explica e recomenda a "Verificação offline" do Defender e uma segunda opinião (Malwarebytes, só do site oficial).

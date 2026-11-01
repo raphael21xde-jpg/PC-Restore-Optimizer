@@ -64,7 +64,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(sc.executable_from_command(cmd), r'C:\Program Files\App\app.exe')
 
     def test_unquoted_with_spaces_until_exe_is_empty(self):
-        # FIX-P3-07-01 (R-43): sem aspas fechadas, espaço no executável = vazio (pode ser argumento).
+        # FIX-P3-07-01 (R-40): sem aspas fechadas, espaço no executável = vazio (pode ser argumento).
         cmd = r'C:\Program Files (x86)\Outro App\run.exe -background SEGREDO'
         self.assertEqual(sc.executable_from_command(cmd), '')
         self.assertEqual(sc.executable_from_command(r'C:\x\run.exe -background SEGREDO'), r'C:\x\run.exe')
@@ -149,7 +149,7 @@ class AutostartTests(unittest.TestCase):
         states = [i['state'] for i in items]
         self.assertEqual(states, [sc.STATE_OK, sc.STATE_SUSPECT, sc.STATE_ATTENTION,
                                   sc.STATE_ATTENTION, sc.STATE_ATTENTION])
-        self.assertEqual(items[1]['path'], '')  # sem aspas e com espaço: nada é mostrado (R-43)
+        self.assertEqual(items[1]['path'], '')  # sem aspas e com espaço: nada é mostrado (R-40)
         self.assertEqual(items[2]['reason'], sc.REASON_SHORTCUT)
         self.assertEqual(items[3]['reason'], sc.REASON_SCRIPT)
 
@@ -365,12 +365,12 @@ SECRET_COMMANDS = (
     r'C:\Program Files\App\app.exe/token SEGREDO123',         # barra colada
     r'ferramenta --token=SEGREDO123',                         # sem extensão, com "="
     r'"C:\Program Files\App\app.exe" --token=SEGREDO123',     # aspas normais
-    # PR #183 (R-42): segredo antes de um segundo caminho com extensão, ou com vírgula
+    # PR #183 (R-40): segredo antes de um segundo caminho com extensão, ou com vírgula
     r'"sem extensao --token=SEGREDO123 C:\a.exe',
     r'powershell -WindowStyle Hidden -token=SEGREDO123 -File C:\x\a.ps1',
     r'C:\Tools\app --token=SEGREDO123 C:\a.exe',
     r'C:\Tools\app,SEGREDO123',
-    # PR #183, segunda revisão (R-43): segredo posicional, sem -, / ou =
+    # PR #183, segunda revisão (R-40): segredo posicional, sem -, / ou =
     r'"C:\Tools\app SEGREDO123 C:\a.exe',
     r'C:\Tools\app SEGREDO123 C:\a.exe',
     r'C:\Program Files\App\run SEGREDO123 C:\Program Files\App\a.exe',
@@ -404,7 +404,7 @@ class FixRessalvas181Tests(unittest.TestCase):
         self.assertNotIn('token', text)
 
     def test_malformed_commands_give_only_the_executable(self):
-        # Sem aspas fechadas e com espaço até a extensão: vazio (R-43).
+        # Sem aspas fechadas e com espaço até a extensão: vazio (R-40).
         self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[0]), '')
         self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[1]), '')
         self.assertEqual(sc.executable_from_command(SECRET_COMMANDS[2]), '')
