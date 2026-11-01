@@ -31,10 +31,11 @@ FALLBACK = 'As últimas escolhas não foram salvas.'
 
 
 def unreadable(name):
-    return (f'O arquivo {name} não pôde ser lido agora (pode estar danificado ou em uso) '
-            'e não foi alterado. As escolhas desta janela não estão sendo salvas. Feche o '
-            'app e abra de novo mais tarde; se o aviso continuar, peça ajuda ou renomeie '
-            'esse arquivo para o app criar um novo.')
+    # FIX-P3-06-12: texto final; a perda das escolhas vem primeiro
+    return (f'As escolhas desta janela não estão sendo salvas e se perdem ao fechar o app. '
+            f'O arquivo {name} não pôde ser lido agora (pode estar danificado ou em uso) '
+            'e não foi alterado. Tente de novo mais tarde (feche e abra o app); se o aviso '
+            'continuar, peça ajuda ou renomeie esse arquivo para o app criar um novo.')
 
 
 def _doc(**kw):
@@ -133,6 +134,29 @@ class NeutralUnreadableWarningTests(unittest.TestCase):
 
     def test_os_error_gets_neutral_warning_and_file_untouched(self):
         self._read_error(OSError('nuvem ainda baixando'))
+
+    # FIX-P3-06-12: bytes que não são UTF-8 e JSON válido que não é objeto
+    def _unreadable_content(self, raw):
+        self.path.write_bytes(raw)
+        # parte do choices_store (sem app): status 'ilegivel', nada gravado
+        self.assertEqual(choices_store._read_disk(self.path), ('ilegivel', None))
+        self.assertEqual(save_merged(self.path, _doc(choices={'c:/a': 'keep'}), _doc())[0],
+                         'ilegivel')
+        self.assertEqual(self.path.read_bytes(), raw)
+        self.assertEqual(sorted(p.name for p in self.folder.iterdir()), ['preferencias.json'])
+        # parte do app: aviso neutro, arquivo intacto, sem temporário nem trava
+        fake = self._fake(_doc(choices={'c:/b': 'skip'}), _doc())
+        self._assert_neutral(self.save_choices(fake), fake)
+        self.assertEqual(self.path.read_bytes(), raw)
+        self.assertEqual(sorted(p.name for p in self.folder.iterdir()), ['preferencias.json'])
+        self.assertEqual(list(self.folder.glob('*.tmp')), [])
+        self.assertEqual(list(self.folder.glob('*.lock')), [])
+
+    def test_non_utf8_bytes_gets_neutral_warning_and_file_untouched(self):
+        self._unreadable_content(b'\xff\xfe{')
+
+    def test_json_list_gets_neutral_warning_and_file_untouched(self):
+        self._unreadable_content(b'[]')
 
 
 class QuitQuestionTests(unittest.TestCase):
