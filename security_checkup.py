@@ -45,8 +45,9 @@ RECOMMENDATION = (
 NOT_CERTAIN = ('"Suspeito" não é certeza de problema: é um sinal para conferir. '
                '"Atenção" quer dizer que vale a pena saber o que é.')
 TASKS_NOTE = 'Sem administrador, o Windows pode não mostrar algumas tarefas.'
-TASKS_EMPTY = ('Nenhuma tarefa agendada para mostrar (as da Microsoft que rodam da pasta do '
-               'Windows não aparecem).')
+TASKS_EMPTY = ('Nenhuma tarefa agendada para mostrar. Só ficam de fora as tarefas da Microsoft '
+               'que rodam da pasta do Windows ou da pasta de programas instalados e que não usam '
+               'um programa que roda scripts ou comandos.')
 ALL_CLEAR = 'Nos itens conferidos não apareceu nenhum sinal de alerta.'
 NOT_ALL_CHECKED = ('Nenhum item conferido ficou como atenção ou suspeito, mas o check-up '
                    'não conseguiu conferir tudo (veja acima).')
@@ -58,8 +59,10 @@ SYSTEM_NAMES = ('svchost.exe', 'csrss.exe', 'lsass.exe', 'winlogon.exe', 'servic
 EXPLORER = 'explorer.exe'
 SCRIPT_EXTENSIONS = ('.vbs', '.ps1', '.js', '.bat', '.cmd')
 SHORTCUT_EXTENSIONS = ('.lnk', '.url')
-# Programas do Windows que abrem scripts: o script em si não é conferido.
-SCRIPT_HOSTS = ('wscript.exe', 'cscript.exe', 'mshta.exe', 'powershell.exe', 'pwsh.exe', 'cmd.exe')
+# Programas do Windows que rodam o código que vem nos argumentos (um script, um
+# comando ou uma biblioteca). Como os argumentos não são lidos, nunca dão OK (R-46).
+SCRIPT_HOSTS = ('wscript.exe', 'cscript.exe', 'mshta.exe', 'powershell.exe', 'pwsh.exe', 'cmd.exe',
+                'rundll32.exe', 'regsvr32.exe')
 
 REASON_OK = 'ok'
 REASON_SYSTEM_NAME = 'system_name'
@@ -88,7 +91,8 @@ REASON_TEXTS = {
                          'mas ela também é usada por programas indesejados.'),
     REASON_DRIVE_ROOT: 'Fica direto na raiz de uma unidade (como C:\\), lugar incomum para um programa.',
     REASON_SCRIPT: 'É um script (arquivo de comandos) que abre direto, sem um programa instalado por trás.',
-    REASON_SCRIPT_HOST: 'Abre um script por meio de um programa do Windows; o app não confere o que o script faz.',
+    REASON_SCRIPT_HOST: ('Usa um programa do Windows que roda o que vier escrito depois dele (um script, '
+                         'um comando ou uma biblioteca); o app não confere o que ele roda.'),
     REASON_SHORTCUT: 'É um atalho na pasta Inicialização; o app não confere para onde ele aponta.',
     REASON_STARTUP_FILE: 'É um arquivo colocado direto na pasta Inicialização.',
     REASON_UNREADABLE: 'O caminho veio vazio ou não pôde ser lido.',
@@ -180,7 +184,10 @@ _KEEP_USERS = ('public', 'default', 'default user', 'all users', '<outro usuári
 # A extensão termina quando não vem letra, número ou "_" colado (app.exe--token=X vira app.exe).
 _COMMAND_EXE = re.compile(r'^(.*?\.(?:exe|bat|cmd|vbs|ps1|js))(?![A-Za-z0-9_])', re.IGNORECASE)
 _NT_PREFIX = re.compile(r'^(?:\\\\\?\\|\\\?\?\\)(UNC\\)?', re.IGNORECASE)
-_SID = re.compile(r'(?<![A-Za-z0-9])S-1-\d+(?:-\d+)+(?![0-9])', re.IGNORECASE)
+# SID de usuário (S-1-5-21-...) e qualquer S-1-... com pelo menos 3 sub-autoridades,
+# mesmo colado em letras (ex.: GoogleUpdateTaskUserS-1-5-21-...Core). "S-1-5-18" fica.
+_SID = re.compile(r'S-1-5-21-\d+-\d+-\d+(?:-\d+)?|S-1-\d+(?:-\d+){3,}', re.IGNORECASE)
+_EMAIL = re.compile(r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+')
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 MAX_NAME = 80
 
@@ -255,6 +262,7 @@ def _clean_name(value, env) -> str:
     if not isinstance(value, str):
         return ''
     text = _CONTROL.sub(' ', sanitize_path(value, env)).strip()
+    text = _EMAIL.sub('<e-mail>', text)
     return text[:MAX_NAME] + ('...' if len(text) > MAX_NAME else '')
 
 
@@ -550,7 +558,11 @@ def _classify_task(row, env):
             state, reason = STATE_SUSPECT, REASON_SYSTEM_NAME
         return state, reason, ''
     state, reason = classify_path(None, exe, env)
+    runs_code = ntpath.basename(_key(exe.strip())) in SCRIPT_HOSTS
     if in_ms:
+        if state == STATE_OK and runs_code:
+            # R-46: sem ler os argumentos, não dá para esconder nem dar OK.
+            return STATE_ATTENTION, REASON_SCRIPT_HOST, exe
         if state == STATE_OK:
             return None
         if _outside_windows_folder(exe, env):
@@ -559,7 +571,7 @@ def _classify_task(row, env):
             state = STATE_SUSPECT if system else STATE_ATTENTION
             reason = REASON_MS_FOLDER_OUTSIDE
         return state, reason, exe
-    if state != STATE_SUSPECT and ntpath.basename(_key(exe.strip())) in SCRIPT_HOSTS:
+    if state != STATE_SUSPECT and runs_code:
         state, reason = STATE_ATTENTION, REASON_SCRIPT_HOST
     return state, reason, exe
 
@@ -699,6 +711,10 @@ def _effective(item, env):
     if item.get('source') in _STARTUP_SOURCES and not path:
         return state, reason
     new_state, new_reason = classify_path(name, path, env)
+    if (new_state == STATE_OK and item.get('source') != 'process' and isinstance(path, str)
+            and ntpath.basename(_key(path.strip())) in SCRIPT_HOSTS):
+        # R-46: inicialização e tarefas não têm os argumentos lidos; nunca OK.
+        new_state, new_reason = STATE_ATTENTION, REASON_SCRIPT_HOST
     if _ORDER[new_state] < _ORDER[state]:
         return new_state, new_reason
     return state, reason
@@ -746,7 +762,9 @@ def checkup_lines(result, env=None):
     section('PROGRAMAS QUE ABREM COM O WINDOWS', result.get('autostart'), False,
             None if autostart_failed else 'Nenhum programa encontrado nas chaves e pastas de inicialização.')
     section('TAREFAS AGENDADAS', result.get('tasks'), False, None if 'tasks' in errors else TASKS_EMPTY)
+    # Sem administrador o Windows pode esconder tarefas: com essa nota, nunca a frase de "tudo limpo".
     lines.insert(len(lines) - 1, '  ' + TASKS_NOTE)
+    tasks_note_shown = True
     processes_shown = section('PROCESSOS EM EXECUÇÃO', result.get('processes'), True,
                               None if 'processes' in errors else 'Nenhum processo foi informado.')
     unchecked = result.get('unchecked')
@@ -774,7 +792,7 @@ def checkup_lines(result, env=None):
         if flagged:
             lines.append(NOT_CERTAIN)
         lines.append(RECOMMENDATION)
-    elif not unchecked and processes_shown:
+    elif not unchecked and processes_shown and not tasks_note_shown:
         lines.append(ALL_CLEAR)
     else:
         lines.append(NOT_ALL_CHECKED)

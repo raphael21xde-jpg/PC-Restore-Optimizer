@@ -153,6 +153,23 @@ class AutostartTests(unittest.TestCase):
         self.assertEqual(items[2]['reason'], sc.REASON_SHORTCUT)
         self.assertEqual(items[3]['reason'], sc.REASON_SCRIPT)
 
+    def test_code_runners_in_system32_are_attention(self):
+        # R-46 (revisão da PR #189): rundll32 e regsvr32 rodam o que vem nos argumentos.
+        for exe in ('rundll32.exe', 'regsvr32.exe', 'mshta.exe', 'cscript.exe', 'pwsh.exe'):
+            with self.subTest(exe=exe):
+                entries = [{'source': 'run_all', 'name': 'X',
+                            'command': 'C:\\Windows\\System32\\' + exe + ' C:\\a\\b.dll,Entrada'}]
+                item = sc.classify_autostart(entries, ENV)[0]
+                self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_SCRIPT_HOST))
+                text = '\n'.join(sc.checkup_lines({'autostart': [item], 'errors': []}, ENV))
+                self.assertIn('[atenção] X', text)
+        forged = {'autostart': [{'source': 'run_all', 'name': 'F', 'path': r'C:\Windows\System32\rundll32.exe',
+                                 'state': sc.STATE_OK, 'reason': sc.REASON_OK}], 'errors': []}
+        self.assertIn('[atenção] F', '\n'.join(sc.checkup_lines(forged, ENV)))
+        # Processos não mudam: o caminho do executável é o que o Windows informa.
+        procs = [{'Name': 'rundll32.exe', 'ExecutablePath': r'C:\Windows\System32\rundll32.exe'}]
+        self.assertEqual(sc.classify_processes(procs, ENV)['items'][0]['state'], sc.STATE_OK)
+
     def test_script_host_is_attention(self):
         entries = [{'source': 'run_user', 'name': 'Script',
                     'command': r'C:\Windows\System32\wscript.exe "C:\Users\Fulano Silva\a.vbs"'}]
@@ -300,8 +317,13 @@ class ReadCheckupTests(unittest.TestCase):
                 'Command': r'"C:\Program Files\Bom\bom.exe"'}]
         procs = [{'Name': 'bom.exe', 'ExecutablePath': r'C:\Program Files\Bom\bom.exe'}]
         clean = self._text(sc.read_checkup(_fake_ps(run, None, procs), ENV))
-        self.assertIn(sc.ALL_CLEAR, clean)
+        # P3-07 fatia 2: a nota das tarefas (sem administrador) deixa a frase neutra.
+        self.assertIn(sc.TASKS_NOTE, clean)
+        self.assertNotIn(sc.ALL_CLEAR, clean)
+        self.assertIn(sc.NOT_ALL_CHECKED, clean)
         self.assertNotIn(sc.RECOMMENDATION, clean)
+        old = {'autostart': [], 'processes': [], 'unchecked': 0, 'errors': []}
+        self.assertNotIn(sc.ALL_CLEAR, self._text(old))
         procs_unchecked = procs + [{'Name': 'System', 'ExecutablePath': None}]
         partial = self._text(sc.read_checkup(_fake_ps(run, None, procs_unchecked), ENV))
         self.assertNotIn(sc.ALL_CLEAR, partial)
@@ -598,9 +620,6 @@ class FixRessalvas181Tests(unittest.TestCase):
         self.assertIn('[OK] svchost.exe', '\n'.join(sc.checkup_lines(result, ENV)))
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 def _task(path, name, execute='', com=False):
     return {'TaskPath': path, 'TaskName': name, 'Execute': execute, 'Com': com}
@@ -827,11 +846,14 @@ class ScheduledTaskTests(unittest.TestCase):
         self.assertIn('RESUMO: OK 2 · atenção 1 · suspeito 0 · não conferidos 0', lines)
         self.assertIn(sc.RECOMMENDATION, lines)
 
-    def test_all_clear_with_ok_tasks(self):
+    def test_ok_tasks_with_admin_note_use_neutral_phrase(self):
         tasks = [_task('\\', 'Boa', r'"C:\Program Files\Boa\boa.exe"')]
         procs = [{'Name': 'bom.exe', 'ExecutablePath': r'C:\Program Files\Bom\bom.exe'}]
         text = self._text(sc.read_checkup(_fake_ps(procs=procs, tasks=tasks), ENV))
-        self.assertIn(sc.ALL_CLEAR, text)
+        self.assertIn(sc.TASKS_NOTE, text)
+        self.assertNotIn(sc.ALL_CLEAR, text)
+        self.assertIn(sc.NOT_ALL_CHECKED, text)
+        self.assertNotIn(sc.RECOMMENDATION, text)
 
     def test_confirmation_mentions_tasks_and_no_forbidden_words(self):
         self.assertIn('tarefas agendadas', sc.CHECKUP_CONFIRMATION)
@@ -842,6 +864,58 @@ class ScheduledTaskTests(unittest.TestCase):
             for word in FORBIDDEN_WORDS:
                 self.assertNotIn(word, text.lower())
 
+    def test_microsoft_folder_code_runners_in_system32_are_shown(self):
+        # R-46: em \Microsoft\ esses programas não somem; ficam "atenção".
+        for exe in ('powershell.exe', 'pwsh.exe', 'cmd.exe', 'wscript.exe', 'cscript.exe', 'mshta.exe',
+                    'rundll32.exe', 'regsvr32.exe'):
+            with self.subTest(exe=exe):
+                item = self._one(_task('\\Microsoft\\Windows\\A\\', 'B', '%windir%\\System32\\' + exe))
+                self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_SCRIPT_HOST))
+                text = self._text({'tasks': [item], 'errors': []})
+                self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', text)
+                self.assertIn('RESUMO: OK 0 · atenção 1', text)
+        self.assertEqual(sc.classify_tasks([_task('\\Microsoft\\Windows\\A\\', 'B',
+                                                  r'C:\Windows\System32\defrag.exe')], ENV), [])
+
+    def test_code_runners_outside_microsoft_are_attention(self):
+        for exe in ('rundll32.exe', 'regsvr32.exe', 'mshta.exe'):
+            with self.subTest(exe=exe):
+                item = self._one(_task('\\', 'T', 'C:\\Windows\\SysWOW64\\' + exe))
+                self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_SCRIPT_HOST))
+        forged = {'tasks': [{'source': 'task', 'name': '\\F', 'path': r'C:\Windows\System32\regsvr32.exe',
+                             'state': sc.STATE_OK, 'reason': sc.REASON_OK}], 'errors': []}
+        self.assertIn('[atenção] \\F', self._text(forged))
+
+    def test_sid_glued_to_letters_is_hidden(self):
+        sid = 'S-1-5-21-1111111111-2222222222-3333333333-1001'
+        rows = [_task('\\', 'GoogleUpdateTaskUser' + sid + 'Core', r'"C:\Program Files\Google\u.exe"'),
+                _task('\\', 'MicrosoftEdgeUpdateTaskUser' + sid + 'UA', r'"C:\Program Files\Edge\e.exe"'),
+                _task('\\', 'Sem' + 'S-1-5-21-44444-55555-66666' + 'Fim', r'"C:\Program Files\x.exe"'),
+                _task('\\', 'Outro' + 's-1-5-80-111-222-333-444' + 'x', r'"C:\Program Files\y.exe"'),
+                _task('\\', 'Comum S-1-5-18 e S-1', r'"C:\Program Files\z.exe"')]
+        text = self._text(sc.read_checkup(_fake_ps(tasks=rows), ENV))
+        for leak in ('1111111111', '2222222222', '3333333333', '1001', '44444', '66666', '444'):
+            self.assertNotIn(leak, text)
+        self.assertIn('GoogleUpdateTaskUser<SID>Core', text)
+        self.assertIn('MicrosoftEdgeUpdateTaskUser<SID>UA', text)
+        self.assertIn('Sem<SID>Fim', text)
+        self.assertIn('Outro<SID>x', text)
+        self.assertIn('Comum S-1-5-18 e S-1', text)
+
+    def test_email_in_task_name_is_hidden(self):
+        rows = [_task('\\', 'OneDrive fulano.silva+x@exemplo.com.br', r'"C:\Program Files\o.exe"'),
+                _task('\\Pasta\\', 'Sync-ciclano@empresa.org-Diario', r'"C:\Program Files\s.exe"')]
+        text = self._text(sc.read_checkup(_fake_ps(tasks=rows), ENV))
+        for leak in ('fulano', 'exemplo', 'ciclano', 'empresa', '@'):
+            self.assertNotIn(leak, text)
+        self.assertIn('\\OneDrive <e-mail>', text)
+        # Do lado seguro: o que vem colado com "-" ao e-mail some junto.
+        self.assertIn('\\Pasta\\<e-mail> — tarefa agendada', text)
+
+    def test_empty_tasks_text_says_what_is_left_out(self):
+        for words in ('Microsoft', 'pasta do Windows', 'programas instalados', 'scripts'):
+            self.assertIn(words, sc.TASKS_EMPTY)
+
     def test_strange_rows_do_not_break(self):
         rows = [None, 5, 'x', {}, {'TaskPath': 7, 'TaskName': None, 'Execute': ['a'], 'Com': 'True'}]
         items = sc.classify_tasks(rows, ENV)
@@ -850,3 +924,7 @@ class ScheduledTaskTests(unittest.TestCase):
         self.assertEqual(sc.classify_tasks(None, ENV), [])
         self.assertEqual(sc.classify_tasks({'value': []}, ENV), [])
         self.assertIsInstance(self._text({'tasks': items, 'errors': []}), str)
+
+
+if __name__ == '__main__':
+    unittest.main()
