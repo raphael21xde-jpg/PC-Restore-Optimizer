@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 1 (última poda: 01/11/2026, pedido `regras-20261101-poda-r25-r34`, issue #157). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-35.
+poda: 3 (última poda: 01/11/2026, pedido `regras-20261101-poda-r25-r34`, issue #157). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-35.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -51,3 +51,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-34 | Juntada à **R-32** na poda de 01/11/2026 (confira a R-32). | Revisão da PR #150 (P3-06 fatia 1, 0d9bf999b191) | 2026-10-31 |
 | R-35 | Ao juntar ou renumerar regras numa poda, procure (grep) as citações "R-<nº>" antigas no código, nos testes e no backlog e atualize-as no mesmo commit da poda. | Revisão da PR #160 (FIX-P3-06-03, 2089a95004b9) | 2026-11-01 |
 | R-36 | Aviso de junção ou conflito entre janelas diz onde ficou cada decisão (no arquivo × nesta janela) e conta só as decisões do usuário; nunca afirma que "ficou" a opção mais segura se a janela que mostra o aviso continua usando outra. | Revisão da PR #167 (FIX-P3-06-09, bbb1199ffc7f), issue #168 | 2026-11-01 |
+| R-37 | Aviso que nomeia a causa (danificado, ocupado, sem permissão) só a afirma quando o código distinguiu essa causa; se um mesmo status junta causas diferentes, o texto é neutro ("não pôde ser lido") e a orientação vale para todas. | Revisão da PR #169 (FIX-P3-06-10, 720d150d116f) | 2026-11-01 |

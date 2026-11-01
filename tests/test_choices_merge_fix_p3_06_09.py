@@ -256,7 +256,9 @@ class SaveChoicesSourceTests(unittest.TestCase):
         # FIX-P3-06-10: a pergunta repete o último aviso e o padrão é "Não"
         body = self._body('_quit')
         self.assertIn("getattr(self,'_choices_last_warning',None)", body)
-        self.assertIn("f'{warning}\\n\\nFechar mesmo assim?'", body)
+        # FIX-P3-06-11: avisa que as últimas escolhas se perdem antes de perguntar
+        self.assertIn("f'{warning}\\n\\nSe fechar agora, essas últimas escolhas não serão salvas. '", body)
+        self.assertIn("'Fechar mesmo assim?'", body)
         self.assertIn("default='no'", body)
 
 
