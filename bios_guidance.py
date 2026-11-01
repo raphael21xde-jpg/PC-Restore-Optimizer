@@ -20,9 +20,12 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
 - na tela, o motivo de "desligado" com números só é exibido se os números forem
   coerentes (0 < configurada < informada e não metade exata); senão vira o
   motivo padrão (R-32, antiga R-34);
-- Resizable BAR (fatia 2): "provavelmente ligado" só se algum intervalo de
-  memória da placa de vídeo (lido pelo Windows, só o tamanho) passa de 256 MiB;
-  o resto é "não confirmado" com motivo deste módulo. Nunca diz "desligado"
+- Resizable BAR (fatia 2, FIX-P3-06-13): cada placa de vídeo é avaliada
+  sozinha pelo tamanho dos intervalos de memória lidos pelo Windows. "Provavelmente
+  ligado" só se TODAS as placas têm algum intervalo maior que 256 MiB; se as placas
+  discordam ou alguma não informa, é "não confirmado" com REBAR_REASON_MIXED (R-38);
+  o resto é "não confirmado" com motivo deste módulo. Aceita o formato
+  {"value": [...]} do ConvertTo-Json do PowerShell 5.1. Nunca diz "desligado"
   (janela pequena também acontece com placa sem suporte ou driver antigo);
 - guarda só família da placa, versão e ano da BIOS; nunca modelo da placa,
   número de série ou nome do PC;
@@ -77,15 +80,17 @@ REBAR_LABELS = {
     REBAR_ON: 'provavelmente ligado',
     REBAR_UNKNOWN: 'não confirmado',
 }
-REBAR_REASON_ON = ('O Windows informa uma janela de memória da placa de vídeo maior que 256 MiB; '
+REBAR_REASON_ON = ('O Windows informa, para cada placa de vídeo, uma janela de memória maior que 256 MiB; '
                    'isso costuma indicar Resizable BAR ligado.')
 REBAR_REASON_SMALL = ('As janelas de memória da placa de vídeo que o Windows informa têm até 256 MiB; '
                       'isso não basta para confirmar o Resizable BAR.')
 REBAR_REASON_DEFAULT = ('O Windows não informou a janela de memória da placa de vídeo; '
                         'não dá para saber.')
+REBAR_REASON_MIXED = ('As placas de vídeo do PC não informam a mesma coisa (por exemplo, vídeo integrado '
+                      'e placa dedicada, ou uma delas sem informação); não dá para confirmar o Resizable BAR.')
 _REBAR_REASONS = {
     REBAR_ON: {REBAR_REASON_ON},
-    REBAR_UNKNOWN: {REBAR_REASON_DEFAULT, REBAR_REASON_SMALL},
+    REBAR_UNKNOWN: {REBAR_REASON_DEFAULT, REBAR_REASON_SMALL, REBAR_REASON_MIXED},
 }
 _REBAR_DEFAULTS = {REBAR_ON: REBAR_REASON_ON, REBAR_UNKNOWN: REBAR_REASON_DEFAULT}
 _BAR_LIMIT = 256 * 1024 ** 2
@@ -173,24 +178,54 @@ def _bar_size(value):
     return value if 0 < value <= _BAR_MAX else None
 
 
+def _ps_list(value):
+    """Lista a partir do que o ConvertTo-Json devolve; nunca lança erro.
+
+    Lista fica como está; {"value": [...]} (PowerShell 5.1 com -InputObject) vira a
+    lista de dentro; qualquer outro valor vira lista vazia.
+    """
+    if isinstance(value, dict) and 'value' in value:
+        value = value['value']
+    return list(value) if isinstance(value, list) else []
+
+
+_GPU_ON, _GPU_SMALL, _GPU_NO_DATA = 'ligada', 'pequena', 'sem_dado'
+
+
+def _gpu_bar_state(gpu):
+    """ligada (alguma janela > 256 MiB), pequena (janelas válidas, todas até 256 MiB) ou sem dado."""
+    if not isinstance(gpu, dict):
+        return _GPU_NO_DATA
+    values = gpu.get('Sizes')
+    values = _ps_list(values) if isinstance(values, (list, dict)) else [values]
+    sizes = [size for size in map(_bar_size, values) if size is not None]
+    if not sizes:
+        return _GPU_NO_DATA
+    return _GPU_ON if any(size > _BAR_LIMIT for size in sizes) else _GPU_SMALL
+
+
 def rebar_state(gpu_bar):
     """(estado, motivo) a partir dos tamanhos dos intervalos de memória das placas de vídeo.
 
-    Entrada: dict ou lista de dicts {"Sizes": [bytes, ...]} (um por placa). Algum
-    intervalo maior que 256 MiB é "provavelmente ligado"; o resto é "não confirmado".
-    Nunca devolve "desligado" e nunca lança erro.
+    Entrada: dict ou lista de dicts {"Sizes": [bytes, ...]} (um por placa); a lista e
+    o Sizes também podem vir como {"value": [...]} (PowerShell 5.1). Cada placa é
+    avaliada sozinha (R-38): "provavelmente ligado" só se todas têm algum intervalo
+    maior que 256 MiB; se uma tem e outra não (ou não informa), é "não confirmado"
+    com REBAR_REASON_MIXED; o resto é "não confirmado". Nunca devolve "desligado"
+    e nunca lança erro.
     """
-    sizes = []
-    for gpu in _items(gpu_bar):
-        values = gpu.get('Sizes')
-        if not isinstance(values, list):
-            values = [values]
-        sizes.extend(size for size in map(_bar_size, values) if size is not None)
-    if not sizes:
-        return REBAR_UNKNOWN, REBAR_REASON_DEFAULT
-    if any(size > _BAR_LIMIT for size in sizes):
+    if isinstance(gpu_bar, dict) and 'value' not in gpu_bar:
+        gpus = [gpu_bar]
+    else:
+        gpus = _ps_list(gpu_bar)
+    states = [_gpu_bar_state(gpu) for gpu in gpus]
+    if states and all(state == _GPU_ON for state in states):
         return REBAR_ON, REBAR_REASON_ON
-    return REBAR_UNKNOWN, REBAR_REASON_SMALL
+    if _GPU_ON in states:
+        return REBAR_UNKNOWN, REBAR_REASON_MIXED
+    if _GPU_SMALL in states:
+        return REBAR_UNKNOWN, REBAR_REASON_SMALL
+    return REBAR_UNKNOWN, REBAR_REASON_DEFAULT
 
 
 def _off_reason_ok(reason):
