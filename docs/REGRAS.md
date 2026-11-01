@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 8 (R-35 a R-40, R-42 e R-43; a R-41 está reservada para o FIX-P3-06-15) (última poda: 01/11/2026, pedido `regras-20261101-poda-r25-r34`, issue #157). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-35.
+poda: 9 (R-35 a R-43) (última poda: 01/11/2026, pedido `regras-20261101-poda-r25-r34`, issue #157). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-35.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -57,3 +57,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-40 | Função que tira o executável de uma linha de comando devolve só o executável também em entrada malformada (aspa sem fechar, sem espaço antes do argumento); tem teste com um argumento-segredo em cada formato e confere que o segredo não aparece. | Revisão da PR #181 (P3-07 fatia 1, 5f61a4a4c51b), issue #182, FIX-P3-07-01 | 2026-11-01 |
 | R-42 | Teste de "segredo não aparece" cobre também o argumento-segredo antes de um segundo caminho com extensão (ex.: `prog --token=X C:\a.exe`, `"prog --token=X C:\a.exe`, `powershell -token=X -File a.ps1`) e confere o texto da tela, não só o retorno da função. | Revisão da PR #183 (FIX-P3-07-01, 78a33572441d) | 2026-11-01 |
 | R-43 | Função que tira o executável de uma linha de comando não depende de o argumento "parecer" opção (-, /, =): se o trecho até a extensão atravessa espaço sem aspas fechadas, devolve vazio; o teste tem argumento-segredo posicional (sem -, / ou =) antes de um segundo caminho, com e sem aspa sem fechar, conferido no texto da tela. | Revisão da PR #183 (FIX-P3-07-01, 26306317de84) | 2026-11-01 |
+| R-41 | Passo de validação ou orientação ao usuário que manda desativar um aparelho ou driver diz o risco e a condição segura (ex.: "só com outra placa de vídeo funcionando"); se ignorar resolve, a orientação é ignorar. | Revisão da PR #179 (FIX-P3-06-14, a88f7f131b69), issue #180, FIX-P3-06-15 | 2026-11-01 |
