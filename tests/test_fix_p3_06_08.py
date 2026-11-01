@@ -30,13 +30,17 @@ def _lock_path(path: Path) -> Path:
 class SaveChoicesSourceTests(unittest.TestCase):
     """Funciona mesmo sem Tk: `_save_choices` não monta mais o temporário fixo."""
 
-    def test_save_choices_uses_atomic_write_text(self):
+    def test_save_choices_uses_choices_store(self):
+        # FIX-P3-06-09: a gravação (atomic_write_text, com trava) passou para
+        # choices_store.save_merged, que junta com o que outra janela gravou.
         source = (ROOT / 'app.py').read_text(encoding='utf-8')
         start = source.index('def _save_choices(self):')
         body = source[start:source.index('\n    def ', start + 1)]
-        self.assertIn('atomic_write_text(self.local_state', body)
+        self.assertIn('choices_store.save_merged(self.local_state', body)
         self.assertNotIn("with_suffix('.json.tmp')", body)
-        self.assertIn('except OSError:pass', body)
+        self.assertIn('except OSError:', body)
+        store = (ROOT / 'choices_store.py').read_text(encoding='utf-8')
+        self.assertIn('atomic_write_text(path', store)
 
 
 class SaveChoicesTests(unittest.TestCase):
@@ -55,7 +59,7 @@ class SaveChoicesTests(unittest.TestCase):
 
     def _fake(self):
         app = self.app
-        return SimpleNamespace(
+        fake = SimpleNamespace(
             local_state=self.folder / 'preferencias.json',
             choices={'C:/Jogos': 'keep'},
             format_vars={d: SimpleNamespace(get=lambda: False) for d in app.DISKS},
@@ -63,6 +67,8 @@ class SaveChoicesTests(unittest.TestCase):
             auto_save_paths=set(), approved_catalog_paths={}, personal_paths=set(),
             browser_keep_paths=set(), browser_vaults={}, retained_discoveries={},
             cleanup_candidates=set(), catalog_items={})
+        fake._choices_doc = lambda: app.App._choices_doc(fake)
+        return fake
 
     def test_unique_tmp_and_foreign_tmp_untouched(self):
         fake = self._fake()
@@ -76,10 +82,10 @@ class SaveChoicesTests(unittest.TestCase):
 
     def test_replace_failure_keeps_old_file_without_tmp_or_error(self):
         fake = self._fake()
-        fake.local_state.write_text('antigo', encoding='utf-8')
+        fake.local_state.write_text('{"antigo": true}', encoding='utf-8')
         with mock.patch.object(atomic_write.os, 'replace', side_effect=OSError('falha')):
-            self.app.App._save_choices(fake)  # sem erro: except OSError continua
-        self.assertEqual(fake.local_state.read_text(encoding='utf-8'), 'antigo')
+            self.app.App._save_choices(fake)  # sem erro: OSError vira aviso
+        self.assertEqual(fake.local_state.read_text(encoding='utf-8'), '{"antigo": true}')
         self.assertEqual(_leftovers(self.folder, '.tmp'), [])
 
 
