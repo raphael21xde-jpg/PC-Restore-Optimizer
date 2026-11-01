@@ -8,8 +8,9 @@ Regras desta fatia:
 - só lê: nada é mudado, encerrado ou tirado do lugar, e não pede administrador;
 - da linha de comando de um programa só fica o executável (argumentos podem
   ter senhas ou tokens); dos processos só o nome e o caminho do executável;
-- a pasta do usuário vira %USERPROFILE% e a de outros usuários vira
-  "<outro usuário>";
+- a pasta do usuário vira %USERPROFILE%, a de outros usuários vira
+  "<outro usuário>" e o nome do usuário (palavra inteira) vira %USERNAME%,
+  só no texto mostrado: a classificação usa o caminho original;
 - na dúvida o item fica "atenção", nunca "OK";
 - as funções são puras e recebem os dados já lidos; o PowerShell real só é
   usado por ``read_checkup`` quando nenhum ``ps`` é passado (importado na hora,
@@ -139,15 +140,22 @@ STARTUP_QUERY = (
     '[pscustomobject]@{Scope=$i;Name=$_.Name;Extension=$_.Extension} } } '
     'catch{ [pscustomobject]@{Scope=$i;Error=$true} } } }; '
     'ConvertTo-Json -InputObject @($out) -Compress')
-PROCESS_QUERY = ('Get-CimInstance Win32_Process | Select-Object Name,ExecutablePath | '
-                 'ConvertTo-Json -Compress')
+# -Property: o Windows nem chega a entregar os outros campos (como a linha de comando).
+PROCESS_QUERY = ('Get-CimInstance Win32_Process -Property Name,ExecutablePath | '
+                 'Select-Object Name,ExecutablePath | ConvertTo-Json -Compress')
 
 _DRIVE_PATH = re.compile(r'^[a-z]:\\')
 _DRIVE_ROOT_FILE = re.compile(r'^[a-z]:\\[^\\]+$')
 _ENV_VAR = re.compile(r'%([^%]+)%')
-_OTHER_USER = re.compile(r'([A-Za-z]:[\\/]Users[\\/])([^\\/"]+)', re.IGNORECASE)
+# C:\Users\<nome>, C:\Documents and Settings\<nome> e \\servidor\users\<nome>.
+_OTHER_USER = re.compile(r'((?:[A-Za-z]:|\\\\[^\\/"]+)[\\/](?:Users|Documents and Settings)[\\/])([^\\/"]+)',
+                         re.IGNORECASE)
+# Marcadores que a troca do nome do usuário não pode estragar.
+_PLACEHOLDERS = ('%USERPROFILE%', '%USERNAME%', '<outro usuário>')
 _KEEP_USERS = ('public', 'default', 'default user', 'all users', '<outro usuário>')
-_COMMAND_EXE = re.compile(r'^(.*?\.(?:exe|bat|cmd|vbs|ps1|js))(?=\s|,|$)', re.IGNORECASE)
+# A extensão termina quando não vem letra, número ou "_" colado (app.exe--token=X vira app.exe).
+_COMMAND_EXE = re.compile(r'^(.*?\.(?:exe|bat|cmd|vbs|ps1|js))(?![A-Za-z0-9_])', re.IGNORECASE)
+_NT_PREFIX = re.compile(r'^(?:\\\\\?\\|\\\?\?\\)(UNC\\)?', re.IGNORECASE)
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 MAX_NAME = 80
 
@@ -198,7 +206,24 @@ def sanitize_path(path, env=None) -> str:
         if match.group(2).strip().lower() in _KEEP_USERS:
             return match.group(0)
         return match.group(1) + '<outro usuário>'
-    return _OTHER_USER.sub(other, text)
+    text = _OTHER_USER.sub(other, text)
+    return _hide_user_name(text, env)
+
+
+def _hide_user_name(text, env):
+    """Troca o USERNAME (palavra inteira, sem diferenciar maiúsculas) por %USERNAME%.
+
+    Só muda o texto mostrado. Nome de uma letra só não é trocado (não identifica
+    ninguém e estragaria "C:"). Os marcadores já colocados ficam como estão.
+    """
+    user = _env_get(env, 'USERNAME')
+    user = user.strip() if user else ''
+    if len(user) < 2:
+        return text
+    protected = '|'.join(re.escape(p) for p in _PLACEHOLDERS)
+    pattern = re.compile('(' + protected + r')|(?<![\w%])' + re.escape(user) + r'(?![\w%])',
+                         re.IGNORECASE)
+    return pattern.sub(lambda m: m.group(1) or '%USERNAME%', text)
 
 
 def _clean_name(value, env) -> str:
@@ -217,12 +242,87 @@ def executable_from_command(cmd) -> str:
         return ''
     if text.startswith('"'):
         end = text.find('"', 1)
-        inner = text[1:end] if end > 0 else text[1:]
-        return inner.strip()
+        if end > 0:
+            return _only_if_not_argument(text[1:end].strip())
+        # Aspa sem fechar: o resto pode ter argumentos; só fica o que termina numa extensão.
+        found = _COMMAND_EXE.match(text[1:])
+        return _only_if_not_argument(_no_space(found.group(1).strip())) if found else ''
     found = _COMMAND_EXE.match(text)
     if found:
-        return found.group(1).strip()
-    return text.split()[0]
+        return _only_if_not_argument(_no_space(found.group(1).strip()))
+    # Sem extensão conhecida: só o primeiro pedaço.
+    return _only_if_not_argument(text.split()[0])
+
+
+def _command_guess(cmd) -> str:
+    """Trecho até a primeira extensão, sem as travas de argumento: só para classificar, nunca mostrado."""
+    if not isinstance(cmd, str):
+        return ''
+    text = cmd.strip().lstrip('"')
+    found = _COMMAND_EXE.match(text)
+    return found.group(1).strip() if found else ''
+
+
+def _no_space(exe) -> str:
+    """Sem aspas fechadas, o executável não pode ter espaço (R-43).
+
+    A busca pela extensão pode atravessar argumentos até um segundo caminho
+    (ex.: ``app SEGREDO C:\\a.exe``); como não dá para saber onde termina o
+    executável, nada é mostrado e o item fica "atenção".
+    """
+    return '' if any(ch.isspace() for ch in exe) else exe
+
+
+def _only_if_not_argument(exe) -> str:
+    """Devolve '' se algum pedaço (separado por espaço) parece argumento (R-40, R-42).
+
+    A busca pela extensão pode atravessar espaços até um segundo caminho
+    (ex.: ``prog --token=X C:\\a.exe``); um pedaço que começa com "-" ou "/", ou que
+    tem "=" ou ",", pode ser senha ou token, e nunca é mostrado. O item vira "atenção".
+    """
+    for piece in exe.split():
+        if piece[:1] in ('-', '/') or '=' in piece or ',' in piece:
+            return ''
+    return exe
+
+
+def _command_is_malformed(cmd, exe) -> bool:
+    """Aspa sem fechar, ou algo colado logo depois do executável: na dúvida, nunca OK."""
+    if not isinstance(cmd, str) or not exe:
+        return False
+    text = cmd.strip()
+    if text.startswith('"'):
+        return text.find('"', 1) < 0
+    rest = text[len(exe):] if text.lower().startswith(exe.lower()) else ''
+    return bool(rest) and not rest[0].isspace() and rest[0] != ','
+
+
+def _nt_literal_end(path) -> bool:
+    """Caminho com \\\\?\\ ou \\??\\ que o Windows não normaliza: nunca pode dar OK.
+
+    Com esses prefixos o Windows não tira espaço (qualquer um, inclusive Unicode)
+    nem ponto do fim e não resolve os pedaços "." e "..": é outro arquivo, e
+    comparar o caminho normalizado daria uma pasta que não é a de verdade.
+    """
+    if not isinstance(path, str) or not path:
+        return False
+    found = _NT_PREFIX.match(path.lstrip())
+    if not found:
+        return False
+    if path[-1].isspace() or path[-1] == '.':
+        return True
+    return any(part in ('.', '..') for part in re.split(r'[\\/]', path.lstrip()[found.end():]))
+
+
+def _strip_nt_prefix(path):
+    """Tira os prefixos \\\\?\\ e \\??\\ do Windows; \\\\?\\UNC\\ vira \\\\."""
+    if not isinstance(path, str):
+        return path
+    found = _NT_PREFIX.match(path)
+    if not found:
+        return path
+    rest = path[found.end():]
+    return '\\\\' + rest if found.group(1) else rest
 
 
 def _expand(path, env):
@@ -248,7 +348,19 @@ def classify_path(name, path, env=None):
     env = _env(env)
     if not isinstance(path, str) or not path.strip():
         return STATE_ATTENTION, REASON_UNREADABLE
-    norm = _key(_expand(path.strip(), env))
+    state, reason = _classify_clean(name, _strip_nt_prefix(path.strip()), env)
+    if state == STATE_OK and _nt_literal_end(path):
+        # Ex.: "\\\\?\\C:\\Windows\\System32\\svchost.exe " não é o svchost do Windows.
+        base = ntpath.basename(_key(path.strip()))
+        claimed = name.strip().lower() if isinstance(name, str) else ''
+        if base in SYSTEM_NAMES or claimed in SYSTEM_NAMES or EXPLORER in (base, claimed):
+            return STATE_SUSPECT, REASON_SYSTEM_NAME
+        return STATE_ATTENTION, REASON_OTHER_PLACE
+    return state, reason
+
+
+def _classify_clean(name, path, env):
+    norm = _key(_expand(path, env))
     base = ntpath.basename(norm)
     claimed = name.strip().lower() if isinstance(name, str) else ''
     if not _DRIVE_PATH.match(norm) and not norm.startswith('\\\\'):
@@ -307,8 +419,16 @@ def classify_autostart(entries, env=None):
                 reason = REASON_STARTUP_FILE
             items.append(_item(source, name, '', STATE_ATTENTION, reason, env))
             continue
-        exe = executable_from_command(entry.get('command'))
+        command = entry.get('command')
+        exe = executable_from_command(command)
         state, reason = classify_path(None, exe, env)
+        if not exe:
+            # Nada é mostrado, mas um nome de sistema fora da pasta do Windows continua suspeito.
+            guess = _command_guess(command)
+            if guess and classify_path(None, guess, env)[0] == STATE_SUSPECT:
+                state, reason = STATE_SUSPECT, REASON_SYSTEM_NAME
+        if state == STATE_OK and _command_is_malformed(command, exe):
+            state, reason = STATE_ATTENTION, REASON_NOT_FULL_PATH
         if state == STATE_OK and ntpath.basename(_key(exe)) in SCRIPT_HOSTS:
             state, reason = STATE_ATTENTION, REASON_SCRIPT_HOST
         items.append(_item(source, name, exe, state, reason, env))
@@ -328,7 +448,8 @@ def classify_processes(procs, env=None):
         if not isinstance(path, str) or not path.strip():
             unchecked += 1
             continue
-        key = ((name or '').lower() if isinstance(name, str) else '', _key(path))
+        key = ((name or '').lower() if isinstance(name, str) else '', _key(_strip_nt_prefix(path.strip())),
+               _nt_literal_end(path))
         if key in grouped:
             grouped[key]['count'] += 1
             continue
@@ -414,9 +535,28 @@ def _safe_reason(item, state):
     return reason
 
 
-def _item_lines(item, env, with_count=False):
+def _effective(item, env):
+    """Estado e motivo para mostrar: classifica de novo o caminho guardado (R-32).
+
+    Vale o mais grave entre o guardado e o recalculado: só rebaixa, nunca promove a OK.
+    Nas entradas de inicialização o nome é o do registro, não o do programa.
+    """
     state = _safe_state(item)
     reason = _safe_reason(item, state)
+    name = item.get('name') if item.get('source') == 'process' else None
+    name = _expand(name, env) if isinstance(name, str) else None
+    path = item.get('path')
+    path = _expand(path, env) if isinstance(path, str) else path
+    if item.get('source') in _STARTUP_SOURCES and not path:
+        return state, reason
+    new_state, new_reason = classify_path(name, path, env)
+    if _ORDER[new_state] < _ORDER[state]:
+        return new_state, new_reason
+    return state, reason
+
+
+def _item_lines(item, env, with_count=False):
+    state, reason = _effective(item, env)
     name = _clean_name(item.get('name'), env) or 'sem nome'
     count = item.get('count')
     if with_count and isinstance(count, int) and not isinstance(count, bool) and count > 1:
@@ -443,7 +583,7 @@ def checkup_lines(result, env=None):
     def section(title, items, with_count, empty_text):
         lines.append(title)
         valid = [i for i in _as_list(items) if isinstance(i, dict)]
-        valid.sort(key=lambda i: _ORDER[_safe_state(i)])
+        valid.sort(key=lambda i: _ORDER[_effective(i, env)[0]])
         for item in valid:
             item_lines, state = _item_lines(item, env, with_count)
             lines.extend(item_lines)
@@ -460,7 +600,10 @@ def checkup_lines(result, env=None):
                               None if 'processes' in errors else 'Nenhum processo foi informado.')
     unchecked = result.get('unchecked')
     unchecked = unchecked if isinstance(unchecked, int) and not isinstance(unchecked, bool) and unchecked > 0 else 0
-    if unchecked:
+    if unchecked == 1:
+        lines.insert(len(lines) - 1, '  1 processo não pôde ser conferido (o Windows não informou de onde '
+                                     'ele roda). Isso é comum em processos do próprio Windows.')
+    elif unchecked:
         lines.insert(len(lines) - 1, f'  {unchecked} processos não puderam ser conferidos (o Windows não '
                                      'informou de onde eles rodam). Isso é comum em processos do próprio Windows.')
     if errors:
