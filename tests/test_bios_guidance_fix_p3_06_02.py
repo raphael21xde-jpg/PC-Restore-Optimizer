@@ -2,6 +2,8 @@
 
 Só dicts sintéticos: nenhum comando, nenhum registro, nenhum WMI e nenhum Tk.
 """
+import pathlib
+import re
 import unittest
 
 import bios_guidance as bg
@@ -85,8 +87,25 @@ def _reason_after_label(lines):
     """Acha a linha do perfil de memória pelo rótulo e devolve a seguinte (o motivo)."""
     for index, line in enumerate(lines):
         if line.strip().startswith(_XMP_LABEL):
+            if index + 1 >= len(lines):
+                raise AssertionError('linha do motivo não encontrada depois do rótulo')
             return lines[index + 1].strip()
     raise AssertionError('linha do perfil de memória não encontrada')
+
+
+class FixP3_06_04Test(unittest.TestCase):
+    def test_reason_after_label_missing_reason_fails_clearly(self):
+        lines = ['Orientação da BIOS', _XMP_LABEL + ' Desligado']
+        with self.assertRaisesRegex(AssertionError,
+                                    'linha do motivo não encontrada depois do rótulo'):
+            _reason_after_label(lines)
+
+    def test_no_stale_rule_citations(self):
+        source = pathlib.Path(bg.__file__).read_text(encoding='utf-8')
+        citations = [m.start() for m in re.finditer(r'R-34\b', source)]
+        stale = [pos for pos in citations
+                 if not source[:pos].endswith('antiga ')]
+        self.assertEqual(stale, [], 'citação solta da R-34 em bios_guidance.py')
 
 
 class PlainTermsTest(unittest.TestCase):
