@@ -747,7 +747,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - O que mudou no check-up de segurança:
   - **Argumentos:** da linha de comando de um programa que abre com o Windows só aparece o executável. Ele pode ter espaço só se veio entre aspas fechadas. Sem aspas, ou com aspa sem fechar, se o trecho até a extensão tiver qualquer espaço, nada é mostrado e o item fica "atenção" (R-40). Também não é mostrado nada se algum pedaço começa com `-` ou `/`, ou tem `=` ou `,`. Argumento colado no executável é cortado (`app.exe--token=X` vira `app.exe`).
   - **Comando malformado nunca é OK:** aspa sem fechar ou algo colado logo depois do executável deixa o item como "atenção", mesmo em `Program Files`.
-  - **Nome do usuário:** também some de `Documents and Settings\<nome>` e `\\servidor\users\<nome>` (vira `<outro usuário>`), e o nome do usuário, como palavra inteira, vira `%USERNAME%` (ex.: `D:\<nome>\` e `<nome> - atalho.lnk`).
+  - **Nome do usuário:** também some de `Documents and Settings\<nome>` e `\\servidor\users\<nome>` (vira `<outro usuário>`), e o nome do usuário vira `%USERNAME%` (ex.: `D:\<nome>\` e `<nome> - atalho.lnk`). Neste FIX a troca valia só para o nome separado do resto por espaço, barra ou pontuação; desde a revisão 2 da PR #189 (P3-07 fatia 2) ela vale também para o nome colado em letras (ex.: `Taskx<nome>y` vira `Taskx%USERNAME%y`).
   - **Prefixos `\\?\` e `\??\`:** são tirados antes de comparar (`\\?\UNC\` vira `\\`). Com esses prefixos, caminho com pedaço `.` ou `..`, ou que termina em espaço (qualquer um, inclusive Unicode) ou ponto, nunca é OK: fica "suspeito" se o nome é de programa do Windows, senão "atenção"; e não é agrupado com o mesmo caminho sem prefixo.
   - **Frase no singular:** "1 processo não pôde ser conferido (o Windows não informou de onde ele roda)."
   - **Consulta dos processos:** o Windows só entrega o nome e o caminho (`-Property Name,ExecutablePath`).
@@ -760,6 +760,10 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - Testes: classe `FixRessalvas181Tests` em `tests/test_security_checkup_p3_07.py`. O segredo `SEGREDO123` é testado em 15 formatos, no retorno da função e no texto da tela. Também há testes do nome do usuário, dos prefixos `\\?\`/`\??\`, do singular/plural, da consulta e do dict com OK falso.
 - Ressalva 7 (fatia 1 marcada `concluído` antes do merge e da validação no Windows): só registrada; segue o padrão dos FIX anteriores (o item vai `concluído` na própria PR, e a validação no Windows fica no "Validar M3").
 - Poda de 01/11/2026 (issue #187): R-42 e R-43 juntadas à R-40.
+
+### FIX-P3-07-02 · Interpretadores fora da pasta do Windows no check-up — `pronto`
+- Interpretadores fora da pasta do Windows (python, pythonw, node, java, javaw, bash, AutoHotkey e afins) dão OK em tarefa agendada e entrada de inicialização, mas rodam código dos argumentos (que não são lidos); devem ficar "atenção", com teste usando node.exe e python.exe em Program Files.
+- Origem: revisão 3 da PR #189.
 
 ### FIX-P3-06-15 · Ressalvas de texto da PR #179 (Validar M3 e R-31) — `concluído` (branch `auto/FIX-P3-06-15-textos-validar-m3`)
 - Issue #180. Três trocas de texto em `docs/BACKLOG.md`, sem código: no "Validar M3", trocar "desativar ou ignorar esses adaptadores" por "ignorar (não é preciso desativar nada); se quiser testar, desative só com outra placa de vídeo funcionando e com a tela ligada nela"; na fatia 2 do P3-06, a frase "Por placa: ... = 'não confirmado' com o motivo padrão" vira "Por placa: ... = placa 'sem dado'; nunca exceção."; no "Validar M3", trocar o nome `REBAR_REASON_MIXED` pelo texto que aparece na tela ("As placas de vídeo do PC não informam a mesma coisa...").
