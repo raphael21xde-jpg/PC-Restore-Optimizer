@@ -11,10 +11,12 @@ Regras desta fatia:
   das tarefas agendadas só a pasta, o nome e o executável (os argumentos nem
   são pedidos ao Windows);
 - a pasta do usuário vira %USERPROFILE%, a de outros usuários vira
-  "<outro usuário>" e o nome do usuário (palavra inteira) vira %USERNAME%,
-  só no texto mostrado: a classificação usa o caminho original; um SID
-  (como S-1-5-21-...) vira <SID>;
+  "<outro usuário>" e o nome do usuário (mesmo colado em letras) vira
+  %USERNAME%, só no texto mostrado: a classificação usa o caminho original;
+  um SID (como S-1-5-21-...) vira <SID> e um e-mail vira <e-mail>;
 - na dúvida o item fica "atenção", nunca "OK";
+- programa da pasta do Windows só dá OK (ou some, nas tarefas da Microsoft)
+  se estiver na lista fechada ``KNOWN_QUIET_PROGRAMS`` (R-46);
 - as funções são puras e recebem os dados já lidos; o PowerShell real só é
   usado por ``read_checkup`` quando nenhum ``ps`` é passado (importado na hora,
   de ``optimization_engine``).
@@ -46,9 +48,8 @@ NOT_CERTAIN = ('"Suspeito" não é certeza de problema: é um sinal para conferi
                '"Atenção" quer dizer que vale a pena saber o que é.')
 TASKS_NOTE = 'Sem administrador, o Windows pode não mostrar algumas tarefas.'
 TASKS_EMPTY = ('Nenhuma tarefa agendada para mostrar. Só ficam de fora as tarefas da Microsoft '
-               'que rodam da pasta do Windows ou da pasta de programas instalados e que não usam '
-               'um programa que roda scripts ou comandos.')
-ALL_CLEAR = 'Nos itens conferidos não apareceu nenhum sinal de alerta.'
+               'que usam um programa da pasta do Windows de uma lista curta de programas conhecidos '
+               '(como o desfragmentador de disco), que não rodam scripts, comandos nem bibliotecas.')
 NOT_ALL_CHECKED = ('Nenhum item conferido ficou como atenção ou suspeito, mas o check-up '
                    'não conseguiu conferir tudo (veja acima).')
 
@@ -63,6 +64,16 @@ SHORTCUT_EXTENSIONS = ('.lnk', '.url')
 # comando ou uma biblioteca). Como os argumentos não são lidos, nunca dão OK (R-45).
 SCRIPT_HOSTS = ('wscript.exe', 'cscript.exe', 'mshta.exe', 'powershell.exe', 'pwsh.exe', 'cmd.exe',
                 'rundll32.exe', 'regsvr32.exe')
+# R-46: lista FECHADA de programas do Windows que não rodam código vindo dos
+# argumentos. Só eles podem dar OK por estarem na pasta do Windows (e só em
+# System32 ou SysWOW64, sem subpasta); qualquer outro programa da pasta do
+# Windows (conhost, forfiles, msiexec, explorer, svchost...) fica "atenção" nas
+# entradas de inicialização e nas tarefas. Na dúvida, um programa fica fora da lista.
+KNOWN_QUIET_PROGRAMS = ('defrag.exe', 'cleanmgr.exe', 'wermgr.exe', 'ctfmon.exe',
+                        'securityhealthsystray.exe', 'sihclient.exe', 'usoclient.exe',
+                        'musnotification.exe', 'musnotificationux.exe', 'dstokenclean.exe',
+                        'devicecensus.exe', 'tzsync.exe', 'srtasks.exe', 'bthudtask.exe',
+                        'lpremove.exe', 'wsqmcons.exe', 'disksnapshot.exe')
 
 REASON_OK = 'ok'
 REASON_SYSTEM_NAME = 'system_name'
@@ -79,6 +90,9 @@ REASON_NOT_FULL_PATH = 'not_full_path'
 REASON_OTHER_PLACE = 'other_place'
 REASON_COM_HANDLER = 'com_handler'
 REASON_MS_FOLDER_OUTSIDE = 'ms_folder_outside'
+REASON_WINDOWS_PROGRAM = 'windows_program'
+REASON_MS_WINDOWS_PROGRAM = 'ms_windows_program'
+REASON_MS_COM_HANDLER = 'ms_com_handler'
 
 REASON_TEXTS = {
     REASON_OK: 'Fica numa pasta de programas do Windows (Windows ou Arquivos de Programas).',
@@ -102,6 +116,15 @@ REASON_TEXTS = {
                          'o app não confere o que esse componente faz.'),
     REASON_MS_FOLDER_OUTSIDE: ('Está na pasta de tarefas da Microsoft, mas roda de fora da pasta do '
                                'Windows.'),
+    REASON_WINDOWS_PROGRAM: ('Usa um programa da pasta do Windows que pode rodar o que vier escrito '
+                             'depois dele (outro programa, um script ou um comando); o app não confere '
+                             'o que ele roda.'),
+    REASON_MS_WINDOWS_PROGRAM: ('É uma tarefa da Microsoft que usa um programa do Windows que pode rodar '
+                                'o que vier escrito depois dele (como o rundll32). Isso é comum nas '
+                                'tarefas da Microsoft, mas o app não confere o que ele roda.'),
+    REASON_MS_COM_HANDLER: ('É uma tarefa da Microsoft que abre um componente do Windows em vez de um '
+                            'arquivo de programa. Isso é comum nas tarefas da Microsoft, mas o app não '
+                            'confere o que esse componente faz.'),
 }
 ADVICE_TEXTS = {
     STATE_SUSPECT: ('Não mexa no arquivo por conta própria. Faça a verificação recomendada '
@@ -187,7 +210,8 @@ _NT_PREFIX = re.compile(r'^(?:\\\\\?\\|\\\?\?\\)(UNC\\)?', re.IGNORECASE)
 # SID de usuário (S-1-5-21-...) e qualquer S-1-... com pelo menos 3 sub-autoridades,
 # mesmo colado em letras (ex.: GoogleUpdateTaskUserS-1-5-21-...Core). "S-1-5-18" fica.
 _SID = re.compile(r'S-1-5-21-\d+-\d+-\d+(?:-\d+)?|S-1-\d+(?:-\d+){3,}', re.IGNORECASE)
-_EMAIL = re.compile(r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+')
+# O "%" entra para pegar também "%USERNAME%@exemplo.com" (o nome já trocado).
+_EMAIL = re.compile(r'[\w.+%-]+@[\w-]+(?:\.[\w-]+)+')
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 MAX_NAME = 80
 
@@ -239,12 +263,14 @@ def sanitize_path(path, env=None) -> str:
             return match.group(0)
         return match.group(1) + '<outro usuário>'
     text = _OTHER_USER.sub(other, text)
-    return _SID.sub('<SID>', _hide_user_name(text, env))
+    return _EMAIL.sub('<e-mail>', _SID.sub('<SID>', _hide_user_name(text, env)))
 
 
 def _hide_user_name(text, env):
-    """Troca o USERNAME (palavra inteira, sem diferenciar maiúsculas) por %USERNAME%.
+    """Troca o USERNAME (sem diferenciar maiúsculas) por %USERNAME%, mesmo colado em letras.
 
+    Ex.: ``TaskxFulano Silvay`` vira ``Taskx%USERNAME%y`` (R-45). Do lado seguro:
+    um nome curto também é trocado dentro de outras palavras ("Ana" em "Banana").
     Só muda o texto mostrado. Nome de uma letra só não é trocado (não identifica
     ninguém e estragaria "C:"). Os marcadores já colocados ficam como estão.
     """
@@ -253,8 +279,7 @@ def _hide_user_name(text, env):
     if len(user) < 2:
         return text
     protected = '|'.join(re.escape(p) for p in _PLACEHOLDERS)
-    pattern = re.compile('(' + protected + r')|(?<![\w%])' + re.escape(user) + r'(?![\w%])',
-                         re.IGNORECASE)
+    pattern = re.compile('(' + protected + ')|' + re.escape(user), re.IGNORECASE)
     return pattern.sub(lambda m: m.group(1) or '%USERNAME%', text)
 
 
@@ -262,7 +287,6 @@ def _clean_name(value, env) -> str:
     if not isinstance(value, str):
         return ''
     text = _CONTROL.sub(' ', sanitize_path(value, env)).strip()
-    text = _EMAIL.sub('<e-mail>', text)
     return text[:MAX_NAME] + ('...' if len(text) > MAX_NAME else '')
 
 
@@ -379,6 +403,43 @@ def _under(norm, base):
     return bool(root) and norm.startswith(root + '\\')
 
 
+def _system_root(env):
+    return _env_get(env, 'SystemRoot') or _env_get(env, 'windir') or 'C:\\Windows'
+
+
+def _norm_exe(path, env):
+    return _key(_expand(_strip_nt_prefix(path.strip()), env))
+
+
+def _known_quiet(path, env) -> bool:
+    """Programa da lista fechada, direto em System32 ou SysWOW64 (R-46)."""
+    if not isinstance(path, str) or not path.strip():
+        return False
+    norm = _norm_exe(path, env)
+    root_key = _key(_system_root(env)).rstrip('\\')
+    return (ntpath.basename(norm) in KNOWN_QUIET_PROGRAMS
+            and ntpath.dirname(norm) in (root_key + '\\system32', root_key + '\\syswow64'))
+
+
+def _code_runner_reason(path, env, allow_known):
+    """Motivo de "atenção" para um programa que pode rodar o que vem nos argumentos, ou None.
+
+    Os programas que rodam scripts, comandos ou bibliotecas (``SCRIPT_HOSTS``)
+    nunca dão OK, estejam onde estiverem (R-45). Qualquer outro programa da pasta
+    do Windows só dá OK se ``allow_known`` e se for da lista fechada (R-46).
+    """
+    if not isinstance(path, str) or not path.strip():
+        return None
+    norm = _norm_exe(path, env)
+    if ntpath.basename(norm) in SCRIPT_HOSTS:
+        return REASON_SCRIPT_HOST
+    if not _under(norm, _system_root(env)):
+        return None
+    if allow_known and _known_quiet(path, env):
+        return None
+    return REASON_WINDOWS_PROGRAM
+
+
 def classify_path(name, path, env=None):
     """Devolve (estado, motivo) para um executável. Na dúvida, "atenção"; nunca OK."""
     env = _env(env)
@@ -465,8 +526,11 @@ def classify_autostart(entries, env=None):
                 state, reason = STATE_SUSPECT, REASON_SYSTEM_NAME
         if state == STATE_OK and _command_is_malformed(command, exe):
             state, reason = STATE_ATTENTION, REASON_NOT_FULL_PATH
-        if state == STATE_OK and ntpath.basename(_key(exe)) in SCRIPT_HOSTS:
-            state, reason = STATE_ATTENTION, REASON_SCRIPT_HOST
+        if state == STATE_OK:
+            # R-45/R-46: sem os argumentos, só a lista fechada da pasta do Windows dá OK.
+            runner = _code_runner_reason(exe, env, allow_known=True)
+            if runner:
+                state, reason = STATE_ATTENTION, runner
         items.append(_item(source, name, exe, state, reason, env))
     return items
 
@@ -538,8 +602,7 @@ def _outside_windows_folder(exe, env) -> bool:
     norm = _key(_expand(_strip_nt_prefix(exe.strip()), env))
     if not _DRIVE_PATH.match(norm) and not norm.startswith('\\\\'):
         return False
-    system_root = _env_get(env, 'SystemRoot') or _env_get(env, 'windir') or 'C:\\Windows'
-    return not _under(norm, system_root)
+    return not _under(norm, _system_root(env))
 
 
 def _classify_task(row, env):
@@ -547,8 +610,8 @@ def _classify_task(row, env):
     execute = row.get('Execute')
     in_ms = _in_ms_folder(row.get('TaskPath'))
     if row.get('Com') is True and not (isinstance(execute, str) and execute.strip()):
-        # Ação COM não tem arquivo: fora da pasta da Microsoft fica "atenção", nunca OK.
-        return None if in_ms else (STATE_ATTENTION, REASON_COM_HANDLER, '')
+        # Ação COM não tem arquivo nem é conferida: sempre "atenção", nunca some nem dá OK.
+        return STATE_ATTENTION, (REASON_MS_COM_HANDLER if in_ms else REASON_COM_HANDLER), ''
     exe = _task_executable(execute)
     if not exe:
         empty = not (isinstance(execute, str) and execute.strip())
@@ -558,13 +621,16 @@ def _classify_task(row, env):
             state, reason = STATE_SUSPECT, REASON_SYSTEM_NAME
         return state, reason, ''
     state, reason = classify_path(None, exe, env)
-    runs_code = ntpath.basename(_key(exe.strip())) in SCRIPT_HOSTS
+    runs_code = ntpath.basename(_norm_exe(exe, env)) in SCRIPT_HOSTS
     if in_ms:
-        if state == STATE_OK and runs_code:
-            # R-45: sem ler os argumentos, não dá para esconder nem dar OK.
-            return STATE_ATTENTION, REASON_SCRIPT_HOST, exe
         if state == STATE_OK:
-            return None
+            if _known_quiet(exe, env):
+                # R-46: só some o que é da lista fechada (programas que não rodam código).
+                return None
+            if _code_runner_reason(exe, env, allow_known=False):
+                return STATE_ATTENTION, REASON_MS_WINDOWS_PROGRAM, exe
+            # Ex.: Office em Arquivos de Programas: aparece como OK, não some.
+            return state, reason, exe
         if _outside_windows_folder(exe, env):
             base = ntpath.basename(_key(exe.strip()))
             system = base in SYSTEM_NAMES or base == EXPLORER
@@ -573,15 +639,20 @@ def _classify_task(row, env):
         return state, reason, exe
     if state != STATE_SUSPECT and runs_code:
         state, reason = STATE_ATTENTION, REASON_SCRIPT_HOST
+    elif state == STATE_OK and _code_runner_reason(exe, env, allow_known=False):
+        # Fora de \Microsoft\, todo programa da pasta do Windows fica "atenção" (R-46).
+        state, reason = STATE_ATTENTION, REASON_WINDOWS_PROGRAM
     return state, reason, exe
 
 
 def classify_tasks(rows, env=None):
     """Classifica as ações das tarefas agendadas (dados já lidos).
 
-    O nome da tarefa não conta como nome de programa. Tarefa da pasta da Microsoft
-    só aparece se o executável não der OK. Tarefas iguais (mesmo nome e mesmo
-    executável) aparecem uma vez.
+    O nome da tarefa não conta como nome de programa. Fora de ``\\Microsoft\\``,
+    todo programa da pasta do Windows fica "atenção". Em ``\\Microsoft\\`` só some
+    a tarefa cujo programa é da lista fechada ``KNOWN_QUIET_PROGRAMS`` (em System32
+    ou SysWOW64); as outras aparecem, e ação COM fica "atenção" (R-46). Tarefas
+    iguais (mesmo nome e mesmo executável) aparecem uma vez.
     """
     env = _env(env)
     grouped = {}
@@ -711,10 +782,13 @@ def _effective(item, env):
     if item.get('source') in _STARTUP_SOURCES and not path:
         return state, reason
     new_state, new_reason = classify_path(name, path, env)
-    if (new_state == STATE_OK and item.get('source') != 'process' and isinstance(path, str)
-            and ntpath.basename(_key(path.strip())) in SCRIPT_HOSTS):
-        # R-45: inicialização e tarefas não têm os argumentos lidos; nunca OK.
-        new_state, new_reason = STATE_ATTENTION, REASON_SCRIPT_HOST
+    if new_state == STATE_OK and item.get('source') != 'process':
+        # R-45/R-46: inicialização e tarefas não têm os argumentos lidos. Tarefa
+        # mostrada nunca dá OK com programa da pasta do Windows (as da lista fechada
+        # em \Microsoft\ nem aparecem); inicialização, só os da lista fechada.
+        runner = _code_runner_reason(path, env, allow_known=item.get('source') != 'task')
+        if runner:
+            new_state, new_reason = STATE_ATTENTION, runner
     if _ORDER[new_state] < _ORDER[state]:
         return new_state, new_reason
     return state, reason
@@ -763,9 +837,9 @@ def checkup_lines(result, env=None):
             None if autostart_failed else 'Nenhum programa encontrado nas chaves e pastas de inicialização.')
     section('TAREFAS AGENDADAS', result.get('tasks'), False, None if 'tasks' in errors else TASKS_EMPTY)
     # Sem administrador o Windows pode esconder tarefas: com essa nota, nunca a frase de "tudo limpo".
+    # Por isso a frase de "tudo limpo" não existe mais: sem alerta, a frase do fim é a neutra.
     lines.insert(len(lines) - 1, '  ' + TASKS_NOTE)
-    tasks_note_shown = True
-    processes_shown = section('PROCESSOS EM EXECUÇÃO', result.get('processes'), True,
+    section('PROCESSOS EM EXECUÇÃO', result.get('processes'), True,
                               None if 'processes' in errors else 'Nenhum processo foi informado.')
     unchecked = result.get('unchecked')
     unchecked = unchecked if isinstance(unchecked, int) and not isinstance(unchecked, bool) and unchecked > 0 else 0
@@ -792,8 +866,6 @@ def checkup_lines(result, env=None):
         if flagged:
             lines.append(NOT_CERTAIN)
         lines.append(RECOMMENDATION)
-    elif not unchecked and processes_shown and not tasks_note_shown:
-        lines.append(ALL_CLEAR)
     else:
         lines.append(NOT_ALL_CHECKED)
     return lines

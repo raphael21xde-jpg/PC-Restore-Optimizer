@@ -28,6 +28,8 @@ ENV = {
     'TEMP': r'C:\Users\Fulano Silva\AppData\Local\Temp',
 }
 FORBIDDEN_WORDS = ('vírus', 'remover', 'apagar', 'quarentena')
+# A frase de "tudo limpo" saiu na fatia 2 (a nota das tarefas sempre aparece).
+ALL_CLEAR_TEXT = 'não apareceu nenhum sinal de alerta'
 
 
 def _forbidden(*args, **kwargs):
@@ -295,7 +297,7 @@ class ReadCheckupTests(unittest.TestCase):
         self.assertNotIn('Acesso negado', text)
         self.assertNotIn('NTUSER', text)
         self.assertNotIn('Fulano', text)
-        self.assertNotIn(sc.ALL_CLEAR, text)
+        self.assertNotIn(ALL_CLEAR_TEXT, text)
         self.assertEqual(len(result['errors']), 3)
 
     def test_ps_raising_on_non_windows_does_not_break(self):
@@ -303,7 +305,7 @@ class ReadCheckupTests(unittest.TestCase):
             raise OSError('sem PowerShell')
         result = sc.read_checkup(ps, ENV)
         self.assertEqual(result['autostart'], [])
-        self.assertNotIn(sc.ALL_CLEAR, self._text(result))
+        self.assertNotIn(ALL_CLEAR_TEXT, self._text(result))
 
     def test_empty_none_and_wrapped_outputs(self):
         for run, startup, procs in ((None, None, None), ([], [], []),
@@ -319,14 +321,14 @@ class ReadCheckupTests(unittest.TestCase):
         clean = self._text(sc.read_checkup(_fake_ps(run, None, procs), ENV))
         # P3-07 fatia 2: a nota das tarefas (sem administrador) deixa a frase neutra.
         self.assertIn(sc.TASKS_NOTE, clean)
-        self.assertNotIn(sc.ALL_CLEAR, clean)
+        self.assertNotIn(ALL_CLEAR_TEXT, clean)
         self.assertIn(sc.NOT_ALL_CHECKED, clean)
         self.assertNotIn(sc.RECOMMENDATION, clean)
         old = {'autostart': [], 'processes': [], 'unchecked': 0, 'errors': []}
-        self.assertNotIn(sc.ALL_CLEAR, self._text(old))
+        self.assertNotIn(ALL_CLEAR_TEXT, self._text(old))
         procs_unchecked = procs + [{'Name': 'System', 'ExecutablePath': None}]
         partial = self._text(sc.read_checkup(_fake_ps(run, None, procs_unchecked), ENV))
-        self.assertNotIn(sc.ALL_CLEAR, partial)
+        self.assertNotIn(ALL_CLEAR_TEXT, partial)
         self.assertIn('1 processo não pôde ser conferido', partial)
 
     def test_no_forbidden_words_in_any_line(self):
@@ -501,9 +503,11 @@ class FixRessalvas181Tests(unittest.TestCase):
         self.assertIn('%USERNAME% - atalho.lnk', text)
         self.assertIn(r'\\srv\users\<outro usuário>\b.exe', text)
 
-    def test_user_name_only_whole_word(self):
+    def test_user_name_also_glued_to_letters(self):
+        # R-45 (revisão 2 da PR #189): colado em letras também é trocado (do lado seguro).
         env = dict(ENV, USERNAME='Ana')
-        self.assertEqual(sc.sanitize_path(r'D:\Ana\Banana\Anais_x.exe', env), r'D:\%USERNAME%\Banana\Anais_x.exe')
+        self.assertEqual(sc.sanitize_path(r'D:\Ana\Banana\Anais_x.exe', env),
+                         r'D:\%USERNAME%\B%USERNAME%na\%USERNAME%is_x.exe')
         self.assertEqual(sc.sanitize_path(r'D:\ana\x.exe', env), r'D:\%USERNAME%\x.exe')
 
     def test_user_name_does_not_break_placeholders(self):
@@ -620,7 +624,6 @@ class FixRessalvas181Tests(unittest.TestCase):
         self.assertIn('[OK] svchost.exe', '\n'.join(sc.checkup_lines(result, ENV)))
 
 
-
 def _task(path, name, execute='', com=False):
     return {'TaskPath': path, 'TaskName': name, 'Execute': execute, 'Com': com}
 
@@ -679,10 +682,10 @@ class ScheduledTaskTests(unittest.TestCase):
         text = self._text({'tasks': [item], 'processes': [], 'errors': []})
         self.assertIn('[OK] \\svchost.exe — tarefa agendada', text)
 
-    def test_microsoft_folder_in_system32_is_hidden(self):
+    def test_microsoft_folder_hides_only_known_quiet_programs(self):
+        # R-46: em \Microsoft\ só some a lista fechada, direto em System32 ou SysWOW64.
         rows = [_task('\\Microsoft\\Windows\\Defrag\\', 'ScheduledDefrag', r'%windir%\system32\defrag.exe'),
-                _task('\\Microsoft\\Windows\\X\\', 'Y', r'C:\Windows\System32\svchost.exe'),
-                _task('\\Microsoft\\Office\\', 'Z', r'"C:\Program Files\Microsoft Office\root\a.exe"')]
+                _task('\\Microsoft\\Windows\\WER\\', 'Q', r'C:\Windows\SysWOW64\wermgr.exe')]
         self.assertEqual(sc.classify_tasks(rows, ENV), [])
         result = sc.read_checkup(_fake_ps(tasks=rows), ENV)
         self.assertEqual(result['tasks'], [])
@@ -701,6 +704,17 @@ class ScheduledTaskTests(unittest.TestCase):
         self.assertIn('[suspeito] \\microsoft\\Windows\\X\\Y — tarefa agendada', text)
         self.assertNotIn('Fulano', text)
 
+    def test_microsoft_folder_other_programs_are_shown(self):
+        # R-46: fora da lista fechada, nada some: svchost e explorer ficam "atenção";
+        # um programa em Arquivos de Programas aparece como OK (não some).
+        item = self._one(_task('\\Microsoft\\Windows\\X\\', 'Y', r'C:\Windows\System32\svchost.exe'))
+        self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_MS_WINDOWS_PROGRAM))
+        item = self._one(_task('\\Microsoft\\Office\\', 'Z', r'"C:\Program Files\Microsoft Office\root\a.exe"'))
+        self.assertEqual((item['state'], item['reason']), (sc.STATE_OK, sc.REASON_OK))
+        # Da lista, mas numa subpasta: não some.
+        item = self._one(_task('\\Microsoft\\A\\', 'B', r'C:\Windows\System32\Tasks\defrag.exe'))
+        self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_MS_WINDOWS_PROGRAM))
+
     def test_microsoft_folder_inside_windows_keeps_own_reason(self):
         item = self._one(_task('\\Microsoft\\Windows\\X\\', 'Y', r'C:\Windows\Temp\a.exe'))
         self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_TEMP))
@@ -713,8 +727,14 @@ class ScheduledTaskTests(unittest.TestCase):
         self.assertIn('[atenção] \\ComTarefa — tarefa agendada', text)
         self.assertNotIn('Onde:', text)
         self.assertIn(sc.REASON_TEXTS[sc.REASON_COM_HANDLER], text)
-        # COM na pasta da Microsoft não aparece.
-        self.assertEqual(sc.classify_tasks([_task('\\Microsoft\\Windows\\A\\', 'B', '', com=True)], ENV), [])
+        # COM na pasta da Microsoft também aparece como "atenção" (revisão 2 da PR #189).
+        item = self._one(_task('\\Microsoft\\Windows\\A\\', 'B', '', com=True))
+        self.assertEqual((item['state'], item['reason'], item['path']),
+                         (sc.STATE_ATTENTION, sc.REASON_MS_COM_HANDLER, ''))
+        text = self._text({'tasks': [item], 'processes': [], 'errors': []})
+        self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', text)
+        self.assertIn('comum nas tarefas da Microsoft', text)
+        self.assertNotIn('Onde:', text)
 
     def test_secret_after_or_glued_to_execute_never_shown(self):
         commands = (r'C:\Program Files\App\a.exe --token=SEGREDO123',
@@ -822,7 +842,7 @@ class ScheduledTaskTests(unittest.TestCase):
         self.assertNotIn('NTUSER', text)
         self.assertNotIn(sc.TASKS_EMPTY, text)
         self.assertIn(sc.RECOMMENDATION, text)
-        self.assertNotIn(sc.ALL_CLEAR, text)
+        self.assertNotIn(ALL_CLEAR_TEXT, text)
         for title in ('PROGRAMAS QUE ABREM COM O WINDOWS', 'TAREFAS AGENDADAS', 'PROCESSOS EM EXECUÇÃO'):
             self.assertIn(title, text)
         self.assertIn('[OK] Bom', text)
@@ -851,7 +871,7 @@ class ScheduledTaskTests(unittest.TestCase):
         procs = [{'Name': 'bom.exe', 'ExecutablePath': r'C:\Program Files\Bom\bom.exe'}]
         text = self._text(sc.read_checkup(_fake_ps(procs=procs, tasks=tasks), ENV))
         self.assertIn(sc.TASKS_NOTE, text)
-        self.assertNotIn(sc.ALL_CLEAR, text)
+        self.assertNotIn(ALL_CLEAR_TEXT, text)
         self.assertIn(sc.NOT_ALL_CHECKED, text)
         self.assertNotIn(sc.RECOMMENDATION, text)
 
@@ -870,7 +890,8 @@ class ScheduledTaskTests(unittest.TestCase):
                     'rundll32.exe', 'regsvr32.exe'):
             with self.subTest(exe=exe):
                 item = self._one(_task('\\Microsoft\\Windows\\A\\', 'B', '%windir%\\System32\\' + exe))
-                self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_SCRIPT_HOST))
+                self.assertEqual((item['state'], item['reason']),
+                                 (sc.STATE_ATTENTION, sc.REASON_MS_WINDOWS_PROGRAM))
                 text = self._text({'tasks': [item], 'errors': []})
                 self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', text)
                 self.assertIn('RESUMO: OK 0 · atenção 1', text)
@@ -913,8 +934,11 @@ class ScheduledTaskTests(unittest.TestCase):
         self.assertIn('\\Pasta\\<e-mail> — tarefa agendada', text)
 
     def test_empty_tasks_text_says_what_is_left_out(self):
-        for words in ('Microsoft', 'pasta do Windows', 'programas instalados', 'scripts'):
+        # Ressalva da revisão 2: só a lista fechada fica de fora (COM e bibliotecas aparecem).
+        for words in ('Microsoft', 'pasta do Windows', 'lista curta', 'scripts', 'comandos', 'bibliotecas'):
             self.assertIn(words, sc.TASKS_EMPTY)
+        self.assertNotIn('programas instalados', sc.TASKS_EMPTY)
+        self.assertFalse(hasattr(sc, 'ALL_CLEAR'))
 
     def test_strange_rows_do_not_break(self):
         rows = [None, 5, 'x', {}, {'TaskPath': 7, 'TaskName': None, 'Execute': ['a'], 'Com': 'True'}]
@@ -924,6 +948,135 @@ class ScheduledTaskTests(unittest.TestCase):
         self.assertEqual(sc.classify_tasks(None, ENV), [])
         self.assertEqual(sc.classify_tasks({'value': []}, ENV), [])
         self.assertIsInstance(self._text({'tasks': items, 'errors': []}), str)
+
+
+# Programas do Windows que rodam o que vem nos argumentos e não são os da R-45
+# (revisão 2 da PR #189). Nenhum deles é da lista fechada.
+WINDOWS_RUNNERS = (r'C:\Windows\System32\conhost.exe', r'C:\Windows\System32\forfiles.exe',
+                   r'C:\Windows\System32\msiexec.exe', r'C:\Windows\explorer.exe',
+                   r'C:\Windows\System32\wbem\WMIC.exe',
+                   r'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\MSBuild.exe',
+                   r'C:\Windows\System32\wsl.exe', r'C:\Windows\System32\schtasks.exe',
+                   r'C:\Windows\hh.exe', r'C:\Windows\System32\control.exe',
+                   r'C:\Windows\System32\certutil.exe', r'C:\Windows\SysWOW64\bitsadmin.exe')
+
+
+class ClosedListRevision2Tests(unittest.TestCase):
+    """R-46: só uma lista fechada de programas do Windows dá OK ou some."""
+
+    def setUp(self):
+        for name in ('run', 'Popen', 'check_output', 'call'):
+            patcher = mock.patch.object(subprocess, name, side_effect=_forbidden)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _text(self, result):
+        return '\n'.join(sc.checkup_lines(result, ENV))
+
+    def test_known_quiet_list_is_closed_and_has_no_code_runner(self):
+        self.assertIsInstance(sc.KNOWN_QUIET_PROGRAMS, tuple)
+        for exe in sc.SCRIPT_HOSTS + sc.SYSTEM_NAMES + (sc.EXPLORER,):
+            self.assertNotIn(exe, sc.KNOWN_QUIET_PROGRAMS)
+        for path in WINDOWS_RUNNERS:
+            self.assertNotIn(Path(path.replace('\\', '/')).name.lower(), sc.KNOWN_QUIET_PROGRAMS)
+
+    def test_task_outside_microsoft_with_windows_program_is_attention(self):
+        for path in WINDOWS_RUNNERS + (r'C:\Windows\System32\defrag.exe',):
+            with self.subTest(path=path):
+                items = sc.classify_tasks([_task('\\', 'T', path)], ENV)
+                self.assertEqual([(i['state'], i['reason']) for i in items],
+                                 [(sc.STATE_ATTENTION, sc.REASON_WINDOWS_PROGRAM)])
+                self.assertIn('[atenção] \\T — tarefa agendada', self._text({'tasks': items, 'errors': []}))
+
+    def test_task_in_microsoft_with_windows_program_is_shown(self):
+        for path in WINDOWS_RUNNERS:
+            with self.subTest(path=path):
+                rows = [_task('\\Microsoft\\Windows\\A\\', 'B', path)]
+                items = sc.classify_tasks(rows, ENV)
+                self.assertEqual([(i['state'], i['reason']) for i in items],
+                                 [(sc.STATE_ATTENTION, sc.REASON_MS_WINDOWS_PROGRAM)])
+                text = self._text(sc.read_checkup(_fake_ps(tasks=rows), ENV))
+                self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', text)
+                self.assertIn('RESUMO: OK 0 · atenção 1', text)
+                self.assertNotIn(sc.TASKS_EMPTY, text)
+
+    def test_microsoft_reason_says_rundll32_is_common(self):
+        text = sc.REASON_TEXTS[sc.REASON_MS_WINDOWS_PROGRAM]
+        self.assertIn('rundll32', text)
+        self.assertIn('comum nas tarefas da Microsoft', text)
+        for reason in (sc.REASON_WINDOWS_PROGRAM, sc.REASON_MS_WINDOWS_PROGRAM, sc.REASON_MS_COM_HANDLER):
+            for word in FORBIDDEN_WORDS:
+                self.assertNotIn(word, sc.REASON_TEXTS[reason].lower())
+
+    def test_autostart_windows_program_is_attention_except_closed_list(self):
+        for path in WINDOWS_RUNNERS:
+            with self.subTest(path=path):
+                item = sc.classify_autostart([{'source': 'run_all', 'name': 'X', 'command': path + ' /a'}], ENV)[0]
+                self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_WINDOWS_PROGRAM))
+        for path in (r'C:\Windows\System32\SecurityHealthSystray.exe', r'%windir%\system32\ctfmon.exe'):
+            with self.subTest(path=path):
+                item = sc.classify_autostart([{'source': 'run_all', 'name': 'Y', 'command': path}], ENV)[0]
+                self.assertEqual((item['state'], item['reason']), (sc.STATE_OK, sc.REASON_OK))
+                self.assertIn('[OK] Y', self._text({'autostart': [item], 'errors': []}))
+        # Da lista, mas fora de System32/SysWOW64: atenção.
+        item = sc.classify_autostart([{'source': 'run_all', 'name': 'Z',
+                                       'command': r'C:\Windows\Tasks\ctfmon.exe'}], ENV)[0]
+        self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_WINDOWS_PROGRAM))
+
+    def test_forged_ok_is_reclassified_on_screen(self):
+        forged = {'autostart': [{'source': 'run_all', 'name': 'F', 'path': r'C:\Windows\System32\conhost.exe',
+                                 'state': sc.STATE_OK, 'reason': sc.REASON_OK},
+                                {'source': 'run_all', 'name': 'G', 'path': r'C:\Windows\System32\ctfmon.exe',
+                                 'state': sc.STATE_OK, 'reason': sc.REASON_OK}],
+                  'tasks': [{'source': 'task', 'name': '\\T', 'path': r'C:\Windows\System32\defrag.exe',
+                             'state': sc.STATE_OK, 'reason': sc.REASON_OK}], 'errors': []}
+        text = self._text(forged)
+        self.assertIn('[atenção] F', text)
+        self.assertIn('[OK] G', text)
+        self.assertIn('[atenção] \\T', text)
+        self.assertIn('RESUMO: OK 1 · atenção 2', text)
+
+    def test_processes_do_not_change(self):
+        procs = [{'Name': 'conhost.exe', 'ExecutablePath': r'C:\Windows\System32\conhost.exe'},
+                 {'Name': 'explorer.exe', 'ExecutablePath': r'C:\Windows\explorer.exe'}]
+        states = [i['state'] for i in sc.classify_processes(procs, ENV)['items']]
+        self.assertEqual(states, [sc.STATE_OK, sc.STATE_OK])
+
+
+class UserNameAndEmailRevision2Tests(unittest.TestCase):
+    """R-45, 2ª parte: identificador separado e colado em letras dos dois lados."""
+
+    def test_user_name_separated_and_glued(self):
+        rows = [_task('\\', 'Task Fulano Silva', r'"C:\Program Files\a.exe"'),
+                _task('\\', 'TaskxFulano Silvay', r'"C:\Program Files\b.exe"'),
+                _task('\\', 'xFULANO SILVA', r'"C:\Program Files\c.exe"')]
+        procs = [{'Name': 'd.exe', 'ExecutablePath': r'D:\xFulano Silvay\d.exe'},
+                 {'Name': 'e.exe', 'ExecutablePath': r'D:\Fulano Silva\e.exe'}]
+        result = sc.read_checkup(_fake_ps(procs=procs, tasks=rows), ENV)
+        text = '\n'.join(sc.checkup_lines(result, ENV))
+        for leak in ('Fulano', 'FULANO', 'Silva', 'SILVA'):
+            self.assertNotIn(leak, repr(result))
+            self.assertNotIn(leak, text)
+        self.assertIn('\\Task %USERNAME% — tarefa agendada', text)
+        self.assertIn('\\Taskx%USERNAME%y — tarefa agendada', text)
+        self.assertIn('\\x%USERNAME% — tarefa agendada', text)
+        self.assertIn(r'D:\x%USERNAME%y\d.exe', text)
+        self.assertIn(r'D:\%USERNAME%\e.exe', text)
+        # Só muda o texto: os estados continuam os mesmos.
+        self.assertEqual([i['state'] for i in result['tasks']], [sc.STATE_OK] * 3)
+
+    def test_email_in_path_is_hidden(self):
+        env = dict(ENV, USERNAME='fulano')
+        procs = [{'Name': 'a.exe', 'ExecutablePath': r'D:\Dados\ciclano.souza@exemplo.com.br\a.exe'},
+                 {'Name': 'b.exe', 'ExecutablePath': r'D:\Dados\fulano@empresa.org\b.exe'}]
+        result = sc.read_checkup(_fake_ps(procs=procs), env)
+        text = '\n'.join(sc.checkup_lines(result, env))
+        for leak in ('ciclano', 'exemplo', 'empresa', '@'):
+            self.assertNotIn(leak, repr(result))
+            self.assertNotIn(leak, text)
+        self.assertIn(r'D:\Dados\<e-mail>\a.exe', text)
+        self.assertIn(r'D:\Dados\<e-mail>\b.exe', text)
+        self.assertEqual(sc.sanitize_path(r'C:\x\fulano.silva+t@exemplo.com\y.exe', ENV), r'C:\x\<e-mail>\y.exe')
 
 
 if __name__ == '__main__':
