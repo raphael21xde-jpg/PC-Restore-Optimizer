@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 0 (última poda: 01/11/2026, pedido `regras-20261101-poda-r35-r44`, issue #187). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-45.
+poda: 2 (última poda: 01/11/2026, pedido `regras-20261101-poda-r35-r44`, issue #187). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-45.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -59,3 +59,5 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-42 | Juntada à **R-40** na poda de 01/11/2026 (confira a R-40). | Revisão da PR #183 (FIX-P3-07-01, 78a33572441d) | 2026-11-01 |
 | R-43 | Juntada à **R-40** na poda de 01/11/2026 (confira a R-40). | Revisão da PR #183 (FIX-P3-07-01, 26306317de84) | 2026-11-01 |
 | R-44 | Juntada à **R-41** na poda de 01/11/2026 (confira a R-41). | Revisão da PR #184 (FIX-P3-06-15), issue #185, FIX-P3-06-16 | 2026-11-01 |
+| R-45 | Item que o app esconde ou marca OK sem ler os argumentos nunca pode ser programa que roda código vindo dos argumentos (powershell, pwsh, cmd, wscript, cscript, mshta, rundll32, regsvr32); fica "atenção". Troca de identificador (SID, usuário) tem teste com o identificador colado em letras dos dois lados. | Revisão da PR #189 (P3-07 fatia 2) | 2026-11-01 |
+| R-46 | Item que o app pode marcar OK ou esconder por estar na pasta do Windows só pode ser de uma lista fechada de programas que não rodam código vindo dos argumentos; programa do Windows fora dessa lista, usado por tarefa ou entrada de inicialização, fica "atenção". Tem teste com conhost, forfiles, msiexec e explorer. | Revisão 2 da PR #189 (P3-07 fatia 2) | 2026-11-02 |
