@@ -961,6 +961,11 @@ WINDOWS_RUNNERS = (r'C:\Windows\System32\conhost.exe', r'C:\Windows\System32\for
                    r'C:\Windows\System32\certutil.exe', r'C:\Windows\SysWOW64\bitsadmin.exe')
 
 
+def _expected_runner(path, default):
+    # R-47: o wsl.exe é interpretador; continua "atenção", com o motivo próprio.
+    return sc.REASON_INTERPRETER if Path(path.replace('\\', '/')).name.lower() in sc.INTERPRETERS else default
+
+
 class ClosedListRevision2Tests(unittest.TestCase):
     """R-46: só uma lista fechada de programas do Windows dá OK ou some."""
 
@@ -985,7 +990,7 @@ class ClosedListRevision2Tests(unittest.TestCase):
             with self.subTest(path=path):
                 items = sc.classify_tasks([_task('\\', 'T', path)], ENV)
                 self.assertEqual([(i['state'], i['reason']) for i in items],
-                                 [(sc.STATE_ATTENTION, sc.REASON_WINDOWS_PROGRAM)])
+                                 [(sc.STATE_ATTENTION, _expected_runner(path, sc.REASON_WINDOWS_PROGRAM))])
                 self.assertIn('[atenção] \\T — tarefa agendada', self._text({'tasks': items, 'errors': []}))
 
     def test_task_in_microsoft_with_windows_program_is_shown(self):
@@ -994,7 +999,7 @@ class ClosedListRevision2Tests(unittest.TestCase):
                 rows = [_task('\\Microsoft\\Windows\\A\\', 'B', path)]
                 items = sc.classify_tasks(rows, ENV)
                 self.assertEqual([(i['state'], i['reason']) for i in items],
-                                 [(sc.STATE_ATTENTION, sc.REASON_MS_WINDOWS_PROGRAM)])
+                                 [(sc.STATE_ATTENTION, _expected_runner(path, sc.REASON_MS_WINDOWS_PROGRAM))])
                 text = self._text(sc.read_checkup(_fake_ps(tasks=rows), ENV))
                 self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', text)
                 self.assertIn('RESUMO: OK 0 · atenção 1', text)
@@ -1012,7 +1017,8 @@ class ClosedListRevision2Tests(unittest.TestCase):
         for path in WINDOWS_RUNNERS:
             with self.subTest(path=path):
                 item = sc.classify_autostart([{'source': 'run_all', 'name': 'X', 'command': path + ' /a'}], ENV)[0]
-                self.assertEqual((item['state'], item['reason']), (sc.STATE_ATTENTION, sc.REASON_WINDOWS_PROGRAM))
+                self.assertEqual((item['state'], item['reason']),
+                                 (sc.STATE_ATTENTION, _expected_runner(path, sc.REASON_WINDOWS_PROGRAM)))
         for path in (r'C:\Windows\System32\SecurityHealthSystray.exe', r'%windir%\system32\ctfmon.exe'):
             with self.subTest(path=path):
                 item = sc.classify_autostart([{'source': 'run_all', 'name': 'Y', 'command': path}], ENV)[0]
@@ -1077,6 +1083,127 @@ class UserNameAndEmailRevision2Tests(unittest.TestCase):
         self.assertIn(r'D:\Dados\<e-mail>\a.exe', text)
         self.assertIn(r'D:\Dados\<e-mail>\b.exe', text)
         self.assertEqual(sc.sanitize_path(r'C:\x\fulano.silva+t@exemplo.com\y.exe', ENV), r'C:\x\<e-mail>\y.exe')
+
+
+class InterpreterRevision3Tests(unittest.TestCase):
+    """R-47: interpretador em tarefa ou inicialização nunca dá OK nem some, em qualquer pasta."""
+
+    NODE = r'C:\Program Files\nodejs\node.exe'
+    PYTHON = r'C:\Program Files\Python313\python.exe'
+
+    def setUp(self):
+        for name in ('run', 'Popen', 'check_output', 'call'):
+            patcher = mock.patch.object(subprocess, name, side_effect=_forbidden)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _text(self, result):
+        return '\n'.join(sc.checkup_lines(result, ENV))
+
+    def test_interpreter_list_is_closed_lowercase_and_has_no_known_quiet(self):
+        self.assertIsInstance(sc.INTERPRETERS, tuple)
+        for exe in sc.INTERPRETERS:
+            self.assertEqual(exe, exe.lower())
+            self.assertTrue(exe.endswith('.exe'))
+        self.assertEqual(set(sc.INTERPRETERS) & set(sc.KNOWN_QUIET_PROGRAMS), set())
+        for exe in ('node.exe', 'python.exe', 'java.exe', 'bash.exe', 'autohotkey.exe', 'wsl.exe'):
+            self.assertIn(exe, sc.INTERPRETERS)
+
+    def test_reason_text_is_plain_and_has_no_forbidden_words(self):
+        text = sc.REASON_TEXTS[sc.REASON_INTERPRETER]
+        self.assertIn('Python', text)
+        for word in FORBIDDEN_WORDS:
+            self.assertNotIn(word, text.lower())
+
+    def test_versioned_names_by_regex(self):
+        for path in (r'C:\Program Files\Python\python3.13.exe', r'D:\x\python3.13t.exe',
+                     r'C:\Program Files\Lua\lua5.4.exe', r'C:\Program Files\Tcl\wish86.exe',
+                     r'C:\Program Files\Python\pythonw3.12.exe', r'C:\Program Files\PHP\php8.exe'):
+            with self.subTest(path=path):
+                self.assertTrue(sc._is_interpreter(path, ENV))
+        for path in (r'C:\Windows\System32\notepad.exe', r'C:\Program Files\App\app.exe',
+                     r'C:\Program Files\App\python.dll', r'C:\Program Files\App\mypython.exe', '', None):
+            with self.subTest(path=path):
+                self.assertFalse(sc._is_interpreter(path, ENV))
+
+    def test_task_outside_microsoft_is_attention(self):
+        for path in (self.NODE, self.PYTHON):
+            with self.subTest(path=path):
+                items = sc.classify_tasks([_task('\\', 'T', '"' + path + '"')], ENV)
+                self.assertEqual([(i['state'], i['reason']) for i in items],
+                                 [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+
+    def test_task_inside_microsoft_is_attention_and_never_hidden(self):
+        for path in (self.NODE, self.PYTHON, r'C:\Windows\System32\bash.exe'):
+            with self.subTest(path=path):
+                items = sc.classify_tasks([_task('\\Microsoft\\Windows\\X\\', 'T', '"' + path + '"')], ENV)
+                self.assertEqual([(i['state'], i['reason']) for i in items],
+                                 [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+
+    def test_every_interpreter_in_program_files_is_attention(self):
+        for exe in sc.INTERPRETERS:
+            path = 'C:\\Program Files\\Tool\\' + exe
+            with self.subTest(exe=exe):
+                for folder in ('\\', '\\Microsoft\\Windows\\'):
+                    items = sc.classify_tasks([_task(folder, 'T', '"' + path + '"')], ENV)
+                    self.assertEqual([(i['state'], i['reason']) for i in items],
+                                     [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+                auto = sc.classify_autostart([{'source': 'run_all', 'name': 'A', 'command': '"' + path + '"'}], ENV)
+                self.assertEqual([(i['state'], i['reason']) for i in auto],
+                                 [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+
+    def test_run_entry_with_arguments_hides_argument(self):
+        command = '"' + self.NODE + '" C:\\x\\segredo.js'
+        items = sc.classify_autostart([{'source': 'run_user', 'name': 'N', 'command': command}], ENV)
+        self.assertEqual([(i['state'], i['reason']) for i in items],
+                         [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+        self.assertEqual(items[0]['path'], self.NODE)
+        text = self._text({'autostart': items, 'errors': []})
+        self.assertNotIn('segredo', text)
+        self.assertNotIn('segredo', repr(items))
+        self.assertIn('[atenção] N', text)
+        self.assertIn('Motivo: ' + sc.REASON_TEXTS[sc.REASON_INTERPRETER], text)
+
+    def test_forged_ok_is_downgraded_on_screen(self):
+        forged = {'autostart': [{'source': 'run_all', 'name': 'F', 'path': self.NODE,
+                                 'state': sc.STATE_OK, 'reason': sc.REASON_OK}],
+                  'tasks': [{'source': 'task', 'name': '\\T', 'path': self.PYTHON,
+                             'state': sc.STATE_OK, 'reason': sc.REASON_OK},
+                            {'source': 'task', 'name': '\\Microsoft\\U', 'path': self.NODE,
+                             'state': sc.STATE_OK, 'reason': sc.REASON_OK}], 'errors': []}
+        text = self._text(forged)
+        self.assertIn('[atenção] F', text)
+        self.assertIn('[atenção] \\T', text)
+        self.assertIn('[atenção] \\Microsoft\\U', text)
+        self.assertEqual(text.count('Motivo: ' + sc.REASON_TEXTS[sc.REASON_INTERPRETER]), 3)
+        self.assertIn('RESUMO: OK 0 · atenção 3', text)
+
+    def test_screen_never_promotes_to_ok(self):
+        stored = {'tasks': [{'source': 'task', 'name': '\\T', 'path': self.NODE,
+                             'state': sc.STATE_SUSPECT, 'reason': sc.REASON_SYSTEM_NAME}], 'errors': []}
+        self.assertIn('[suspeito] \\T', self._text(stored))
+
+    def test_processes_do_not_change(self):
+        procs = [{'Name': 'node.exe', 'ExecutablePath': self.NODE},
+                 {'Name': 'python.exe', 'ExecutablePath': self.PYTHON}]
+        items = sc.classify_processes(procs, ENV)['items']
+        self.assertEqual([(i['state'], i['reason']) for i in items], [(sc.STATE_OK, sc.REASON_OK)] * 2)
+        text = self._text({'processes': items, 'errors': []})
+        self.assertIn('RESUMO: OK 2 · atenção 0', text)
+
+    def test_common_program_in_program_files_still_ok(self):
+        path = r'C:\Program Files\App\app.exe'
+        self.assertEqual([(i['state'], i['reason']) for i in sc.classify_tasks([_task('\\', 'T', '"' + path + '"')], ENV)],
+                         [(sc.STATE_OK, sc.REASON_OK)])
+        auto = sc.classify_autostart([{'source': 'run_all', 'name': 'A', 'command': '"' + path + '" --x'}], ENV)
+        self.assertEqual([(i['state'], i['reason']) for i in auto], [(sc.STATE_OK, sc.REASON_OK)])
+
+    def test_interpreter_in_appdata_stays_appdata(self):
+        path = r'C:\Users\Fulano Silva\AppData\Local\Programs\Python\python.exe'
+        auto = sc.classify_autostart([{'source': 'run_user', 'name': 'A', 'command': '"' + path + '"'}], ENV)
+        self.assertEqual([(i['state'], i['reason']) for i in auto], [(sc.STATE_ATTENTION, sc.REASON_APPDATA)])
+        tasks = sc.classify_tasks([_task('\\', 'T', '"' + path + '"')], ENV)
+        self.assertEqual([(i['state'], i['reason']) for i in tasks], [(sc.STATE_ATTENTION, sc.REASON_APPDATA)])
 
 
 if __name__ == '__main__':

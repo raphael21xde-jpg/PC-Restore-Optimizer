@@ -761,9 +761,10 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 - Ressalva 7 (fatia 1 marcada `concluído` antes do merge e da validação no Windows): só registrada; segue o padrão dos FIX anteriores (o item vai `concluído` na própria PR, e a validação no Windows fica no "Validar M3").
 - Poda de 01/11/2026 (issue #187): R-42 e R-43 juntadas à R-40.
 
-### FIX-P3-07-02 · Interpretadores fora da pasta do Windows no check-up — `pronto`
+### FIX-P3-07-02 · Interpretadores fora da pasta do Windows no check-up — `concluído` (branch `auto/FIX-P3-07-02-interpretadores`)
 - Interpretadores fora da pasta do Windows (python, pythonw, node, java, javaw, bash, AutoHotkey e afins) dão OK em tarefa agendada e entrada de inicialização, mas rodam código dos argumentos (que não são lidos); devem ficar "atenção", com teste usando node.exe e python.exe em Program Files.
 - Origem: revisão 3 da PR #189.
+- Feito (04/11/2026): lista fechada `INTERPRETERS` (+ regex de versão) e motivo `interpreter` em tarefas e inicialização, em qualquer pasta; a tela só rebaixa; processos sem mudança; regra R-47. Escolha (a mais segura): lista abrangente, na dúvida o programa entra. O `wsl.exe` da pasta do Windows passa do motivo "programa do Windows" para o motivo de interpretador (continua "atenção"); em `\Microsoft\`, a tarefa com interpretador nunca some.
 
 ### FIX-P3-06-15 · Ressalvas de texto da PR #179 (Validar M3 e R-31) — `concluído` (branch `auto/FIX-P3-06-15-textos-validar-m3`)
 - Issue #180. Três trocas de texto em `docs/BACKLOG.md`, sem código: no "Validar M3", trocar "desativar ou ignorar esses adaptadores" por "ignorar (não é preciso desativar nada); se quiser testar, desative só com outra placa de vídeo funcionando e com a tela ligada nela"; na fatia 2 do P3-06, a frase "Por placa: ... = 'não confirmado' com o motivo padrão" vira "Por placa: ... = placa 'sem dado'; nunca exceção."; no "Validar M3", trocar o nome `REBAR_REASON_MIXED` pelo texto que aparece na tela ("As placas de vídeo do PC não informam a mesma coisa...").
