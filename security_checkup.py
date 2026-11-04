@@ -84,8 +84,11 @@ INTERPRETERS = ('python.exe', 'pythonw.exe', 'python3.exe', 'py.exe', 'pyw.exe',
                 'php-win.exe', 'php-cgi.exe', 'lua.exe', 'wlua.exe', 'luajit.exe', 'tclsh.exe', 'wish.exe',
                 'rscript.exe', 'r.exe', 'rterm.exe', 'julia.exe', 'autohotkey.exe', 'autohotkey32.exe',
                 'autohotkey64.exe', 'autohotkeyu32.exe', 'autohotkeyu64.exe', 'autohotkeya32.exe',
-                'autoit3.exe', 'autoit3_x64.exe')
+                'autoit3.exe', 'autoit3_x64.exe', 'autohotkeyux.exe', 'autohotkey64_uia.exe',
+                'autohotkey32_uia.exe', 'javaws.exe', 'jjs.exe', 'mintty.exe', 'msbuild.exe')
 # Nomes com versão (ex.: python3.13.exe, lua5.4.exe, wish86.exe).
+# R-48: nome curto 8.3 (ex.: AUTOHO~1.EXE); não dá para saber qual programa é.
+_SHORT_NAME = re.compile(r'~\d')
 _VERSIONED_INTERPRETER = re.compile(r'^(python|pythonw|pypy|lua|tclsh|wish|perl|ruby|php)\d+(\.\d+)*t?w?\.exe$')
 
 REASON_OK = 'ok'
@@ -107,6 +110,7 @@ REASON_WINDOWS_PROGRAM = 'windows_program'
 REASON_MS_WINDOWS_PROGRAM = 'ms_windows_program'
 REASON_MS_COM_HANDLER = 'ms_com_handler'
 REASON_INTERPRETER = 'interpreter'
+REASON_UNCERTAIN_NAME = 'uncertain_name'
 
 REASON_TEXTS = {
     REASON_OK: 'Fica numa pasta de programas do Windows (Windows ou Arquivos de Programas).',
@@ -139,8 +143,10 @@ REASON_TEXTS = {
     REASON_MS_COM_HANDLER: ('É uma tarefa da Microsoft que abre um componente do Windows em vez de um '
                             'arquivo de programa. Isso é comum nas tarefas da Microsoft, mas o app não '
                             'confere o que esse componente faz.'),
-    REASON_INTERPRETER: ('É um programa que roda código escrito depois dele (como Python, Node ou Java); '
-                         'os argumentos não são lidos, então o app não confere o que ele roda.'),
+    REASON_INTERPRETER: ('É um programa que roda scripts ou comandos que recebe (como Python, Node ou Java). '
+                         'O app não lê esses comandos, então não confere o que ele roda.'),
+    REASON_UNCERTAIN_NAME: ('O nome do arquivo está incompleto ou abreviado (sem o ".exe", com ponto no fim '
+                            'ou no formato curto, como ARQUIV~1.EXE); o app não confere qual programa ele abre.'),
 }
 ADVICE_TEXTS = {
     STATE_SUSPECT: ('Não mexa no arquivo por conta própria. Faça a verificação recomendada '
@@ -424,12 +430,32 @@ def _system_root(env):
 
 
 def _norm_exe(path, env):
-    return _key(_expand(_strip_nt_prefix(path.strip()), env))
+    # R-48: o Windows ignora pontos e espaços no fim do nome ("node.exe." abre node.exe).
+    return _key(_expand(_strip_nt_prefix(path.strip()), env)).rstrip(' .')
+
+
+def _exe_names(path, env):
+    """Nomes com que o programa pode ser comparado às listas (R-48).
+
+    Sem ".exe" no fim, o Windows pode acrescentar ".exe" (``node`` abre ``node.exe``),
+    então os dois nomes contam.
+    """
+    base = ntpath.basename(_norm_exe(path, env))
+    return (base,) if base.endswith('.exe') else (base, base + '.exe')
+
+
+def _uncertain_name(path, env) -> bool:
+    """Nome sem ".exe", com ponto ou espaço no fim, ou curto (8.3): nunca dá OK (R-48)."""
+    raw = ntpath.basename(_key(_expand(_strip_nt_prefix(path.strip()), env)))
+    return raw != raw.rstrip(' .') or not raw.endswith('.exe') or bool(_SHORT_NAME.search(raw))
 
 
 def _known_quiet(path, env) -> bool:
     """Programa da lista fechada, direto em System32 ou SysWOW64 (R-46)."""
     if not isinstance(path, str) or not path.strip():
+        return False
+    if _uncertain_name(path, env):
+        # R-48: "defrag", "defrag.exe." ou "DEFRAG~1.EXE" não somem nem dão OK.
         return False
     norm = _norm_exe(path, env)
     root_key = _key(_system_root(env)).rstrip('\\')
@@ -441,8 +467,7 @@ def _is_interpreter(path, env) -> bool:
     """Interpretador da lista fechada ``INTERPRETERS`` (ou nome com versão), em qualquer pasta (R-47)."""
     if not isinstance(path, str) or not path.strip():
         return False
-    base = ntpath.basename(_norm_exe(path, env))
-    return base in INTERPRETERS or bool(_VERSIONED_INTERPRETER.match(base))
+    return any(base in INTERPRETERS or _VERSIONED_INTERPRETER.match(base) for base in _exe_names(path, env))
 
 
 def _code_runner_reason(path, env, allow_known):
@@ -451,15 +476,18 @@ def _code_runner_reason(path, env, allow_known):
     Os programas que rodam scripts, comandos ou bibliotecas (``SCRIPT_HOSTS``)
     nunca dão OK, estejam onde estiverem (R-45); os interpretadores (``INTERPRETERS``)
     também não (R-47). Qualquer outro programa da pasta do Windows só dá OK se
-    ``allow_known`` e se for da lista fechada (R-46).
+    ``allow_known`` e se for da lista fechada (R-46). Nome sem ".exe", com ponto ou
+    espaço no fim, ou curto (8.3) nunca dá OK, em qualquer pasta (R-48).
     """
     if not isinstance(path, str) or not path.strip():
         return None
     norm = _norm_exe(path, env)
-    if ntpath.basename(norm) in SCRIPT_HOSTS:
+    if any(base in SCRIPT_HOSTS for base in _exe_names(path, env)):
         return REASON_SCRIPT_HOST
     if _is_interpreter(path, env):
         return REASON_INTERPRETER
+    if _uncertain_name(path, env):
+        return REASON_UNCERTAIN_NAME
     if not _under(norm, _system_root(env)):
         return None
     if allow_known and _known_quiet(path, env):
@@ -648,16 +676,16 @@ def _classify_task(row, env):
             state, reason = STATE_SUSPECT, REASON_SYSTEM_NAME
         return state, reason, ''
     state, reason = classify_path(None, exe, env)
-    runs_code = ntpath.basename(_norm_exe(exe, env)) in SCRIPT_HOSTS
+    runs_code = any(base in SCRIPT_HOSTS for base in _exe_names(exe, env))
     if in_ms:
         if state == STATE_OK:
             if _known_quiet(exe, env):
                 # R-46: só some o que é da lista fechada (programas que não rodam código).
                 return None
             runner = _code_runner_reason(exe, env, allow_known=False)
-            if runner == REASON_INTERPRETER:
-                # R-47: interpretador nunca some nem dá OK, nem em \Microsoft\.
-                return STATE_ATTENTION, REASON_INTERPRETER, exe
+            if runner in (REASON_INTERPRETER, REASON_UNCERTAIN_NAME):
+                # R-47/R-48: interpretador ou nome incerto nunca some nem dá OK, nem em \Microsoft\.
+                return STATE_ATTENTION, runner, exe
             if runner:
                 return STATE_ATTENTION, REASON_MS_WINDOWS_PROGRAM, exe
             # Ex.: Office em Arquivos de Programas: aparece como OK, não some.
@@ -821,6 +849,8 @@ def _effective(item, env):
         # R-45/R-46/R-47: inicialização e tarefas não têm os argumentos lidos. Tarefa
         # mostrada nunca dá OK com programa da pasta do Windows (as da lista fechada
         # em \Microsoft\ nem aparecem); inicialização, só os da lista fechada.
+        # Interpretador (R-47) e nome incerto (R-48) ficam "atenção" em qualquer
+        # pasta, inclusive com nome da lista fechada.
         runner = _code_runner_reason(path, env, allow_known=item.get('source') != 'task')
         if runner:
             new_state, new_reason = STATE_ATTENTION, runner

@@ -962,8 +962,8 @@ WINDOWS_RUNNERS = (r'C:\Windows\System32\conhost.exe', r'C:\Windows\System32\for
 
 
 def _expected_runner(path, default):
-    # R-47: o wsl.exe é interpretador; continua "atenção", com o motivo próprio.
-    return sc.REASON_INTERPRETER if Path(path.replace('\\', '/')).name.lower() in sc.INTERPRETERS else default
+    # R-47: wsl.exe e MSBuild.exe são interpretadores; continuam "atenção", com o motivo próprio.
+    return sc.REASON_INTERPRETER if path.lower().endswith(('\\wsl.exe', '\\msbuild.exe')) else default
 
 
 class ClosedListRevision2Tests(unittest.TestCase):
@@ -1204,6 +1204,98 @@ class InterpreterRevision3Tests(unittest.TestCase):
         self.assertEqual([(i['state'], i['reason']) for i in auto], [(sc.STATE_ATTENTION, sc.REASON_APPDATA)])
         tasks = sc.classify_tasks([_task('\\', 'T', '"' + path + '"')], ENV)
         self.assertEqual([(i['state'], i['reason']) for i in tasks], [(sc.STATE_ATTENTION, sc.REASON_APPDATA)])
+
+
+class UncertainNameRevisionPR191Tests(unittest.TestCase):
+    """R-48: nome sem extensão, com ponto ou espaço no fim, ou curto (8.3) nunca dá OK."""
+
+    def setUp(self):
+        for name in ('run', 'Popen', 'check_output', 'call'):
+            patcher = mock.patch.object(subprocess, name, side_effect=_forbidden)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _text(self, result):
+        return '\n'.join(sc.checkup_lines(result, ENV))
+
+    def _auto(self, command):
+        items = sc.classify_autostart([{'source': 'run_user', 'name': 'A', 'command': command}], ENV)
+        return [(i['state'], i['reason']) for i in items], items
+
+    def test_interpreter_without_extension_or_trailing_dot_in_autostart(self):
+        for command in (r'"C:\Program Files\nodejs\node" x.js', r'"C:\Program Files\Python313\python"',
+                        r'"C:\Program Files\nodejs\node.exe." x.js', r'"C:\Program Files\nodejs\node.exe "',
+                        r'"C:\Program Files\Python313\python3.13" a.py'):
+            with self.subTest(command=command):
+                found, items = self._auto(command)
+                self.assertEqual(found, [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+                self.assertIn('[atenção] A', self._text({'autostart': items, 'errors': []}))
+
+    def test_script_host_without_extension_or_trailing_dot(self):
+        for command in (r'"C:\Program Files\x\powershell" -c y', r'"C:\Program Files\x\cmd.exe." /c y',
+                        r'"C:\Program Files\x\POWERS~1.EXE"'):
+            with self.subTest(command=command):
+                found, _ = self._auto(command)
+                self.assertEqual(found[0][0], sc.STATE_ATTENTION)
+                self.assertIn(found[0][1], (sc.REASON_SCRIPT_HOST, sc.REASON_UNCERTAIN_NAME))
+        self.assertEqual(self._auto(r'"C:\Program Files\x\powershell"')[0],
+                         [(sc.STATE_ATTENTION, sc.REASON_SCRIPT_HOST)])
+
+    def test_any_extensionless_program_is_never_ok(self):
+        for command in (r'"C:\Program Files\App\app"', r'"C:\Program Files\App\app.exe."',
+                        r'"C:\Program Files\App\app.com"', r'"C:\Program Files\App\app.exe.."'):
+            with self.subTest(command=command):
+                found, _ = self._auto(command)
+                self.assertEqual(found, [(sc.STATE_ATTENTION, sc.REASON_UNCERTAIN_NAME)])
+
+    def test_short_83_name_is_attention_in_autostart_and_task(self):
+        path = r'C:\Program Files\AutoHotkey\AUTOHO~1.EXE'
+        self.assertEqual(self._auto('"' + path + '" a.ahk')[0], [(sc.STATE_ATTENTION, sc.REASON_UNCERTAIN_NAME)])
+        for folder in ('\\', '\\Microsoft\\Windows\\'):
+            with self.subTest(folder=folder):
+                items = sc.classify_tasks([_task(folder, 'T', '"' + path + '"')], ENV)
+                self.assertEqual([(i['state'], i['reason']) for i in items],
+                                 [(sc.STATE_ATTENTION, sc.REASON_UNCERTAIN_NAME)])
+
+    def test_known_quiet_with_odd_name_is_shown_not_hidden(self):
+        for path in (r'C:\Windows\System32\DEFRAG~1.EXE', r'C:\Windows\System32\defrag.exe.'):
+            with self.subTest(path=path):
+                items = sc.classify_tasks([_task('\\Microsoft\\Windows\\A\\', 'B', path)], ENV)
+                self.assertEqual([i['state'] for i in items], [sc.STATE_ATTENTION])
+        self.assertFalse(sc._known_quiet(r'C:\Windows\System32\defrag', ENV))
+        self.assertFalse(sc._known_quiet(r'C:\Windows\System32\defrag.exe.', ENV))
+        self.assertTrue(sc._known_quiet(r'C:\Windows\System32\defrag.exe', ENV))
+        found, _ = self._auto(r'C:\Windows\System32\ctfmon.exe.')
+        self.assertEqual(found[0][0], sc.STATE_ATTENTION)
+
+    def test_screen_downgrades_forged_ok(self):
+        paths = (r'C:\Program Files\nodejs\node', r'C:\Program Files\Python313\python',
+                 r'C:\Program Files\nodejs\node.exe.', r'C:\Program Files\AutoHotkey\AUTOHO~1.EXE',
+                 r'C:\Program Files\x\powershell', r'C:\Program Files\x\cmd.exe.')
+        forged = {'autostart': [{'source': 'run_all', 'name': 'F%d' % n, 'path': p, 'state': sc.STATE_OK,
+                                 'reason': sc.REASON_OK} for n, p in enumerate(paths)],
+                  'tasks': [{'source': 'task', 'name': '\\T%d' % n, 'path': p, 'state': sc.STATE_OK,
+                             'reason': sc.REASON_OK} for n, p in enumerate(paths)], 'errors': []}
+        text = self._text(forged)
+        self.assertIn('RESUMO: OK 0 · atenção %d' % (2 * len(paths)), text)
+        self.assertIn('Motivo: ' + sc.REASON_TEXTS[sc.REASON_INTERPRETER], text)
+        self.assertIn('Motivo: ' + sc.REASON_TEXTS[sc.REASON_UNCERTAIN_NAME], text)
+
+    def test_new_interpreters_and_texts(self):
+        for exe in ('autohotkeyux.exe', 'autohotkey64_uia.exe', 'autohotkey32_uia.exe', 'javaws.exe',
+                    'jjs.exe', 'mintty.exe', 'msbuild.exe'):
+            self.assertIn(exe, sc.INTERPRETERS)
+        self.assertEqual(set(sc.INTERPRETERS) & set(sc.KNOWN_QUIET_PROGRAMS), set())
+        self.assertEqual(sc.REASON_TEXTS[sc.REASON_INTERPRETER],
+                         'É um programa que roda scripts ou comandos que recebe (como Python, Node ou Java). '
+                         'O app não lê esses comandos, então não confere o que ele roda.')
+        for reason in (sc.REASON_INTERPRETER, sc.REASON_UNCERTAIN_NAME):
+            for word in FORBIDDEN_WORDS:
+                self.assertNotIn(word, sc.REASON_TEXTS[reason].lower())
+
+    def test_processes_still_unchanged(self):
+        procs = [{'Name': 'node.exe', 'ExecutablePath': r'C:\Program Files\nodejs\node.exe'}]
+        self.assertEqual([i['state'] for i in sc.classify_processes(procs, ENV)['items']], [sc.STATE_OK])
 
 
 if __name__ == '__main__':

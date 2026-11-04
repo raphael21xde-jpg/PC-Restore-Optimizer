@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 3 (última poda: 01/11/2026, pedido `regras-20261101-poda-r35-r44`, issue #187). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-45.
+poda: 4 (última poda: 01/11/2026, pedido `regras-20261101-poda-r35-r44`, issue #187). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-45.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -62,3 +62,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-45 | Item que o app esconde ou marca OK sem ler os argumentos nunca pode ser programa que roda código vindo dos argumentos (powershell, pwsh, cmd, wscript, cscript, mshta, rundll32, regsvr32); fica "atenção". Troca de identificador (SID, usuário) tem teste com o identificador colado em letras dos dois lados. | Revisão da PR #189 (P3-07 fatia 2) | 2026-11-01 |
 | R-46 | Item que o app pode marcar OK ou esconder por estar na pasta do Windows só pode ser de uma lista fechada de programas que não rodam código vindo dos argumentos; programa do Windows fora dessa lista, usado por tarefa ou entrada de inicialização, fica "atenção". Tem teste com conhost, forfiles, msiexec e explorer. | Revisão 2 da PR #189 (P3-07 fatia 2) | 2026-11-02 |
 | R-47 | Interpretador (python, node, java, bash, AutoHotkey e afins, lista fechada INTERPRETERS) usado por tarefa agendada ou entrada de inicialização nunca dá OK nem some, em qualquer pasta, inclusive Program Files; fica "atenção" com motivo próprio, e a tela só rebaixa. Processos não mudam. Tem teste com node.exe e python.exe em Program Files. | Revisão 3 da PR #189 (FIX-P3-07-02) | 2026-11-04 |
+| R-48 | Comparação de nome de programa para dar OK ou "atenção" (listas SCRIPT_HOSTS, INTERPRETERS, KNOWN_QUIET_PROGRAMS) vale também para o nome sem extensão (o Windows acrescenta .exe), com ponto ou espaço no fim e no nome curto 8.3 (~1); na dúvida, nunca OK. Tem teste com node, node.exe. e AUTOHO~1.EXE em Program Files. | Revisão da PR #191 (FIX-P3-07-02) | 2026-11-04 |
