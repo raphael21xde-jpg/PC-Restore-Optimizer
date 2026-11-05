@@ -1298,5 +1298,119 @@ class UncertainNameRevisionPR191Tests(unittest.TestCase):
         self.assertEqual([i['state'] for i in sc.classify_processes(procs, ENV)['items']], [sc.STATE_OK])
 
 
+class LaunchersAndVersionsFix0703Tests(unittest.TestCase):
+    """FIX-P3-07-03 (issue #192): lançadores, nomes com versão, espaço no fim e marcadores."""
+
+    LAUNCHERS = ('env.exe', 'awk.exe', 'gawk.exe', 'mawk.exe', 'nawk.exe', 'go.exe', 'groovy.exe',
+                 'scala.exe', 'kotlin.exe', 'kotlinc.exe')
+    VERSIONED = ('node18.exe', 'java8.exe', 'javaw17.exe', 'bash5.exe', 'python3.12.exe', 'lua5.4.exe',
+                 'env2.exe', 'go1.22.exe', 'deno2.exe')
+
+    def setUp(self):
+        for name in ('run', 'Popen', 'check_output', 'call'):
+            patcher = mock.patch.object(subprocess, name, side_effect=_forbidden)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _text(self, result, env=ENV):
+        return '\n'.join(sc.checkup_lines(result, env))
+
+    def _auto(self, command):
+        items = sc.classify_autostart([{'source': 'run_user', 'name': 'A', 'command': command}], ENV)
+        return [(i['state'], i['reason']) for i in items], items
+
+    def _tasks(self, folder, execute):
+        items = sc.classify_tasks([_task(folder, 'T', execute)], ENV)
+        return [(i['state'], i['reason']) for i in items]
+
+    def test_launchers_are_in_closed_list(self):
+        for exe in self.LAUNCHERS:
+            self.assertIn(exe, sc.INTERPRETERS)
+        self.assertEqual(set(sc.INTERPRETERS) & set(sc.KNOWN_QUIET_PROGRAMS), set())
+
+    def test_launchers_and_versioned_names_in_program_files_are_attention(self):
+        for exe in self.LAUNCHERS + self.VERSIONED:
+            path = 'C:\\Program Files\\Lang\\' + exe
+            with self.subTest(exe=exe):
+                self.assertTrue(sc._is_interpreter(path, ENV))
+                found, items = self._auto('"' + path + '" x')
+                self.assertEqual(found, [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+                for folder in ('\\', '\\Microsoft\\Windows\\'):
+                    self.assertEqual(self._tasks(folder, '"' + path + '"'),
+                                     [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+                forged = {'autostart': [dict(items[0], state=sc.STATE_OK, reason=sc.REASON_OK)],
+                          'tasks': [{'source': 'task', 'name': '\\T', 'path': path, 'state': sc.STATE_OK,
+                                     'reason': sc.REASON_OK}], 'errors': []}
+                self.assertIn('RESUMO: OK 0 · atenção 2', self._text(forged))
+
+    def test_versioned_without_extension_is_attention(self):
+        for command in (r'"C:\Program Files\nodejs\node18"', r'"C:\Program Files\Java\bin\java8" -jar a.jar'):
+            with self.subTest(command=command):
+                self.assertEqual(self._auto(command)[0], [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+
+    def test_common_programs_with_numbers_stay_ok(self):
+        for path in (r'C:\Program Files\App\app2.exe', r'C:\Program Files\Steam\steam.exe',
+                     r'C:\Program Files\Envoy\envoy.exe', r'C:\Program Files\Golf\golf.exe'):
+            with self.subTest(path=path):
+                self.assertFalse(sc._is_interpreter(path, ENV))
+                self.assertEqual(self._auto('"' + path + '"')[0], [(sc.STATE_OK, sc.REASON_OK)])
+
+    def test_trailing_space_inside_quotes_is_never_ok(self):
+        for command in ('"C:\\Windows\\System32\\ctfmon.exe "', '"C:\\Windows\\System32\\ctfmon.exe\t" x',
+                        '"C:\\Program Files\\App\\app.exe "'):
+            with self.subTest(command=command):
+                self.assertEqual(self._auto(command)[0], [(sc.STATE_ATTENTION, sc.REASON_UNCERTAIN_NAME)])
+        # Sem o espaço, continua como antes.
+        self.assertEqual(self._auto(r'"C:\Windows\System32\ctfmon.exe"')[0], [(sc.STATE_OK, sc.REASON_OK)])
+        # Interpretador continua com o motivo de interpretador.
+        self.assertEqual(self._auto(r'"C:\Program Files\nodejs\node.exe "')[0],
+                         [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+
+    def test_task_with_trailing_space_is_shown_not_hidden(self):
+        for execute in ('C:\\Windows\\System32\\ctfmon.exe ', 'C:\\Windows\\System32\\defrag.exe\t'):
+            with self.subTest(execute=execute):
+                self.assertEqual(self._tasks('\\Microsoft\\Windows\\A\\', execute),
+                                 [(sc.STATE_ATTENTION, sc.REASON_UNCERTAIN_NAME)])
+        # Fora de \\Microsoft\\ também não dá OK.
+        self.assertEqual([r[0] for r in self._tasks('\\', 'C:\\Program Files\\App\\app.exe ')],
+                         [sc.STATE_ATTENTION])
+        self.assertEqual(self._tasks('\\', 'C:\\Windows\\System32\\ctfmon.exe '),
+                         [(sc.STATE_ATTENTION, sc.REASON_UNCERTAIN_NAME)])
+        self.assertEqual(self._tasks('\\Microsoft\\Windows\\A\\', r'C:\Windows\System32\defrag.exe'), [])
+
+    def test_uncertain_name_text(self):
+        self.assertEqual(sc.REASON_TEXTS[sc.REASON_UNCERTAIN_NAME],
+                         'O nome do arquivo não termina em .exe, termina com ponto ou espaço, ou está '
+                         'abreviado (como ARQUIV~1.EXE); o app não confere qual programa ele abre.')
+
+    def test_placeholders_survive_user_named_sid_or_mail(self):
+        sid = 'S-1-5-21-1111111111-2222222222-3333333333-1001'
+        for user in ('SID', 'mail', 'e-mail', 'Sid', 'MAIL'):
+            env = dict(ENV, USERNAME=user)
+            with self.subTest(user=user):
+                path = 'D:\\Sync-' + sid + '\\fulano@empresa.com\\a.exe'
+                once = sc.sanitize_path(path, env)
+                self.assertEqual(once, 'D:\\Sync-<SID>\\<e-mail>\\a.exe')
+                self.assertEqual(sc.sanitize_path(once, env), once)
+                procs = [{'Name': 'a.exe', 'ExecutablePath': path}]
+                rows = [_task('\\', 'Task' + sid, '"C:\\Program Files\\x\\' + 'ciclano@mail.com\\b.exe"')]
+                result = sc.read_checkup(_fake_ps(procs=procs, tasks=rows), env)
+                text = self._text(result, env)
+                for leak in ('1001', '3333333333', 'fulano', 'ciclano', 'empresa', '@'):
+                    self.assertNotIn(leak, repr(result))
+                    self.assertNotIn(leak, text)
+                self.assertIn('D:\\Sync-<SID>\\<e-mail>\\a.exe', text)
+                self.assertIn('\\Task<SID>', text)
+                self.assertIn('\\x\\<e-mail>\\b.exe', text)
+                self.assertNotIn('<%USERNAME%>', text)
+                self.assertNotIn('<e-%USERNAME%>', text)
+
+    def test_user_name_inside_email_domain_still_hides_email(self):
+        env = dict(ENV, USERNAME='mail')
+        self.assertEqual(sc.sanitize_path(r'D:\x\fulano@mail.com\a.exe', env), r'D:\x\<e-mail>\a.exe')
+        env = dict(ENV, USERNAME='com')
+        self.assertEqual(sc.sanitize_path(r'D:\x\fulano@mail.com\a.exe', env), r'D:\x\<e-mail>\a.exe')
+
+
 if __name__ == '__main__':
     unittest.main()

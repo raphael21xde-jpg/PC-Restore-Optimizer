@@ -85,11 +85,17 @@ INTERPRETERS = ('python.exe', 'pythonw.exe', 'python3.exe', 'py.exe', 'pyw.exe',
                 'rscript.exe', 'r.exe', 'rterm.exe', 'julia.exe', 'autohotkey.exe', 'autohotkey32.exe',
                 'autohotkey64.exe', 'autohotkeyu32.exe', 'autohotkeyu64.exe', 'autohotkeya32.exe',
                 'autoit3.exe', 'autoit3_x64.exe', 'autohotkeyux.exe', 'autohotkey64_uia.exe',
-                'autohotkey32_uia.exe', 'javaws.exe', 'jjs.exe', 'mintty.exe', 'msbuild.exe')
-# Nomes com versão (ex.: python3.13.exe, lua5.4.exe, wish86.exe).
+                'autohotkey32_uia.exe', 'javaws.exe', 'jjs.exe', 'mintty.exe', 'msbuild.exe',
+                # FIX-P3-07-03: lançadores que rodam o código ou o programa dos argumentos.
+                'env.exe', 'awk.exe', 'gawk.exe', 'mawk.exe', 'nawk.exe', 'go.exe', 'groovy.exe',
+                'scala.exe', 'kotlin.exe', 'kotlinc.exe')
 # R-48: nome curto 8.3 (ex.: AUTOHO~1.EXE); não dá para saber qual programa é.
 _SHORT_NAME = re.compile(r'~\d')
-_VERSIONED_INTERPRETER = re.compile(r'^(python|pythonw|pypy|lua|tclsh|wish|perl|ruby|php)\d+(\.\d+)*t?w?\.exe$')
+# R-49: qualquer nome da lista com versão (ex.: python3.13.exe, node18.exe, java8.exe,
+# javaw17.exe, wish86.exe, php-8.exe). Do lado seguro: "-" ou "_" antes do número também conta.
+_VERSIONED_INTERPRETER = re.compile(
+    r'^(' + '|'.join(sorted((re.escape(n[:-4]) for n in INTERPRETERS), key=len, reverse=True))
+    + r')[-_]?\d+(\.\d+)*t?w?\.exe$')
 
 REASON_OK = 'ok'
 REASON_SYSTEM_NAME = 'system_name'
@@ -145,8 +151,8 @@ REASON_TEXTS = {
                             'confere o que esse componente faz.'),
     REASON_INTERPRETER: ('É um programa que roda scripts ou comandos que recebe (como Python, Node ou Java). '
                          'O app não lê esses comandos, então não confere o que ele roda.'),
-    REASON_UNCERTAIN_NAME: ('O nome do arquivo está incompleto ou abreviado (sem o ".exe", com ponto no fim '
-                            'ou no formato curto, como ARQUIV~1.EXE); o app não confere qual programa ele abre.'),
+    REASON_UNCERTAIN_NAME: ('O nome do arquivo não termina em .exe, termina com ponto ou espaço, ou está '
+                            'abreviado (como ARQUIV~1.EXE); o app não confere qual programa ele abre.'),
 }
 ADVICE_TEXTS = {
     STATE_SUSPECT: ('Não mexa no arquivo por conta própria. Faça a verificação recomendada '
@@ -224,7 +230,8 @@ _ENV_VAR = re.compile(r'%([^%]+)%')
 _OTHER_USER = re.compile(r'((?:[A-Za-z]:|\\\\[^\\/"]+)[\\/](?:Users|Documents and Settings)[\\/])([^\\/"]+)',
                          re.IGNORECASE)
 # Marcadores que a troca do nome do usuário não pode estragar.
-_PLACEHOLDERS = ('%USERPROFILE%', '%USERNAME%', '<outro usuário>')
+# <SID> e <e-mail> entram para um usuário chamado "SID" ou "mail" (FIX-P3-07-03).
+_PLACEHOLDERS = ('%USERPROFILE%', '%USERNAME%', '<outro usuário>', '<SID>', '<e-mail>')
 _KEEP_USERS = ('public', 'default', 'default user', 'all users', '<outro usuário>')
 # A extensão termina quando não vem letra, número ou "_" colado (app.exe--token=X vira app.exe).
 _COMMAND_EXE = re.compile(r'^(.*?\.(?:exe|bat|cmd|vbs|ps1|js))(?![A-Za-z0-9_])', re.IGNORECASE)
@@ -232,8 +239,8 @@ _NT_PREFIX = re.compile(r'^(?:\\\\\?\\|\\\?\?\\)(UNC\\)?', re.IGNORECASE)
 # SID de usuário (S-1-5-21-...) e qualquer S-1-... com pelo menos 3 sub-autoridades,
 # mesmo colado em letras (ex.: GoogleUpdateTaskUserS-1-5-21-...Core). "S-1-5-18" fica.
 _SID = re.compile(r'S-1-5-21-\d+-\d+-\d+(?:-\d+)?|S-1-\d+(?:-\d+){3,}', re.IGNORECASE)
-# O "%" entra para pegar também "%USERNAME%@exemplo.com" (o nome já trocado).
-_EMAIL = re.compile(r'[\w.+%-]+@[\w-]+(?:\.[\w-]+)+')
+# O "%" entra para pegar também "%USERNAME%@exemplo.com" e "a@%USERNAME%.com" (o nome já trocado).
+_EMAIL = re.compile(r'[\w.+%-]+@[\w%-]+(?:\.[\w%-]+)+')
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 MAX_NAME = 80
 
@@ -285,7 +292,10 @@ def sanitize_path(path, env=None) -> str:
             return match.group(0)
         return match.group(1) + '<outro usuário>'
     text = _OTHER_USER.sub(other, text)
-    return _EMAIL.sub('<e-mail>', _SID.sub('<SID>', _hide_user_name(text, env)))
+    # O SID é trocado antes do nome do usuário (um nome como "S-1" estragaria o SID)
+    # e de novo depois; os marcadores já colocados ficam protegidos (FIX-P3-07-03).
+    text = _hide_user_name(_SID.sub('<SID>', text), env)
+    return _EMAIL.sub('<e-mail>', _SID.sub('<SID>', text))
 
 
 def _hide_user_name(text, env):
@@ -331,6 +341,18 @@ def executable_from_command(cmd) -> str:
         return _only_if_not_argument(_no_space(found.group(1).strip()))
     # Sem extensão conhecida: só o primeiro pedaço.
     return _only_if_not_argument(text.split()[0])
+
+
+def _quoted_trailing_space(cmd) -> bool:
+    """O nome entre aspas termina com espaço (ex.: ``"C:\\a\\b.exe "``); R-48."""
+    if not isinstance(cmd, str):
+        return False
+    text = cmd.strip()
+    end = text.find('"', 1) if text.startswith('"') else -1
+    if end <= 0:
+        return False
+    inner = text[1:end]
+    return inner != inner.rstrip()
 
 
 def _command_guess(cmd) -> str:
@@ -586,6 +608,9 @@ def classify_autostart(entries, env=None):
             runner = _code_runner_reason(exe, env, allow_known=True)
             if runner:
                 state, reason = STATE_ATTENTION, runner
+        if state == STATE_OK and _quoted_trailing_space(command):
+            # R-48: '"...\\ctfmon.exe "' nunca dá OK (espaço no fim do nome).
+            state, reason = STATE_ATTENTION, REASON_UNCERTAIN_NAME
         items.append(_item(source, name, exe, state, reason, env))
     return items
 
@@ -677,6 +702,10 @@ def _classify_task(row, env):
         return state, reason, ''
     state, reason = classify_path(None, exe, env)
     runs_code = any(base in SCRIPT_HOSTS for base in _exe_names(exe, env))
+    if (state == STATE_OK and execute != execute.rstrip() and not runs_code
+            and not _is_interpreter(exe, env)):
+        # R-48: espaço no fim do caminho: nunca some nem dá OK, nem em \Microsoft\.
+        return STATE_ATTENTION, REASON_UNCERTAIN_NAME, exe
     if in_ms:
         if state == STATE_OK:
             if _known_quiet(exe, env):
