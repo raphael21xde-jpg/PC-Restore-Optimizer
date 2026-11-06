@@ -230,8 +230,8 @@ class CompareTests(unittest.TestCase):
                            _entry('depois', self._values(cpu=12, memory=55, processes=180, startup=7,
                                                          power_plan='Alto desempenho'),
                                   BASE + timedelta(hours=1))])
-        self.assertIn('Uso do processador (média): 20% → 12% (8 pontos a menos)', text)
-        self.assertIn('Memória em uso: 60% → 55% (5 pontos a menos)', text)
+        self.assertIn('Uso do processador (média): 20% → 12% (8 pontos percentuais a menos)', text)
+        self.assertIn('Memória em uso: 60% → 55% (5 pontos percentuais a menos)', text)
         self.assertIn('Processos abertos: 200 → 180 (20 a menos)', text)
         self.assertIn('Programas que abrem com o Windows: 10 → 7 (3 a menos)', text)
         self.assertIn('Plano de energia: Equilibrado → Alto desempenho (mudou)', text)
@@ -242,7 +242,7 @@ class CompareTests(unittest.TestCase):
     def test_more_and_same(self):
         text = self._text([_entry('antes', self._values(), BASE),
                            _entry('depois', self._values(cpu=25, startup=10), BASE + timedelta(hours=1))])
-        self.assertIn('20% → 25% (5 pontos a mais)', text)
+        self.assertIn('20% → 25% (5 pontos percentuais a mais)', text)
         self.assertIn('10 → 10 (igual)', text)
         self.assertIn('Equilibrado → Equilibrado (igual)', text)
 
@@ -251,7 +251,7 @@ class CompareTests(unittest.TestCase):
                            _entry('depois', self._values(memory=None), BASE + timedelta(hours=1))])
         self.assertIn('Uso do processador (média): sem dado', text)
         self.assertIn('Memória em uso: sem dado', text)
-        self.assertNotIn('pontos a menos', text.split('Memória')[0].split('processador')[1])
+        self.assertNotIn('pontos percentuais a menos', text.split('Memória')[0].split('processador')[1])
 
     def test_uses_last_before_and_last_after_it(self):
         text = self._text([_entry('antes', self._values(processes=100), BASE),
@@ -270,6 +270,9 @@ class CompareTests(unittest.TestCase):
     def test_missing_before_or_everything(self):
         text = self._text([_entry('depois', self._values(), BASE)])
         self.assertIn(pm.MISSING_BEFORE, text)
+        # Ressalva 5 da PR #200: já existe uma DEPOIS; falta só a ANTES.
+        self.assertNotIn(pm.MISSING_AFTER, text)
+        self.assertIn(pm.AFTER_NEEDS_BEFORE, text)
         text = self._text([])
         self.assertIn(pm.MISSING_BEFORE, text)
         self.assertIn(pm.MISSING_AFTER, text)
@@ -291,6 +294,14 @@ class CompareTests(unittest.TestCase):
         for label in ('Uso do processador (média)', 'Memória em uso', 'Processos abertos',
                       'Programas que abrem com o Windows', 'Plano de energia'):
             self.assertIn(label + ': sem dado', text)
+
+    def test_one_point_is_singular_and_question_says_processes(self):
+        text = self._text([_entry('antes', self._values(), BASE),
+                           _entry('depois', self._values(cpu=19), BASE + timedelta(hours=1))])
+        self.assertIn('20% → 19% (1 ponto percentual a menos)', text)
+        # Ressalva 4 da PR #200: o que é contado são processos.
+        self.assertIn('quantos processos estão abertos', pm.MEASURE_CONFIRMATION)
+        self.assertNotIn('programas estão abertos', pm.MEASURE_CONFIRMATION)
 
     def test_naive_timestamp_is_ignored(self):
         text = self._text([{'phase': 'antes', 'at': '2026-11-06T12:00:00', 'values': self._values()}])

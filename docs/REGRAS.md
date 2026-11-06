@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 9 (última poda: 01/11/2026, pedido `regras-20261101-poda-r35-r44`, issue #187). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-45.
+poda: 10 (última poda: 01/11/2026, pedido `regras-20261101-poda-r35-r44`, issue #187). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-45.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -68,3 +68,6 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-51 | Valor lido do sistema que o app compara com uma pasta ou uma extensão perigosa (exclusão, caminho) passa pela mesma normalização do Windows antes da comparação (sem ponto e espaço no fim de cada pedaço, sem prefixo \\?\, curingas como *.* = tudo); na dúvida, vale a classificação mais grave. Tem teste com C:\Windows. e C:\*.* | Revisão da PR #196 (P3-07 fatia 3) | 2026-11-06 |
 | R-52 | Filtro que esconde ou reclassifica um valor lido do sistema pelo texto (aviso do Windows, palavra como "administrador") nunca vale para um valor que parece caminho ou programa; tem teste com exclusões em C:\Users\Administrador\... que continuam "suspeito" | Revisão da PR #197 (P3-07 fatia 4) | 2026-11-06 |
 | R-53 | Filtro que esconde um valor "estranho" ou o troca por aviso só pode esconder, nunca rebaixar: se a classificação sem o filtro dá "suspeito", continua "suspeito"; exceção de processo (o da própria medição) é pelo PID, nunca pelo nome de um programa da R-45. Tem teste comparando com a classificação anterior (bin/cmd.exe, **.exe, powershell de outro PID) | Revisão 2 da PR #197 (P3-07 fatia 4) | 2026-11-06 |
+| R-54 | Ajuste que muda o Windows só entra pela lista fechada SAFE_TWEAKS (HKCU, DWORD, documentado) e pelo diário de alterações; desfazer de um valor que não existia apaga só esse valor, nunca a chave. Tem teste com chave fora da lista e com valor ausente. | P3-04 | 2026-11-06 |
+| R-55 | Ajuste que grava em HKCU ou no perfil do usuário (registro, %LOCALAPPDATA%) e exige administrador só roda se o usuário do processo for o mesmo dono da sessão interativa; diferente ou desconhecido = recusa antes de ler ou perguntar. Tem teste com "outra conta" e "não deu para saber". | Revisão da PR #201 (P3-04) | 2026-11-06 |
+| R-56 | Consulta ao Windows que resolve nome ou SID de conta (LookupAccountName/LookupAccountSid, WTS, domínio) conta como operação que pode esperar (pode ir à rede) e roda no Job, nunca na thread do Tk; a recusa vem no retorno do Job, antes de ler ou mudar qualquer coisa. | Revisão 2 da PR #201 (P3-04, 93d21e1005ff) | 2026-11-06 |

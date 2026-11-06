@@ -26,7 +26,7 @@ class OptimizationGUIV057Tests(unittest.TestCase):
             root.navigate(root.optimization)
             root.update_idletasks()
             self.assertEqual(root.tabs.select(),str(root.optimization))
-            self.assertEqual(len(root.optimizer_panel.tabs.tabs()),7)  # P3-03 fatia 2b-1: Alterações feitas
+            self.assertEqual(len(root.optimizer_panel.tabs.tabs()),8)  # P3-03 fatia 2b-1: Alterações feitas; P3-04: Ajustes seguros
             self.assertFalse(root.optimizer_panel.running)
             self.assertIsNone(root.optimizer_panel.report)
             if os.name == 'nt':

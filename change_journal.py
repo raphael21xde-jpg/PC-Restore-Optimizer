@@ -563,7 +563,16 @@ class ChangeJournal:
         lines = []
         for number, entry in enumerate(self._entries, 1):
             adapter = self._adapters.get(entry['kind'])
-            label = getattr(adapter, 'label', None)
+            label = None
+            # P3-04: o adaptador pode dar um nome por item (``label_for(chave)``).
+            label_for = getattr(adapter, 'label_for', None)
+            if callable(label_for):
+                try:
+                    label = label_for(entry['key'])
+                except Exception:
+                    label = None
+            if not isinstance(label, str) or not label or _looks_like_path(label):
+                label = getattr(adapter, 'label', None)
             if not isinstance(label, str) or not label or _looks_like_path(label):
                 label = 'ajuste'
             lines.append(f'{number}. {label}: {STATUS_TEXT[entry["status"]]}.')

@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -475,6 +476,13 @@ class StepsButtonTests(unittest.TestCase):
         self.panel = ou.OptimizationPanel(self.root, app_dir=self.tmp, state_dir=self.tmp,
                                           ask=lambda *a: False, show=lambda *a: None)
         self.panel.pack()
+        # P3-04 (ressalva 1 da PR #200): o histórico de medições é lido num Job ao abrir;
+        # espera ele terminar para a conferência de timers começar do zero.
+        deadline = time.monotonic() + 5
+        while self.panel._history_job is not None and time.monotonic() < deadline:
+            self.root.update()
+            time.sleep(0.01)
+        self.assertIsNone(self.panel._history_job)
 
     def _report(self):
         hardware = _hardware(_bar(8 * 1024 ** 3))
