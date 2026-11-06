@@ -28,6 +28,8 @@ from hardware_profile import profile_lines, SCAN_CONFIRMATION
 from bios_guidance import bios_guidance_lines, bios_steps_text
 import security_checkup as checkup_engine
 from security_checkup import CHECKUP_CONFIRMATION, IDLE_CONFIRMATION
+import pc_measure
+from pc_measure import MEASURE_CONFIRMATION
 from atomic_write import atomic_write_text
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
@@ -44,6 +46,17 @@ IDLE_BUTTON_TEXT='Medir uso parado (2 min)'
 IDLE_RUNNING_TEXT='Medindo... (2 min)'
 IDLE_FAILED_TEXT=('A medição do uso com o PC parado não pôde ser concluída. Nada foi mudado '
                   'nem encerrado. Tente de novo mais tarde.')
+# P3-02: medição antes e depois (só leitura, ~1 minuto).
+MEASURE_TITLE='Medição antes e depois'
+MEASURE_HELP=('Meça ANTES de aplicar os ajustes e DEPOIS deles, com os mesmos programas abertos. '
+              'Só lê: nada é mudado.')
+MEASURE_BEFORE_TEXT='Medir ANTES (1 min)'
+MEASURE_AFTER_TEXT='Medir DEPOIS (1 min)'
+MEASURE_RUNNING_TEXT='Medindo... (1 min)'
+MEASURE_FAILED_TEXT=('A medição do PC não pôde ser concluída ou guardada. Nada foi mudado no Windows. '
+                     'Tente de novo mais tarde.')
+MEASURE_HISTORY_UNREADABLE=('Não foi possível ler as medições guardadas. Uma medição nova não '
+                            'apaga nada: ela só é guardada quando o arquivo puder ser lido.')
 
 # ---------- P3-03 fatia 2a: textos da troca de plano (sem caminhos, R-07) ----------
 POWER_ADMIN_TEXT = (
@@ -254,6 +267,9 @@ class OptimizationPanel(tk.Frame):
         self._idle_job=None
         self._idle_result=None
         self._checkup_result=None
+        # P3-02: medição antes e depois (Job) e o arquivo com as medições.
+        self._measure_job=None
+        self.measure_path=self.state_dir/pc_measure.MEASURE_FILE
         self.scenario=tk.StringVar(value='Counter-Strike 2 | mesmo mapa, resolução e ajustes')
         self.phase=tk.StringVar(value='antes')
         self.plan_choice=tk.StringVar(value='')
@@ -342,6 +358,24 @@ class OptimizationPanel(tk.Frame):
         # P3-07 fatia 4: mede 2 minutos (só leitura), em botão à parte.
         self.btn_idle=ttk.Button(actions,text=IDLE_BUTTON_TEXT,command=self.measure_idle)
         self.btn_idle.pack(side='left',padx=(9,0))
+        # P3-02: medição antes e depois (só leitura), com a comparação logo abaixo.
+        box=tk.Frame(area,bg=PANEL,highlightbackground=BORDER,highlightthickness=1)
+        box.pack(fill='x',pady=(6,0))
+        tk.Label(box,text=MEASURE_TITLE,bg=PANEL,fg=TEXT,font=('Segoe UI',11,'bold'),
+                 anchor='w').pack(fill='x',padx=16,pady=(10,3))
+        tk.Label(box,text=MEASURE_HELP,bg=PANEL,fg=MUTED,font=('Segoe UI',10),justify='left',
+                 wraplength=830,anchor='w').pack(fill='x',padx=16)
+        measure_row=tk.Frame(box,bg=PANEL);measure_row.pack(fill='x',padx=16,pady=(6,4))
+        self.btn_measure_before=ttk.Button(measure_row,text=MEASURE_BEFORE_TEXT,
+                                           command=lambda:self.measure_pc('antes'))
+        self.btn_measure_before.pack(side='left')
+        self.btn_measure_after=ttk.Button(measure_row,text=MEASURE_AFTER_TEXT,
+                                          command=lambda:self.measure_pc('depois'))
+        self.btn_measure_after.pack(side='left',padx=(9,0))
+        self.measure_text=tk.Text(box,bg=PANEL,fg=TEXT,relief='flat',bd=0,wrap='word',
+                                  font=('Consolas',10),padx=16,pady=6,height=9)
+        self.measure_text.pack(fill='x',padx=(0,4),pady=(0,8))
+        self._render_measures()
         self.report_text=self._text_area(area)
         self._write(self.report_text,'Nenhuma análise executada. Clique em “Analisar este PC”.\n\n'
                     'Princípio do estudo Honest: avaliar Windows, GPU, firmware e resultados com benchmarks.\n'
@@ -1070,13 +1104,14 @@ class OptimizationPanel(tk.Frame):
 
     def security_checkup(self):
         """P3-07: pergunta antes; a consulta (só leitura) roda num Job e volta por WindowTimers."""
-        if self._checkup_job is not None or self._idle_job is not None:
+        if self._any_measure_running():
             return
         if not self._ask('Check-up de segurança',CHECKUP_CONFIRMATION):
             self.note.set('Check-up cancelado. Nada foi lido nem alterado.')
             return
         self.btn_checkup.configure(state='disabled')
         self.btn_idle.configure(state='disabled')
+        self._set_measure_buttons('disabled')
         self.note.set('Fazendo o check-up de segurança (só leitura)...')
         job=Job(lambda cancelled,progress:checkup_engine.read_checkup())
         self._checkup_job=job
@@ -1096,6 +1131,7 @@ class OptimizationPanel(tk.Frame):
     def _checkup_finished(self,result):
         self.btn_checkup.configure(state='normal')
         self.btn_idle.configure(state='normal')
+        self._set_measure_buttons('normal')
         self.note.set('Check-up de segurança concluído. Nada foi mudado.')
         # Revisão 2 da PR #197: a hora do check-up aparece quando ele volta na janela.
         self._checkup_result=dict(result,checked_at=time.strftime('%H:%M')) if isinstance(result,dict) else result
@@ -1105,6 +1141,7 @@ class OptimizationPanel(tk.Frame):
         # R-07: nunca a mensagem original (pode ter caminho com nome de usuário).
         self.btn_checkup.configure(state='normal')
         self.btn_idle.configure(state='normal')
+        self._set_measure_buttons('normal')
         self.note.set('O check-up de segurança não pôde ser concluído. Nada foi mudado.')
         self._show('warning','Check-up de segurança',CHECKUP_FAILED_TEXT)
 
@@ -1133,7 +1170,7 @@ class OptimizationPanel(tk.Frame):
 
     def measure_idle(self):
         """P3-07 fatia 4: pergunta antes; mede 2 minutos (só leitura) num Job, com retorno por WindowTimers."""
-        if self._idle_job is not None or self._checkup_job is not None:
+        if self._any_measure_running():
             return
         if not self._ask('Medir uso parado',IDLE_CONFIRMATION):
             self.note.set('Medição cancelada. Nada foi lido nem alterado.')
@@ -1141,6 +1178,7 @@ class OptimizationPanel(tk.Frame):
         # O check-up também usa o processador: fica desligado enquanto mede.
         self.btn_idle.configure(state='disabled',text=IDLE_RUNNING_TEXT)
         self.btn_checkup.configure(state='disabled')
+        self._set_measure_buttons('disabled')
         self.note.set('Medindo o uso com o PC parado por 2 minutos (só leitura). Não use o PC nesse tempo.')
         job=Job(lambda cancelled,progress:checkup_engine.read_idle())
         self._idle_job=job
@@ -1160,6 +1198,7 @@ class OptimizationPanel(tk.Frame):
     def _idle_done(self):
         self.btn_idle.configure(state='normal',text=IDLE_BUTTON_TEXT)
         self.btn_checkup.configure(state='normal')
+        self._set_measure_buttons('normal')
 
     def _idle_finished(self,idle):
         self._idle_done()
@@ -1173,6 +1212,67 @@ class OptimizationPanel(tk.Frame):
         self._idle_done()
         self.note.set('A medição do uso parado não pôde ser concluída. Nada foi mudado.')
         self._show('warning','Medir uso parado',IDLE_FAILED_TEXT)
+
+    def _any_measure_running(self):
+        # Check-up, uso parado e medição antes/depois usam o processador: um de cada vez.
+        return any(getattr(self,name,None) is not None for name in ('_checkup_job','_idle_job','_measure_job'))
+
+    def _set_measure_buttons(self,state):
+        for name in ('btn_measure_before','btn_measure_after'):
+            button=getattr(self,name,None)
+            if button is not None:
+                button.configure(state=state)
+
+    def _render_measures(self):
+        try:
+            history=pc_measure.read_measures(self.measure_path)
+        except ValueError:
+            self._write(self.measure_text,MEASURE_HISTORY_UNREADABLE+'\n\n'+pc_measure.MEASURE_WARNING)
+            return
+        self._write(self.measure_text,'\n'.join(pc_measure.compare_measures(history)))
+
+    def measure_pc(self,phase):
+        """P3-02: pergunta antes; mede ~1 minuto (só leitura) num Job e guarda; retorno por WindowTimers."""
+        if phase not in pc_measure.PHASES or self._any_measure_running():
+            return
+        if not self._ask(MEASURE_TITLE,MEASURE_CONFIRMATION):
+            self.note.set('Medição cancelada. Nada foi lido nem alterado.')
+            return
+        self._set_measure_buttons('disabled')
+        (self.btn_measure_before if phase=='antes' else self.btn_measure_after).configure(text=MEASURE_RUNNING_TEXT)
+        self.btn_checkup.configure(state='disabled')
+        self.btn_idle.configure(state='disabled')
+        self.note.set('Medindo o PC por cerca de 1 minuto (só leitura). Não use o PC nesse tempo.')
+        path=self.measure_path
+        def work(cancelled,progress):
+            measure=pc_measure.read_measure()
+            path.parent.mkdir(parents=True,exist_ok=True)
+            return pc_measure.save_measure(path,phase,measure)
+        job=Job(work)
+        self._measure_job=job
+        def poll():
+            outcome=job.poll()
+            if outcome is None:
+                self._timers.after(200,poll)
+                return
+            self._measure_job=None
+            kind,_value=outcome
+            self._measure_done()
+            if kind=='done':
+                self.note.set('Medição '+phase.upper()+' concluída e guardada. Nada foi mudado.')
+                self._render_measures()
+            else:
+                # R-07: nunca a mensagem original (pode ter caminho com nome de usuário).
+                self.note.set('A medição do PC não pôde ser concluída. Nada foi mudado.')
+                self._show('warning',MEASURE_TITLE,MEASURE_FAILED_TEXT)
+        self._timers.after(10,poll)
+
+    def _measure_done(self):
+        self._set_measure_buttons('normal')
+        self.btn_measure_before.configure(text=MEASURE_BEFORE_TEXT)
+        self.btn_measure_after.configure(text=MEASURE_AFTER_TEXT)
+        self.btn_checkup.configure(state='normal')
+        self.btn_idle.configure(state='normal')
 
     def export_report(self):
         if not self.report:
