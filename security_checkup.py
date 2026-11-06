@@ -1,8 +1,10 @@
 """P3-07: check-up de segurança, somente leitura.
 
 Olha os programas que abrem com o Windows (chaves Run/RunOnce e pastas de
-Inicialização), as tarefas agendadas (fatia 2) e os processos em execução, e
-marca cada item como OK, atenção ou suspeito, com o motivo em português simples.
+Inicialização), as tarefas agendadas (fatia 2), os processos em execução, a
+situação do Microsoft Defender e as conexões de rede para portas comuns de
+mineração (fatia 3), e marca cada item como OK, atenção ou suspeito, com o
+motivo em português simples.
 
 Regras desta fatia:
 - só lê: nada é mudado, encerrado ou tirado do lugar, e não pede administrador;
@@ -15,6 +17,8 @@ Regras desta fatia:
   %USERNAME%, só no texto mostrado: a classificação usa o caminho original;
   um SID (como S-1-5-21-...) vira <SID> e um e-mail vira <e-mail>;
 - na dúvida o item fica "atenção", nunca "OK";
+- o Defender só é lido (situação e exclusões), nunca mudado; das conexões de
+  rede só ficam a porta remota e o programa dono (o endereço remoto nem é pedido);
 - programa da pasta do Windows só dá OK (ou some, nas tarefas da Microsoft)
   se estiver na lista fechada ``KNOWN_QUIET_PROGRAMS`` (R-46);
 - as funções são puras e recebem os dados já lidos; o PowerShell real só é
@@ -34,8 +38,10 @@ _STATES = (STATE_OK, STATE_ATTENTION, STATE_SUSPECT)
 
 CHECKUP_CONFIRMATION = (
     'O check-up vai só ler a lista de programas que abrem com o Windows, das tarefas '
-    'agendadas e dos programas abertos agora (processos), com o lugar de onde cada um roda.\n\n'
-    'Nada é mudado, encerrado ou tirado do lugar, e não precisa de administrador. '
+    'agendadas e dos programas abertos agora (processos), com o lugar de onde cada um roda. '
+    'Vai ler também a situação do Microsoft Defender (proteção ligada e exclusões) e as '
+    'conexões de rede abertas agora (só a porta e o programa, sem o endereço).\n\n'
+    'Nada é mudado, encerrado ou tirado do lugar (nem no Defender), e não precisa de administrador. '
     'Pode levar alguns segundos.\n\nContinuar?')
 
 NEVER_CHANGES = ('O app só olha: não muda, não encerra e não tira nada do lugar. '
@@ -50,6 +56,11 @@ TASKS_NOTE = 'Sem administrador, o Windows pode não mostrar algumas tarefas.'
 TASKS_EMPTY = ('Nenhuma tarefa agendada para mostrar. Só ficam de fora as tarefas da Microsoft '
                'que usam um programa da pasta do Windows de uma lista curta de programas conhecidos '
                '(como o desfragmentador de disco), que não rodam scripts, comandos nem bibliotecas.')
+DEFENDER_NO_EXCLUSIONS = ('O Windows não mostrou nenhuma exclusão do Defender (sem administrador, '
+                          'ele pode esconder as exclusões).')
+DEFENDER_EMPTY = 'Não foi possível conferir o Microsoft Defender.'
+NETWORK_EMPTY = 'Nenhuma conexão para portas comuns de mineração no momento do check-up.'
+NETWORK_NOTE = 'Só as conexões abertas na hora do check-up são vistas; o endereço de destino não é lido.'
 NOT_ALL_CHECKED = ('Nenhum item conferido ficou como atenção ou suspeito, mas o check-up '
                    'não conseguiu conferir tudo (veja acima).')
 
@@ -126,6 +137,22 @@ REASON_MS_WINDOWS_PROGRAM = 'ms_windows_program'
 REASON_MS_COM_HANDLER = 'ms_com_handler'
 REASON_INTERPRETER = 'interpreter'
 REASON_UNCERTAIN_NAME = 'uncertain_name'
+# P3-07 fatia 3: Microsoft Defender e conexões de rede.
+REASON_RT_ON = 'rt_on'
+REASON_RT_OFF = 'rt_off'
+REASON_DEFENDER_UNKNOWN = 'defender_unknown'
+REASON_EXCL_HIDDEN = 'excl_hidden'
+REASON_EXCL_UNKNOWN = 'excl_unknown'
+REASON_EXCL_USER = 'excl_user_folder'
+REASON_EXCL_TEMP = 'excl_temp'
+REASON_EXCL_APPDATA = 'excl_appdata'
+REASON_EXCL_PROGRAMDATA = 'excl_programdata'
+REASON_EXCL_DRIVE_ROOT = 'excl_drive_root'
+REASON_EXCL_WINDOWS = 'excl_windows'
+REASON_EXCL_EXTENSION = 'excl_extension'
+REASON_EXCL_SCRIPT_PROCESS = 'excl_script_process'
+REASON_EXCL_OTHER = 'excl_other'
+REASON_MINING_PORT = 'mining_port'
 
 REASON_TEXTS = {
     REASON_OK: 'Fica numa pasta de programas do Windows (Windows ou Arquivos de Programas).',
@@ -162,6 +189,34 @@ REASON_TEXTS = {
                          'O app não lê esses comandos, então não confere o que ele roda.'),
     REASON_UNCERTAIN_NAME: ('O nome do arquivo não termina em .exe, termina com ponto ou espaço, ou está '
                             'abreviado (como ARQUIV~1.EXE); o app não confere qual programa ele abre.'),
+    REASON_RT_ON: 'A proteção em tempo real do Microsoft Defender está ligada.',
+    REASON_RT_OFF: ('O Microsoft Defender ou a proteção em tempo real dele está desligado. Isso pode ser '
+                    'normal se outro programa de segurança estiver instalado; confira em Segurança do Windows.'),
+    REASON_DEFENDER_UNKNOWN: ('Não foi possível conferir se a proteção em tempo real do Microsoft Defender '
+                              'está ligada (isso acontece, por exemplo, com outro programa de segurança '
+                              'instalado). Confira em Segurança do Windows.'),
+    REASON_EXCL_HIDDEN: ('Sem administrador, o Windows não mostra as exclusões do Defender; '
+                         'não foi possível conferir.'),
+    REASON_EXCL_UNKNOWN: 'Não foi possível conferir as exclusões do Defender.',
+    REASON_EXCL_USER: ('O Defender foi configurado para não olhar uma pasta de usuário. Programas '
+                       'indesejados costumam se esconder assim.'),
+    REASON_EXCL_TEMP: ('O Defender foi configurado para não olhar uma pasta temporária. Programas '
+                       'indesejados costumam se esconder assim.'),
+    REASON_EXCL_APPDATA: ('O Defender foi configurado para não olhar a pasta AppData (ou algo dentro dela). '
+                          'Programas indesejados costumam se esconder assim.'),
+    REASON_EXCL_PROGRAMDATA: ('O Defender foi configurado para não olhar a pasta ProgramData (ou algo dentro '
+                              'dela). Programas indesejados costumam se esconder assim.'),
+    REASON_EXCL_DRIVE_ROOT: 'O Defender foi configurado para não olhar uma unidade inteira (como C:\\).',
+    REASON_EXCL_WINDOWS: 'O Defender foi configurado para não olhar a pasta do Windows (ou System32) inteira.',
+    REASON_EXCL_EXTENSION: ('O Defender foi configurado para não olhar arquivos de programa ou de script '
+                            '(como .exe, .dll ou .ps1). Programas indesejados costumam fazer isso.'),
+    REASON_EXCL_SCRIPT_PROCESS: ('O Defender foi configurado para não olhar um programa que roda scripts ou '
+                                 'comandos (como PowerShell, cmd ou Python). Programas indesejados costumam '
+                                 'fazer isso.'),
+    REASON_EXCL_OTHER: ('O Defender foi configurado para não olhar este item. Alguns programas pedem isso '
+                        '(como jogos ou ferramentas), mas confira se foi você que colocou.'),
+    REASON_MINING_PORT: ('Tem uma conexão para uma porta comum de mineração de criptomoedas. Pode ser outro '
+                         'programa usando a mesma porta, mas vale conferir.'),
 }
 ADVICE_TEXTS = {
     STATE_SUSPECT: ('Não mexa no arquivo por conta própria. Faça a verificação recomendada '
@@ -169,6 +224,15 @@ ADVICE_TEXTS = {
     STATE_ATTENTION: ('Confira se você reconhece este programa. Se não reconhecer, faça a '
                       'verificação recomendada no fim desta lista.'),
 }
+
+# P3-07 fatia 3: conselhos do Defender (uma configuração, não um arquivo) e da rede.
+DEFENDER_ADVICE_TEXTS = {
+    STATE_SUSPECT: ('Não mude nada por conta própria. Faça a verificação recomendada no fim desta lista.'),
+    STATE_ATTENTION: ('Confira em Segurança do Windows se você reconhece esta configuração. Se não '
+                      'reconhecer, faça a verificação recomendada no fim desta lista.'),
+}
+NETWORK_ADVICE = ('Não encerre o programa nem mexa no arquivo por conta própria. Faça a verificação '
+                  'recomendada no fim desta lista.')
 
 SOURCE_TEXTS = {
     'run_user': 'registro, só este usuário',
@@ -179,6 +243,11 @@ SOURCE_TEXTS = {
     'startup_all': 'pasta Inicialização de todos os usuários',
     'task': 'tarefa agendada',
 }
+DEFENDER_KIND_TEXTS = {
+    'path': 'Exclusão de pasta ou arquivo',
+    'process': 'Exclusão de programa',
+    'extension': 'Exclusão de tipo de arquivo',
+}
 _STARTUP_SOURCES = ('startup_user', 'startup_all')
 
 ERROR_TEXTS = {
@@ -188,6 +257,8 @@ ERROR_TEXTS = {
     'startup_part': 'Não foi possível ler parte das pastas de Inicialização.',
     'processes': 'Processos em execução: não foi possível ler.',
     'tasks': 'Tarefas agendadas: não foi possível ler.',
+    'defender': 'Microsoft Defender: não foi possível ler.',
+    'network': 'Conexões de rede: não foi possível ler.',
 }
 ERROR_GENERIC = 'Parte do check-up: não foi possível ler.'
 
@@ -231,6 +302,28 @@ TASK_QUERY = (
     "Com=($a.CimClass.CimClassName -eq 'MSFT_TaskComHandlerAction')} } }; "
     'ConvertTo-Json -InputObject @($out) -Compress')
 MS_TASK_FOLDER = '\\microsoft\\'
+
+# P3-07 fatia 3. Só leitura: o Defender só é consultado (situação e exclusões).
+# Cada parte tem seu try: uma parte negada vira null e não derruba a outra.
+DEFENDER_QUERY = (
+    '$s=$null; $p=$null; '
+    'try{ $s=Get-MpComputerStatus -ErrorAction Stop | '
+    'Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled }catch{}; '
+    'try{ $p=Get-MpPreference -ErrorAction Stop | '
+    'Select-Object ExclusionPath,ExclusionProcess,ExclusionExtension }catch{}; '
+    'ConvertTo-Json -InputObject ([pscustomobject]@{Status=$s;Preference=$p}) -Depth 3 -Compress')
+# Portas comuns de mineração (stratum). Só a porta remota e o programa dono:
+# o endereço de destino nem é pedido ao Windows (dado pessoal).
+MINING_PORTS = (3333, 4444, 5555, 7777, 14444, 14433, 45700)
+NETWORK_QUERY = (
+    '$ports=@(' + ','.join(str(p) for p in MINING_PORTS) + '); '
+    '$out=foreach($c in @(Get-NetTCPConnection -State Established -ErrorAction Stop | '
+    'Select-Object RemotePort,OwningProcess)){ if($ports -contains [int]$c.RemotePort){ '
+    '$n=$null; $x=$null; '
+    'try{ $g=Get-Process -Id $c.OwningProcess -ErrorAction Stop; $n=[string]$g.Name; $x=[string]$g.Path }catch{}; '
+    '[pscustomobject]@{RemotePort=[int]$c.RemotePort;Name=$n;Path=$x} } }; '
+    'ConvertTo-Json -InputObject @($out) -Compress')
+EXECUTABLE_EXTENSIONS = ('exe', 'dll', 'ps1', 'bat', 'cmd', 'vbs', 'js', 'scr')
 
 _DRIVE_PATH = re.compile(r'^[a-z]:\\')
 _DRIVE_ROOT_FILE = re.compile(r'^[a-z]:\\[^\\]+$')
@@ -740,6 +833,10 @@ def _classify_task(row, env):
             if runner in (REASON_INTERPRETER, REASON_UNCERTAIN_NAME):
                 # R-47/R-48: interpretador ou nome incerto nunca some nem dá OK, nem em \Microsoft\.
                 return STATE_ATTENTION, runner, exe
+            if runner == REASON_SCRIPT_HOST and not any(b in SCRIPT_HOSTS for b in _exe_names(exe, env)):
+                # Ressalva da PR #195: "cmd2.exe" não é programa do Windows; o texto de
+                # "comum nas tarefas da Microsoft" seria falso (R-50).
+                return STATE_ATTENTION, REASON_SCRIPT_HOST, exe
             if runner:
                 return STATE_ATTENTION, REASON_MS_WINDOWS_PROGRAM, exe
             # Ex.: Office em Arquivos de Programas: aparece como OK, não some.
@@ -791,6 +888,173 @@ def classify_tasks(rows, env=None):
     return list(grouped.values())
 
 
+# --- P3-07 fatia 3: Microsoft Defender -------------------------------------------------
+
+_HIDDEN_EXCLUSION = re.compile(r'^\s*N/A\b', re.IGNORECASE)
+_EXCL_SUSPECT = (REASON_EXCL_USER, REASON_EXCL_TEMP, REASON_EXCL_APPDATA, REASON_EXCL_PROGRAMDATA,
+                 REASON_EXCL_DRIVE_ROOT, REASON_EXCL_WINDOWS, REASON_EXCL_EXTENSION, REASON_EXCL_SCRIPT_PROCESS)
+_EXCL_REASONS = _EXCL_SUSPECT + (REASON_EXCL_OTHER,)
+_DEFENDER_REASONS = {REASON_RT_ON: STATE_OK, REASON_RT_OFF: STATE_ATTENTION,
+                     REASON_DEFENDER_UNKNOWN: STATE_ATTENTION, REASON_EXCL_HIDDEN: STATE_ATTENTION,
+                     REASON_EXCL_UNKNOWN: STATE_ATTENTION, REASON_EXCL_OTHER: STATE_ATTENTION}
+_DEFENDER_REASONS.update({reason: STATE_SUSPECT for reason in _EXCL_SUSPECT})
+_EXCL_FIELDS = (('ExclusionPath', 'path'), ('ExclusionProcess', 'process'), ('ExclusionExtension', 'extension'))
+
+
+def _clean_path(value, env) -> str:
+    return _CONTROL.sub(' ', sanitize_path(value, env)).strip()
+
+
+def _exclusion_values(value):
+    """Valores de um campo de exclusão: None, um texto ou uma lista de textos."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    return [v for v in value if isinstance(v, str) and v.strip()]
+
+
+def _extension_reason(text):
+    ext = text.strip().lstrip('*').lstrip('.').strip().lower()
+    return REASON_EXCL_EXTENSION if ext in EXECUTABLE_EXTENSIONS else None
+
+
+def _folder_reason(value, env):
+    """Motivo "suspeito" de uma pasta ou arquivo excluído, ou None (outros lugares: "atenção")."""
+    norm = _key(_expand(_strip_nt_prefix(value.strip()), env)).rstrip('\\')
+    base = ntpath.basename(norm)
+    if '*' in base and _extension_reason(ntpath.splitext(base)[1] or base):
+        return REASON_EXCL_EXTENSION
+    bare = norm.rstrip('\\*').rstrip('\\')
+    if re.match(r'^[a-z]:$', bare) or norm in ('*', ''):
+        return REASON_EXCL_DRIVE_ROOT
+    root = _key(_system_root(env)).rstrip('\\')
+    windows = (root, root + '\\system32', root + '\\syswow64')
+    if bare in windows:
+        return REASON_EXCL_WINDOWS
+    folder = norm + '\\'
+
+    def inside(name):
+        base_dir = _env_get(env, name)
+        if not base_dir:
+            return False
+        key = _key(base_dir).rstrip('\\')
+        return bool(key) and (norm == key or norm.startswith(key + '\\'))
+    if '\\temp\\' in folder or '\\tmp\\' in folder or inside('TEMP') or inside('TMP'):
+        return REASON_EXCL_TEMP
+    if '\\appdata\\' in folder or inside('LOCALAPPDATA') or inside('APPDATA'):
+        return REASON_EXCL_APPDATA
+    if re.match(r'^[a-z]:\\programdata\\', folder) or inside('ProgramData'):
+        return REASON_EXCL_PROGRAMDATA
+    if re.match(r'^[a-z]:\\(users|documents and settings)\\', folder) or inside('USERPROFILE'):
+        return REASON_EXCL_USER
+    return None
+
+
+def classify_exclusion(kind, value, env=None):
+    """(estado, motivo) de uma exclusão do Defender. Nunca dá OK (toda exclusão vale conferir)."""
+    env = _env(env)
+    if not isinstance(value, str) or not value.strip():
+        return STATE_ATTENTION, REASON_EXCL_OTHER
+    if kind == 'extension':
+        reason = _extension_reason(value)
+    elif kind == 'process':
+        reason = (REASON_EXCL_SCRIPT_PROCESS
+                  if _is_script_host(value, env) or _is_interpreter(value, env) else _folder_reason(value, env))
+    else:
+        reason = _folder_reason(value, env)
+    return (STATE_SUSPECT, reason) if reason else (STATE_ATTENTION, REASON_EXCL_OTHER)
+
+
+def _defender_item(reason, env, kind=None, value=None):
+    state = _DEFENDER_REASONS[reason]
+    name = DEFENDER_KIND_TEXTS.get(kind, 'Microsoft Defender')
+    return {'source': 'defender', 'name': name, 'kind': kind, 'path': _clean_path(value, env) if value else '',
+            'state': state, 'reason': reason, 'count': 1}
+
+
+def classify_defender(data, env=None):
+    """Classifica a situação do Defender (dados já lidos). Só lê; nunca pede administrador.
+
+    Proteção em tempo real ligada (com o serviço e o antivírus do Defender ligados) dá
+    OK; desligada fica "atenção" (pode ser outro programa de segurança); sem dado
+    legível, "atenção" ("não foi possível conferir"). Cada exclusão é um item: nunca
+    OK; pasta de usuário, temporária, AppData, ProgramData, raiz de unidade, pasta do
+    Windows (ou System32/SysWOW64) inteira, extensão de programa ou script, e programa
+    que roda scripts ou comandos ficam "suspeito". Sem administrador o Windows esconde
+    as exclusões ("N/A: ..."): vira um item "atenção", sem pedir elevação.
+    """
+    env = _env(env)
+    rows = _as_list(data)
+    data = rows[0] if rows and isinstance(rows[0], dict) else {}
+    status = data.get('Status')
+    status = status if isinstance(status, dict) else {}
+    flags = [status.get(k) for k in ('RealTimeProtectionEnabled', 'AntivirusEnabled', 'AMServiceEnabled')]
+    if any(flag is False for flag in flags):
+        items = [_defender_item(REASON_RT_OFF, env)]
+    elif all(flag is True for flag in flags):
+        items = [_defender_item(REASON_RT_ON, env)]
+    else:
+        items = [_defender_item(REASON_DEFENDER_UNKNOWN, env)]
+    pref = data.get('Preference')
+    if not isinstance(pref, dict):
+        items.append(_defender_item(REASON_EXCL_UNKNOWN, env))
+        return items
+    hidden = False
+    seen = set()
+    for field, kind in _EXCL_FIELDS:
+        for value in _exclusion_values(pref.get(field)):
+            if _HIDDEN_EXCLUSION.match(value):
+                hidden = True
+                continue
+            key = (kind, _key(_strip_nt_prefix(value.strip())))
+            if key in seen:
+                continue
+            seen.add(key)
+            reason = classify_exclusion(kind, value, env)[1]
+            items.append(_defender_item(reason, env, kind, value))
+    if hidden:
+        items.append(_defender_item(REASON_EXCL_HIDDEN, env))
+    return items
+
+
+# --- P3-07 fatia 3: conexões de rede ---------------------------------------------------
+
+def _port(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def classify_connections(rows, env=None):
+    """Conexões para portas comuns de mineração (dados já lidos): cada uma é "suspeito".
+
+    Só a porta remota e o programa dono são usados (o endereço remoto nunca é lido
+    nem guardado). Conexões iguais (porta, programa e caminho) aparecem uma vez.
+    """
+    env = _env(env)
+    grouped = {}
+    for row in _as_list(rows):
+        if not isinstance(row, dict):
+            continue
+        port = _port(row.get('RemotePort'))
+        if port not in MINING_PORTS:
+            continue
+        name = row.get('Name') if isinstance(row.get('Name'), str) else ''
+        path = row.get('Path') if isinstance(row.get('Path'), str) else ''
+        key = (port, name.strip().lower(), _key(_strip_nt_prefix(path.strip())) if path.strip() else '')
+        if key in grouped:
+            grouped[key]['count'] += 1
+            continue
+        grouped[key] = {'source': 'network', 'name': _clean_name(name, env), 'path': _clean_path(path, env),
+                        'port': port, 'state': STATE_SUSPECT, 'reason': REASON_MINING_PORT, 'count': 1}
+    return list(grouped.values())
+
+
 def _task_entries(raw):
     """Linhas da consulta das tarefas: só os quatro campos pedidos, nada mais."""
     rows = []
@@ -835,7 +1099,7 @@ def _startup_entries(raw):
 
 
 def read_checkup(ps=None, env=None):
-    """Faz as quatro consultas (só leitura) e classifica. Erro vira código, nunca texto do sistema."""
+    """Faz as seis consultas (só leitura) e classifica. Erro vira código, nunca texto do sistema."""
     if ps is None:
         from optimization_engine import _ps as ps  # noqa: PLC0415 - preguiçoso de propósito
     env = _env(env)
@@ -865,8 +1129,18 @@ def read_checkup(ps=None, env=None):
         processes = classify_processes(ps(PROCESS_QUERY), env)
     except Exception:  # noqa: BLE001
         errors.append('processes')
+    defender = []
+    try:
+        defender = classify_defender(ps(DEFENDER_QUERY), env)
+    except Exception:  # noqa: BLE001
+        errors.append('defender')
+    network = []
+    try:
+        network = classify_connections(ps(NETWORK_QUERY), env)
+    except Exception:  # noqa: BLE001
+        errors.append('network')
     return {'autostart': classify_autostart(entries, env), 'tasks': tasks, 'processes': processes['items'],
-            'unchecked': processes['unchecked'], 'errors': errors}
+            'unchecked': processes['unchecked'], 'defender': defender, 'network': network, 'errors': errors}
 
 
 _ORDER = {STATE_SUSPECT: 0, STATE_ATTENTION: 1, STATE_OK: 2}
@@ -913,7 +1187,64 @@ def _effective(item, env):
     return state, reason
 
 
+def _defender_effective(item, env):
+    """Estado e motivo de um item do Defender, sempre a partir dos códigos (R-32).
+
+    Só o motivo "proteção ligada" pode dar OK; uma exclusão é classificada de novo
+    pelo valor guardado e vale o mais grave (nunca promove a OK).
+    """
+    reason = item.get('reason')
+    if item.get('kind') in DEFENDER_KIND_TEXTS or reason in _EXCL_REASONS:
+        # Uma exclusão nunca dá OK: o valor guardado é classificado de novo.
+        new_state, new_reason = classify_exclusion(item.get('kind'), item.get('path'), env)
+        if reason in _EXCL_REASONS and _ORDER[_DEFENDER_REASONS[reason]] <= _ORDER[new_state]:
+            return _DEFENDER_REASONS[reason], reason
+        return new_state, new_reason
+    if reason not in _DEFENDER_REASONS:
+        return STATE_ATTENTION, REASON_DEFENDER_UNKNOWN
+    # O estado vem do motivo (o "state" do dict é ignorado): só "proteção ligada" é OK.
+    return _DEFENDER_REASONS[reason], reason
+
+
+def _special_effective(item, env):
+    if item.get('source') == 'network':
+        # Toda conexão mostrada é para uma porta comum de mineração: sempre "suspeito".
+        return STATE_SUSPECT, REASON_MINING_PORT
+    return _defender_effective(item, env)
+
+
+def _special_lines(item, env, with_count=False):
+    """Linhas de um item do Defender ou de uma conexão de rede."""
+    state, reason = _special_effective(item, env)
+    if item.get('source') == 'network':
+        name = _clean_name(item.get('name'), env) or 'programa sem nome'
+        count = item.get('count')
+        if isinstance(count, int) and not isinstance(count, bool) and count > 1:
+            name += f' ({count} conexões)'
+        port = _port(item.get('port'))
+        lines = [f'  [{state}] {name}' + (f' — porta {port}' if port in MINING_PORTS else '')]
+    else:
+        kind = item.get('kind')
+        lines = [f'  [{state}] ' + DEFENDER_KIND_TEXTS.get(kind, 'Microsoft Defender')]
+    path = _clean_path(item.get('path'), env)
+    network = item.get('source') == 'network'
+    if path and not network and item.get('kind') == 'extension' and not path.startswith(('.', '*')):
+        path = '.' + path
+    if path:
+        lines.append(('      Onde: ' if network else '      Item: ') + path)
+    lines.append('      Motivo: ' + REASON_TEXTS[reason])
+    advice = NETWORK_ADVICE if network else DEFENDER_ADVICE_TEXTS.get(state)
+    if advice:
+        lines.append('      O que fazer: ' + advice)
+    return lines, state
+
+
+_SPECIAL_SOURCES = ('defender', 'network')
+
+
 def _item_lines(item, env, with_count=False):
+    if item.get('source') in _SPECIAL_SOURCES:
+        return _special_lines(item, env, with_count)
     state, reason = _effective(item, env)
     name = _clean_name(item.get('name'), env) or 'sem nome'
     count = item.get('count')
@@ -938,10 +1269,13 @@ def checkup_lines(result, env=None):
     counts = {STATE_OK: 0, STATE_ATTENTION: 0, STATE_SUSPECT: 0}
     lines = ['CHECK-UP DE SEGURANÇA — SÓ LEITURA', NEVER_CHANGES, '']
 
-    def section(title, items, with_count, empty_text):
+    def section(title, items, with_count, empty_text, special=None):
         lines.append(title)
         valid = [i for i in _as_list(items) if isinstance(i, dict)]
-        valid.sort(key=lambda i: _ORDER[_effective(i, env)[0]])
+        # A seção decide como o item é mostrado, não o "source" guardado no dict.
+        valid = [dict(i, source=special) if special or i.get('source') in _SPECIAL_SOURCES else i
+                 for i in valid]
+        valid.sort(key=lambda i: _ORDER[(_special_effective if special else _effective)(i, env)[0]])
         for item in valid:
             item_lines, state = _item_lines(item, env, with_count)
             lines.extend(item_lines)
@@ -968,6 +1302,17 @@ def checkup_lines(result, env=None):
     elif unchecked:
         lines.insert(len(lines) - 1, f'  {unchecked} processos não puderam ser conferidos (o Windows não '
                                      'informou de onde eles rodam). Isso é comum em processos do próprio Windows.')
+    defender_items = [i for i in _as_list(result.get('defender')) if isinstance(i, dict)]
+    section('MICROSOFT DEFENDER', defender_items, False,
+            None if 'defender' in errors else DEFENDER_EMPTY, special='defender')
+    if defender_items and not any(i.get('kind') in DEFENDER_KIND_TEXTS
+                                  or i.get('reason') in (REASON_EXCL_HIDDEN, REASON_EXCL_UNKNOWN)
+                                  for i in defender_items):
+        lines.insert(len(lines) - 1, '  ' + DEFENDER_NO_EXCLUSIONS)
+    section('CONEXÕES DE REDE', result.get('network'), True,
+            None if 'network' in errors else NETWORK_EMPTY, special='network')
+    if 'network' not in errors:
+        lines.insert(len(lines) - 1, '  ' + NETWORK_NOTE)
     if errors:
         lines.append('CONSULTAS INCOMPLETAS:')
         texts = []

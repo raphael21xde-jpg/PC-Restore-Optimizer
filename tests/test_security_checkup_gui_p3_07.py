@@ -156,6 +156,21 @@ class ShowCheckupWithoutTkTests(unittest.TestCase):
         self.assertIn(sc.RECOMMENDATION, self.written[-1])
         self.assertIn('[suspeito] Falso', self.written[-1])
 
+    def test_defender_and_network_sections_in_window(self):
+        # P3-07 fatia 3: as duas seções novas aparecem na janela e entram no RESUMO.
+        result = dict(_result(), autostart=[],
+                      defender=[{'source': 'defender', 'name': 'Microsoft Defender', 'kind': None, 'path': '',
+                                 'state': sc.STATE_ATTENTION, 'reason': sc.REASON_RT_OFF, 'count': 1}],
+                      network=[{'source': 'network', 'name': 'mina', 'path': '', 'port': 3333,
+                                'state': sc.STATE_SUSPECT, 'reason': sc.REASON_MINING_PORT, 'count': 2}])
+        self.show(self.panel, result)
+        text = self.written[-1]
+        self.assertIn('MICROSOFT DEFENDER', text)
+        self.assertIn('CONEXÕES DE REDE', text)
+        self.assertIn('[suspeito] mina (2 conexões) — porta 3333', text)
+        self.assertIn('RESUMO: OK 0 · atenção 1 · suspeito 1', text)
+        self.assertIn(sc.RECOMMENDATION, text)
+
 
 @unittest.skipIf(NO_DISPLAY, 'Sem Tk ou sem tela gráfica')
 class CheckupButtonTests(unittest.TestCase):
@@ -222,6 +237,8 @@ class CheckupButtonTests(unittest.TestCase):
         read.assert_not_called()
         self.assertEqual(self.asked[0][1], sc.CHECKUP_CONFIRMATION)
         self.assertIn('tarefas agendadas', self.asked[0][1])  # P3-07 fatia 2
+        self.assertIn('Microsoft Defender', self.asked[0][1])  # P3-07 fatia 3
+        self.assertIn('conexões de rede', self.asked[0][1])
         self.assertIsNone(self.panel._checkup_job)
         self.assertIsNone(getattr(self.panel, '_checkup_window', None))
         self.assertFalse(self.panel.btn_checkup.instate(['disabled']))
