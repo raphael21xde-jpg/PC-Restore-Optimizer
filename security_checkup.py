@@ -1310,6 +1310,12 @@ def _idle_effective(item):
     return state, reason
 
 
+def _idle_kind(item):
+    """'cpu' ou 'gpu', ou None (revisão da PR #199, R-32: lista ou dict guardado não quebra)."""
+    kind = item.get('kind')
+    return kind if isinstance(kind, str) and kind in IDLE_KIND_TEXTS else None
+
+
 def _idle_section(idle, env, counts):
     """Linhas da seção "USO COM O PC PARADO" (soma os estados em ``counts``)."""
     lines = ['USO COM O PC PARADO']
@@ -1323,14 +1329,14 @@ def _idle_section(idle, env, counts):
     items = [i for i in _as_list(idle.get('items')) if isinstance(i, dict)]
     # FIX-P3-07-05 (R-32): CPU ou GPU que falta no resultado guardado aparece como
     # "sem dado" (atenção); nunca some e nunca deixa a seção toda OK.
-    kinds = {i.get('kind') for i in items}
+    kinds = {_idle_kind(i) for i in items}
     items += [i for i in classify_idle(None, env)['items'] if i['kind'] not in kinds]
     high = False
     for item in items:
         state, reason = _idle_effective(item)
         counts[state] += 1
         high = high or reason == REASON_IDLE_HIGH
-        label = IDLE_KIND_TEXTS.get(item.get('kind'), 'Medição')
+        label = IDLE_KIND_TEXTS.get(_idle_kind(item), 'Medição')
         shown = _rounded(item.get('value')) if reason != REASON_IDLE_UNKNOWN else None
         lines.append(f'  [{state}] {label}: ' + (f'média de {shown}%' if shown is not None else 'sem dado'))
         lines.append('      Motivo: ' + REASON_TEXTS[reason])

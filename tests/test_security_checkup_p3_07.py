@@ -2304,5 +2304,26 @@ class IdleRevisions197Fix0705Tests(unittest.TestCase):
         self.assertIn(note, self._text({'idle': sc.classify_idle(_idle(), ENV)}))
 
 
+class IdleUnhashableKindPr199Tests(unittest.TestCase):
+    """Revisão da PR #199 (R-32): 'kind' que não serve de chave num resultado guardado não quebra."""
+
+    def setUp(self):
+        for name in ('run', 'Popen', 'check_output', 'call'):
+            patcher = mock.patch.object(subprocess, name, side_effect=_forbidden)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_list_or_dict_kind_shows_as_measure(self):
+        for kind in (['cpu'], {'cpu': 1}, {'x'}):
+            with self.subTest(kind=kind):
+                stored = {'idle': {'items': [{'kind': kind, 'value': 3, 'state': sc.STATE_OK,
+                                              'reason': sc.REASON_IDLE_OK}], 'top': []}}
+                text = '\n'.join(sc.checkup_lines(stored, ENV))
+                self.assertIn('[OK] Medição: média de 3%', text)
+                # CPU e GPU continuam aparecendo como "sem dado" (nunca somem).
+                self.assertIn('[atenção] Processador (CPU): sem dado', text)
+                self.assertIn('[atenção] Placa de vídeo (GPU): sem dado', text)
+
+
 if __name__ == '__main__':
     unittest.main()
