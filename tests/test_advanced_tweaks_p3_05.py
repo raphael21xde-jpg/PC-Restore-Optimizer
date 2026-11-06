@@ -68,13 +68,15 @@ class Base(unittest.TestCase):
 class ClosedListTests(Base):
     def test_list_is_exactly_the_mouse_tweak_with_three_text_values(self):
         self.assertIsInstance(at.ADVANCED_TWEAKS, tuple)
-        self.assertEqual([t.id for t in at.ADVANCED_TWEAKS], ['mouse_precision'])
+        # P3-05 fatia 2: o 2º ajuste (HKLM) está em tests/test_advanced_tweaks_hklm_p3_05.py.
+        self.assertEqual([t.id for t in at.ADVANCED_TWEAKS], ['mouse_precision', 'gpu_hw_scheduling'])
         tweak = at.TWEAKS_BY_ID['mouse_precision']
         self.assertEqual(len(tweak.values), 1)
         value = tweak.values[0]
         self.assertEqual((value.key, value.path, value.names, value.desired),
                          ('mouse_precision', MOUSE, NAMES, ('0', '0', '0')))
-        self.assertEqual(set(at.TWEAK_VALUES), {'mouse_precision'})
+        self.assertEqual(set(at.TWEAK_VALUES), {'mouse_precision', 'gpu_hw_scheduling'})
+        self.assertEqual((value.kind, value.scope), (at.ADVANCED_KIND, 'conta'))
         self.assertEqual(at.ADVANCED_KIND, 'hkcu_sz_advanced')
         self.assertTrue(cj._valid_key(at.ADVANCED_KIND))
         self.assertTrue(cj._valid_key(value.key))
@@ -95,11 +97,16 @@ class ClosedListTests(Base):
 
     def test_source_has_no_commands_hklm_or_system_calls(self):
         source = (ROOT / 'advanced_tweaks.py').read_text(encoding='utf-8')
-        for forbidden in ('HKEY_LOCAL_MACHINE', 'HKLM', 'Defender', 'WindowsUpdate', 'Policies',
+        for forbidden in ('Defender', 'WindowsUpdate', 'Policies',
                           'Services', 'subprocess', 'powershell', 'SystemParametersInfo', 'ctypes',
                           'BIOS', 'os.system'):
             self.assertNotIn(forbidden, source)
         tree = ast.parse(source)
+        # P3-05 fatia 2: HKLM só no adaptador do computador; o do mouse continua só em HKCU.
+        mouse = next(ast.unparse(n) for n in tree.body
+                     if isinstance(n, ast.ClassDef) and n.name == 'AdvancedRegistryAdapter')
+        self.assertNotIn('HKEY_LOCAL_MACHINE', mouse)
+        self.assertNotIn('HKLM', mouse)
         calls = {n.func.attr for n in ast.walk(tree)
                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
         self.assertNotIn('DeleteKey', calls)
@@ -184,7 +191,7 @@ class OtherTypeTests(Base):
                             call()
                     self.assertEqual(self.values(), before)
                     self.assertFalse([c for c in self.reg.calls if c[0] in ('SetValueEx', 'DeleteValue')])
-                    states = at.read_states(self.adapter)
+                    states = at.read_states(self.adapter)[:1]
                     self.assertEqual(states, [{'id': 'mouse_precision', 'state': 'other_type',
                                                'changes': []}])
                     self.assertIn('o app não mexe', '\n'.join(at.state_lines(states)))
@@ -206,7 +213,7 @@ class ApplyAndUndoTests(Base):
         self.windows_default()
         self.assertEqual(self.adapter.read('mouse_precision'), '1;6;10')
         self.assertTrue(cj.is_simple_value('1;6;10'))
-        self.assertEqual(at.read_states(self.adapter),
+        self.assertEqual(at.read_states(self.adapter)[:1],
                          [{'id': 'mouse_precision', 'state': 'not_applied',
                            'changes': [{'kind': at.ADVANCED_KIND, 'key': 'mouse_precision',
                                         'after': '0;0;0'}]}])
@@ -220,7 +227,7 @@ class ApplyAndUndoTests(Base):
     def test_already_applied(self):
         for name in NAMES:
             self.reg.put(MOUSE, name, '0', SZ)
-        states = at.read_states(self.adapter)
+        states = at.read_states(self.adapter)[:1]
         self.assertEqual(states, [{'id': 'mouse_precision', 'state': 'applied', 'changes': []}])
         self.assertIn('já aplicado', '\n'.join(at.state_lines(states)))
 

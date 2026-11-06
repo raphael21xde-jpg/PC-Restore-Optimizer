@@ -117,6 +117,9 @@ class AdvancedTabTests(unittest.TestCase):
         self.reg = FakeWinreg()
         self.adapter = at.AdvancedRegistryAdapter(registry=self.reg)
         self.safe_adapter = st.RegistryTweakAdapter(registry=self.reg)
+        # P3-05 fatia 2: o ajuste do computador usa outro registro falso (só HKLM, vazio aqui).
+        self.machine_reg = FakeWinreg(hives=('HKLM',))
+        self.machine = at.MachineDwordAdapter(registry=self.machine_reg)
         self.admin = True
         self.owner = so.SAME
         self.owner_threads = []
@@ -134,6 +137,7 @@ class AdvancedTabTests(unittest.TestCase):
     def make_panel(self, **extra):
         options = dict(app_dir=self.tmp, state_dir=self.tmp, power_adapter=FakePower(),
                        tweak_adapter=self.safe_adapter, advanced_adapter=self.adapter,
+                       machine_adapter=self.machine,
                        restore_point=self._restore_point, elevated_probe=lambda: self.admin,
                        session_owner_probe=self._owner, ask=self._ask,
                        show=lambda *a: self.shown.append(a))
@@ -200,6 +204,7 @@ class AdvancedTabTests(unittest.TestCase):
         self.assertEqual(names[7], ou.TWEAKS_TAB_LABEL)
         self.assertEqual(names[6], ou.CHANGES_TAB_LABEL)
         self.assertEqual(self.reg.calls, [])
+        self.assertEqual(self.machine_reg.calls, [])
         tweak = at.TWEAKS_BY_ID['mouse_precision']
         text = self.text()
         for part in (tweak.name, tweak.what, tweak.downside, tweak.when,
@@ -236,6 +241,9 @@ class AdvancedTabTests(unittest.TestCase):
         self.assertNotIn(True, threads)
         self.assertEqual(self.owner_threads, [False])
         self.assertIn('• Aceleração do mouse desligada: ainda não aplicado.', self.text())
+        # Registro do computador vazio: o 2º ajuste aparece com o texto neutro de "não mexe" (R-57).
+        self.assertIn('• Agendamento de GPU acelerado por hardware ligado: '
+                      + at.STATE_TEXT['unsupported'], self.text())
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.asked, [])
 
@@ -363,6 +371,7 @@ class AdvancedTabTests(unittest.TestCase):
         self.admin = False
         self.apply()
         self.assertEqual(self.reg.calls, [])
+        self.assertEqual(self.machine_reg.calls, [])
         self.assertEqual(self.asked, [])
         self.assertEqual(self.restore_calls, [])
         self.assertEqual(self.shown[-1], ('warning', ou.ADVANCED_TITLE, ou.TWEAKS_ADMIN_TEXT))
@@ -410,10 +419,23 @@ class AdvancedTabTests(unittest.TestCase):
         path.write_text(json.dumps(data), encoding='utf-8')
         panel = self.make_panel()
         self.addCleanup(panel.destroy)
-        self.assertTrue(panel.advanced_buttons['mouse_precision'].instate(['disabled']))
+        for tweak_id, button in panel.advanced_buttons.items():   # R-58: todos os botões
+            with self.subTest(tweak=tweak_id):
+                self.assertTrue(button.instate(['disabled']))
+                calls, machine_calls = len(self.reg.calls), len(self.machine_reg.calls)
+                asked, shown = len(self.asked), len(self.shown)
+                job_before = panel._power_job
+                panel.apply_advanced(tweak_id)
+                self.assertIs(panel._power_job, job_before)
+                self.assertEqual(len(self.reg.calls), calls)
+                self.assertEqual(len(self.machine_reg.calls), machine_calls)
+                self.assertEqual(len(self.asked), asked)
+                self.assertEqual(len(self.shown), shown + 1)
+                self.assertEqual(self.shown[-1][2], ou.ADVANCED_UNKNOWN_TEXT.format(n=1))
         calls, asked = len(self.reg.calls), len(self.asked)
+        job_before = panel._power_job
         panel.apply_advanced('mouse_precision')
-        self.assertIsNone(panel._power_job)
+        self.assertIs(panel._power_job, job_before)
         self.assertEqual(len(self.reg.calls), calls)
         self.assertEqual(len(self.asked), asked)
         self.assertEqual(self.shown[-1][2], ou.ADVANCED_UNKNOWN_TEXT.format(n=1))
@@ -455,15 +477,19 @@ class AdvancedTabTests(unittest.TestCase):
         self.assertEqual(self.panel.advanced_status.get(), message)
         self.assertIsNone(self.panel.journal)
         self.assertIsNone(self.panel.journal_off_text)
-        for button in (self.panel.advanced_buttons['mouse_precision'], self.panel.btn_tweaks_apply,
+        self.assertEqual(list(self.panel.advanced_buttons), [t.id for t in at.ADVANCED_TWEAKS])
+        for button in (*self.panel.advanced_buttons.values(), self.panel.btn_tweaks_apply,
                        self.panel.btn_undo_all, self.panel.btn_recheck):
             self.assertTrue(button.instate(['disabled']))
         self.assertFalse(self.panel.btn_advanced_refresh.instate(['disabled']))
         self.assertNotIn('Fulano', ' '.join(map(str, self.shown)))
-        asked = len(self.asked)
-        self.panel.apply_advanced('mouse_precision')
-        self.assertEqual(len(self.asked), asked)
-        self.assertEqual(self.shown[-1], ('error', ou.ADVANCED_TITLE, message))
+        for tweak_id in self.panel.advanced_buttons:   # R-58: todos os botões do grupo
+            with self.subTest(tweak=tweak_id):
+                asked, job = len(self.asked), self.panel._power_job
+                self.panel.apply_advanced(tweak_id)
+                self.assertEqual(len(self.asked), asked)
+                self.assertIs(self.panel._power_job, job)
+                self.assertEqual(self.shown[-1], ('error', ou.ADVANCED_TITLE, message))
 
     def test_journal_error_lists_the_buttons_that_turn_off(self):
         self.windows_default()
@@ -473,7 +499,14 @@ class AdvancedTabTests(unittest.TestCase):
         message = 'Não foi possível gravar o diário de alterações. ' + ou.ADVANCED_JOURNAL_OFF_TEXT
         self.assertEqual(self.shown[-1], ('error', ou.ADVANCED_TITLE, message))
         self.assertIsNone(self.panel.journal)
-        self.assertTrue(self.panel.advanced_buttons['mouse_precision'].instate(['disabled']))
+        for tweak_id, button in self.panel.advanced_buttons.items():   # R-58
+            with self.subTest(tweak=tweak_id):
+                self.assertTrue(button.instate(['disabled']))
+                asked, job = len(self.asked), self.panel._power_job
+                self.panel.apply_advanced(tweak_id)
+                self.assertEqual(len(self.asked), asked)
+                self.assertIs(self.panel._power_job, job)
+                self.assertEqual(self.shown[-1][0], 'error')
         self.assertTrue(self.panel.btn_tweaks_apply.instate(['disabled']))
 
     def test_reread_failure_after_apply_is_neutral(self):
@@ -527,22 +560,27 @@ class AdvancedTabTests(unittest.TestCase):
         self.panel.refresh_advanced()
         self.assertTrue(started.wait(5))
         self.root.update()
-        self.assertTrue(self.panel.advanced_buttons['mouse_precision'].instate(['disabled']))
+        for button in self.panel.advanced_buttons.values():   # R-58: todos os botões
+            self.assertTrue(button.instate(['disabled']))
         self.assertTrue(self.panel.btn_advanced_refresh.instate(['disabled']))
         self.assertTrue(self.panel.btn_tweaks_apply.instate(['disabled']))
         job = self.panel._power_job
-        self.panel.apply_advanced('mouse_precision')
+        for tweak_id in self.panel.advanced_buttons:
+            self.panel.apply_advanced(tweak_id)
+            self.assertIs(self.panel._power_job, job)
         self.panel.apply_safe_tweaks()
         self.assertIs(self.panel._power_job, job)
         self.assertEqual(self.asked, [])
         release.set()
         self.settle()
-        self.assertFalse(self.panel.advanced_buttons['mouse_precision'].instate(['disabled']))
+        for button in self.panel.advanced_buttons.values():
+            self.assertFalse(button.instate(['disabled']))
         self.assertFalse(self.panel.btn_advanced_refresh.instate(['disabled']))
 
     def test_unknown_tweak_id_does_nothing(self):
+        job_before = self.panel._power_job
         self.panel.apply_advanced('outro')
-        self.assertIsNone(self.panel._power_job)
+        self.assertIs(self.panel._power_job, job_before)
         self.assertEqual(self.reg.calls, [])
 
 
