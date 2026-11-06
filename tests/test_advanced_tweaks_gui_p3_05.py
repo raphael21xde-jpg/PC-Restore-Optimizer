@@ -241,7 +241,7 @@ class AdvancedTabTests(unittest.TestCase):
         self.assertNotIn(True, threads)
         self.assertEqual(self.owner_threads, [False])
         self.assertIn('• Aceleração do mouse desligada: ainda não aplicado.', self.text())
-        # Registro do computador vazio: o 2º ajuste aparece como "não oferece".
+        # Registro do computador vazio: o 2º ajuste aparece com o texto neutro de "não mexe" (R-57).
         self.assertIn('• Agendamento de GPU acelerado por hardware ligado: '
                       + at.STATE_TEXT['unsupported'], self.text())
         self.assertEqual(self.writes(), [])

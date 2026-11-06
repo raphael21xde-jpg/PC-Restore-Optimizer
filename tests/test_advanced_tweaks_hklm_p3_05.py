@@ -193,8 +193,9 @@ class StateTests(Base):
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.writes(), [])
         text = '\n'.join(at.state_lines([state]))
-        self.assertIn('não oferece', text)
+        self.assertIn(at.STATE_TEXT['unsupported'], text)
         self.assertIn('o app não mexe', text)
+        self.assertNotIn('não oferece', text)
 
     def test_value_absent_out_of_list_or_other_type_is_unsupported(self):
         cases = {'ausente': None, 'zero': (0, DWORD), 'tres': (3, DWORD), 'texto': ('1', SZ),
@@ -232,6 +233,30 @@ class StateTests(Base):
                 # Build ruim: nem chega a ler o HwSchMode.
                 self.assertFalse([c for c in self.reg.calls if c[0] == 'QueryValueEx'
                                   and c[2] == 'HwSchMode'])
+
+    def test_neutral_text_for_absent_value_and_other_type(self):
+        # R-57: o estado junta causas diferentes; o texto vale para todas e não culpa a placa.
+        for name, case in {'ausente': None, 'texto': ('1', SZ),
+                           'qword': (1, FakeWinreg.REG_QWORD)}.items():
+            with self.subTest(case=name):
+                self.new_registry()
+                self.build()
+                self.reg.put(GRAPHICS, 'OutroValor', 5, DWORD, hive=HKLM)
+                if case is not None:
+                    self.mode(*case)
+                with self.assertRaises(at.NotSupportedError) as raised:
+                    self.machine.read(KEY)
+                message = str(raised.exception)
+                text = '\n'.join(at.state_lines([self.gpu_state()]))
+                for shown in (message, text):
+                    self.assertIn('não encontrou esta opção num formato que ele sabe mudar com '
+                                  'segurança', shown)
+                    self.assertIn('o app não mexe', shown)
+                    self.assertNotIn('não oferece', shown)
+                    self.assertNotIn('placa de vídeo', shown)
+                self.assertEqual(message, at.MSG_NOT_SUPPORTED)
+                self.assertIn('Nada foi alterado', message)
+                self.assertIn('Configurações > Sistema > Tela > Elementos gráficos', message)
 
     def test_reading_hwschmode_fails_is_unreadable(self):
         self.build()
@@ -294,6 +319,21 @@ class OnlyTheListTests(Base):
             self.machine.apply(KEY, 2)
         self.assertEqual(self.current(), (3, DWORD))
         self.assertEqual(self.writes(), [])
+
+    def test_write_failure_is_refused_and_the_journal_marks_failed(self):
+        self.build()
+        self.mode(1)
+        self.reg.fail_set.add('HwSchMode')
+        with self.assertRaises(at.AdvancedTweakError) as raised:
+            self.machine.apply(KEY, 2)
+        self.assertEqual(str(raised.exception), at.MSG_WRITE_FAILED)
+        self.assertNotIn('Fulano', str(raised.exception))
+        self.assertEqual(self.current(), (1, DWORD))
+        journal = self.journal()
+        with self.assertRaises(cj.BatchRefused):
+            journal.apply_batch(self.gpu_state()['changes'])
+        self.assertEqual(journal.entries()[0]['status'], 'failed')
+        self.assertEqual(self.current(), (1, DWORD))
 
     def test_never_creates_or_deletes_keys_or_values(self):
         self.build()

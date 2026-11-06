@@ -41,8 +41,8 @@ as contas) e só depois de reiniciar:
 do tipo REG_DWORD (um ``bool`` é recusado). Antes de ler o valor, confere a
 versão do Windows (``CurrentBuildNumber``, texto só com algarismos); versão
 antiga (antes da 19041), ilegível ou fora do padrão, valor ausente, chave
-ausente, 0, 3 ou outro tipo = ``NotSupportedError`` ("o Windows ou a placa de
-vídeo deste PC não oferece; o app não mexe"). O adaptador nunca cria nem apaga
+ausente, 0, 3 ou outro tipo = ``NotSupportedError`` (texto neutro, R-57: "o
+app não encontrou esta opção num formato que ele sabe mudar com segurança"). O adaptador nunca cria nem apaga
 a chave ou o valor: só abre a chave que já existe e troca o número.
 """
 from __future__ import annotations
@@ -68,8 +68,11 @@ MSG_NOT_TEXT = ('O valor no Windows é de outro tipo ou está num formato difere
 MSG_WRITE_FAILED = ('O Windows não aceitou gravar um dos valores; o app voltou os que já '
                     'tinha gravado.')
 MSG_NOT_WINDOWS = 'Este recurso só funciona em computadores Windows.'
-MSG_NOT_SUPPORTED = ('O Windows ou a placa de vídeo deste PC não oferece este ajuste; o app não '
-                     'mexe. Nada foi alterado.')
+# R-57: o estado junta causas diferentes, então o texto é neutro (vale para todas).
+MSG_NOT_SUPPORTED = ('O app não encontrou esta opção num formato que ele sabe mudar com segurança (Windows '
+                     'antigo, opção nunca usada ou valor diferente); o app não mexe. Nada foi '
+                     'alterado. Se a opção existir em Configurações > Sistema > Tela > Elementos '
+                     'gráficos, ligue por lá.')
 MEASURE_BEFORE_HINT = 'Para comparar, meça ANTES na aba 1 antes de aplicar.'
 
 
@@ -158,7 +161,8 @@ STATE_TEXT = {
     'not_applied': 'ainda não aplicado.',
     'other_type': ('o app não mexe (o valor no Windows é de outro tipo ou está num '
                    'formato diferente).'),
-    'unsupported': 'o Windows ou a placa de vídeo deste PC não oferece; o app não mexe.',
+    'unsupported': ('o app não encontrou esta opção num formato que ele sabe mudar com segurança '
+                    '(Windows antigo, opção nunca usada ou valor diferente); o app não mexe.'),
     'unreadable': 'Não foi possível ler o estado atual; o app não mexe.',
 }
 

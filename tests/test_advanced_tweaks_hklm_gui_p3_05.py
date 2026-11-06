@@ -76,7 +76,8 @@ class SourceTests(unittest.TestCase):
                       ast.unparse(_function('_read_advanced_work')))
         ready = ast.unparse(_function('_advanced_ready'))
         self.assertIn('read_states(adapter, machine_adapter)', ready)
-        self.assertIn('ADVANCED_UNSUPPORTED_TEXT', ready)
+        self.assertIn('self._advanced_state_message(state)', ready)
+        self.assertIn('ADVANCED_UNSUPPORTED_TEXT', ast.unparse(_function('_advanced_state_message')))
 
     def test_intro_text_no_longer_says_only_your_account(self):
         if ou is None:
@@ -84,7 +85,22 @@ class SourceTests(unittest.TestCase):
         self.assertNotIn('Só na sua conta', ou.ADVANCED_INTRO_TEXT)
         self.assertIn('A maioria vale só na sua conta; o que vale para o computador inteiro avisa '
                       'na pergunta.', ou.ADVANCED_INTRO_TEXT)
-        self.assertIn('não oferece', ou.ADVANCED_UNSUPPORTED_TEXT)
+        # R-57: texto neutro, igual ao do adaptador; não culpa o Windows nem a placa.
+        self.assertEqual(ou.ADVANCED_UNSUPPORTED_TEXT, at.MSG_NOT_SUPPORTED)
+        self.assertNotIn('não oferece', ou.ADVANCED_UNSUPPORTED_TEXT)
+        self.assertIn('não encontrou esta opção', ou.ADVANCED_UNSUPPORTED_TEXT)
+
+    def test_unchanged_message_follows_the_new_state(self):
+        if ou is None:
+            self.skipTest('sem Tk')
+        message = ou.OptimizationPanel._advanced_state_message
+        self.assertEqual(message('applied'), ou.ADVANCED_ALREADY_TEXT)
+        self.assertEqual(message('unsupported'), ou.ADVANCED_UNSUPPORTED_TEXT)
+        self.assertEqual(message('other_type'), ou.ADVANCED_NOT_TOUCHED_TEXT)
+        for state in ('not_applied', 'unreadable', None):
+            self.assertEqual(message(state), ou.ADVANCED_READ_FAILED_TEXT)
+        done = ast.unparse(_function('_advanced_apply_done'))
+        self.assertIn('self._advanced_state_message(state)', done)
 
 
 @unittest.skipIf(NO_DISPLAY, 'sem Tk ou sem tela')
@@ -104,6 +120,8 @@ class GpuButtonTests(unittest.TestCase):
         self.reg = FakeWinreg()
         self.machine_reg = FakeWinreg(hives=('HKLM',))
         self.admin = True
+        self.owner = so.SAME
+        self.restore_ok = True
         self.restore_calls = []
         self.answer = True
         self.asked = []
@@ -120,7 +138,7 @@ class GpuButtonTests(unittest.TestCase):
                        advanced_adapter=at.AdvancedRegistryAdapter(registry=self.reg),
                        machine_adapter=at.MachineDwordAdapter(registry=self.machine_reg),
                        restore_point=self._restore_point, elevated_probe=lambda: self.admin,
-                       session_owner_probe=lambda: so.SAME, ask=self._ask,
+                       session_owner_probe=self._owner, ask=self._ask,
                        show=lambda *a: self.shown.append(a))
         options.update(extra)
         panel = ou.OptimizationPanel(self.root, **options)
@@ -128,9 +146,14 @@ class GpuButtonTests(unittest.TestCase):
         self.settle(panel)
         return panel
 
+    def _owner(self):
+        if isinstance(self.owner, Exception):
+            raise self.owner
+        return self.owner
+
     def _restore_point(self, description):
         self.restore_calls.append(description)
-        return True
+        return self.restore_ok
 
     def _ask(self, title, text):
         self.asked.append((title, text))
@@ -250,6 +273,63 @@ class GpuButtonTests(unittest.TestCase):
                 self.assertEqual(self.shown[-1], ('warning', ou.ADVANCED_TITLE, ou.ADVANCED_UNSUPPORTED_TEXT))
                 self.assertIn('• Agendamento de GPU acelerado por hardware ligado: '
                               + at.STATE_TEXT['unsupported'], self.text())
+        self.assertFalse(self.panel.journal.entries())
+
+    def test_other_or_unknown_account_refuses_before_reading_hklm(self):
+        self.supported()
+        for answer in (so.OTHER, so.UNKNOWN, OSError('falhou')):
+            with self.subTest(answer=answer):
+                self.owner = answer
+                expected = (ou.TWEAKS_OTHER_ACCOUNT_TEXT if answer == so.OTHER
+                            else ou.TWEAKS_ACCOUNT_UNKNOWN_TEXT)
+                self.apply()
+                self.assertEqual(self.machine_reg.calls, [])
+                self.assertEqual(self.reg.calls, [])
+                self.assertEqual(self.asked, [])
+                self.assertEqual(self.restore_calls, [])
+                self.assertEqual(self.shown[-1], ('warning', ou.ADVANCED_TITLE, expected))
+                self.panel.refresh_advanced()
+                self.settle()
+                self.assertEqual(self.machine_reg.calls, [])
+        self.assertEqual(self.current(), (1, DWORD))
+
+    def test_restore_point_refused_writes_nothing_in_hklm(self):
+        self.supported()
+        self.restore_ok = False
+        self.apply()
+        self.assertEqual(len(self.restore_calls), 1)
+        self.assertFalse([c for c in self.machine_reg.calls if c[0] == 'SetValueEx'])
+        self.assertEqual(self.current(), (1, DWORD))
+        self.assertIn(ou.POWER_RESTORE_POINT_HELP, self.shown[-1][2])
+        self.assertFalse(self.panel.journal.entries())
+
+    def changed_while_asking(self, mode):
+        def ask(title, text):
+            self.asked.append((title, text))
+            self.supported(mode=mode)   # mudado por fora enquanto a pergunta estava aberta
+            return True
+        self.panel._ask_advanced = ask
+
+    def test_changed_to_out_of_list_while_asking_does_not_say_already_applied(self):
+        self.supported()
+        self.changed_while_asking(3)
+        self.apply()
+        self.assertEqual(len(self.asked), 1)
+        self.assertEqual(self.restore_calls, [])
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.current(), (3, DWORD))
+        self.assertEqual(self.panel.advanced_status.get(), ou.ADVANCED_UNSUPPORTED_TEXT)
+        self.assertNotEqual(self.panel.advanced_status.get(), ou.ADVANCED_ALREADY_TEXT)
+        self.assertEqual(self.shown[-1], ('warning', ou.ADVANCED_TITLE, ou.ADVANCED_UNSUPPORTED_TEXT))
+        self.assertFalse(self.panel.journal.entries())
+
+    def test_turned_on_outside_while_asking_says_already_applied(self):
+        self.supported()
+        self.changed_while_asking(2)
+        self.apply()
+        self.assertEqual(self.restore_calls, [])
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.panel.advanced_status.get(), ou.ADVANCED_ALREADY_TEXT)
         self.assertFalse(self.panel.journal.entries())
 
     def test_already_on_does_not_ask(self):
