@@ -214,12 +214,24 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(out['items'], [])
 
 
-def _fake_ps(run=None, startup=None, procs=None, fail=(), tasks=None):
+# P3-07 fatia 3: por padrão, o Defender ligado e sem exclusões mostradas, e nenhuma conexão.
+DEFENDER_ON = {'Status': {'AMServiceEnabled': True, 'AntivirusEnabled': True,
+                          'RealTimeProtectionEnabled': True},
+               'Preference': {'ExclusionPath': None, 'ExclusionProcess': None, 'ExclusionExtension': None}}
+_DEFAULT = object()
+
+
+def _fake_ps(run=None, startup=None, procs=None, fail=(), tasks=None, defender=_DEFAULT, network=None):
     calls = []
+    defender = DEFENDER_ON if defender is _DEFAULT else defender
 
     def ps(code, timeout=22):
         calls.append(code)
-        if 'Win32_Process' in code:
+        if 'Get-MpComputerStatus' in code:
+            kind = 'defender'
+        elif 'Get-NetTCPConnection' in code:
+            kind = 'network'
+        elif 'Win32_Process' in code:
             kind = 'processes'
         elif 'Get-ScheduledTask' in code:
             kind = 'tasks'
@@ -229,7 +241,8 @@ def _fake_ps(run=None, startup=None, procs=None, fail=(), tasks=None):
             kind = 'run'
         if kind in fail:
             raise RuntimeError(r'Acesso negado: C:\Users\Fulano Silva\NTUSER.DAT')
-        return {'run': run, 'startup': startup, 'processes': procs, 'tasks': tasks}[kind]
+        return {'run': run, 'startup': startup, 'processes': procs, 'tasks': tasks,
+                'defender': defender, 'network': network}[kind]
     ps.calls = calls
     return ps
 
@@ -247,7 +260,7 @@ class ReadCheckupTests(unittest.TestCase):
     def test_queries_are_read_only(self):
         ps = _fake_ps()
         sc.read_checkup(ps, ENV)
-        self.assertEqual(len(ps.calls), 4)
+        self.assertEqual(len(ps.calls), 6)  # P3-07 fatia 3: + Defender e rede
         code = '\n'.join(ps.calls)
         for key in (r'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
                     r'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
@@ -357,7 +370,7 @@ class ReadCheckupTests(unittest.TestCase):
         import optimization_engine as oe
         with mock.patch.object(oe, '_ps', return_value=None) as ps:
             sc.read_checkup(env=ENV)
-        self.assertEqual(ps.call_count, 4)
+        self.assertEqual(ps.call_count, 6)  # P3-07 fatia 3: + Defender e rede
 
 
 class SourceTests(unittest.TestCase):
@@ -529,7 +542,8 @@ class FixRessalvas181Tests(unittest.TestCase):
                 states = [i['state'] for i in result['processes']]
                 self.assertEqual(states, [sc.STATE_OK, sc.STATE_OK, sc.STATE_SUSPECT])
                 text = '\n'.join(sc.checkup_lines(result, env))
-                self.assertIn('RESUMO: OK 2 · atenção 0 · suspeito 1', text)
+                # +1 OK: Defender ligado (P3-07 fatia 3)
+                self.assertIn('RESUMO: OK 3 · atenção 0 · suspeito 1', text)
 
     # Ressalva 3
     def test_nt_prefix_in_system32_is_ok(self):
@@ -692,7 +706,7 @@ class ScheduledTaskTests(unittest.TestCase):
         text = self._text(result)
         self.assertNotIn('Defrag', text)
         self.assertIn(sc.TASKS_EMPTY, text)
-        self.assertIn('RESUMO: OK 0 · atenção 0 · suspeito 0', text)
+        self.assertIn('RESUMO: OK 1 · atenção 0 · suspeito 0', text) # +1 OK: Defender ligado (P3-07 fatia 3)
 
     def test_microsoft_folder_outside_windows_is_shown(self):
         item = self._one(_task('\\Microsoft\\Windows\\Defrag\\', 'ScheduledDefrag', r'%APPDATA%\defrag.exe'))
@@ -863,7 +877,7 @@ class ScheduledTaskTests(unittest.TestCase):
         self.assertEqual(sc.TASKS_NOTE, 'Sem administrador, o Windows pode não mostrar algumas tarefas.')
         self.assertTrue(any('[atenção] \\Ruim — tarefa agendada' in line for line in section))
         self.assertTrue(any('[OK] \\Boa — tarefa agendada' in line for line in section))
-        self.assertIn('RESUMO: OK 2 · atenção 1 · suspeito 0 · não conferidos 0', lines)
+        self.assertIn('RESUMO: OK 3 · atenção 1 · suspeito 0 · não conferidos 0', lines)
         self.assertIn(sc.RECOMMENDATION, lines)
 
     def test_ok_tasks_with_admin_note_use_neutral_phrase(self):
@@ -1002,7 +1016,7 @@ class ClosedListRevision2Tests(unittest.TestCase):
                                  [(sc.STATE_ATTENTION, _expected_runner(path, sc.REASON_MS_WINDOWS_PROGRAM))])
                 text = self._text(sc.read_checkup(_fake_ps(tasks=rows), ENV))
                 self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', text)
-                self.assertIn('RESUMO: OK 0 · atenção 1', text)
+                self.assertIn('RESUMO: OK 1 · atenção 1', text) # +1 OK: Defender ligado (P3-07 fatia 3)
                 self.assertNotIn(sc.TASKS_EMPTY, text)
 
     def test_microsoft_reason_says_rundll32_is_common(self):
@@ -1480,6 +1494,319 @@ class QuotedSpaceAndScriptHostVersionsFix0704Tests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self._auto('"' + path + '"')[0], [(sc.STATE_OK, sc.REASON_OK)])
                 self.assertEqual(self._tasks('\\', '"' + path + '"'), [(sc.STATE_OK, sc.REASON_OK)])
+
+
+
+ADMIN_HIDDEN = 'N/A: Must be and administrator to view exclusions'
+
+
+def _defender(rt=True, av=True, am=True, paths=None, procs=None, exts=None, preference=True):
+    return {'Status': {'AMServiceEnabled': am, 'AntivirusEnabled': av, 'RealTimeProtectionEnabled': rt},
+            'Preference': ({'ExclusionPath': paths, 'ExclusionProcess': procs, 'ExclusionExtension': exts}
+                           if preference else None)}
+
+
+class DefenderAndNetworkSlice3Tests(unittest.TestCase):
+    """P3-07 fatia 3: Defender e conexões de rede, só com dados simulados e ``ps`` falso."""
+
+    def setUp(self):
+        for name in ('run', 'Popen', 'check_output', 'call'):
+            patcher = mock.patch.object(subprocess, name, side_effect=_forbidden)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _text(self, result, env=ENV):
+        return '\n'.join(sc.checkup_lines(result, env))
+
+    def _reasons(self, data):
+        return [(i['state'], i['reason']) for i in sc.classify_defender(data, ENV)]
+
+    def _exclusion(self, kind, value):
+        data = _defender(**{kind: [value]})
+        found = [(i['state'], i['reason']) for i in sc.classify_defender(data, ENV)
+                 if i['reason'] != sc.REASON_RT_ON]
+        self.assertEqual(len(found), 1, found)
+        return found[0]
+
+    # --- Defender: proteção em tempo real ---
+    def test_real_time_on_is_ok(self):
+        self.assertEqual(self._reasons(_defender()), [(sc.STATE_OK, sc.REASON_RT_ON)])
+
+    def test_real_time_off_is_attention_and_mentions_security_app(self):
+        for kwargs in ({'rt': False}, {'av': False}, {'am': False}):
+            with self.subTest(**kwargs):
+                self.assertEqual(self._reasons(_defender(**kwargs)), [(sc.STATE_ATTENTION, sc.REASON_RT_OFF)])
+        self.assertIn('Segurança do Windows', sc.REASON_TEXTS[sc.REASON_RT_OFF])
+        self.assertIn('outro programa de segurança', sc.REASON_TEXTS[sc.REASON_RT_OFF])
+
+    def test_missing_or_unreadable_status_is_attention_not_checked(self):
+        cases = (None, 'x', 7, [], {}, {'Status': None, 'Preference': None},
+                 {'Status': {'RealTimeProtectionEnabled': 'True', 'AntivirusEnabled': True,
+                             'AMServiceEnabled': True}},
+                 {'Status': {'RealTimeProtectionEnabled': True}})
+        for data in cases:
+            with self.subTest(data=data):
+                found = self._reasons(data)
+                self.assertIn((sc.STATE_ATTENTION, sc.REASON_DEFENDER_UNKNOWN), found)
+                self.assertNotIn(sc.STATE_OK, [f[0] for f in found])
+        self.assertIn('não foi possível conferir', sc.REASON_TEXTS[sc.REASON_DEFENDER_UNKNOWN].lower())
+
+    def test_wrapped_list_output_is_read(self):
+        self.assertEqual(self._reasons([_defender()]), [(sc.STATE_OK, sc.REASON_RT_ON)])
+
+    # --- Defender: exclusões ---
+    def test_suspect_path_exclusions(self):
+        cases = {
+            r'C:\Users\Fulano Silva': sc.REASON_EXCL_USER,
+            r'C:\Users\Fulano Silva\Downloads': sc.REASON_EXCL_USER,
+            r'%USERPROFILE%\Documents': sc.REASON_EXCL_USER,
+            r'D:\Users\Beltrano': sc.REASON_EXCL_USER,
+            r'C:\Users': sc.REASON_EXCL_USER,
+            r'C:\Users\Fulano Silva\AppData\Local\Temp': sc.REASON_EXCL_TEMP,
+            r'C:\Windows\Temp\x': sc.REASON_EXCL_TEMP,
+            r'%TEMP%': sc.REASON_EXCL_TEMP,
+            r'C:\Users\Fulano Silva\AppData\Roaming\Minerador': sc.REASON_EXCL_APPDATA,
+            r'%APPDATA%': sc.REASON_EXCL_APPDATA,
+            r'C:\ProgramData': sc.REASON_EXCL_PROGRAMDATA,
+            r'C:\ProgramData\Coisa\x.exe': sc.REASON_EXCL_PROGRAMDATA,
+            'C:\\': sc.REASON_EXCL_DRIVE_ROOT,
+            'D:': sc.REASON_EXCL_DRIVE_ROOT,
+            'E:\\*': sc.REASON_EXCL_DRIVE_ROOT,
+            r'\\?\C:\\': sc.REASON_EXCL_DRIVE_ROOT,
+            r'C:\Windows': sc.REASON_EXCL_WINDOWS,
+            'c:\\windows\\': sc.REASON_EXCL_WINDOWS,
+            r'%SystemRoot%\System32': sc.REASON_EXCL_WINDOWS,
+            r'C:\Windows\SysWOW64\*': sc.REASON_EXCL_WINDOWS,
+            '*.exe': sc.REASON_EXCL_EXTENSION,
+            r'C:\Jogos\*.ps1': sc.REASON_EXCL_EXTENSION,
+        }
+        for value, reason in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(self._exclusion('paths', value), (sc.STATE_SUSPECT, reason))
+
+    def test_other_exclusions_are_attention_never_ok(self):
+        for kind, value in (('paths', r'C:\Program Files\Jogo'), ('paths', r'D:\Jogos\Steam'),
+                            ('paths', r'C:\Windows\Logs\CBS'), ('paths', 'pasta solta'),
+                            ('procs', r'C:\Program Files\Jogo\jogo.exe'), ('procs', 'steam.exe'),
+                            ('exts', 'iso'), ('exts', '.mp4'), ('exts', '*.vhdx')):
+            with self.subTest(kind=kind, value=value):
+                self.assertEqual(self._exclusion(kind, value), (sc.STATE_ATTENTION, sc.REASON_EXCL_OTHER))
+
+    def test_executable_extensions_are_suspect(self):
+        for ext in ('exe', '.dll', '*.ps1', 'BAT', '.cmd', 'vbs', 'js', 'scr'):
+            with self.subTest(ext=ext):
+                self.assertEqual(self._exclusion('exts', ext), (sc.STATE_SUSPECT, sc.REASON_EXCL_EXTENSION))
+
+    def test_script_host_and_interpreter_processes_are_suspect(self):
+        for value in ('powershell.exe', 'pwsh7.exe', 'cmd.exe', r'C:\Windows\System32\wscript.exe',
+                      'python.exe', 'python3.12.exe', r'C:\Program Files\nodejs\node.exe', 'node18.exe',
+                      'mshta', 'java8.exe'):
+            with self.subTest(value=value):
+                self.assertEqual(self._exclusion('procs', value),
+                                 (sc.STATE_SUSPECT, sc.REASON_EXCL_SCRIPT_PROCESS))
+
+    def test_process_in_suspect_folder_is_suspect(self):
+        self.assertEqual(self._exclusion('procs', r'C:\Users\Fulano Silva\AppData\Roaming\x\app.exe'),
+                         (sc.STATE_SUSPECT, sc.REASON_EXCL_APPDATA))
+        self.assertEqual(self._exclusion('procs', r'C:\Temp\x.exe'), (sc.STATE_SUSPECT, sc.REASON_EXCL_TEMP))
+
+    def test_hidden_exclusions_without_admin(self):
+        for value in (ADMIN_HIDDEN, [ADMIN_HIDDEN], 'n/a: algo'):
+            data = _defender(paths=value, procs=value, exts=value)
+            with self.subTest(value=value):
+                self.assertEqual(self._reasons(data), [(sc.STATE_OK, sc.REASON_RT_ON),
+                                                       (sc.STATE_ATTENTION, sc.REASON_EXCL_HIDDEN)])
+        self.assertEqual(sc.REASON_TEXTS[sc.REASON_EXCL_HIDDEN],
+                         'Sem administrador, o Windows não mostra as exclusões do Defender; '
+                         'não foi possível conferir.')
+        text = self._text({'defender': sc.classify_defender(_defender(paths=[ADMIN_HIDDEN]), ENV), 'errors': []})
+        self.assertNotIn('Must be', text)
+        for word in ('elevar', 'como administrador', 'executar como'):
+            self.assertNotIn(word, text.lower())
+
+    def test_missing_preference_is_attention_not_checked(self):
+        for data in (_defender(preference=False), {'Status': _defender()['Status'], 'Preference': 'x'}):
+            with self.subTest(data=data):
+                self.assertIn((sc.STATE_ATTENTION, sc.REASON_EXCL_UNKNOWN), self._reasons(data))
+
+    def test_no_exclusions_is_a_neutral_line_not_ok(self):
+        text = self._text({'defender': sc.classify_defender(_defender(paths=[], procs=None, exts=None), ENV),
+                           'errors': []})
+        self.assertIn(sc.DEFENDER_NO_EXCLUSIONS, text)
+        self.assertIn('RESUMO: OK 1 · atenção 0 · suspeito 0', text)
+        self.assertNotIn('nenhuma exclusão', sc.REASON_TEXTS[sc.REASON_RT_ON].lower())
+
+    def test_exclusion_paths_are_cleaned_and_listed_once(self):
+        paths = [r'C:\Users\Fulano Silva\AppData\Roaming\Mina', r'c:\users\fulano silva\appdata\roaming\mina',
+                 r'D:\Users\Beltrano\x', r'D:\S-1-5-21-111-222-333-1001\fulano@exemplo.com\Fulano Silva',
+                 'D:\\Jogos\x07ruim']
+        items = sc.classify_defender(_defender(paths=paths), ENV)
+        excl = [i for i in items if i['reason'] != sc.REASON_RT_ON]
+        self.assertEqual(len(excl), 4)
+        text = self._text({'defender': items, 'errors': []})
+        for secret in ('Fulano', 'Silva', 'Beltrano', 'S-1-5-21', 'exemplo.com', '\x07'):
+            self.assertNotIn(secret, text)
+        self.assertIn(r'%USERPROFILE%\AppData\Roaming\Mina', text)
+        self.assertIn('<outro usuário>', text)
+        self.assertIn('<SID>', text)
+
+    def test_forged_ok_exclusion_is_never_ok_on_screen(self):
+        forged = {'defender': [{'source': 'defender', 'name': 'Exclusão de pasta', 'kind': 'path',
+                                'path': r'%USERPROFILE%\AppData\Roaming\x', 'state': sc.STATE_OK,
+                                'reason': sc.REASON_OK},
+                               {'source': 'defender', 'name': 'Exclusão de pasta', 'kind': 'path',
+                                'path': r'D:\Jogos', 'state': sc.STATE_OK, 'reason': sc.REASON_EXCL_OTHER},
+                               {'source': 'defender', 'name': 'x', 'state': sc.STATE_OK, 'reason': 'texto livre'}],
+                  'network': [{'source': 'network', 'name': 'a.exe', 'port': 3333, 'state': sc.STATE_OK,
+                               'reason': sc.REASON_OK}],
+                  'errors': []}
+        text = self._text(forged)
+        self.assertIn('RESUMO: OK 0 · atenção 2 · suspeito 2', text)
+        self.assertNotIn('texto livre', text)
+        self.assertIn(sc.RECOMMENDATION, text)
+
+    # --- Rede ---
+    def _conn(self, port, name='app', path=r'C:\Program Files\App\app.exe'):
+        return {'RemotePort': port, 'Name': name, 'Path': path}
+
+    def test_mining_ports_are_suspect(self):
+        for port in sc.MINING_PORTS:
+            with self.subTest(port=port):
+                items = sc.classify_connections([self._conn(port)], ENV)
+                self.assertEqual([(i['state'], i['reason']) for i in items],
+                                 [(sc.STATE_SUSPECT, sc.REASON_MINING_PORT)])
+        self.assertEqual(sc.MINING_PORTS, (3333, 4444, 5555, 7777, 14444, 14433, 45700))
+        self.assertIn('conexão para uma porta comum de mineração', sc.REASON_TEXTS[sc.REASON_MINING_PORT])
+
+    def test_other_ports_and_garbage_are_ignored(self):
+        rows = [self._conn(443), self._conn(80), self._conn('3333x'), self._conn(True), self._conn(None),
+                {'Name': 'x'}, None, 7, 'texto']
+        self.assertEqual(sc.classify_connections(rows, ENV), [])
+        self.assertEqual(sc.classify_connections(None, ENV), [])
+        self.assertEqual(len(sc.classify_connections({'value': [self._conn('4444')]}, ENV)), 1)
+
+    def test_same_connection_once_with_count_and_clean_names(self):
+        path = r'C:\Users\Fulano Silva\AppData\Roaming\Fulano Silva\x.exe'
+        rows = [self._conn(3333, 'Fulano Silva-miner', path)] * 3 + [self._conn(3333, None, None),
+                                                                    self._conn(4444, 'b', path)]
+        items = sc.classify_connections(rows, ENV)
+        self.assertEqual(len(items), 3)
+        text = self._text({'network': items, 'errors': []})
+        self.assertIn('(3 conexões)', text)
+        self.assertIn('porta 3333', text)
+        self.assertIn('porta 4444', text)
+        self.assertNotIn('Fulano', text)
+        self.assertNotIn('Silva', text)
+        self.assertIn(r'%USERPROFILE%\AppData\Roaming\%USERNAME%\x.exe', text)
+        self.assertIn('RESUMO: OK 0 · atenção 0 · suspeito 3', text)
+
+    def test_no_connection_is_neutral_line(self):
+        text = self._text({'network': [], 'errors': []})
+        self.assertIn('Nenhuma conexão para portas comuns de mineração no momento do check-up.', text)
+        self.assertIn(sc.NOT_ALL_CHECKED, text)
+
+    def test_network_query_never_asks_remote_address(self):
+        source = (ROOT / 'security_checkup.py').read_text(encoding='utf-8')
+        self.assertNotIn('RemoteAddress', source)
+        self.assertNotIn('RemoteAddress', sc.NETWORK_QUERY)
+        self.assertIn('Get-NetTCPConnection -State Established', sc.NETWORK_QUERY)
+        self.assertIn('Get-Process -Id', sc.NETWORK_QUERY)
+        self.assertIn('RemotePort', sc.NETWORK_QUERY)
+        self.assertIn('OwningProcess', sc.NETWORK_QUERY)
+        rows = [{'RemotePort': 3333, 'Name': 'a', 'Path': None, 'RemoteAddress': '203.0.113.9',
+                 'LocalAddress': '192.168.0.10'}]
+        result = sc.read_checkup(_fake_ps(network=rows), ENV)
+        self.assertNotIn('203.0.113.9', repr(result))
+        self.assertNotIn('192.168.0.10', repr(result))
+
+    # --- Consultas, read_checkup e tela ---
+    def test_defender_query_is_read_only(self):
+        self.assertIn('Get-MpComputerStatus', sc.DEFENDER_QUERY)
+        self.assertIn('Get-MpPreference', sc.DEFENDER_QUERY)
+        for field in ('AMServiceEnabled', 'AntivirusEnabled', 'RealTimeProtectionEnabled',
+                      'ExclusionPath', 'ExclusionProcess', 'ExclusionExtension'):
+            self.assertIn(field, sc.DEFENDER_QUERY)
+        self.assertIn('-Compress', sc.DEFENDER_QUERY)
+        source = (ROOT / 'security_checkup.py').read_text(encoding='utf-8')
+        for code in (sc.DEFENDER_QUERY, sc.NETWORK_QUERY, source):
+            for word in ('Set-Mp', 'Add-Mp', 'Remove-Mp', 'Start-Mp', 'Update-Mp', 'Stop-Process', 'RunAs',
+                         'Disable', 'Set-NetFirewall'):
+                self.assertNotIn(word, code)
+
+    def test_read_checkup_returns_defender_and_network(self):
+        rows = [{'RemotePort': 3333, 'Name': 'mina', 'Path': r'C:\Temp\mina.exe'}]
+        result = sc.read_checkup(_fake_ps(defender=_defender(rt=False, exts=['exe']), network=rows), ENV)
+        self.assertEqual(result['errors'], [])
+        self.assertEqual([i['reason'] for i in result['defender']], [sc.REASON_RT_OFF, sc.REASON_EXCL_EXTENSION])
+        self.assertEqual([i['reason'] for i in result['network']], [sc.REASON_MINING_PORT])
+        text = self._text(result)
+        self.assertIn('MICROSOFT DEFENDER', text)
+        self.assertIn('CONEXÕES DE REDE', text)
+        self.assertLess(text.index('PROCESSOS EM EXECUÇÃO'), text.index('MICROSOFT DEFENDER'))
+        self.assertLess(text.index('MICROSOFT DEFENDER'), text.index('CONEXÕES DE REDE'))
+        self.assertLess(text.index('CONEXÕES DE REDE'), text.index('RESUMO'))
+        self.assertIn('RESUMO: OK 0 · atenção 1 · suspeito 2', text)
+        self.assertIn(sc.RECOMMENDATION, text)
+
+    def test_recommendation_when_only_defender_or_network_flagged(self):
+        for kwargs in ({'defender': _defender(rt=False)}, {'defender': _defender(paths=[ADMIN_HIDDEN])},
+                       {'defender': None},
+                       {'network': [{'RemotePort': 14444, 'Name': 'x', 'Path': None}]}):
+            with self.subTest(kwargs=kwargs):
+                text = self._text(sc.read_checkup(_fake_ps(**kwargs), ENV))
+                self.assertIn(sc.RECOMMENDATION, text)
+                self.assertIn(sc.NOT_CERTAIN, text)
+        clean = self._text(sc.read_checkup(_fake_ps(), ENV))
+        self.assertNotIn(sc.RECOMMENDATION, clean)
+        self.assertIn(sc.NOT_ALL_CHECKED, clean)
+
+    def test_failed_queries_become_codes_without_system_text(self):
+        result = sc.read_checkup(_fake_ps(fail=('defender', 'network')), ENV)
+        self.assertEqual(result['errors'], ['defender', 'network'])
+        self.assertEqual(result['defender'], [])
+        self.assertEqual(result['network'], [])
+        text = self._text(result)
+        self.assertIn(sc.ERROR_TEXTS['defender'], text)
+        self.assertIn(sc.ERROR_TEXTS['network'], text)
+        self.assertNotIn('Acesso negado', text)
+        self.assertNotIn('NTUSER', text)
+        self.assertNotIn(sc.NETWORK_EMPTY, text)
+        self.assertIn(sc.RECOMMENDATION, text)
+        # As outras seções continuam.
+        procs = [{'Name': 'a.exe', 'ExecutablePath': r'C:\Temp\a.exe'}]
+        other = sc.read_checkup(_fake_ps(procs=procs, fail=('defender',)), ENV)
+        self.assertEqual(len(other['processes']), 1)
+        self.assertEqual(other['errors'], ['defender'])
+
+    def test_confirmation_mentions_defender_and_network(self):
+        self.assertIn('Microsoft Defender', sc.CHECKUP_CONFIRMATION)
+        self.assertIn('conexões de rede', sc.CHECKUP_CONFIRMATION)
+        self.assertIn('tarefas agendadas', sc.CHECKUP_CONFIRMATION)
+        self.assertNotIn('vírus', sc.CHECKUP_CONFIRMATION.lower())
+
+    def test_no_forbidden_words_in_new_lines(self):
+        result = sc.read_checkup(_fake_ps(defender=_defender(rt=False, paths=['C:\\', ADMIN_HIDDEN],
+                                                             procs=['cmd.exe'], exts=['iso']),
+                                          network=[{'RemotePort': 3333, 'Name': 'x', 'Path': None}]), ENV)
+        for line in sc.checkup_lines(result, ENV):
+            for word in FORBIDDEN_WORDS:
+                self.assertNotIn(word, line.lower())
+
+    # --- Ressalvas da revisão da PR #195 ---
+    def test_quoted_trailing_space_task_shows_path_without_space(self):
+        for folder in ('\\', '\\Microsoft\\Windows\\Defrag\\'):
+            with self.subTest(folder=folder):
+                items = sc.classify_tasks([_task(folder, 'T', '"C:\\Windows\\System32\\defrag.exe "')], ENV)
+                self.assertEqual(len(items), 1)
+                self.assertEqual(items[0]['path'], r'C:\Windows\System32\defrag.exe')
+
+    def test_versioned_script_host_in_microsoft_task_is_script_host(self):
+        items = sc.classify_tasks([_task('\\Microsoft\\Windows\\A\\', 'T', r'C:\Windows\System32\cmd2.exe')], ENV)
+        self.assertEqual([(i['state'], i['reason']) for i in items], [(sc.STATE_ATTENTION, sc.REASON_SCRIPT_HOST)])
+        # O rundll32 de verdade continua com o motivo das tarefas da Microsoft.
+        items = sc.classify_tasks([_task('\\Microsoft\\Windows\\A\\', 'T', r'C:\Windows\System32\rundll32.exe')],
+                                  ENV)
+        self.assertEqual([i['reason'] for i in items], [sc.REASON_MS_WINDOWS_PROGRAM])
 
 
 if __name__ == '__main__':
