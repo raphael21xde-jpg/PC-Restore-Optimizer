@@ -32,7 +32,7 @@ MAX_PLAN_NAME = 80
 
 MEASURE_CONFIRMATION = (
     'O app vai medir o PC por cerca de 1 minuto: uso do processador, memória em uso, '
-    'quantos programas estão abertos, quantos abrem com o Windows e o plano de energia.\n\n'
+    'quantos processos estão abertos, quantos programas abrem com o Windows e o plano de energia.\n\n'
     'Só lê: nada é mudado. Não use o PC durante a medição (o resultado fica mais justo).\n\n'
     'Continuar?')
 MEASURE_FAILED = 'Não foi possível medir o PC. Nada foi mudado.'
@@ -40,6 +40,8 @@ MEASURE_WARNING = ('A medição mostra como o PC estava em cada momento; não pr
                    'a diferença. Meça nas mesmas condições (mesmos programas abertos).')
 MISSING_BEFORE = 'Falta a medição ANTES: clique em "Medir ANTES (1 min)" antes de aplicar os ajustes.'
 MISSING_AFTER = 'Falta a medição DEPOIS: depois de aplicar os ajustes, clique em "Medir DEPOIS (1 min)".'
+# Ressalva 5 da PR #200: já existe DEPOIS, mas nenhuma ANTES feita antes dela.
+AFTER_NEEDS_BEFORE = 'A medição DEPOIS só vale quando é feita depois de uma medição ANTES.'
 NO_DATA = 'sem dado'
 LABELS = {
     'cpu': 'Uso do processador (média)',
@@ -239,11 +241,12 @@ def _difference(key, before, after):
     if key == 'power_plan':
         return '(igual)' if before == after else '(mudou)'
     delta = after - before
-    unit = ' pontos' if key in ('cpu', 'memory') else ''
+    # Ressalva 4 da PR #200: "pontos percentuais" (a diferença entre duas porcentagens).
+    unit = ' pontos percentuais' if key in ('cpu', 'memory') else ''
     if delta == 0:
         return '(igual)'
     if key in ('cpu', 'memory') and abs(delta) == 1:
-        unit = ' ponto'
+        unit = ' ponto percentual'
     return f'({abs(delta)}{unit} a {"menos" if delta < 0 else "mais"})'
 
 
@@ -268,8 +271,11 @@ def compare_measures(historico, env=None):
     before = _latest(entries, 'antes')
     after = _latest(entries, 'depois', before[0]) if before else None
     if before is None:
+        # Ressalva 5 da PR #200: com uma DEPOIS e sem ANTES, falta só a ANTES (e a
+        # explicação de que a DEPOIS precisa vir depois dela); sem nada, faltam as duas.
         lines.append(MISSING_BEFORE)
-    if after is None:
+        lines.append(AFTER_NEEDS_BEFORE if _latest(entries, 'depois') is not None else MISSING_AFTER)
+    elif after is None:
         lines.append(MISSING_AFTER)
     if before is not None and after is not None:
         old = _clean_values(before[1].get('values'), env)
