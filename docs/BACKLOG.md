@@ -442,7 +442,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
 
 ---
 
-## Marco M3 — Otimização universal (carro-chefe)  ← ATUAL
+## Marco M3 — Otimização universal (carro-chefe)  (aprovado no Monitor em 06/11/2026; teste com administrador no PC do Raphael ainda falta, issue #207)
 ### P3-01 · Perfil de hardware (somente leitura) — `concluído` (fatias 1 e 2)
 - CPU, GPU, RAM (velocidade e dual channel), discos, notebook ou desktop, Windows.
 - Classificação em básico / intermediário / gamer / alto desempenho / notebook.
@@ -916,7 +916,7 @@ Issue "Validar M3": rodar o check-up de segurança, medir, aplicar os ajustes se
 
 ---
 
-## Marco M4 — Produto final
+## Marco M4 — Produto final  ← ATUAL
 ### P4-01 · Manual curto em português — `concluído` (branch `auto/P4-01-manual-curto`)
 - Critério de aceite: `docs/MANUAL.md` com 11 seções `##` (do que o app faz até o que ele NUNCA faz), em português simples, e todo nome entre aspas existe como texto no código (`tests/test_manual.py`: nomes, seções, sem dados pessoais, lista do que nunca faz, reinstalação pelo instalador oficial da Microsoft, link no `README.md`).
 - Revisão 1 (commit 388353818074): o manual passou a dizer quando "Desfazer tudo" pede administrador e reinício (ajustes do computador todo da aba 9) e que ele para no primeiro item que falha; corrigiu onde ficam os botões de escolha ("Seleção avançada" > "Arquivos pessoais"; "Meu computador"; "Preservação"); o teste de nomes passou a ler os rótulos com `ast` no módulo de cada tela (R-61), mais a trava da R-60. Regras novas: R-60 e R-61.
@@ -936,6 +936,12 @@ Issue "Validar M3": rodar o check-up de segurança, medir, aplicar os ajustes se
 - Hoje o assistente (`browser_recovery_ui.py`, ~linhas 47-51 e 83-86) só aceita um cofre `.pcbrowser`/`.opgx` ou uma pasta `CONFERIR-NAVEGADOR`, criados só pela página escondida "Navegadores", e só orienta a importação no Opera e no Opera GX. Ligar a criação do cofre a uma tela alcançável e orientar outros navegadores (ao menos Chrome, Edge e Firefox), com teste. Pode ir junto do FIX-P4-01-02. Depois do FIX, o manual e `tests/test_manual.py` (`test_browser_restore_states_its_limits`) são atualizados juntos. Achado na revisão 4 da P4-01.
 ### FIX-P4-01-06 · Texto da revisão do backup cita "D:, F: e G:" fixos — `pronto`
 - `app.py` (`_build_review`, ~linha 592): "Somente os arquivos marcados no C: serão copiados; D:, F: e G: ficam no local." vale só para um PC com essas letras. Trocar por um texto que valha para qualquer PC (por exemplo, "os outros discos ficam no local"), procurando com grep os testes que comparam o texto antigo (R-03). Achado na revisão 4 da P4-01.
+### FIX-M3-01 · Check-up de segurança com "atenção" demais — `pronto`
+- Achado no teste real do M3 no PC do Raphael (06/11/2026, issue #207): 199 itens "atenção", a maioria tarefas agendadas da própria Microsoft (`\\Microsoft\\Windows\\...`, NGEN, Application Experience) e apps comuns em AppData (OneDrive, Discord, Opera). Assusta quem não é técnico. Agrupar as tarefas `\\Microsoft\\Windows\\` num resumo com a contagem, sem esconder nenhum item "suspeito" e sem rebaixar nada que pareça caminho ou programa (R-53). Só leitura, como hoje. Teste com dados simulados.
+### FIX-M3-02 · XMP/EXPO "não confirmado" com memória acima do padrão — `pronto`
+- Achado no teste real do M3 (issue #207): as 4 memórias DDR4 a 3600 MT/s configurado aparecem como XMP "não confirmado". Velocidade configurada acima do padrão JEDEC do tipo da memória (DDR4: 3200) indica perfil ligado: mostrar "provavelmente ligado", como no Resizable BAR. Opção mais segura: só "provavelmente", nunca "ligado"; sem dado ou tipo desconhecido continua "não confirmado". Teste com dados simulados.
+### FIX-M3-03 · Plano de energia aparece só com o código (GUID) no diagnóstico — `pronto`
+- Achado no teste real do M3 (issue #207): a linha "Plano de energia:" mostra só o GUID (ex.: `381b4222-...`, que é o "Equilibrado"). Mostrar o nome do plano; se não der para ler o nome, mostrar o código com "(nome não lido)". Teste com dados simulados.
 ### P4-02 · Primeiro uso guiado — `pronto` (depois do M1)
 ### P4-03 · Instalador (.exe) — `pronto` (depois de P4-02)
 - Script de build (PyInstaller) e teste do pacote.
