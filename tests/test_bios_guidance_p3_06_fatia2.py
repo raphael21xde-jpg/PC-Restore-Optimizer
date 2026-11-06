@@ -57,16 +57,17 @@ def _text(guidance):
 
 
 class RebarStateTests(unittest.TestCase):
-    def test_window_above_256_mib_is_probably_on(self):
+    def test_window_above_256_mib_is_not_confirmed(self):
+        # FIX-M3-T1: janela grande sozinha não confirma o Resizable BAR.
         state, reason = bg.rebar_state(_bar(16 * MIB, 8192 * MIB, 32 * 1024))
-        self.assertEqual(state, bg.REBAR_ON)
-        self.assertEqual(reason, bg.REBAR_REASON_ON)
+        self.assertEqual(state, bg.REBAR_UNKNOWN)
+        self.assertEqual(reason, bg.REBAR_REASON_BIG)
 
     def test_several_gpus_only_one_large_is_mixed(self):
         # FIX-P3-06-13 (R-38): antes bastava uma placa; agora todas precisam concordar.
         value = [{'Sizes': [256 * MIB, 16 * MIB]}, {'Sizes': [16 * 1024 ** 3]}]
         self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_MIXED))
-        self.assertEqual(bg.rebar_state({'Sizes': [512 * MIB]})[0], bg.REBAR_ON)
+        self.assertEqual(bg.rebar_state({'Sizes': [512 * MIB]}), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_BIG))
 
     def test_all_up_to_256_mib_is_not_confirmed(self):
         state, reason = bg.rebar_state(_bar(256 * MIB, 16 * MIB, 128 * 1024))
@@ -91,9 +92,9 @@ class RebarStateTests(unittest.TestCase):
         value = [{'Sizes': [256 * MIB, 16 * MIB]}, {'Sizes': [8 * 1024 ** 3, 32 * MIB]}]
         self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_MIXED))
 
-    def test_two_dedicated_above_256_mib_is_on(self):
+    def test_two_dedicated_above_256_mib_is_big(self):
         value = [{'Sizes': [8 * 1024 ** 3]}, {'Sizes': [16 * MIB, 512 * MIB]}]
-        self.assertEqual(bg.rebar_state(value), (bg.REBAR_ON, bg.REBAR_REASON_ON))
+        self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_BIG))
 
     def test_dedicated_and_gpu_without_sizes_is_mixed(self):
         for other in ({}, {'Sizes': None}, {'Sizes': []}, {'Sizes': 'x'}, {'Sizes': {'value': []}}):
@@ -124,25 +125,27 @@ class RebarStateTests(unittest.TestCase):
     def test_all_gpus_without_data_is_default(self):
         self.assertEqual(bg.rebar_state([{}, None]), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_DEFAULT))
 
-    def test_single_large_gpu_is_on(self):
-        self.assertEqual(bg.rebar_state(_bar(8 * 1024 ** 3)), (bg.REBAR_ON, bg.REBAR_REASON_ON))
-        self.assertEqual(bg.rebar_state({'Sizes': [8 * 1024 ** 3]}), (bg.REBAR_ON, bg.REBAR_REASON_ON))
+    def test_single_large_gpu_is_big(self):
+        self.assertEqual(bg.rebar_state(_bar(8 * 1024 ** 3)), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_BIG))
+        self.assertEqual(bg.rebar_state({'Sizes': [8 * 1024 ** 3]}), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_BIG))
 
     def test_lines_accept_mixed_reason(self):
         text = _text({'rebar': bg.REBAR_UNKNOWN, 'rebar_reason': bg.REBAR_REASON_MIXED})
         self.assertIn('Resizable BAR: não confirmado', text)
         self.assertIn(bg.REBAR_REASON_MIXED, text)
         self.assertIn(bg.REBAR_REASON_MIXED, bg._REBAR_REASONS[bg.REBAR_UNKNOWN])
-        text = _text({'rebar': bg.REBAR_ON, 'rebar_reason': bg.REBAR_REASON_MIXED})
-        self.assertNotIn(bg.REBAR_REASON_MIXED, text)
+        # FIX-M3-T1: estado antigo "provavelmente_ligado" vira "não confirmado".
+        text = _text({'rebar': 'provavelmente_ligado', 'rebar_reason': bg.REBAR_REASON_MIXED})
+        self.assertIn('Resizable BAR: não confirmado', text)
+        self.assertIn(bg.REBAR_REASON_MIXED, text)
 
     def test_mixed_reason_wording(self):
         self.assertEqual(bg.REBAR_REASON_MIXED,
                          'As placas de vídeo do PC não informam a mesma coisa (por exemplo, vídeo integrado '
                          'e placa dedicada, ou uma delas sem informação); não dá para confirmar o Resizable BAR.')
-        self.assertEqual(bg.REBAR_REASON_ON,
-                         'O Windows informa, para cada placa de vídeo, uma janela de memória maior que 256 MiB; '
-                         'isso costuma indicar Resizable BAR ligado.')
+        self.assertEqual(bg.REBAR_REASON_BIG,
+                         'O Windows informa uma janela de memória maior que 256 MiB, mas isso sozinho não '
+                         'confirma o Resizable BAR (há placas que mostram isso com ele desligado).')
 
     def test_never_says_off(self):
         for value in (None, _bar(16 * MIB), _bar(512 * MIB), 'x'):
@@ -150,7 +153,9 @@ class RebarStateTests(unittest.TestCase):
                 guidance = bg.build_bios_guidance(_hardware(value), {'form_factor': 'desktop'})
                 line = next(l for l in bg.bios_guidance_lines(guidance) if 'Resizable BAR:' in l)
                 self.assertNotIn('desligad', line.lower())
-                self.assertNotIn('desligad', guidance['rebar_reason'].lower())
+                # REBAR_REASON_BIG cita "com ele desligado" só como exemplo; nunca diz que está desligado.
+                reason = guidance['rebar_reason'].replace('com ele desligado', '')
+                self.assertNotIn('desligad', reason.lower())
         for label in bg.REBAR_LABELS.values():
             self.assertNotIn('desligad', label)
 
@@ -158,13 +163,13 @@ class RebarStateTests(unittest.TestCase):
 class PowerShellWrappedTests(unittest.TestCase):
     """FIX-P3-06-13: ConvertTo-Json do PowerShell 5.1 pode embrulhar listas em {"value": [...]}."""
 
-    def test_wrapped_gpu_list_is_on(self):
+    def test_wrapped_gpu_list_is_big(self):
         value = json.loads('{"value": [{"Sizes": [8589934592]}], "Count": 1}')
-        self.assertEqual(bg.rebar_state(value), (bg.REBAR_ON, bg.REBAR_REASON_ON))
+        self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_BIG))
 
-    def test_wrapped_sizes_is_on(self):
+    def test_wrapped_sizes_is_big(self):
         value = json.loads('[{"Sizes": {"value": [8589934592], "Count": 1}}]')
-        self.assertEqual(bg.rebar_state(value), (bg.REBAR_ON, bg.REBAR_REASON_ON))
+        self.assertEqual(bg.rebar_state(value), (bg.REBAR_UNKNOWN, bg.REBAR_REASON_BIG))
 
     def test_wrapped_strange_is_default_without_exception(self):
         for value in ({'value': []}, {'value': 'x'}, {'value': None}, {'value': {'Sizes': [8 * 1024 ** 3]}},
@@ -179,7 +184,7 @@ class PowerShellWrappedTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(bg._ps_list(value), [])
 
-    def test_inspect_pc_with_wrapped_output_is_on(self):
+    def test_inspect_pc_with_wrapped_output_is_not_confirmed(self):
         def fake_ps(code, timeout=22):
             if 'Win32_DeviceMemoryAddress' in code:
                 return json.loads('{"value": [{"Sizes": {"value": [8589934592], "Count": 1}}], "Count": 1}')
@@ -190,22 +195,23 @@ class PowerShellWrappedTests(unittest.TestCase):
                 mock.patch.object(oe, 'available_power_plans', side_effect=oe.OptimizationError('x')), \
                 mock.patch.object(subprocess, 'run', _forbidden):
             report = oe.inspect_pc()
-        self.assertEqual(report['bios_guidance']['rebar'], bg.REBAR_ON)
+        self.assertEqual(report['bios_guidance']['rebar'], bg.REBAR_UNKNOWN)
+        self.assertEqual(report['bios_guidance']['rebar_reason'], bg.REBAR_REASON_BIG)
 
 
 class GuidanceRebarTests(unittest.TestCase):
     def test_build_guidance_has_rebar_and_reason(self):
         guidance = bg.build_bios_guidance(_hardware(_bar(8 * 1024 ** 3)), {'form_factor': 'desktop'})
-        self.assertEqual(guidance['rebar'], bg.REBAR_ON)
-        self.assertEqual(guidance['rebar_reason'], bg.REBAR_REASON_ON)
+        self.assertEqual(guidance['rebar'], bg.REBAR_UNKNOWN)
+        self.assertEqual(guidance['rebar_reason'], bg.REBAR_REASON_BIG)
         guidance = bg.build_bios_guidance({}, {})
         self.assertEqual(guidance['rebar'], bg.REBAR_UNKNOWN)
         self.assertEqual(guidance['rebar_reason'], bg.REBAR_REASON_DEFAULT)
 
     def test_lines_depend_on_state(self):
         on = _text(bg.build_bios_guidance(_hardware(_bar(8 * 1024 ** 3)), {}))
-        self.assertIn('  Resizable BAR: provavelmente ligado', on)
-        self.assertIn(bg.REBAR_REASON_ON, on)
+        self.assertIn('  Resizable BAR: não confirmado', on)
+        self.assertIn(bg.REBAR_REASON_BIG, on)
         unknown = _text(bg.build_bios_guidance(_hardware(_bar(256 * MIB)), {}))
         self.assertIn('  Resizable BAR: não confirmado', unknown)
         self.assertIn(bg.REBAR_REASON_SMALL, unknown)
@@ -215,13 +221,17 @@ class GuidanceRebarTests(unittest.TestCase):
             self.assertIn('nem o modo de inicialização', text)
 
     def test_lines_only_accept_module_reasons(self):
-        text = _text({'rebar': bg.REBAR_ON, 'rebar_reason': 'Clique em http://exemplo para baixar'})
+        text = _text({'rebar': bg.REBAR_UNKNOWN, 'rebar_reason': 'Clique em http://exemplo para baixar'})
         self.assertNotIn('http', text)
-        self.assertIn(bg.REBAR_REASON_ON, text)
-        text = _text({'rebar': 'desligado', 'rebar_reason': bg.REBAR_REASON_ON})
-        self.assertIn('Resizable BAR: não confirmado', text)
-        self.assertNotIn(bg.REBAR_REASON_ON, text)
         self.assertIn(bg.REBAR_REASON_DEFAULT, text)
+        old_on = ('O Windows informa, para cada placa de vídeo, uma janela de memória maior que 256 MiB; '
+                  'isso costuma indicar Resizable BAR ligado.')
+        for state in ('desligado', 'provavelmente_ligado'):
+            with self.subTest(state=state):
+                text = _text({'rebar': state, 'rebar_reason': old_on})
+                self.assertIn('Resizable BAR: não confirmado', text)
+                self.assertNotIn(old_on, text)
+                self.assertIn(bg.REBAR_REASON_DEFAULT, text)
 
     def test_no_automatic_above_4g(self):
         for value in (_bar(8 * 1024 ** 3), None):
@@ -287,7 +297,8 @@ class InspectGpuBarTests(unittest.TestCase):
         for forbidden in ('PNPDeviceID', '.Name', 'Select-Object', 'Set-', 'Invoke-CimMethod', 'Remove-', 'New-',
                           'reg ', 'bcdedit', 'Start-Process', 'RunAs'):
             self.assertNotIn(forbidden, code)
-        self.assertEqual(report['bios_guidance']['rebar'], bg.REBAR_ON)
+        self.assertEqual(report['bios_guidance']['rebar'], bg.REBAR_UNKNOWN)
+        self.assertEqual(report['bios_guidance']['rebar_reason'], bg.REBAR_REASON_BIG)
 
     def test_query_failure_message_without_powershell_text(self):
         def fake_ps(code, timeout=22):
@@ -336,7 +347,7 @@ class InspectGpuBarTests(unittest.TestCase):
         self.assertNotIn('gpu_bar', oe._EXPORT_COLUMNS)
         data = oe.exportable_report(report)
         self.assertNotIn('gpu_bar', data['hardware'])
-        self.assertEqual(data['bios_guidance']['rebar'], bg.REBAR_ON)
+        self.assertEqual(data['bios_guidance']['rebar'], bg.REBAR_UNKNOWN)
         with tempfile.TemporaryDirectory() as folder:
             target = oe.export_snapshot(report, Path(folder) / 'diag.json')
             text = target.read_text(encoding='utf-8')
@@ -500,7 +511,8 @@ class StepsButtonTests(unittest.TestCase):
         self.assertFalse(button.instate(['disabled']))
         text = self.panel.report_text.get('1.0', 'end')
         self.assertIn('BIOS — SÓ ORIENTAÇÃO', text)
-        self.assertIn('Resizable BAR: provavelmente ligado', text)
+        self.assertIn('Resizable BAR: não confirmado', text)
+        self.assertIn(bg.REBAR_REASON_BIG, text)
 
     def test_window_is_read_only_text_and_closes_without_timer(self):
         report = self._report()

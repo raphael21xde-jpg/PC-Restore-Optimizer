@@ -20,14 +20,18 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
 - na tela, o motivo de "desligado" com números só é exibido se os números forem
   coerentes (0 < configurada < informada e não metade exata); senão vira o
   motivo padrão (R-32, antiga R-34);
-- Resizable BAR (fatia 2, FIX-P3-06-13): cada placa de vídeo é avaliada
-  sozinha pelo tamanho dos intervalos de memória lidos pelo Windows. "Provavelmente
-  ligado" só se TODAS as placas têm algum intervalo maior que 256 MiB; se as placas
-  discordam ou alguma não informa (inclusive pequena + sem dado, FIX-P3-06-14), é
-  "não confirmado" com REBAR_REASON_MIXED (R-38); todas até 256 MiB é "não
-  confirmado" com REBAR_REASON_SMALL; todas sem dado, REBAR_REASON_DEFAULT. Aceita o formato
-  {"value": [...]} do ConvertTo-Json do PowerShell 5.1. Nunca diz "desligado"
-  (janela pequena também acontece com placa sem suporte ou driver antigo);
+- Resizable BAR (fatia 2, FIX-P3-06-13, FIX-M3-T1): o estado é sempre "não
+  confirmado". O Windows só informa o tamanho dos intervalos de memória de cada
+  placa de vídeo, e isso não confirma o estado (RTX 5070, driver 621.01: janela de
+  16 GiB com o Resizable BAR desligado no painel da NVIDIA). O tamanho só escolhe o
+  motivo: todas as placas com algum intervalo maior que 256 MiB, REBAR_REASON_BIG;
+  placas que discordam ou alguma sem dado (inclusive pequena + sem dado,
+  FIX-P3-06-14), REBAR_REASON_MIXED (R-38); todas até 256 MiB, REBAR_REASON_SMALL;
+  todas sem dado, REBAR_REASON_DEFAULT. Logo depois do motivo vêm os passos
+  REBAR_CHECK_STEPS para conferir no painel da NVIDIA/AMD ou no GPU-Z. Relatório
+  antigo com "provavelmente_ligado" aparece como "não confirmado" (R-32). Aceita o
+  formato {"value": [...]} do ConvertTo-Json do PowerShell 5.1. Nunca diz "ligado"
+  nem "desligado";
 - guarda só família da placa, versão e ano da BIOS; nunca modelo da placa,
   número de série ou nome do PC;
 - não recomenda atualizar a BIOS e não traz link nem download.
@@ -75,14 +79,13 @@ _ACCEPTED_REASONS = {
     XMP_UNKNOWN: {_DEFAULT_REASONS[XMP_UNKNOWN], REASON_MIXED, REASON_UNITS},
 }
 
-REBAR_ON = 'provavelmente_ligado'
+# FIX-M3-T1: não existe mais "provavelmente ligado"; o tamanho da janela não confirma o estado.
 REBAR_UNKNOWN = 'nao_confirmado'
 REBAR_LABELS = {
-    REBAR_ON: 'provavelmente ligado',
     REBAR_UNKNOWN: 'não confirmado',
 }
-REBAR_REASON_ON = ('O Windows informa, para cada placa de vídeo, uma janela de memória maior que 256 MiB; '
-                   'isso costuma indicar Resizable BAR ligado.')
+REBAR_REASON_BIG = ('O Windows informa uma janela de memória maior que 256 MiB, mas isso sozinho não '
+                    'confirma o Resizable BAR (há placas que mostram isso com ele desligado).')
 REBAR_REASON_SMALL = ('As janelas de memória da placa de vídeo que o Windows informa têm até 256 MiB; '
                       'isso não basta para confirmar o Resizable BAR.')
 REBAR_REASON_DEFAULT = ('O Windows não informou a janela de memória da placa de vídeo; '
@@ -90,10 +93,18 @@ REBAR_REASON_DEFAULT = ('O Windows não informou a janela de memória da placa d
 REBAR_REASON_MIXED = ('As placas de vídeo do PC não informam a mesma coisa (por exemplo, vídeo integrado '
                       'e placa dedicada, ou uma delas sem informação); não dá para confirmar o Resizable BAR.')
 _REBAR_REASONS = {
-    REBAR_ON: {REBAR_REASON_ON},
-    REBAR_UNKNOWN: {REBAR_REASON_DEFAULT, REBAR_REASON_SMALL, REBAR_REASON_MIXED},
+    REBAR_UNKNOWN: {REBAR_REASON_DEFAULT, REBAR_REASON_SMALL, REBAR_REASON_MIXED, REBAR_REASON_BIG},
 }
-_REBAR_DEFAULTS = {REBAR_ON: REBAR_REASON_ON, REBAR_UNKNOWN: REBAR_REASON_DEFAULT}
+_REBAR_DEFAULTS = {REBAR_UNKNOWN: REBAR_REASON_DEFAULT}
+REBAR_CHECK_TITLE = 'Como conferir sem entrar na BIOS:'
+# Onde a pessoa confere o estado real, sem link e sem download.
+REBAR_CHECK_STEPS = (
+    'NVIDIA: abra o Painel de controle da NVIDIA > Informações do sistema (canto de baixo à esquerda) '
+    'e veja a linha "BAR redimensionável" (Resizable BAR).',
+    'AMD: abra o AMD Software: Adrenalin Edition e procure "Smart Access Memory" (área de '
+    'Desempenho/Ajuste).',
+    'Se você já usa o GPU-Z, veja o campo "Resizable BAR" na primeira aba.',
+)
 _BAR_LIMIT = 256 * 1024 ** 2
 # Acima de 1 TiB não é janela de placa de vídeo real; é dado estranho e é ignorado.
 _BAR_MAX = 1024 ** 4
@@ -190,11 +201,11 @@ def _ps_list(value):
     return list(value) if isinstance(value, list) else []
 
 
-_GPU_ON, _GPU_SMALL, _GPU_NO_DATA = 'ligada', 'pequena', 'sem_dado'
+_GPU_BIG, _GPU_SMALL, _GPU_NO_DATA = 'grande', 'pequena', 'sem_dado'
 
 
 def _gpu_bar_state(gpu):
-    """ligada (alguma janela > 256 MiB), pequena (janelas válidas, todas até 256 MiB) ou sem dado."""
+    """grande (alguma janela > 256 MiB), pequena (janelas válidas, todas até 256 MiB) ou sem dado."""
     if not isinstance(gpu, dict):
         return _GPU_NO_DATA
     values = gpu.get('Sizes')
@@ -202,19 +213,20 @@ def _gpu_bar_state(gpu):
     sizes = [size for size in map(_bar_size, values) if size is not None]
     if not sizes:
         return _GPU_NO_DATA
-    return _GPU_ON if any(size > _BAR_LIMIT for size in sizes) else _GPU_SMALL
+    return _GPU_BIG if any(size > _BAR_LIMIT for size in sizes) else _GPU_SMALL
 
 
 def rebar_state(gpu_bar):
     """(estado, motivo) a partir dos tamanhos dos intervalos de memória das placas de vídeo.
 
     Entrada: dict ou lista de dicts {"Sizes": [bytes, ...]} (um por placa); a lista e
-    o Sizes também podem vir como {"value": [...]} (PowerShell 5.1). Cada placa é
-    avaliada sozinha (R-38): "provavelmente ligado" só se todas têm algum intervalo
-    maior que 256 MiB; se as placas discordam ou alguma não informa (inclusive uma
-    pequena junto de uma sem dado), é "não confirmado" com REBAR_REASON_MIXED; todas
-    pequenas é "não confirmado" com REBAR_REASON_SMALL; todas sem dado é "não
-    confirmado" com REBAR_REASON_DEFAULT. Nunca devolve "desligado" e nunca lança erro.
+    o Sizes também podem vir como {"value": [...]} (PowerShell 5.1). O estado é
+    sempre REBAR_UNKNOWN (FIX-M3-T1): o tamanho da janela não confirma o Resizable
+    BAR. Cada placa é avaliada sozinha (R-38) só para escolher o motivo: todas com
+    algum intervalo maior que 256 MiB, REBAR_REASON_BIG; placas que discordam ou
+    alguma sem dado (inclusive uma pequena junto de uma sem dado), REBAR_REASON_MIXED;
+    todas pequenas, REBAR_REASON_SMALL; todas sem dado, REBAR_REASON_DEFAULT. Nunca
+    devolve "ligado" nem "desligado" e nunca lança erro.
     """
     # dict sem 'value' = uma placa só; com 'value' = lista embrulhada pelo PowerShell 5.1
     if isinstance(gpu_bar, dict) and 'value' not in gpu_bar:
@@ -222,8 +234,8 @@ def rebar_state(gpu_bar):
     else:
         gpus = _ps_list(gpu_bar)
     states = [_gpu_bar_state(gpu) for gpu in gpus]
-    if states and all(state == _GPU_ON for state in states):
-        return REBAR_ON, REBAR_REASON_ON
+    if states and all(state == _GPU_BIG for state in states):
+        return REBAR_UNKNOWN, REBAR_REASON_BIG
     if len(set(states)) > 1:
         return REBAR_UNKNOWN, REBAR_REASON_MIXED
     if states and all(state == _GPU_SMALL for state in states):
@@ -372,12 +384,15 @@ def bios_steps_text(guidance):
     """Texto da janela "Ver passo a passo"; sempre regenerado pela família (R-32).
 
     O campo ``steps`` do dict é ignorado de propósito. Sem link e sem download.
+    Termina com os passos para conferir o Resizable BAR sem entrar na BIOS (FIX-M3-T1).
     """
     family = _family(guidance)
     lines = ['Passo a passo para conferir na BIOS',
              f'{NEVER_CHANGES} Aqui só mostramos como conferir; qualquer mudança é sua.',
              f'Fabricante da placa: {FAMILY_LABELS[family]}', '']
     lines.extend(f'{number}. {step}' for number, step in enumerate(_steps(family), 1))
+    lines.extend(['', f'Resizable BAR — {REBAR_CHECK_TITLE}'])
+    lines.extend(f'- {step}' for step in REBAR_CHECK_STEPS)
     return '\n'.join(lines)
 
 
@@ -396,7 +411,8 @@ def bios_guidance_lines(guidance):
     rebar = guidance.get('rebar')
     rebar = rebar if isinstance(rebar, str) and rebar in REBAR_LABELS else REBAR_UNKNOWN
     rebar_reason = guidance.get('rebar_reason')
-    # R-32: só aceita os motivos de Resizable BAR que este módulo gera.
+    # R-32: só aceita os motivos de Resizable BAR que este módulo gera; estado antigo
+    # "provavelmente_ligado" (antes do FIX-M3-T1) não está em REBAR_LABELS e vira "não confirmado".
     if not (isinstance(rebar_reason, str) and rebar_reason in _REBAR_REASONS[rebar]):
         rebar_reason = _REBAR_DEFAULTS[rebar]
     version = _version(guidance.get('bios_version')) or 'não disponível'
@@ -411,6 +427,8 @@ def bios_guidance_lines(guidance):
              f"  BIOS: versão {version} | ano {year if year is not None else 'não disponível'}",
              f'  Resizable BAR: {REBAR_LABELS[rebar]} (veja abaixo como conferir).',
              f'    {rebar_reason}',
+             f'    {REBAR_CHECK_TITLE}',
+             *(f'      - {step}' for step in REBAR_CHECK_STEPS),
              '  O app não pede para atualizar a BIOS. Se você decidir atualizar, use só o site oficial do '
              'fabricante; atualizar BIOS tem risco (faltar energia no meio pode impedir o PC de ligar).',
              '  Como conferir na BIOS:']
