@@ -1,11 +1,14 @@
 """P4-01: confere o manual curto (docs/MANUAL.md).
 
-Só lê arquivos do repositório: sem disco real, sem Tk e sem rodar o app.
+Só lê arquivos do repositório (e um módulo sintético em TemporaryDirectory):
+sem disco real, sem Tk e sem rodar o app.
 
-R-61: um nome citado entre aspas no manual precisa existir como rótulo (texto
-de botão, aba, menu ou título de etapa) no módulo da tela citada, nunca só como
-pedaço de texto em qualquer .py. Os rótulos são lidos com ``ast``, então
-comentários e docstrings não contam.
+R-61/R-62: um nome citado entre aspas no manual precisa ser rótulo (text=,
+_nav_entry/_nav_action ou a lista de abas/etapas que a função usa) DENTRO da
+função que monta a tela citada, e essa função precisa ser alcançável a partir
+de App.__init__, seguindo chamadas e referências por nome com ``ast``.
+Comentários, docstrings, funções nunca chamadas e as páginas escondidas
+(abas do notebook sem menu) não contam.
 """
 import ast
 import re
@@ -15,6 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MANUAL = ROOT / 'docs' / 'MANUAL.md'
+ROOTS = (('app.py', 'App.__init__'),)
 
 REQUIRED_SECTIONS = (
     'O que o app faz',
@@ -30,82 +34,84 @@ REQUIRED_SECTIONS = (
     'O que o app NUNCA faz',
 )
 
-# Nome da tela do app citado no manual -> módulo onde ele é rótulo.
+SIDEBAR = ('app.py', 'App._build_sidebar')
+REVIEW = ('app.py', 'App._build_review')
+HISTORY = ('app.py', 'App._build_history')
+RECOVERY = ('app.py', 'App._build_recovery')
+DIAGNOSTIC = ('app.py', 'App._build_diagnostic')
+OPT_TABS = ('optimization_ui.py', 'OptimizationPanel._build')
+OPT_DIAG = ('optimization_ui.py', 'OptimizationPanel._build_diagnostics')
+AFTER = ('after_format_ui.py', 'show_after_format')
+INSTALL = ('workflow_ui.py', 'build_installation')
+
+# Nome da tela citado no manual -> (módulo, função que monta a tela).
 UI_LABELS = {
-    # menu lateral e páginas
-    'Visão geral': 'app.py',
-    'Meu computador': 'app.py',
-    'Preservação': 'app.py',
-    'Instalar Windows': 'app.py',
-    'Recuperação': 'app.py',
-    'Depois de formatar': 'app.py',
-    'Central de recuperação': 'app.py',
-    'Cópia protegida para outro disco': 'app.py',
-    'Otimização': 'app.py',
-    'Diagnóstico': 'app.py',
-    'Histórico e relatórios': 'app.py',
-    'Seleção avançada': 'app.py',
-    'Arquivos pessoais': 'app.py',
-    'Navegadores': 'app.py',
+    # menu lateral
+    'Visão geral': SIDEBAR,
+    'Meu computador': SIDEBAR,
+    'Preservação': SIDEBAR,
+    'Instalar Windows': SIDEBAR,
+    'Recuperação': SIDEBAR,
+    'Depois de formatar': SIDEBAR,
+    'Central de recuperação': SIDEBAR,
+    'Cópia protegida para outro disco': SIDEBAR,
+    'Otimização': SIDEBAR,
+    'Diagnóstico': SIDEBAR,
+    'Histórico e relatórios': SIDEBAR,
     # Diagnóstico
-    'Analisar computador e discos': 'app.py',
-    'Simular destino de backup (somente leitura)': 'app.py',
-    'Conferir origens e destinos (somente leitura)': 'app.py',
-    'Exportar relatório JSON': 'app.py',
+    'Analisar computador e discos': DIAGNOSTIC,
+    'Simular destino de backup (somente leitura)': DIAGNOSTIC,
+    'Conferir origens e destinos (somente leitura)': DIAGNOSTIC,
+    'Exportar relatório JSON': DIAGNOSTIC,
     # backup
-    'Examinar unidades marcadas': 'deep_discovery_ui.py',
-    'Manter selecionados': 'deep_discovery_ui.py',
-    'Não preservar': 'deep_discovery_ui.py',
-    'Começar pela detecção  →': 'app.py',
-    'Manter': 'app.py',
-    'Não incluir no backup': 'app.py',
-    'Pendente': 'app.py',
-    'Retirar do backup (não apaga)': 'workflow_ui.py',
-    'Criar backup protegido do navegador': 'app.py',
-    'Revisar o plano': 'app.py',
-    'Escolher destino': 'app.py',
-    '1. Recalcular plano e espaço': 'app.py',
-    '2. Iniciar backup (confirmação dupla)': 'app.py',
-    'Retomar backup interrompido': 'app.py',
+    'Examinar unidades marcadas': ('deep_discovery_ui.py', 'show_deep_discovery'),
+    'Manter selecionados': ('deep_discovery_ui.py', 'show_deep_discovery'),
+    'Não preservar': ('deep_discovery_ui.py', 'show_deep_discovery'),
+    'Retirar do backup (não apaga)': ('workflow_ui.py', 'build_preservation'),
+    'Próximo: revisar backup dos arquivos escolhidos →': ('workflow_ui.py', 'build_preservation'),
+    'Escolher destino': REVIEW,
+    '1. Recalcular plano e espaço': REVIEW,
+    '2. Iniciar backup (confirmação dupla)': REVIEW,
+    'Retomar backup interrompido': REVIEW,
     # testar e restaurar
-    'Testar restauração de arquivo pequeno': 'app.py',
-    '5. Conferir TODO o backup (SHA-256)': 'app.py',
-    'Cancelar auditoria': 'app.py',
-    'Salvar relatório de auditoria': 'app.py',
-    'Restaurar navegador — assistente': 'app.py',
-    'Escolher arquivo para testar': 'app.py',
-    'Colocar no lugar original': 'restore_ui.py',
+    'Testar restauração de arquivo pequeno': HISTORY,
+    'Escolher arquivo para testar': HISTORY,
+    '5. Conferir TODO o backup (SHA-256)': RECOVERY,
+    'Cancelar auditoria': RECOVERY,
+    'Salvar relatório de auditoria': RECOVERY,
+    'Colocar no lugar original': ('restore_ui.py', 'show_restore'),
+    'Restaurar navegador': ('browser_recovery_ui.py', 'show_recovery'),
     # reinstalação guiada
-    'Revisar preservação': 'workflow_ui.py',
-    'Diagnóstico dos discos': 'workflow_ui.py',
-    'Recuperação depois do Windows': 'workflow_ui.py',
-    '1. Exportar plano para usar depois': 'app.py',
-    'Conferir discos e letras': 'after_format.py',
-    'Restaurar os arquivos': 'after_format.py',
-    'Reinstalar os programas': 'after_format.py',
-    'Religar os launchers de jogos': 'after_format.py',
-    'Navegador e senhas': 'after_format.py',
-    'Abrir': 'after_format_ui.py',
-    'Feito': 'after_format_ui.py',
-    'Pular': 'after_format_ui.py',
+    'Revisar preservação': INSTALL,
+    'Diagnóstico dos discos': INSTALL,
+    'Recuperação depois do Windows': INSTALL,
+    '1. Exportar plano para usar depois': RECOVERY,
+    'Conferir discos e letras': AFTER,
+    'Restaurar os arquivos': AFTER,
+    'Reinstalar os programas': AFTER,
+    'Religar os launchers de jogos': AFTER,
+    'Navegador e senhas': AFTER,
+    'Abrir': AFTER,
+    'Feito': AFTER,
+    'Pular': AFTER,
     # otimização
-    '1  Diagnóstico': 'optimization_ui.py',
-    '4  Energia reversível': 'optimization_ui.py',
-    '6  BIOS e drivers': 'optimization_ui.py',
-    '7  Alterações feitas': 'optimization_ui.py',
-    '8  Ajustes seguros': 'optimization_ui.py',
-    '9  Ajustes avançados': 'optimization_ui.py',
-    'Analisar este PC': 'optimization_ui.py',
-    'Check-up de segurança': 'optimization_ui.py',
-    'Ver passo a passo': 'optimization_ui.py',
-    'Ver estado atual': 'optimization_ui.py',
-    'Aplicar ajustes seguros': 'optimization_ui.py',
-    'Medir ANTES (1 min)': 'optimization_ui.py',
-    'Medir DEPOIS (1 min)': 'optimization_ui.py',
-    'Medir uso parado (2 min)': 'optimization_ui.py',
-    'Desfazer tudo': 'optimization_ui.py',
-    'Conferir de novo': 'optimization_ui.py',
-    'Desfazer alteração antiga': 'optimization_ui.py',
+    '1  Diagnóstico': OPT_TABS,
+    '4  Energia reversível': OPT_TABS,
+    '6  BIOS e drivers': OPT_TABS,
+    '7  Alterações feitas': OPT_TABS,
+    '8  Ajustes seguros': OPT_TABS,
+    '9  Ajustes avançados': OPT_TABS,
+    'Analisar este PC': OPT_DIAG,
+    'Check-up de segurança': OPT_DIAG,
+    'Ver passo a passo': OPT_DIAG,
+    'Medir ANTES (1 min)': OPT_DIAG,
+    'Medir DEPOIS (1 min)': OPT_DIAG,
+    'Medir uso parado (2 min)': OPT_DIAG,
+    'Ver estado atual': ('optimization_ui.py', 'OptimizationPanel._build_tweaks'),
+    'Aplicar ajustes seguros': ('optimization_ui.py', 'OptimizationPanel._build_tweaks'),
+    'Desfazer tudo': ('optimization_ui.py', 'OptimizationPanel._build_changes'),
+    'Conferir de novo': ('optimization_ui.py', 'OptimizationPanel._build_changes'),
+    'Desfazer alteração antiga': ('optimization_ui.py', 'OptimizationPanel._build_power'),
 }
 
 # Nomes do próprio Windows citados no manual -> módulo cujo texto de tela os cita.
@@ -114,14 +120,191 @@ WINDOWS_NAMES = {
     'Gerenciamento de Disco': 'after_format.py',
 }
 
-# Rótulos guardados em constante: só contam nomes com estes finais.
-_LABEL_NAME_ENDS = ('_LABEL', '_TEXT', '_TITLE')
-_NAV_CALLS = {'_nav_entry', '_nav_action'}
+# Páginas do notebook escondido (Hidden.TNotebook) sem item no menu: hoje só se chega
+# a elas por _build_legacy_home, que nunca é chamada (FIX-P4-01-02).
+HIDDEN_BUILDERS = {
+    ('app.py', 'App._build'),            # rótulos das abas escondidas
+    ('app.py', 'App._build_catalog'),    # "Seleção avançada"
+    ('app.py', 'App._build_inventory'),  # "Arquivos pessoais"
+    ('app.py', 'App._build_browsers'),   # "Navegadores"
+    ('app.py', 'App._build_legacy_home'),
+}
+
+_LABEL_CALLS = {'_nav_entry', '_nav_action'}
 
 
 def _norm(text):
     """Junta espaços seguidos num só (as abas usam dois espaços: "8  Ajustes seguros")."""
     return re.sub(r'\s+', ' ', text).strip()
+
+
+def _str(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+class _Module:
+    def __init__(self, root, filename):
+        self.filename = filename
+        self.tree = ast.parse((Path(root) / filename).read_text(encoding='utf-8'))
+        self.funcs, self.top, self.methods, self.consts, self.imports = {}, {}, {}, {}, {}
+        for node in ast.walk(self.tree):
+            if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                target = node.module.replace('.', '/') + '.py'
+                if (Path(root) / target).is_file():
+                    for alias in node.names:
+                        self.imports[alias.asname or alias.name] = (target, alias.name)
+        for node in self.tree.body:
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        self.consts[target.id] = node.value
+        self._collect(self.tree.body, '', False)
+        self.skip = set()
+        for node in ast.walk(self.tree):
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                body = node.body
+                if body and isinstance(body[0], ast.Expr) and _str(body[0].value) is not None:
+                    self.skip.add(id(body[0].value))
+
+    def _collect(self, body, prefix, in_class):
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                qual = prefix + node.name
+                self.funcs[qual] = node
+                if not prefix:
+                    self.top[node.name] = qual
+                if in_class:
+                    self.methods.setdefault(node.name, []).append(qual)
+                self._collect(node.body, qual + '.', False)
+            elif isinstance(node, ast.ClassDef):
+                qual = prefix + node.name
+                if not prefix:
+                    self.top[node.name] = qual + '.__init__'
+                self._collect(node.body, qual + '.', True)
+            else:
+                for field in ('body', 'orelse', 'finalbody', 'handlers'):
+                    self._collect(getattr(node, field, None) or [], prefix, in_class)
+
+    def own_nodes(self, qual):
+        """Corpo da função sem entrar nas funções internas (cada uma é um nó próprio)."""
+        stack = list(self.funcs[qual].body)
+        while stack:
+            node = stack.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            yield node
+            stack.extend(ast.iter_child_nodes(node))
+
+
+class _Project:
+    def __init__(self, root=ROOT):
+        self.root = Path(root)
+        self.mods = {}
+
+    def mod(self, filename):
+        if filename not in self.mods:
+            self.mods[filename] = _Module(self.root, filename)
+        return self.mods[filename]
+
+    def _resolve(self, mod, qual, name):
+        if qual + '.' + name in mod.funcs:
+            return [(mod.filename, qual + '.' + name)]
+        if name in mod.top and mod.top[name] in mod.funcs:
+            return [(mod.filename, mod.top[name])]
+        if name in mod.imports:
+            target, orig = mod.imports[name]
+            other = self.mod(target)
+            found = other.top.get(orig)
+            return [(target, found)] if found in other.funcs else []
+        return []
+
+    def edges(self, filename, qual):
+        mod = self.mod(filename)
+        out = []
+        for node in mod.own_nodes(qual):
+            if isinstance(node, ast.Name):
+                out += self._resolve(mod, qual, node.id)
+            elif isinstance(node, ast.Attribute):
+                out += [(filename, q) for q in mod.methods.get(node.attr, [])]
+        return out
+
+    def reachable(self, roots=ROOTS):
+        seen, stack = set(), list(roots)
+        while stack:
+            node = stack.pop()
+            if node not in seen:
+                seen.add(node)
+                stack.extend(self.edges(*node))
+        return seen
+
+    def _const_labels(self, value):
+        text = _str(value)
+        if text is not None:
+            return {_norm(text)}
+        found = set()
+        if isinstance(value, (ast.Tuple, ast.List)):
+            for elt in value.elts:
+                if _str(elt) is not None:
+                    found.add(_norm(_str(elt)))
+                elif isinstance(elt, ast.Dict):
+                    for key, val in zip(elt.keys, elt.values):
+                        if key is not None and _str(key) == 'title' and _str(val) is not None:
+                            found.add(_norm(_str(val)))
+        return found
+
+    def _name_labels(self, mod, name):
+        if name in mod.consts:
+            return self._const_labels(mod.consts[name])
+        if name in mod.imports:
+            target, orig = mod.imports[name]
+            other = self.mod(target)
+            if orig in other.consts:
+                return self._const_labels(other.consts[orig])
+        return set()
+
+    def _value_labels(self, mod, node):
+        if id(node) in mod.skip:
+            return set()
+        if _str(node) is not None:
+            return {_norm(_str(node))}
+        if isinstance(node, ast.Name):
+            return self._name_labels(mod, node.id)
+        return set()
+
+    def labels(self, filename, qual):
+        """Rótulos montados pela própria função: text=, _nav_entry/_nav_action,
+        tuplas/listas do corpo dela e a lista de etapas que ela percorre (for)."""
+        mod = self.mod(filename)
+        found = set()
+        for node in mod.own_nodes(qual):
+            if isinstance(node, ast.Call):
+                for kw in node.keywords:
+                    if kw.arg == 'text':
+                        found |= self._value_labels(mod, kw.value)
+                name = getattr(node.func, 'attr', None) or getattr(node.func, 'id', None)
+                if name in _LABEL_CALLS:
+                    for arg in node.args:
+                        found |= self._value_labels(mod, arg)
+            elif isinstance(node, (ast.Tuple, ast.List)):
+                for elt in node.elts:
+                    if _str(elt) is not None and id(elt) not in mod.skip:
+                        found.add(_norm(_str(elt)))
+                    elif isinstance(elt, ast.Name) and _str(mod.consts.get(elt.id)) is not None:
+                        found.add(_norm(_str(mod.consts[elt.id])))
+            elif isinstance(node, ast.For):
+                it = node.iter
+                names = [it] if isinstance(it, ast.Name) else (
+                    [a for a in it.args if isinstance(a, ast.Name)] if isinstance(it, ast.Call) else [])
+                for name_node in names:
+                    found |= self._name_labels(mod, name_node.id)
+        return found
+
+    def screen_strings(self, filename):
+        mod = self.mod(filename)
+        return [_norm(n.value) for n in ast.walk(mod.tree)
+                if _str(n) is not None and id(n) not in mod.skip]
 
 
 def _manual_text():
@@ -130,8 +313,7 @@ def _manual_text():
 
 def _sections(text):
     """Devolve {título: corpo} das seções de nível ##."""
-    found = {}
-    current = None
+    found, current = {}, None
     for line in text.splitlines():
         if line.startswith('## '):
             current = line[3:].strip()
@@ -152,71 +334,85 @@ def _paragraphs(text):
     return [p for p in re.split(r'\n\s*\n', text) if p.strip()]
 
 
-def _str(node):
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    return None
-
-
-def _docstring_nodes(tree):
-    skip = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            body = getattr(node, 'body', [])
-            if body and isinstance(body[0], ast.Expr) and _str(body[0].value) is not None:
-                skip.add(id(body[0].value))
-    return skip
-
-
-def _labels(filename, root=ROOT):
-    """Rótulos de tela de um módulo: text='...', tuplas/listas de rótulos,
-    _nav_entry/_nav_action, 'title' de etapas e constantes *_LABEL/*_TEXT/*_TITLE."""
-    tree = ast.parse((Path(root) / filename).read_text(encoding='utf-8'))
-    skip = _docstring_nodes(tree)
+def _quoted_names(text):
+    """Nomes entre aspas retas "..." ou curvas “...”."""
     found = set()
-
-    def add(node):
-        value = _str(node)
-        if value is not None and id(node) not in skip:
-            found.add(_norm(value))
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            for kw in node.keywords:
-                if kw.arg == 'text':
-                    add(kw.value)
-            func = node.func
-            name = getattr(func, 'attr', None) or getattr(func, 'id', None)
-            if name in _NAV_CALLS:
-                for arg in node.args:
-                    add(arg)
-        elif isinstance(node, (ast.Tuple, ast.List)):
-            for elt in node.elts:
-                add(elt)
-        elif isinstance(node, ast.Dict):
-            for key, value in zip(node.keys, node.values):
-                if key is not None and _str(key) == 'title':
-                    add(value)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id.endswith(_LABEL_NAME_ENDS):
-                    add(node.value)
+    for straight, curly in re.findall(r'"([^"\n]+)"|“([^”\n]+)”', text):
+        found.add(_norm(straight or curly))
     return found
 
 
-def _screen_strings(filename):
-    """Todos os textos de um módulo, sem docstrings (comentários não entram no ast)."""
-    tree = ast.parse((ROOT / filename).read_text(encoding='utf-8'))
-    skip = _docstring_nodes(tree)
-    return [_norm(n.value) for n in ast.walk(tree)
-            if _str(n) is not None and id(n) not in skip]
+class ScreenAnalyzerTests(unittest.TestCase):
+    """O analisador, com um módulo sintético (nada do app real é tocado)."""
 
+    SOURCE = (
+        '"""Botão Só Na Docstring."""\n'
+        '# Botão Só No Comentário\n'
+        'AVISO = "Use o Botão Só No Meio do texto."\n'
+        'ABA_LABEL = "Aba  Constante"\n'
+        'ETAPAS = ({"id": "a", "title": "Etapa Da Lista"},)\n'
+        'class App:\n'
+        '    def __init__(self):\n'
+        '        self._build_tela()\n'
+        '    def _build_tela(self):\n'
+        '        """Botão Só Na Docstring Da Função."""\n'
+        '        ttk.Button(frame, text="Botão De Verdade")\n'
+        '        for f, n in ((frame, "Aba  Da Tupla"), (frame, ABA_LABEL)):\n'
+        '            pass\n'
+        '        for numero, etapa in enumerate(ETAPAS, 1):\n'
+        '            pass\n'
+        '        def janela():\n'
+        '            ttk.Button(frame, text="Botão Da Janela")\n'
+        '        ttk.Button(frame, text="Abrir janela", command=janela)\n'
+        '        def nunca_usada():\n'
+        '            ttk.Button(frame, text="Botão Interno Morto")\n'
+        '    def _build_morta(self):\n'
+        '        ttk.Button(frame, text="Botão Morto")\n'
+        'def solta():\n'
+        '    ttk.Button(frame, text="Botão Solto Morto")\n'
+        'SOLTOS = ("Texto Numa Tupla Do Módulo",)\n')
 
-def _quoted_names(text):
-    return {_norm(q) for q in re.findall(r'"([^"\n]+)"', text)}
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        Path(self.tmp.name, 'tela.py').write_text(self.SOURCE, encoding='utf-8')
+        self.project = _Project(self.tmp.name)
+        self.reach = self.project.reachable((('tela.py', 'App.__init__'),))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_labels_inside_the_function(self):
+        labels = self.project.labels('tela.py', 'App._build_tela')
+        for name in ('Botão De Verdade', 'Aba Da Tupla', 'Aba Constante', 'Etapa Da Lista',
+                     'Abrir janela'):
+            self.assertIn(name, labels)
+        for name in ('Botão Só Na Docstring.', 'Botão Só No Comentário', 'Botão Só No Meio',
+                     'Botão Só Na Docstring Da Função.', 'Botão Da Janela',
+                     'Texto Numa Tupla Do Módulo', 'Botão Morto'):
+            self.assertNotIn(name, labels)
+
+    def test_only_called_functions_are_reachable(self):
+        self.assertIn(('tela.py', 'App._build_tela'), self.reach)
+        self.assertIn(('tela.py', 'App._build_tela.janela'), self.reach)
+        for dead in ('App._build_morta', 'solta', 'App._build_tela.nunca_usada'):
+            self.assertNotIn(('tela.py', dead), self.reach)
+
+    def test_label_in_never_called_function_does_not_count(self):
+        hits = {lab for node in self.reach for lab in self.project.labels(*node)}
+        self.assertIn('Botão Da Janela', hits)
+        for dead in ('Botão Morto', 'Botão Solto Morto', 'Botão Interno Morto'):
+            self.assertNotIn(dead, hits)
+
+    def test_curly_quotes_are_extracted(self):
+        self.assertEqual(_quoted_names('clique em “Abrir” e em "Feito"'), {'Abrir', 'Feito'})
 
 
 class ManualTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.project = _Project()
+        cls.reach = cls.project.reachable()
+
     def test_manual_exists_and_is_short(self):
         self.assertTrue(MANUAL.is_file())
         self.assertLessEqual(len(_manual_text().splitlines()), 260)
@@ -226,50 +422,36 @@ class ManualTests(unittest.TestCase):
         self.assertGreater(len(quoted), 20)
         known = {_norm(k) for k in UI_LABELS} | {_norm(k) for k in WINDOWS_NAMES}
         self.assertEqual(sorted(quoted - known), [],
-                         'nome entre aspas no manual sem módulo de tela no mapa do teste')
-        cache = {}
-        for name, filename in UI_LABELS.items():
+                         'nome entre aspas no manual sem tela no mapa do teste')
+        for name, screen in UI_LABELS.items():
             if _norm(name) not in quoted:
                 continue
-            labels = cache.setdefault(filename, _labels(filename))
-            with self.subTest(name=name, file=filename):
-                self.assertIn(_norm(name), labels,
-                              f'"{name}" não é rótulo de tela em {filename}')
+            with self.subTest(name=name, screen=screen):
+                self.assertNotIn(screen, HIDDEN_BUILDERS)
+                self.assertIn(screen, self.reach, f'{screen} não é alcançável')
+                self.assertIn(_norm(name), self.project.labels(*screen),
+                              f'"{name}" não é rótulo da tela {screen}')
         for name, filename in WINDOWS_NAMES.items():
             if _norm(name) not in quoted:
                 continue
             with self.subTest(name=name, file=filename):
-                self.assertTrue(any(_norm(name) in s for s in _screen_strings(filename)),
+                self.assertTrue(any(_norm(name) in s for s in self.project.screen_strings(filename)),
                                 f'"{name}" não aparece nos textos de tela de {filename}')
 
-    def test_label_check_ignores_comments_docstrings_and_fragments(self):
-        # Trava da R-61, com um módulo sintético (nada do app real é mudado).
-        source = (
-            '"""Botão Só Na Docstring."""\n'
-            '# Botão Só No Comentário\n'
-            'AVISO = "Use o Botão Só No Meio do texto."\n'
-            'X_LABEL = "Aba  Constante"\n'
-            'def build(ttk, frame):\n'
-            '    """Botão Só Na Docstring Da Função."""\n'
-            '    ttk.Button(frame, text="Botão De Verdade")\n'
-            '    for f, n in ((frame, "Aba  Da Tupla"),):\n'
-            '        pass\n')
-        with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, 'tela.py').write_text(source, encoding='utf-8')
-            labels = _labels('tela.py', root=tmp)
-        for name in ('Botão De Verdade', 'Aba Constante', 'Aba Da Tupla'):
-            self.assertIn(name, labels)
-        for name in ('Botão Só Na Docstring.', 'Botão Só No Comentário', 'Botão Só No Meio',
-                     'Botão Só Na Docstring Da Função.'):
-            self.assertNotIn(name, labels)
-        # E um nome de tela conferido no arquivo errado não passa.
-        self.assertNotIn('Manter selecionados', _labels('app.py'))
+    def test_hidden_pages_are_really_unreachable_or_hidden(self):
+        # Se o FIX-P4-01-02 ligar essas páginas ao menu, este teste avisa para rever o manual.
+        self.assertNotIn(('app.py', 'App._build_legacy_home'), self.reach)
+        app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        self.assertIn("self.style.layout('Hidden.TNotebook.Tab', [])", app_source)
+        sidebar = self.project.labels(*SIDEBAR)
+        for page in ('Seleção avançada', 'Arquivos pessoais', 'Navegadores'):
+            self.assertNotIn(page, sidebar)
+            self.assertNotIn(page, _quoted_names(_manual_text()))
 
     def test_undo_without_admin_mentions_machine_wide_exception(self):
         # R-60: "Desfazer tudo ... sem administrador" precisa trazer a exceção no mesmo trecho.
         text = _manual_text()
-        hits = [p for p in _paragraphs(text)
-                if 'Desfazer tudo' in p and 'sem administrador' in p]
+        hits = [p for p in _paragraphs(text) if 'Desfazer tudo' in p and 'sem administrador' in p]
         self.assertTrue(hits, 'o manual deveria explicar quando "Desfazer tudo" pede administrador')
         for paragraph in hits:
             flat = _norm(paragraph)

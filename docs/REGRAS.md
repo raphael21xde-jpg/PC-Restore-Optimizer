@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 5 (última poda: 06/11/2026, pedido `regras-20261106-poda-r45-r56`, issue #203). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-57.
+poda: 6 (última poda: 06/11/2026, pedido `regras-20261106-poda-r45-r56`, issue #203). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-57.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -76,3 +76,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-59 | Texto de "o app não mexe" ou de recusa não manda o usuário fazer por fora a mesma mudança que o app recusou; se orienta um caminho manual, cumpre a R-41 (risco, reinício, como desfazer) e nunca vale para o caso de valor desconhecido. Tem teste conferindo o texto. | Revisão da PR #206 (P3-05 fatia 2, edf87d9c46d5) | 2026-11-06 |
 | R-60 | Manual ou texto de ajuda que diz que uma ação "funciona sem administrador" ou "desfaz tudo" vale para todos os tipos que a ação cobre (todos os adaptadores do diário, inclusive HKLM); se algum tipo exige administrador ou reinício, o mesmo trecho diz isso, com teste. | Revisão da P4-01 (388353818074) | 2026-11-06 |
 | R-61 | Teste que confere "nome de botão ou aba citado no manual existe" procura o nome como rótulo no módulo da tela citada, nunca como pedaço de texto em qualquer .py. | Revisão da P4-01 (388353818074) | 2026-11-06 |
+| R-62 | Manual ou texto de ajuda que diz "na tela X, clique em Y" só cita tela e botão alcançáveis pela navegação visível (menu ou botão de uma tela alcançável); o teste confere o rótulo dentro da função que monta essa tela e que essa função é chamada, nunca no módulo inteiro nem em código morto. | Revisão 2 da P4-01 (46e341a107d2) | 2026-11-06 |

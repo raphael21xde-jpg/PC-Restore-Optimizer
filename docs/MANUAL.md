@@ -9,7 +9,7 @@ O PC Restore & Optimizer ajuda você a trocar de Windows sem perder nada e, depo
 a deixar o computador mais rápido com segurança. Ele:
 
 - mostra os discos e o que existe em cada um (só olha, não muda nada);
-- deixa você escolher o que guardar: pastas, arquivos, jogos, saves e navegadores;
+- deixa você escolher o que guardar: pastas, arquivos, jogos e saves;
 - faz um backup conferido (cada arquivo copiado é conferido com SHA-256);
 - testa se o backup consegue ser restaurado antes de você formatar;
 - orienta a reinstalação do Windows e a volta dos seus dados depois;
@@ -25,7 +25,7 @@ protegido, ainda em teste: por enquanto, use o backup normal descrito abaixo.
 
 1. Instale o Python 3.13 (site oficial python.org). Na instalação, marque a opção que
    coloca o Python no PATH.
-2. Baixe a pasta do app e abra-a.
+2. Copie a pasta do app que você recebeu para o seu PC e abra-a.
 3. Dê dois cliques em `INICIAR.bat`. Ele abre o app com o Python instalado.
 
 **Abra do jeito normal (sem administrador) quase sempre.** Backup, restauração e
@@ -37,8 +37,8 @@ permissões erradas e a sua conta normal poderia não conseguir abri-los.
 "4  Energia reversível", "8  Ajustes seguros" e "9  Ajustes avançados"). Antes de
 mudar algo, o app cria um ponto de restauração do Windows, e isso exige
 administrador. O app nunca pede isso sozinho. Para abrir assim: feche o app, clique
-com o botão direito no atalho dele, escolha "Executar como administrador" e entre
-com a **sua própria conta**.
+com o botão direito no `INICIAR.bat` (ou no atalho dele), escolha
+"Executar como administrador" e entre com a **sua própria conta**.
 
 Nas abas "8  Ajustes seguros" e "9  Ajustes avançados", o app também confere a
 conta: se o Windows pedir a senha de outra conta, os ajustes valeriam para aquela
@@ -66,28 +66,27 @@ ser formatado. Uma partição no mesmo disco do Windows não protege seus dados.
 
 1. **Procure o que existe.** Em "Meu computador", marque as unidades e clique em
    "Examinar unidades marcadas". O app lista jogos, aplicativos e arquivos. Ele só
-   olha. Na lista, use "Manter selecionados" ou "Não preservar".
-2. **Arquivos e pastas soltos.** Em "Visão geral", clique em
-   "Começar pela detecção  →" para abrir a "Seleção avançada". Na aba
-   "Arquivos pessoais", cada item pode ficar como "Manter", "Não incluir no backup"
-   ou "Pendente".
-   - "Não preservar" e "Não incluir no backup" querem dizer só **não copiar**. O app
-     **nunca apaga** o arquivo do seu disco por causa disso.
-3. **Revise.** Em "Preservação", confira a lista do que vai ser guardado. O botão
+   olha. Na lista, use "Manter selecionados" para guardar ou "Não preservar" para
+   deixar de fora.
+   - "Não preservar" quer dizer só **não copiar**. O app **nunca apaga** o arquivo do
+     seu disco por causa disso.
+2. **Revise.** Em "Preservação", confira a lista do que vai ser guardado. O botão
    "Retirar do backup (não apaga)" só tira a marcação de um item.
-4. **Navegadores.** Na aba "Navegadores" da "Seleção avançada", o app guarda
-   favoritos e preferências numa cópia protegida
-   ("Criar backup protegido do navegador"). Se você incluir um arquivo de senhas
-   exportado (CSV), lembre: ele é texto legível. Nunca o envie por chat ou e-mail e
-   não o deixe desprotegido.
-5. **Faça o backup.** Em "Visão geral", clique em "Revisar o plano". Clique em
+3. **Faça o backup.** Ainda em "Preservação", clique em
+   "Próximo: revisar backup dos arquivos escolhidos →". Nessa tela, clique em
    "Escolher destino" e escolha uma pasta no outro disco. Clique em
    "1. Recalcular plano e espaço" para ver se cabe. Depois clique em
    "2. Iniciar backup (confirmação dupla)". O app pergunta duas vezes antes de começar.
-6. **Caiu a energia ou o PC travou?** Clique em "Retomar backup interrompido" e
-   escolha o arquivo `manifest.json` do backup que parou. O app continua esse backup.
+4. **Caiu a energia ou o PC travou?** Na mesma tela, clique em
+   "Retomar backup interrompido" e escolha o arquivo `manifest.json` do backup que
+   parou. O app continua esse backup.
 
 Os arquivos originais nunca são mexidos: o backup só lê e copia.
+
+**Navegadores.** A tela de backup do navegador ainda não está ligada ao menu do app.
+Antes de formatar, confira se a sincronização da conta do navegador está ligada. Se
+você exportar as senhas pelo próprio navegador para um arquivo CSV, lembre: ele é
+texto legível. Nunca o envie por chat ou e-mail e não o deixe desprotegido.
 
 ## Testar e restaurar
 
@@ -100,10 +99,10 @@ um problema.
 2. No menu, clique em "Recuperação" e em "5. Conferir TODO o backup (SHA-256)". O app
    confere cada arquivo do backup. Pode demorar; se precisar, use "Cancelar auditoria".
    No fim, você pode clicar em "Salvar relatório de auditoria".
-3. Para o navegador, na aba "Navegadores", clique em
-   "Restaurar navegador — assistente" e siga os passos. Favoritos e senhas voltam
-   importando pelo próprio navegador. Cookies, sessões abertas (logins) e passkeys
-   **não voltam**: você vai precisar entrar nas contas de novo.
+3. Para o navegador (no Windows novo), em "Depois de formatar", na etapa
+   "Navegador e senhas", clique em "Abrir". Abre o assistente "Restaurar navegador",
+   que ajuda a trazer favoritos e senhas importando pelo próprio navegador.
+   Cookies, sessões abertas (logins) e passkeys **não voltam**: você vai precisar entrar nas contas de novo.
 
 Para restaurar de verdade, em "Histórico e relatórios" use
 "Escolher arquivo para testar". Por padrão, os arquivos vão para uma pasta nova.
@@ -126,8 +125,8 @@ O app **não formata e não instala o Windows**. Quem formata e instala é o
 - na tela "Recuperação", clique em "1. Exportar plano para usar depois" e guarde o
   arquivo no disco do backup.
 
-**Cuidado na hora de instalar.** O disco que você escolher no instalador é apagado
-por inteiro, sem volta. Antes, anote o tamanho e o modelo do disco do Windows que
+**Cuidado na hora de instalar.** O instalador apaga as partições que você excluir ou
+formatar naquele disco, sem volta. Antes, anote o tamanho e o modelo do disco do Windows que
 aparecem em "Analisar computador e discos" (menu "Diagnóstico") e confira os mesmos
 dados no instalador. O mais seguro é deixar o disco do backup desconectado durante
 a instalação (desconecte com o PC desligado e fora da tomada, e reconecte depois).
@@ -212,7 +211,7 @@ ter uma opção com nome parecido com *Load Optimized Defaults*.
 ## O que o app NUNCA faz
 
 - Nunca formata nem particiona discos.
-- Nunca apaga seus arquivos. "Não incluir no backup" só quer dizer não copiar.
+- Nunca apaga seus arquivos. "Não preservar" só quer dizer não copiar.
 - Nunca mexe na EFI nem no BCD (a parte que dá a partida no Windows).
 - Nunca instala o Windows: quem instala é o instalador oficial da Microsoft, com você.
 - Nunca desliga o Defender nem o Windows Update.
