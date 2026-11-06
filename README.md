@@ -4,6 +4,8 @@
 
 Base histórica v0.6.9, preservada a partir do arquivo disponibilizado pelo autor. **Não é a versão v0.8.1.** Não executar em produção operações de disco, instalação ou restauração sem testes.
 
+**Como usar o app:** veja o [manual curto em português](docs/MANUAL.md).
+
 ## Objetivo
 Ferramenta para computadores Windows de diferentes configurações, com inventário de volumes, seleção explícita de preservação, backup verificável, recuperação, orientação de reinstalação do Windows e otimizações seguras.
 

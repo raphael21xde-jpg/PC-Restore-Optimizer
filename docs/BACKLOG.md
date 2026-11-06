@@ -917,7 +917,9 @@ Issue "Validar M3": rodar o check-up de segurança, medir, aplicar os ajustes se
 ---
 
 ## Marco M4 — Produto final
-### P4-01 · Manual curto em português — `pronto`
+### P4-01 · Manual curto em português — `concluído` (branch `auto/P4-01-manual-curto`)
+- Critério de aceite: `docs/MANUAL.md` com 11 seções `##` (do que o app faz até o que ele NUNCA faz), em português simples, e todo nome entre aspas existe como texto no código (`tests/test_manual.py`: nomes, seções, sem dados pessoais, lista do que nunca faz, reinstalação pelo instalador oficial da Microsoft, link no `README.md`).
+- Escolhas de design (as mais seguras): só Markdown, sem tela de Ajuda no app; só nomes de menus, abas e botões que existem (conferidos com grep e travados pelo teste, que junta espaços seguidos porque as abas usam dois espaços); sem capturas de tela; a "Cópia protegida para outro disco" aparece só como recurso protegido, ainda em teste; o manual só manda usar botões do app e não ensina fazer à mão o que o app recusa (restaurar ou copiar como administrador); administrador só para as abas 4, 8 e 9 da Otimização, com a própria conta.
 ### P4-02 · Primeiro uso guiado — `pronto` (depois do M1)
 ### P4-03 · Instalador (.exe) — `pronto` (depois de P4-02)
 - Script de build (PyInstaller) e teste do pacote.
