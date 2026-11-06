@@ -13,15 +13,13 @@ a deixar o computador mais rápido com segurança. Ele:
 - faz um backup conferido (cada arquivo copiado é conferido com SHA-256);
 - testa se o backup consegue ser restaurado antes de você formatar;
 - orienta a reinstalação do Windows e a volta dos seus dados depois;
-- mede o computador e aplica ajustes de desempenho que podem ser desfeitos.
+- mede o computador e aplica ajustes de desempenho, anotando cada um para poder desfazer.
 
 O menu da esquerda tem: "Visão geral", "Meu computador", "Preservação",
 "Instalar Windows", "Recuperação", "Depois de formatar", "Central de recuperação",
 "Cópia protegida para outro disco", "Otimização", "Diagnóstico" e
-"Histórico e relatórios".
-
-O item "Cópia protegida para outro disco" é um recurso protegido, ainda em teste.
-Por enquanto, use o backup normal descrito abaixo.
+"Histórico e relatórios". O item "Cópia protegida para outro disco" é um recurso
+protegido, ainda em teste: por enquanto, use o backup normal descrito abaixo.
 
 ## Instalar e abrir
 
@@ -40,19 +38,21 @@ permissões erradas e a sua conta normal poderia não conseguir abri-los.
 mudar algo, o app cria um ponto de restauração do Windows, e isso exige
 administrador. O app nunca pede isso sozinho. Para abrir assim: feche o app, clique
 com o botão direito no atalho dele, escolha "Executar como administrador" e entre
-com a **sua própria conta**. Se o Windows pedir a senha de outra conta, os ajustes
-valeriam para aquela outra conta; por isso o app confere a conta e, se não for a
-sua, não lê nem muda nada.
+com a **sua própria conta**.
+
+Nas abas "8  Ajustes seguros" e "9  Ajustes avançados", o app também confere a
+conta: se o Windows pedir a senha de outra conta, os ajustes valeriam para aquela
+outra conta; por isso, se não for a sua, o app não lê nem muda nada.
 
 Terminou os ajustes? Feche e abra o app de novo do jeito normal para fazer backup ou
-restaurar. "Desfazer tudo" funciona sem administrador.
+restaurar.
 
 ## Diagnóstico de discos (só leitura)
 
 No menu, clique em "Diagnóstico".
 
-- "Analisar computador e discos": mostra os discos físicos, as partições, a EFI e
-  outros detalhes. Só lê, não muda nada.
+- "Analisar computador e discos": mostra os discos físicos (com tamanho e modelo),
+  as partições, a EFI e outros detalhes. Só lê, não muda nada.
 - "Simular destino de backup (somente leitura)": confere se um disco serve para
   receber o backup, sem copiar nada.
 - "Conferir origens e destinos (somente leitura)": confere de onde os arquivos vão
@@ -64,20 +64,27 @@ ser formatado. Uma partição no mesmo disco do Windows não protege seus dados.
 
 ## Backup
 
-1. **Escolha o que procurar.** Em "Meu computador", marque as unidades e clique em
-   "Examinar unidades marcadas". O app lista jogos, aplicativos e arquivos. Ele só olha.
-2. **Escolha o que manter.** Em "Preservação", revise a lista. Em cada item você pode
-   marcar "Manter", "Não incluir no backup" ou "Pendente".
-   - "Não incluir no backup" quer dizer só **não copiar**. O app **nunca apaga** o
-     arquivo do seu disco por causa disso.
-   - "Retirar do backup (não apaga)" também só tira a marcação.
-3. **Navegadores.** Na tela "Navegadores", o app ajuda a guardar favoritos e
-   preferências numa cópia protegida ("Criar backup protegido do navegador").
-4. **Faça o backup.** Na revisão do backup, clique em "Escolher destino" e escolha
-   uma pasta no outro disco. Clique em "1. Recalcular plano e espaço" para ver se cabe.
-   Depois clique em "2. Iniciar backup (confirmação dupla)". O app pergunta duas vezes
-   antes de começar.
-5. **Caiu a energia ou o PC travou?** Clique em "Retomar backup interrompido" e
+1. **Procure o que existe.** Em "Meu computador", marque as unidades e clique em
+   "Examinar unidades marcadas". O app lista jogos, aplicativos e arquivos. Ele só
+   olha. Na lista, use "Manter selecionados" ou "Não preservar".
+2. **Arquivos e pastas soltos.** Em "Visão geral", clique em
+   "Começar pela detecção  →" para abrir a "Seleção avançada". Na aba
+   "Arquivos pessoais", cada item pode ficar como "Manter", "Não incluir no backup"
+   ou "Pendente".
+   - "Não preservar" e "Não incluir no backup" querem dizer só **não copiar**. O app
+     **nunca apaga** o arquivo do seu disco por causa disso.
+3. **Revise.** Em "Preservação", confira a lista do que vai ser guardado. O botão
+   "Retirar do backup (não apaga)" só tira a marcação de um item.
+4. **Navegadores.** Na aba "Navegadores" da "Seleção avançada", o app guarda
+   favoritos e preferências numa cópia protegida
+   ("Criar backup protegido do navegador"). Se você incluir um arquivo de senhas
+   exportado (CSV), lembre: ele é texto legível. Nunca o envie por chat ou e-mail e
+   não o deixe desprotegido.
+5. **Faça o backup.** Em "Visão geral", clique em "Revisar o plano". Clique em
+   "Escolher destino" e escolha uma pasta no outro disco. Clique em
+   "1. Recalcular plano e espaço" para ver se cabe. Depois clique em
+   "2. Iniciar backup (confirmação dupla)". O app pergunta duas vezes antes de começar.
+6. **Caiu a energia ou o PC travou?** Clique em "Retomar backup interrompido" e
    escolha o arquivo `manifest.json` do backup que parou. O app continua esse backup.
 
 Os arquivos originais nunca são mexidos: o backup só lê e copia.
@@ -89,16 +96,21 @@ um problema.
 
 1. No menu, clique em "Histórico e relatórios". Escolha o backup e clique em
    "Testar restauração de arquivo pequeno". O app traz um arquivo de volta para uma
-   pasta nova de conferência e confere se ele é igual ao original.
-2. Na tela "Recuperação", clique em "5. Conferir TODO o backup (SHA-256)". O app
+   pasta nova de conferência.
+2. No menu, clique em "Recuperação" e em "5. Conferir TODO o backup (SHA-256)". O app
    confere cada arquivo do backup. Pode demorar; se precisar, use "Cancelar auditoria".
    No fim, você pode clicar em "Salvar relatório de auditoria".
-3. Para o navegador, na tela "Navegadores", clique em
-   "Restaurar navegador — assistente" e siga os passos. Senhas e favoritos voltam
-   pelo próprio navegador (importação).
+3. Para o navegador, na aba "Navegadores", clique em
+   "Restaurar navegador — assistente" e siga os passos. Favoritos e senhas voltam
+   importando pelo próprio navegador. Cookies, sessões abertas (logins) e passkeys
+   **não voltam**: você vai precisar entrar nas contas de novo.
 
-A restauração sempre vai para uma pasta nova. O app nunca sobrescreve nem apaga o
-que já existe. Lembre: o app recusa restaurar se estiver aberto como administrador.
+Para restaurar de verdade, em "Histórico e relatórios" use
+"Escolher arquivo para testar". Por padrão, os arquivos vão para uma pasta nova.
+O botão "Colocar no lugar original" mostra antes uma prévia: se já existe lá um
+arquivo diferente, o app guarda o antigo com o nome terminado em `.antes-pcro-DATA`
+e coloca o novo. Nada é apagado. Lembre: o app recusa restaurar se estiver aberto
+como administrador.
 
 ## Reinstalação guiada
 
@@ -114,8 +126,11 @@ O app **não formata e não instala o Windows**. Quem formata e instala é o
 - na tela "Recuperação", clique em "1. Exportar plano para usar depois" e guarde o
   arquivo no disco do backup.
 
-Na hora de instalar, escolha com muito cuidado o disco do Windows no instalador:
-confira pelo tamanho e nunca escolha o disco onde está o backup.
+**Cuidado na hora de instalar.** O disco que você escolher no instalador é apagado
+por inteiro, sem volta. Antes, anote o tamanho e o modelo do disco do Windows que
+aparecem em "Analisar computador e discos" (menu "Diagnóstico") e confira os mesmos
+dados no instalador. O mais seguro é deixar o disco do backup desconectado durante
+a instalação (desconecte com o PC desligado e fora da tomada, e reconecte depois).
 
 **Depois de formatar** ("Depois de formatar"):
 
@@ -140,8 +155,8 @@ No menu, clique em "Otimização". As abas são numeradas.
    e depois em "Aplicar ajustes seguros". O app mostra o que vai mudar, pergunta antes
    e cria um ponto de restauração.
 4. **Ajustes avançados (opcional).** Na aba "9  Ajustes avançados", cada ajuste é
-   aplicado um de cada vez. A pergunta mostra o lado ruim do ajuste e vem com "Não"
-   marcado: apertar Enter não aplica nada. Só responda "Sim" se entendeu o aviso.
+   aplicado um de cada vez. A pergunta mostra o lado ruim do ajuste e vem com **Não**
+   marcado: apertar Enter não aplica nada. Só responda **Sim** se entendeu o aviso.
 5. **Meça depois.** Feche os mesmos programas e clique em "Medir DEPOIS (1 min)".
    O app compara processador, memória, processos, programas que abrem com o Windows
    e plano de energia.
@@ -151,13 +166,21 @@ está mexendo nele.
 
 ## Desfazer
 
-Tudo o que o app muda fica anotado e pode ser desfeito.
+Cada ajuste que o app aplica fica anotado na aba "7  Alterações feitas".
 
-- Na aba "7  Alterações feitas", veja a lista do que foi mudado.
-- "Desfazer tudo" volta cada ajuste para como estava antes. Funciona sem
-  administrador.
+- "Desfazer tudo" volta os ajustes anotados, do mais novo ao mais antigo, para como
+  estavam antes. Os ajustes que valem só na sua conta e a troca de plano de energia
+  se desfazem sem administrador. **Exceção:** os ajustes da aba
+  "9  Ajustes avançados" que valem para o computador todo (todas as contas), como o
+  agendamento de GPU, só se desfazem com o app aberto como administrador (com a sua
+  própria conta), e o desfazer deles só vale depois de reiniciar o computador.
+- Se um item não puder ser desfeito, o desfazer **para nesse item**: os mais antigos
+  que ele continuam aplicados. Leia a mensagem, resolva (por exemplo, abrindo como
+  administrador) e clique em "Desfazer tudo" de novo.
 - "Conferir de novo" lê de novo o estado real do Windows, para confirmar o que está
   aplicado.
+- Uma troca de plano de energia feita por uma versão antiga do app se desfaz pelo
+  botão "Desfazer alteração antiga", na aba "4  Energia reversível".
 
 Alguns ajustes só valem depois de sair da conta e entrar de novo, ou de reiniciar.
 O app avisa quando for assim e nunca reinicia o PC sozinho. Se algo der muito errado,
@@ -167,18 +190,24 @@ você também pode usar o ponto de restauração do Windows criado antes da muda
 
 - "Analisar este PC" (aba "1  Diagnóstico"): mostra Windows, processador, placa de
   vídeo, memória, discos, placa-mãe e versão da BIOS. Só lê.
-- "Check-up de segurança": olha os programas que abrem com o Windows, os processos
-  e o Defender, e aponta o que merece atenção. Nada é mudado, encerrado ou tirado do
-  lugar, e não precisa de administrador.
+- "Check-up de segurança" (também na aba "1  Diagnóstico"): olha os programas que
+  abrem com o Windows, os processos e o Defender, e aponta o que merece atenção. Nada
+  é mudado, encerrado ou tirado do lugar, e não precisa de administrador.
 
 ## BIOS e drivers
 
-Na aba "6  BIOS e drivers", o app explica o que pode ser melhorado (por exemplo,
-perfil de memória XMP/EXPO e Resizable BAR).
+A aba "6  BIOS e drivers" explica o que pode ser melhorado na BIOS (por exemplo,
+perfil de memória XMP/EXPO e Resizable BAR) e o que o app consegue ou não confirmar.
 
-Depois de "Analisar este PC", o botão "Ver passo a passo" mostra as instruções para
-o seu caso. **O app só orienta.** Ele nunca muda a BIOS: se você quiser mudar algo,
-é você quem entra na BIOS e faz, seguindo o manual da sua placa-mãe.
+Na aba "1  Diagnóstico", depois de "Analisar este PC", o botão "Ver passo a passo"
+mostra como entrar na BIOS do seu tipo de placa, onde procurar cada opção, o que não
+mexer (CSM e modo de inicialização, que podem impedir o Windows de abrir), como sair
+sem salvar e como voltar a BIOS ao padrão de fábrica se o PC não ligar.
+
+**O app só orienta.** Ele nunca muda a BIOS. Se você decidir mudar algo, quem entra
+na BIOS e faz é você, seguindo o manual da sua placa-mãe. Antes de mudar, anote (ou
+fotografe) o valor antigo de cada opção. Para voltar tudo ao padrão, a BIOS costuma
+ter uma opção com nome parecido com *Load Optimized Defaults*.
 
 ## O que o app NUNCA faz
 
