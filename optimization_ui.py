@@ -3,7 +3,7 @@
 No system mutation happens during construction, scanning or CSV import.
 Only the Power tab (power plan), the "Ajustes seguros" tab (P3-04: closed
 HKCU list in ``safe_tweaks``) and the "Ajustes avançados" tab (P3-05: closed
-HKCU list in ``advanced_tweaks``) can request a reversible change, after confirmation.
+HKCU/HKLM list in ``advanced_tweaks``) can request a reversible change, after confirmation.
 """
 from __future__ import annotations
 import json
@@ -36,7 +36,7 @@ from pc_measure import MEASURE_CONFIRMATION
 import safe_tweaks
 from safe_tweaks import RegistryTweakAdapter, TWEAK_KIND
 import advanced_tweaks
-from advanced_tweaks import AdvancedRegistryAdapter, ADVANCED_KIND
+from advanced_tweaks import AdvancedRegistryAdapter, ADVANCED_KIND, MachineDwordAdapter, MACHINE_KIND
 from atomic_write import atomic_write_text
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
@@ -200,7 +200,8 @@ TWEAKS_ACCOUNT_UNKNOWN_TEXT = (
 # ---------- P3-05: aba "Ajustes avançados" (textos fixos, R-07) ----------
 ADVANCED_TITLE = 'Ajustes avançados'
 ADVANCED_INTRO_TEXT = (
-    'Ajustes do próprio Windows que ajudam algumas pessoas, mas têm um lado ruim. Só na sua conta. '
+    'Ajustes do próprio Windows que ajudam algumas pessoas, mas têm um lado ruim. A maioria vale só '
+    'na sua conta; o que vale para o computador inteiro avisa na pergunta. '
     'Cada ajuste tem o seu botão, e o app sempre pergunta antes, mostrando o lado ruim (a resposta '
     'já vem marcada em "Não"). Se você aceitar, o app cria antes um ponto de restauração e anota '
     'tudo no diário de alterações.')
@@ -213,6 +214,9 @@ ADVANCED_REREAD_FAILED_TEXT = ('Não foi possível ler de novo o estado dos ajus
                                'com "Ver estado atual" ou com o "Conferir de novo" da aba "'
                                + CHANGES_TAB_LABEL + '".')
 ADVANCED_ALREADY_TEXT = 'Este ajuste já está aplicado. Nada foi mudado.'
+# P3-05 fatia 2: o Windows (versão antiga) ou a placa de vídeo não oferece o ajuste.
+ADVANCED_UNSUPPORTED_TEXT = ('O Windows ou a placa de vídeo deste PC não oferece este ajuste; o app '
+                             'não mexe. Nada foi mudado.')
 ADVANCED_NOT_TOUCHED_TEXT = ('O app não mexe neste ajuste: o valor no Windows é de outro tipo ou '
                              'está num formato diferente. Nada foi mudado.')
 ADVANCED_CANCEL_TEXT = 'Ajuste avançado cancelado. Nada foi mudado.'
@@ -303,7 +307,8 @@ def build_presentmon_args(executable, process, output_file, seconds, session_nam
 class OptimizationPanel(tk.Frame):
     def __init__(self, master, app_dir, *, state_dir=None, power_adapter=None,
                  restore_point=None, elevated_probe=None, ask=None, show=None,
-                 tweak_adapter=None, session_owner_probe=None, advanced_adapter=None):
+                 tweak_adapter=None, session_owner_probe=None, advanced_adapter=None,
+                 machine_adapter=None):
         super().__init__(master, bg=BG)
         self.app_dir=Path(app_dir)
         if state_dir is not None:
@@ -322,6 +327,8 @@ class OptimizationPanel(tk.Frame):
         self._tweaks_measuring=False
         # P3-05: ajustes avançados (lista fechada em HKCU); o registro só é lido num Job.
         self.advanced_adapter=advanced_adapter or AdvancedRegistryAdapter()
+        # P3-05 fatia 2: ajustes do computador (lista fechada em HKLM), também lidos só num Job.
+        self.machine_adapter=machine_adapter or MachineDwordAdapter()
         self.advanced_states=None
         self._restore_point=restore_point or create_restore_point
         self._elevated_probe=elevated_probe
@@ -1353,7 +1360,7 @@ class OptimizationPanel(tk.Frame):
     def _read_advanced_work(self):
         """Roda no Job: só lê os valores da lista fechada."""
         try:
-            return {'advanced':advanced_tweaks.read_states(self.advanced_adapter)}
+            return {'advanced':advanced_tweaks.read_states(self.advanced_adapter,self.machine_adapter)}
         except Exception:
             return {'advanced':None}
 
@@ -1447,7 +1454,8 @@ class OptimizationPanel(tk.Frame):
             self._show('info',ADVANCED_TITLE,ADVANCED_ALREADY_TEXT)
             return
         if state!='not_applied' or not item.get('changes'):
-            message=(ADVANCED_NOT_TOUCHED_TEXT if state=='other_type' else ADVANCED_READ_FAILED_TEXT)
+            message={'other_type':ADVANCED_NOT_TOUCHED_TEXT,
+                     'unsupported':ADVANCED_UNSUPPORTED_TEXT}.get(state,ADVANCED_READ_FAILED_TEXT)
             self.advanced_status.set(message)
             self._show('warning',ADVANCED_TITLE,message)
             return
@@ -1460,13 +1468,15 @@ class OptimizationPanel(tk.Frame):
             self._show('error',ADVANCED_TITLE,self._journal_error_text())
             return
         adapter=self.advanced_adapter
+        machine_adapter=self.machine_adapter
         asked={change['key'] for change in item['changes']}
         def work():
             try:
                 if journal.has_blocking():
                     journal.recover_interrupted()
                 # Relê agora: só entra o que continua faltando e estava na pergunta.
-                fresh=advanced_tweaks.state_for(advanced_tweaks.read_states(adapter),tweak.id) or {}
+                fresh=advanced_tweaks.state_for(advanced_tweaks.read_states(adapter,machine_adapter),
+                                                tweak.id) or {}
                 todo=([dict(c) for c in fresh.get('changes',[]) if c['key'] in asked]
                       if fresh.get('state')=='not_applied' else [])
                 if not todo:
@@ -1889,7 +1899,8 @@ class OptimizationPanel(tk.Frame):
         try:
             self.journal=ChangeJournal(self.change_journal_path,
                                        {POWER_KIND:self.power_adapter,TWEAK_KIND:self.tweak_adapter,
-                                        ADVANCED_KIND:self.advanced_adapter},
+                                        ADVANCED_KIND:self.advanced_adapter,
+                                        MACHINE_KIND:self.machine_adapter},
                                        self._restore_point)
             self.journal_error=''
         except JournalError as exc:

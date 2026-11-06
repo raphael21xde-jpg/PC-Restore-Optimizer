@@ -117,6 +117,9 @@ class AdvancedTabTests(unittest.TestCase):
         self.reg = FakeWinreg()
         self.adapter = at.AdvancedRegistryAdapter(registry=self.reg)
         self.safe_adapter = st.RegistryTweakAdapter(registry=self.reg)
+        # P3-05 fatia 2: o ajuste do computador usa outro registro falso (só HKLM, vazio aqui).
+        self.machine_reg = FakeWinreg(hives=('HKLM',))
+        self.machine = at.MachineDwordAdapter(registry=self.machine_reg)
         self.admin = True
         self.owner = so.SAME
         self.owner_threads = []
@@ -134,6 +137,7 @@ class AdvancedTabTests(unittest.TestCase):
     def make_panel(self, **extra):
         options = dict(app_dir=self.tmp, state_dir=self.tmp, power_adapter=FakePower(),
                        tweak_adapter=self.safe_adapter, advanced_adapter=self.adapter,
+                       machine_adapter=self.machine,
                        restore_point=self._restore_point, elevated_probe=lambda: self.admin,
                        session_owner_probe=self._owner, ask=self._ask,
                        show=lambda *a: self.shown.append(a))
@@ -200,6 +204,7 @@ class AdvancedTabTests(unittest.TestCase):
         self.assertEqual(names[7], ou.TWEAKS_TAB_LABEL)
         self.assertEqual(names[6], ou.CHANGES_TAB_LABEL)
         self.assertEqual(self.reg.calls, [])
+        self.assertEqual(self.machine_reg.calls, [])
         tweak = at.TWEAKS_BY_ID['mouse_precision']
         text = self.text()
         for part in (tweak.name, tweak.what, tweak.downside, tweak.when,
@@ -236,6 +241,9 @@ class AdvancedTabTests(unittest.TestCase):
         self.assertNotIn(True, threads)
         self.assertEqual(self.owner_threads, [False])
         self.assertIn('• Aceleração do mouse desligada: ainda não aplicado.', self.text())
+        # Registro do computador vazio: o 2º ajuste aparece como "não oferece".
+        self.assertIn('• Agendamento de GPU acelerado por hardware ligado: '
+                      + at.STATE_TEXT['unsupported'], self.text())
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.asked, [])
 
@@ -363,6 +371,7 @@ class AdvancedTabTests(unittest.TestCase):
         self.admin = False
         self.apply()
         self.assertEqual(self.reg.calls, [])
+        self.assertEqual(self.machine_reg.calls, [])
         self.assertEqual(self.asked, [])
         self.assertEqual(self.restore_calls, [])
         self.assertEqual(self.shown[-1], ('warning', ou.ADVANCED_TITLE, ou.TWEAKS_ADMIN_TEXT))

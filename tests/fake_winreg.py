@@ -1,14 +1,20 @@
 """Registro do Windows falso, só em memória, para os testes do P3-04 e do P3-05.
 
-Imita o pedaço do módulo ``winreg`` que ``safe_tweaks`` usa. Nunca toca no
-registro de verdade. ``DeleteKey`` e qualquer acesso fora de HKCU falham o teste.
+Imita o pedaço do módulo ``winreg`` que ``safe_tweaks`` e ``advanced_tweaks``
+usam. Nunca toca no registro de verdade. ``DeleteKey`` falha o teste.
+
+Por padrão só HKCU é aceito: qualquer acesso a HKLM falha o teste. Com
+``FakeWinreg(hives=('HKLM',))`` (P3-05 fatia 2) só HKLM é aceito, e HKCU falha.
+HKLM fica num dicionário separado (``machine_keys``): o mesmo caminho em HKCU e
+em HKLM são chaves diferentes.
 """
 
 
 class FakeKey:
-    def __init__(self, registry, path):
+    def __init__(self, registry, path, hive='HKCU'):
         self.registry = registry
         self.path = path
+        self.hive = hive
 
     def __enter__(self):
         return self
@@ -30,44 +36,51 @@ class FakeWinreg:
     REG_QWORD = 11
     KEY_READ = 0x20019
     KEY_SET_VALUE = 0x0002
+    KEY_WOW64_64KEY = 0x0100
 
-    def __init__(self):
-        self.keys = {}       # caminho em minúsculas -> {nome do valor: (valor, tipo)}
+    def __init__(self, hives=('HKCU',)):
+        self.hives = tuple(hives)
+        self.keys = {}       # HKCU: caminho em minúsculas -> {nome do valor: (valor, tipo)}
+        self.machine_keys = {}   # HKLM, separado do HKCU
         self.calls = []
         self.fail_set = set()   # nomes de valor cuja gravação falha (OSError)
         self.fail_read = set()  # nomes de valor cuja leitura falha (PermissionError)
         self.ignore_set = set() # nomes de valor cuja gravação "some" (não confirma)
 
     # ---------- ajuda dos testes ----------
-    def put(self, path, name, value, kind=None):
-        self.keys.setdefault(path.lower(), {})[name] = (value, self.REG_DWORD if kind is None else kind)
+    def _store(self, hive):
+        return self.machine_keys if hive == self.HKEY_LOCAL_MACHINE else self.keys
 
-    def get(self, path, name):
-        return self.keys.get(path.lower(), {}).get(name)
+    def put(self, path, name, value, kind=None, hive='HKCU'):
+        self._store(hive).setdefault(path.lower(), {})[name] = (
+            value, self.REG_DWORD if kind is None else kind)
+
+    def get(self, path, name, hive='HKCU'):
+        return self._store(hive).get(path.lower(), {}).get(name)
 
     # ---------- API do winreg ----------
     def _hive(self, hive):
-        if hive != self.HKEY_CURRENT_USER:
-            raise AssertionError('acesso fora de HKCU em teste')
+        if hive not in (self.HKEY_CURRENT_USER, self.HKEY_LOCAL_MACHINE) or hive not in self.hives:
+            raise AssertionError(f'acesso a {hive!r} em teste (permitido: {self.hives})')
 
     def OpenKey(self, hive, path, reserved=0, access=KEY_READ):
         self._hive(hive)
         self.calls.append(('OpenKey', path, access))
-        if path.lower() not in self.keys:
+        if path.lower() not in self._store(hive):
             raise FileNotFoundError(2, 'O sistema não pode encontrar o arquivo especificado')
-        return FakeKey(self, path.lower())
+        return FakeKey(self, path.lower(), hive)
 
     def CreateKeyEx(self, hive, path, reserved=0, access=KEY_READ):
         self._hive(hive)
         self.calls.append(('CreateKeyEx', path, access))
-        self.keys.setdefault(path.lower(), {})
-        return FakeKey(self, path.lower())
+        self._store(hive).setdefault(path.lower(), {})
+        return FakeKey(self, path.lower(), hive)
 
     def QueryValueEx(self, key, name):
         self.calls.append(('QueryValueEx', key.path, name))
         if name in self.fail_read:
             raise PermissionError(5, r'Acesso negado C:\Users\Fulano')
-        values = self.keys.get(key.path)
+        values = self._store(key.hive).get(key.path)
         if values is None or name not in values:
             raise FileNotFoundError(2, 'não existe')
         return values[name]
@@ -78,11 +91,11 @@ class FakeWinreg:
             raise OSError(5, r'Acesso negado C:\Users\Fulano')
         if name in self.ignore_set:
             return
-        self.keys.setdefault(key.path, {})[name] = (value, kind)
+        self._store(key.hive).setdefault(key.path, {})[name] = (value, kind)
 
     def DeleteValue(self, key, name):
         self.calls.append(('DeleteValue', key.path, name))
-        values = self.keys.get(key.path)
+        values = self._store(key.hive).get(key.path)
         if values is None or name not in values:
             raise FileNotFoundError(2, 'não existe')
         del values[name]
