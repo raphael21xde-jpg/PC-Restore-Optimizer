@@ -25,6 +25,7 @@ for _folder in (ROOT, ROOT / 'tests'):
 import optimization_engine as oe  # noqa: E402
 import pc_measure as pm  # noqa: E402
 import safe_tweaks as st  # noqa: E402
+import session_owner as so  # noqa: E402
 from fake_winreg import FakeWinreg  # noqa: E402
 
 try:
@@ -37,7 +38,6 @@ except ImportError:  # Python sem Tk: os testes de tela pulam.
 NO_DISPLAY = tk is None or (sys.platform != 'win32' and not os.environ.get('DISPLAY'))
 
 GAMEBAR = r'Software\Microsoft\GameBar'
-CONFIG = r'System\GameConfigStore'
 DVR = r'Software\Microsoft\Windows\CurrentVersion\GameDVR'
 THEMES = r'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
 GUID = '381b4222-f694-41f0-9685-ff5bb260df2e'
@@ -74,6 +74,11 @@ class SourceTests(unittest.TestCase):
         self.assertIn('self._is_elevated()', start)
         self.assertIn('self._run_power_job', start)
         self.assertNotIn('read_states', start)    # a leitura é no Job, não na tela
+        # R-55: a conta é conferida antes de ler (antes do Job), em aplicar e em ver o estado.
+        for name in ('apply_safe_tweaks', 'refresh_tweaks'):
+            code = ast.unparse(_function(name))
+            self.assertIn('self._tweaks_account_refused()', code)
+            self.assertLess(code.index('self._tweaks_account_refused()'), code.index('self._run_power_job'))
         ready = ast.unparse(_function('_tweaks_ready'))
         self.assertIn('self._ask', ready)
         self.assertIn('confirmation_text', ready)
@@ -109,6 +114,8 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.reg = FakeWinreg()
         self.adapter = st.RegistryTweakAdapter(registry=self.reg)
         self.admin = True
+        self.owner = so.SAME
+        self.owner_calls = 0
         self.restore_ok = True
         self.restore_calls = []
         self.answer = True
@@ -125,10 +132,17 @@ class SafeTweaksTabTests(unittest.TestCase):
                                      power_adapter=FakePower(), tweak_adapter=self.adapter,
                                      restore_point=self._restore_point,
                                      elevated_probe=lambda: self.admin,
+                                     session_owner_probe=self._owner,
                                      ask=self._ask, show=lambda *a: self.shown.append(a))
         panel.pack()
         self.settle(panel)
         return panel
+
+    def _owner(self):
+        self.owner_calls += 1
+        if isinstance(self.owner, Exception):
+            raise self.owner
+        return self.owner
 
     def _restore_point(self, description):
         self.restore_calls.append(description)
@@ -214,13 +228,13 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.assertNotIn(st.TWEAKS_BY_ID['game_mode'].name, question)
         self.assertIn('ponto de restauração', question)
         self.assertIn('diário de alterações', question)
+        self.assertIn('Para comparar, meça ANTES na aba 1 antes de aplicar.', question)
         self.assertEqual(len(self.restore_calls), 1)
-        self.assertEqual(self.reg.get(CONFIG, 'GameDVR_Enabled'), (0, FakeWinreg.REG_DWORD))
-        self.assertEqual(self.reg.get(DVR, 'AppCaptureEnabled'), (0, FakeWinreg.REG_DWORD))
+        self.assertEqual(self.reg.get(DVR, 'HistoricalCaptureEnabled'), (0, FakeWinreg.REG_DWORD))
         self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (0, FakeWinreg.REG_DWORD))
         # O Modo de Jogo já estava ligado: nem entrou no lote.
         self.assertEqual([e['key'] for e in self.panel.journal.entries()],
-                         ['game_dvr', 'app_capture', 'transparency'])
+                         ['historical_capture', 'transparency'])
         self.assertFalse([c for c in self.reg.calls if c[0] == 'SetValueEx' and c[2] == 'AutoGameModeEnabled'])
         info = self.shown[-1]
         self.assertEqual(info[0], 'info')
@@ -230,25 +244,24 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.assertIn('• Efeitos de transparência desligados: já aplicado.', self.text())
         changes = self.panel.changes_text.get('1.0', 'end')
         self.assertIn('Efeitos de transparência: aplicada.', changes)
-        self.assertIn('Gravação do Game Bar (jogos): aplicada.', changes)
+        self.assertIn('Gravação em segundo plano do Game Bar: aplicada.', changes)
         self.assertFalse(self.panel.btn_undo_all.instate(['disabled']))
         # "Desfazer tudo" da aba 7 também cobre os ajustes seguros.
         self.panel.undo_all_changes()
         self.settle()
-        self.assertIsNone(self.reg.get(CONFIG, 'GameDVR_Enabled'))   # não existia antes
-        self.assertIsNone(self.reg.get(DVR, 'AppCaptureEnabled'))
+        self.assertIsNone(self.reg.get(DVR, 'HistoricalCaptureEnabled'))   # não existia antes
         self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (1, FakeWinreg.REG_DWORD))
         self.assertEqual(self.reg.get(THEMES, 'AppsUseLightTheme'), (1, FakeWinreg.REG_DWORD))
         self.assertIn(DVR.lower(), self.reg.keys)   # a chave nunca é apagada
         self.assertEqual(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'), (1, FakeWinreg.REG_DWORD))
-        self.assertIn(ou.CHANGES_ALL_UNDONE_TEXT.format(n=3), self.panel.changes_status.get())
+        self.assertIn(ou.CHANGES_ALL_UNDONE_TEXT.format(n=2), self.panel.changes_status.get())
         self.assertIn('• Efeitos de transparência desligados: ainda não aplicado.', self.text())
         self.assertEqual(len(self.restore_calls), 1)
 
     def test_recheck_covers_safe_tweaks(self):
         self.panel.apply_safe_tweaks()
         self.settle()
-        self.assertEqual(len(self.panel.journal.entries()), 4)
+        self.assertEqual(len(self.panel.journal.entries()), 3)
         del self.reg.keys[THEMES.lower()]['EnableTransparency']   # desfeito por fora
         self.panel.recheck_changes()
         self.settle()
@@ -270,8 +283,7 @@ class SafeTweaksTabTests(unittest.TestCase):
 
     def test_nothing_missing_does_not_ask_nor_create_restore_point(self):
         self.reg.put(GAMEBAR, 'AutoGameModeEnabled', 1)
-        self.reg.put(CONFIG, 'GameDVR_Enabled', 0)
-        self.reg.put(DVR, 'AppCaptureEnabled', 0)
+        self.reg.put(DVR, 'HistoricalCaptureEnabled', 0)
         self.reg.put(THEMES, 'EnableTransparency', 0)
         self.panel.apply_safe_tweaks()
         self.settle()
@@ -298,6 +310,69 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.assertEqual(self.restore_calls, [])
         self.assertEqual(self.shown[-1][2], ou.TWEAKS_ADMIN_TEXT)
         self.assertIn('OUTRA conta', ou.TWEAKS_ADMIN_TEXT)
+        self.assertIn('SUA própria conta', ou.TWEAKS_ADMIN_TEXT)
+        self.assertIn('confere a conta', ou.TWEAKS_ADMIN_TEXT)
+        self.assertNotIn('nesse caso, não aplique', ou.TWEAKS_ADMIN_TEXT)
+
+    # ---------- R-55: mesma conta que está usando o PC ----------
+    def assert_refused_without_reading(self, expected):
+        self.assertEqual(self.reg.calls, [])
+        self.assertEqual(self.asked, [])
+        self.assertEqual(self.restore_calls, [])
+        self.assertIsNone(self.panel._power_job)
+        self.assertEqual(self.shown[-1], ('warning', ou.TWEAKS_TITLE, expected))
+        self.assertEqual(self.panel.tweaks_status.get(), expected)
+        self.assertFalse(self.panel.journal.entries())
+
+    def test_same_account_goes_on(self):
+        self.panel.refresh_tweaks()
+        self.settle()
+        self.assertEqual(self.owner_calls, 1)
+        self.assertTrue(self.reg.calls)
+        self.panel.apply_safe_tweaks()
+        self.settle()
+        self.assertEqual(self.owner_calls, 2)
+        self.assertEqual(len(self.asked), 1)
+        self.assertEqual(len(self.restore_calls), 1)
+
+    def test_other_account_refuses_without_reading_or_asking(self):
+        self.owner = so.OTHER
+        self.panel.apply_safe_tweaks()
+        self.settle()
+        self.assert_refused_without_reading(ou.TWEAKS_OTHER_ACCOUNT_TEXT)
+        self.panel.refresh_tweaks()
+        self.settle()
+        self.assert_refused_without_reading(ou.TWEAKS_OTHER_ACCOUNT_TEXT)
+        self.assertIn('SUA própria conta', ou.TWEAKS_OTHER_ACCOUNT_TEXT)
+        self.assertIn('administrador', ou.TWEAKS_OTHER_ACCOUNT_TEXT)
+        self.assertIn(ou.TWEAKS_NOT_READ_TEXT, self.text())
+
+    def test_unknown_account_refuses(self):
+        for answer in (so.UNKNOWN, OSError('falhou'), 'qualquer coisa'):
+            with self.subTest(answer=answer):
+                self.owner = answer
+                self.panel.apply_safe_tweaks()
+                self.settle()
+                self.assert_refused_without_reading(ou.TWEAKS_ACCOUNT_UNKNOWN_TEXT)
+                self.panel.refresh_tweaks()
+                self.settle()
+                self.assert_refused_without_reading(ou.TWEAKS_ACCOUNT_UNKNOWN_TEXT)
+        self.assertIn('SUA própria conta', ou.TWEAKS_ACCOUNT_UNKNOWN_TEXT)
+
+    def test_default_probe_outside_windows_refuses(self):
+        panel = ou.OptimizationPanel(self.root, app_dir=self.tmp, state_dir=self.tmp,
+                                     power_adapter=FakePower(), tweak_adapter=self.adapter,
+                                     restore_point=self._restore_point,
+                                     elevated_probe=lambda: True,
+                                     ask=self._ask, show=lambda *a: self.shown.append(a))
+        self.addCleanup(panel.destroy)
+        with mock.patch.object(so.sys, 'platform', 'linux'):
+            panel.apply_safe_tweaks()
+            panel.refresh_tweaks()
+        self.assertIsNone(panel._power_job)
+        self.assertEqual(self.reg.calls, [])
+        self.assertEqual(self.asked, [])
+        self.assertEqual(self.shown[-1][2], ou.TWEAKS_ACCOUNT_UNKNOWN_TEXT)
 
     def test_restore_point_refused_changes_nothing(self):
         self.restore_ok = False
@@ -310,24 +385,75 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.assertIn(ou.POWER_RESTORE_POINT_HELP, message)
 
     def test_failure_in_the_middle_rolls_back(self):
-        self.reg.fail_set.add('AppCaptureEnabled')
+        self.reg.fail_set.add('HistoricalCaptureEnabled')
         self.panel.apply_safe_tweaks()
         self.settle()
         self.assertIsNone(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'))
-        self.assertIsNone(self.reg.get(CONFIG, 'GameDVR_Enabled'))
+        self.assertIsNone(self.reg.get(DVR, 'HistoricalCaptureEnabled'))
         self.assertIsNone(self.reg.get(THEMES, 'EnableTransparency'))
         self.assertEqual(self.shown[-1][0], 'warning')
         self.assertIn('desfeitos', self.shown[-1][2])
         self.assertNotIn('Fulano', ' '.join(map(str, self.shown)))
 
-    def test_unexpected_error_shows_generic_message(self):
+    def test_unexpected_error_says_part_may_have_changed_and_turns_journal_off(self):
+        # R-27, igual ao "Desfazer tudo": algo pode já ter mudado; o diário fica desligado.
         with mock.patch.object(self.panel.journal, 'apply_batch',
                                side_effect=RuntimeError(r'C:\Users\Fulano\segredo')):
             self.panel.apply_safe_tweaks()
             self.settle()
-        self.assertEqual(self.shown[-1], ('error', ou.TWEAKS_TITLE, ou.TWEAKS_GENERIC_FAIL))
+        message = ou.TWEAKS_UNEXPECTED_ERROR_TEXT
+        self.assertIn('Parte deles pode já ter mudado no Windows', message)
+        self.assertIn('fechar e abrir', message)
+        self.assertNotIn('Nada foi', message)
+        self.assertEqual(self.shown[-1], ('error', ou.TWEAKS_TITLE, message))
+        self.assertEqual(self.panel.tweaks_status.get(), message)
+        self.assertIsNone(self.panel.journal)
+        self.assertEqual(self.panel.journal_error, message)
+        self.assertIsNone(self.panel.journal_off_text)
+        self.assertTrue(self.panel.btn_tweaks_apply.instate(['disabled']))
+        self.assertTrue(self.panel.btn_undo_all.instate(['disabled']))
+        self.assertTrue(self.panel.btn_recheck.instate(['disabled']))
         self.assertNotIn('Fulano', ' '.join(map(str, self.shown)))
         self.assertNotIn('Fulano', self.panel.tweaks_status.get())
+        # Um novo clique continua recusado (até reabrir o app).
+        asked = len(self.asked)
+        self.panel.apply_safe_tweaks()
+        self.assertEqual(len(self.asked), asked)
+        self.assertEqual(self.shown[-1], ('error', ou.TWEAKS_TITLE, message))
+
+    # ---------- R-19: releitura que falha depois de mudar algo ----------
+    def test_reread_failure_after_apply_is_neutral(self):
+        real = self.panel._read_tweaks_work
+        answers = []
+
+        def flaky():
+            answers.append(1)
+            return real() if len(answers) == 1 else {'tweaks': None}
+        self.panel._read_tweaks_work = flaky
+        self.panel.apply_safe_tweaks()
+        self.settle()
+        self.assertEqual(len(self.panel.journal.entries()), 3)
+        text = self.text()
+        self.assertIn(ou.TWEAKS_REREAD_FAILED_TEXT, text)
+        self.assertNotIn('Nada foi mudado', text)
+        self.assertNotIn('Nada foi mudado', ou.TWEAKS_REREAD_FAILED_TEXT)
+
+    def test_reread_failure_after_undo_all_is_neutral(self):
+        self.panel.apply_safe_tweaks()
+        self.settle()
+        self.panel._read_tweaks_work = lambda: {'tweaks': None}
+        self.panel.undo_all_changes()
+        self.settle()
+        self.assertIn(ou.CHANGES_ALL_UNDONE_TEXT.format(n=3), self.panel.changes_status.get())
+        text = self.text()
+        self.assertIn(ou.TWEAKS_REREAD_FAILED_TEXT, text)
+        self.assertNotIn('Nada foi mudado', text)
+
+    def test_first_read_failure_still_says_nothing_changed(self):
+        self.panel._read_tweaks_work = lambda: {'tweaks': None}
+        self.panel.refresh_tweaks()
+        self.settle()
+        self.assertIn(ou.TWEAKS_READ_FAILED_TEXT, self.text())
 
     def test_unknown_entry_blocks_before_asking(self):
         self.panel.apply_safe_tweaks()
@@ -336,7 +462,7 @@ class SafeTweaksTabTests(unittest.TestCase):
         data = json.loads((self.tmp / 'otimizacao-diario.json').read_text(encoding='utf-8'))
         data['entries'][0]['status'] = 'unknown'
         (self.tmp / 'otimizacao-diario.json').write_text(json.dumps(data), encoding='utf-8')
-        self.assertEqual(len(entries), 4)
+        self.assertEqual(len(entries), 3)
         panel = self.make_panel()
         self.assertTrue(panel.btn_tweaks_apply.instate(['disabled']))
         asked = len(self.asked)

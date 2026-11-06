@@ -20,10 +20,10 @@ for _folder in (ROOT, ROOT / 'tests'):
 
 import change_journal as cj  # noqa: E402
 import safe_tweaks as st  # noqa: E402
+import session_owner as so  # noqa: E402
 from fake_winreg import FakeWinreg  # noqa: E402
 
 GAMEBAR = r'Software\Microsoft\GameBar'
-CONFIG = r'System\GameConfigStore'
 DVR = r'Software\Microsoft\Windows\CurrentVersion\GameDVR'
 THEMES = r'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
 
@@ -55,15 +55,15 @@ class Base(unittest.TestCase):
 
 
 class ClosedListTests(Base):
-    def test_list_is_exactly_the_three_documented_tweaks(self):
+    def test_list_is_exactly_the_three_tweaks_three_values(self):
         self.assertEqual([t.id for t in st.SAFE_TWEAKS], ['game_mode', 'game_bar_capture', 'transparency'])
-        values = {(v.path, v.name, v.desired) for t in st.SAFE_TWEAKS for v in t.values}
-        self.assertEqual(values, {
+        values = [(v.path, v.name, v.desired) for t in st.SAFE_TWEAKS for v in t.values]
+        self.assertEqual(values, [
             (GAMEBAR, 'AutoGameModeEnabled', 1),
-            (CONFIG, 'GameDVR_Enabled', 0),
-            (DVR, 'AppCaptureEnabled', 0),
+            (DVR, 'HistoricalCaptureEnabled', 0),
             (THEMES, 'EnableTransparency', 0),
-        })
+        ])
+        self.assertEqual(set(st.TWEAK_VALUES), {'game_mode', 'historical_capture', 'transparency'})
         self.assertEqual(set(st.TWEAK_VALUES), {v.key for t in st.SAFE_TWEAKS for v in t.values})
         self.assertIsInstance(st.SAFE_TWEAKS, tuple)
 
@@ -78,6 +78,21 @@ class ClosedListTests(Base):
                 self.assertTrue(value.label and '\\' not in value.label)
         self.assertIn('na hora', st.TWEAKS_BY_ID['transparency'].when)
         self.assertIn('jogo', st.TWEAKS_BY_ID['game_bar_capture'].when)
+
+    def test_game_bar_only_changes_what_the_name_promises(self):
+        # Escolha do coordenador: só "Gravar o que aconteceu"; print e gravar na hora ficam como estavam.
+        tweak = st.TWEAKS_BY_ID['game_bar_capture']
+        self.assertEqual([v.name for v in tweak.values], ['HistoricalCaptureEnabled'])
+        self.assertIn('Gravar o que aconteceu', tweak.what)
+        self.assertIn('Tirar print e gravar na hora continuam funcionando', tweak.what)
+        self.assertIn('mesma opção que existe nas Configurações do Windows', tweak.what)
+        source = (ROOT / 'safe_tweaks.py').read_text(encoding='utf-8')
+        for gone in ('GameDVR_Enabled', 'AppCaptureEnabled', 'GameConfigStore', 'documentad'):
+            self.assertNotIn(gone, source)
+        for key in ('game_dvr', 'app_capture'):
+            with self.assertRaises(st.TweakError):
+                self.adapter.read(key)
+        self.assertEqual(self.reg.calls, [])
 
     def test_nothing_about_hklm_defender_update_services_or_bios(self):
         source = (ROOT / 'safe_tweaks.py').read_text(encoding='utf-8')
@@ -188,18 +203,19 @@ class JournalFlowTests(Base):
 
     def test_apply_undo_and_recheck_through_the_journal(self):
         self.reg.put(THEMES, 'EnableTransparency', 1)
-        self.reg.put(CONFIG, 'GameDVR_Enabled', 1)
+        self.reg.put(DVR, 'HistoricalCaptureEnabled', 1)
         journal = self.journal()
         changes = self.all_changes()
         self.assertEqual([c['key'] for c in changes],
-                         ['game_mode', 'game_dvr', 'app_capture', 'transparency'])
+                         ['game_mode', 'historical_capture', 'transparency'])
         ids = journal.apply_batch(changes)
-        self.assertEqual(len(ids), 4)
+        self.assertEqual(len(ids), 3)
         self.assertEqual(len(self.restore_calls), 1)
         self.assertEqual(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'), (1, FakeWinreg.REG_DWORD))
         self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (0, FakeWinreg.REG_DWORD))
         befores = {e['key']: e['before'] for e in journal.entries()}
-        self.assertEqual(befores, {'game_mode': None, 'game_dvr': 1, 'app_capture': None, 'transparency': 1})
+        self.assertEqual(self.reg.get(DVR, 'HistoricalCaptureEnabled'), (0, FakeWinreg.REG_DWORD))
+        self.assertEqual(befores, {'game_mode': None, 'historical_capture': 1, 'transparency': 1})
         self.assertTrue(all(s['state'] == 'applied' for s in st.read_states(self.adapter)))
         self.assertEqual(self.all_changes(), [])
         self.assertIn('1. Modo de Jogo: aplicada.', journal.summary_lines())
@@ -209,14 +225,12 @@ class JournalFlowTests(Base):
         self.assertEqual(result['changed'], [])
         self.assertEqual(len([c for c in self.reg.calls if c[0] in ('SetValueEx', 'DeleteValue')]), writes)
         done, pending, reason = journal.undo_all()
-        self.assertEqual((len(done), pending, reason), (4, [], ''))
+        self.assertEqual((len(done), pending, reason), (3, [], ''))
         self.assertIsNone(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'))
-        self.assertIsNone(self.reg.get(DVR, 'AppCaptureEnabled'))
         self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (1, FakeWinreg.REG_DWORD))
-        self.assertEqual(self.reg.get(CONFIG, 'GameDVR_Enabled'), (1, FakeWinreg.REG_DWORD))
-        # As chaves criadas pelo app continuam lá (vazias): nunca apaga a chave.
+        self.assertEqual(self.reg.get(DVR, 'HistoricalCaptureEnabled'), (1, FakeWinreg.REG_DWORD))
+        # A chave criada pelo app continua lá (vazia): nunca apaga a chave.
         self.assertIn(GAMEBAR.lower(), self.reg.keys)
-        self.assertIn(DVR.lower(), self.reg.keys)
         saved = json.loads((self.tmp / 'diario.json').read_text(encoding='utf-8'))
         self.assertTrue(all(e['status'] == 'reverted' for e in saved['entries']))
         self.assertNotIn('\\', json.dumps(saved).replace('\\\\', ''))
@@ -238,17 +252,16 @@ class JournalFlowTests(Base):
         self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (1, FakeWinreg.REG_DWORD))
 
     def test_failure_in_the_middle_rolls_back_what_was_applied(self):
-        self.reg.put(CONFIG, 'GameDVR_Enabled', 1)
-        self.reg.fail_set.add('AppCaptureEnabled')
+        self.reg.put(DVR, 'HistoricalCaptureEnabled', 1)
+        self.reg.fail_set.add('HistoricalCaptureEnabled')
         journal = self.journal()
         with self.assertRaises(cj.BatchRefused):
             journal.apply_batch(self.all_changes())
         self.assertIsNone(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'))
-        self.assertEqual(self.reg.get(CONFIG, 'GameDVR_Enabled'), (1, FakeWinreg.REG_DWORD))
-        self.assertIsNone(self.reg.get(DVR, 'AppCaptureEnabled'))
+        self.assertEqual(self.reg.get(DVR, 'HistoricalCaptureEnabled'), (1, FakeWinreg.REG_DWORD))
         self.assertIsNone(self.reg.get(THEMES, 'EnableTransparency'))
         statuses = [e['status'] for e in journal.entries()]
-        self.assertEqual(statuses, ['failed', 'failed', 'failed'])
+        self.assertEqual(statuses, ['failed', 'failed'])
 
     def test_write_that_does_not_stick_is_not_confirmed(self):
         self.reg.ignore_set.add('EnableTransparency')
@@ -269,20 +282,19 @@ class JournalFlowTests(Base):
 class StatesTests(Base):
     def test_states_and_pending_skip_what_is_already_set(self):
         self.reg.put(GAMEBAR, 'AutoGameModeEnabled', 1)
-        self.reg.put(CONFIG, 'GameDVR_Enabled', 0)
         self.reg.put(THEMES, 'EnableTransparency', 1)
         states = {s['id']: s for s in st.read_states(self.adapter)}
         self.assertEqual(states['game_mode']['state'], 'applied')
         self.assertEqual(states['game_bar_capture']['state'], 'not_applied')
-        self.assertEqual([c['key'] for c in states['game_bar_capture']['changes']], ['app_capture'])
+        self.assertEqual([c['key'] for c in states['game_bar_capture']['changes']], ['historical_capture'])
         self.assertEqual(states['transparency']['state'], 'not_applied')
         self.assertEqual([c['key'] for c in st.pending_changes(list(states.values()))],
-                         ['app_capture', 'transparency'])
+                         ['historical_capture', 'transparency'])
         self.assertEqual([t.id for t in st.pending_tweaks(list(states.values()))],
                          ['game_bar_capture', 'transparency'])
 
     def test_other_type_or_unreadable_tweak_is_left_out_whole(self):
-        self.reg.put(DVR, 'AppCaptureEnabled', '0', FakeWinreg.REG_SZ)
+        self.reg.put(DVR, 'HistoricalCaptureEnabled', '0', FakeWinreg.REG_SZ)
         self.reg.put(THEMES, 'EnableTransparency', 1)
         self.reg.fail_read.add('EnableTransparency')
         states = {s['id']: s for s in st.read_states(self.adapter)}
@@ -306,9 +318,84 @@ class StatesTests(Base):
         self.assertIn('diário de alterações', text)
         self.assertIn('Desfazer tudo', text)
         self.assertIn('7  Alterações feitas', text)
+        # Só sugere medir antes (não obriga).
+        self.assertIn('\nPara comparar, meça ANTES na aba 1 antes de aplicar.', text)
         self.assertNotIn('\\', text)
         lines = st.applied_lines(tweaks)
         self.assertTrue(any('na hora' in line for line in lines))
+
+
+class UnknownKindTests(Base):
+    """Ressalva 7: um diário com um tipo desconhecido continua sendo recusado."""
+
+    def test_unknown_kind_is_refused_and_touches_nothing(self):
+        journal = self.journal()
+        journal.apply_batch([{'kind': st.TWEAK_KIND, 'key': 'transparency', 'after': 0}])
+        path = self.tmp / 'diario.json'
+        data = json.loads(path.read_text(encoding='utf-8'))
+        data['entries'][0]['kind'] = 'registro_livre'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        calls = len(self.reg.calls)
+        journal = self.journal()
+        ok, reason = journal.undo(journal.entries()[0]['id'])
+        self.assertFalse(ok)
+        self.assertIn('não sabe', reason)
+        with self.assertRaises(cj.BatchRefused):
+            journal.apply_batch([{'kind': 'registro_livre', 'key': 'transparency', 'after': 0}])
+        self.assertEqual(len(self.reg.calls), calls)
+        self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (0, FakeWinreg.REG_DWORD))
+
+    def test_old_key_outside_the_list_is_refused_and_writes_nothing(self):
+        journal = self.journal()
+        journal.apply_batch([{'kind': st.TWEAK_KIND, 'key': 'transparency', 'after': 0}])
+        path = self.tmp / 'diario.json'
+        data = json.loads(path.read_text(encoding='utf-8'))
+        data['entries'][0]['key'] = 'app_capture'   # chave que saiu da lista
+        path.write_text(json.dumps(data), encoding='utf-8')
+        journal = self.journal()
+        calls = len(self.reg.calls)
+        ok, _reason = journal.undo(journal.entries()[0]['id'])
+        self.assertFalse(ok)
+        with self.assertRaises(cj.BatchRefused):
+            journal.apply_batch([{'kind': st.TWEAK_KIND, 'key': 'app_capture', 'after': 0}])
+        self.assertFalse([c for c in self.reg.calls[calls:] if c[0] in ('SetValueEx', 'DeleteValue')])
+        self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (0, FakeWinreg.REG_DWORD))
+
+
+class SessionOwnerTests(unittest.TestCase):
+    """R-55: a consulta da conta é injetável; na dúvida, "não deu para saber"."""
+
+    def test_probe_answers_pass_through(self):
+        for answer in (so.SAME, so.OTHER, so.UNKNOWN):
+            with self.subTest(answer=answer):
+                self.assertEqual(so.session_owner(lambda: answer), answer)
+
+    def test_error_or_strange_answer_is_unknown(self):
+        def boom():
+            raise OSError(5, r'Acesso negado C:\Users\Fulano')
+        self.assertEqual(so.session_owner(boom), so.UNKNOWN)
+        for strange in (True, None, 1, 'mesma', 'Mesma conta', b'mesma conta'):
+            with self.subTest(answer=strange):
+                self.assertEqual(so.session_owner(lambda: strange), so.UNKNOWN)
+
+    def test_outside_windows_is_unknown_without_calling_windows(self):
+        with mock.patch.object(so.sys, 'platform', 'linux'), \
+                mock.patch.object(so, '_windows_probe', side_effect=AssertionError('chamou o Windows')):
+            self.assertEqual(so.session_owner(), so.UNKNOWN)
+
+    def test_windows_failure_is_unknown(self):
+        with mock.patch.object(so.sys, 'platform', 'win32'), \
+                mock.patch.object(so, '_windows_probe', side_effect=OSError('falhou')):
+            self.assertEqual(so.session_owner(), so.UNKNOWN)
+
+    def test_windows_probe_only_reads(self):
+        source = (ROOT / 'session_owner.py').read_text(encoding='utf-8')
+        for needed in ('OpenProcessToken', 'GetTokenInformation', 'WTSQuerySessionInformationW',
+                       'WTS_CURRENT_SESSION', 'LookupAccountNameW', 'EqualSid'):
+            self.assertIn(needed, source)
+        for forbidden in ('subprocess', 'winreg', 'SetToken', 'AdjustToken', 'ImpersonateLoggedOnUser',
+                          'CreateProcess', 'ShellExecute', 'RunAs', 'os.system', 'open('):
+            self.assertNotIn(forbidden, source)
 
 
 if __name__ == '__main__':

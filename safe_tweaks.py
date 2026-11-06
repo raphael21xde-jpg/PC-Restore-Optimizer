@@ -1,9 +1,8 @@
 """P3-04: ajustes seguros com 1 clique (lista fechada, só na conta do usuário).
 
-Cada ajuste é um ou mais valores DWORD em HKEY_CURRENT_USER, documentados pela
-Microsoft e que o próprio usuário muda nas Configurações do Windows. Nada fora da
-lista ``SAFE_TWEAKS``: nenhum outro ramo do registro, nenhum serviço, nenhum
-comando.
+Cada ajuste é um valor DWORD em HKEY_CURRENT_USER, a mesma opção que o próprio
+usuário muda nas Configurações do Windows. Nada fora da lista ``SAFE_TWEAKS``:
+nenhum outro ramo do registro, nenhum serviço, nenhum comando.
 
 ``RegistryTweakAdapter`` é o adaptador do diário de alterações
 (``change_journal``), com o tipo ``TWEAK_KIND``:
@@ -21,7 +20,9 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
 - lista fechada e curta, só HKCU, sem administrador para o ajuste em si;
 - valor que já está no desejado não entra no lote;
 - ajuste com algum valor de outro tipo, ou que não pôde ser lido, fica fora
-  do lote inteiro (os dois valores do Game Bar andam juntos).
+  do lote inteiro;
+- o Game Bar muda só "Gravar o que aconteceu" (``HistoricalCaptureEnabled``):
+  print e gravar na hora continuam como estavam (escolha do coordenador).
 """
 from __future__ import annotations
 
@@ -39,6 +40,8 @@ MSG_BAD_VALUE = 'Valor que o app não aceita para este ajuste; nada foi alterado
 MSG_NOT_DWORD = ('O valor no Windows é de outro tipo; por segurança, o app não mexe '
                  'neste ajuste. Nada foi alterado.')
 MSG_NOT_WINDOWS = 'Este recurso só funciona em computadores Windows.'
+# Só sugere (não obriga): a comparação antes/depois é da aba 1 (P3-02).
+MEASURE_BEFORE_HINT = 'Para comparar, meça ANTES na aba 1 antes de aplicar.'
 
 
 class TweakError(RuntimeError):
@@ -80,15 +83,15 @@ SAFE_TWEAKS = (
     SafeTweak(
         id='game_bar_capture',
         name='Gravação em segundo plano do Xbox Game Bar desligada',
-        what=('O Game Bar para de gravar os jogos em segundo plano, o que usa '
-              'processador, placa de vídeo e disco. Tirar print e gravar na hora '
-              'continuam funcionando pelo Game Bar.'),
+        what=('Desliga a opção "Gravar o que aconteceu" do Game Bar, que fica gravando '
+              'o jogo em segundo plano e usa processador, placa de vídeo e disco. É a '
+              'mesma opção que existe nas Configurações do Windows. Tirar print e gravar '
+              'na hora continuam funcionando pelo Game Bar.'),
         when=('Vale para os jogos abertos depois; se um jogo já estiver aberto, '
               'feche e abra o jogo de novo.'),
-        values=(RegistryValue('game_dvr', r'System\GameConfigStore',
-                              'GameDVR_Enabled', 0, 'Gravação do Game Bar (jogos)'),
-                RegistryValue('app_capture', r'Software\Microsoft\Windows\CurrentVersion\GameDVR',
-                              'AppCaptureEnabled', 0, 'Gravação do Game Bar (captura)')),
+        values=(RegistryValue('historical_capture', r'Software\Microsoft\Windows\CurrentVersion\GameDVR',
+                              'HistoricalCaptureEnabled', 0,
+                              'Gravação em segundo plano do Game Bar'),),
     ),
     SafeTweak(
         id='transparency',
@@ -272,7 +275,8 @@ def confirmation_text(tweaks):
             f'{items}\n\n'
             'Antes, o app cria um ponto de restauração do Windows e anota tudo no diário de '
             'alterações. Para voltar, use "Desfazer tudo" na aba "' + CHANGES_TAB_NAME + '".\n\n'
-            'Ajustes que já estão no valor certo não são mexidos.')
+            'Ajustes que já estão no valor certo não são mexidos.\n\n'
+            + MEASURE_BEFORE_HINT)
 
 
 def applied_lines(tweaks):

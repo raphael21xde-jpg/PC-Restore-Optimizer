@@ -23,6 +23,7 @@ from optimization_engine import (inspect_pc, available_power_plans, active_power
                                  legacy_power_pending, POWER_KIND, POWER_KEY)
 from change_journal import ChangeJournal, JournalError, BatchRefused
 from elevation_guard import is_process_elevated
+import session_owner
 from restore_jobs import Job
 from ui_timers import WindowTimers
 from hardware_profile import profile_lines, SCAN_CONFIRMATION
@@ -148,23 +149,42 @@ TWEAKS_UNDO_WHERE_TEXT = ('Para desfazer: aba "' + CHANGES_TAB_LABEL + '", botã
 TWEAKS_NOT_READ_TEXT = 'Estado atual: ainda não lido. Clique em "Ver estado atual" (só lê).'
 TWEAKS_READING_TEXT = 'Lendo o estado atual dos ajustes (somente leitura)…'
 TWEAKS_READ_FAILED_TEXT = 'Não foi possível ler o estado dos ajustes. Nada foi mudado.'
+# R-19: depois de aplicar ou desfazer algo pode ter mudado; a releitura que falha não diz "nada mudou".
+TWEAKS_REREAD_FAILED_TEXT = ('Não foi possível ler de novo o estado dos ajustes. Confira com '
+                             '"Ver estado atual" ou com o "Conferir de novo" da aba "'
+                             + CHANGES_TAB_LABEL + '".')
 TWEAKS_NOTHING_TEXT = ('Não há ajuste seguro para aplicar: os que o app pode mexer já estão no '
                        'valor certo. Nada foi mudado.')
 TWEAKS_CANCEL_TEXT = 'Aplicar ajustes seguros cancelado. Nada foi mudado.'
 TWEAKS_RUNNING_TEXT = 'Criando o ponto de restauração e aplicando os ajustes… Isto pode demorar um pouco.'
 TWEAKS_APPLIED_TEXT = ('Ajustes aplicados e anotados no diário de alterações. Para desfazer, use '
                        '"Desfazer tudo" na aba "' + CHANGES_TAB_LABEL + '".')
-TWEAKS_GENERIC_FAIL = ('O Windows não confirmou a operação. Confira na aba "' + CHANGES_TAB_LABEL + '" '
-                       'com "Conferir de novo".')
+# R-27: erro inesperado no meio do lote; algo pode já ter mudado no Windows.
+TWEAKS_UNEXPECTED_ERROR_TEXT = (
+    'Ocorreu um erro inesperado ao aplicar os ajustes. Parte deles pode já ter mudado no Windows. '
+    'O diário e os botões de aplicar e desfazer ajustes ficam desligados até você fechar e abrir '
+    'o app de novo. Depois disso, confira na aba "' + CHANGES_TAB_LABEL + '" com "Conferir de novo".')
 TWEAKS_UNKNOWN_TEXT = ('{n} ajuste(s) com estado desconhecido. Use "Conferir de novo" na aba "'
                        + CHANGES_TAB_LABEL + '". Por segurança, novos ajustes ficam bloqueados.')
 TWEAKS_ADMIN_TEXT = (
     'Para aplicar os ajustes, o app cria antes um ponto de restauração do Windows, e isso só '
     'funciona com o app aberto como administrador. O app nunca pede isso sozinho. Se quiser '
     'aplicar: feche o app, clique com o botão direito no atalho dele e escolha "Executar como '
-    'administrador". Atenção: se o Windows pedir a senha de OUTRA conta, os ajustes valeriam '
-    'para aquela conta e não para a sua; nesse caso, não aplique. Depois, para fazer backup ou '
+    'administrador" com a SUA própria conta. Se o Windows pedir a senha de OUTRA conta, os '
+    'ajustes valeriam para aquela conta e não para a sua; por isso o app confere a conta e, se '
+    'não for a sua, não lê nem muda nada. Depois, para fazer backup ou '
     'restaurar, abra o app de novo do jeito normal. Desfazer funciona sem administrador.')
+# R-55: o HKCU é o da conta do processo; só segue se for a mesma conta que está usando o PC.
+TWEAKS_OTHER_ACCOUNT_TEXT = (
+    'O app está aberto com outra conta do Windows, diferente da conta que está usando o computador '
+    'agora. Os ajustes valeriam para aquela outra conta, e não para a sua. Por isso o app não leu '
+    'nem mudou nada. Para usar os ajustes: feche o app, clique com o botão direito no atalho dele, '
+    'escolha "Executar como administrador" e entre com a SUA própria conta.')
+TWEAKS_ACCOUNT_UNKNOWN_TEXT = (
+    'Não deu para confirmar se o app está aberto com a sua própria conta do Windows. Por '
+    'segurança, o app não leu nem mudou nada. Para usar os ajustes: feche o app, clique com o '
+    'botão direito no atalho dele, escolha "Executar como administrador" e entre com a SUA '
+    'própria conta.')
 _LEGACY_KNOWN_MESSAGES = {
     'Nenhuma alteração anterior registrada neste aplicativo.',
     'Registro de reversão está ilegível.',
@@ -242,7 +262,7 @@ def build_presentmon_args(executable, process, output_file, seconds, session_nam
 class OptimizationPanel(tk.Frame):
     def __init__(self, master, app_dir, *, state_dir=None, power_adapter=None,
                  restore_point=None, elevated_probe=None, ask=None, show=None,
-                 tweak_adapter=None):
+                 tweak_adapter=None, session_owner_probe=None):
         super().__init__(master, bg=BG)
         self.app_dir=Path(app_dir)
         if state_dir is not None:
@@ -261,6 +281,7 @@ class OptimizationPanel(tk.Frame):
         self._tweaks_measuring=False
         self._restore_point=restore_point or create_restore_point
         self._elevated_probe=elevated_probe
+        self._session_owner_probe=session_owner_probe
         self._ask=ask or (lambda title, text: messagebox.askyesno(title, text))
         self._show=show or self._messagebox
         self._timers=WindowTimers(self)
@@ -1037,13 +1058,14 @@ class OptimizationPanel(tk.Frame):
         self._render_tweaks(None)
         self._update_tweak_buttons()
 
-    def _render_tweaks(self,states,failed=False):
+    def _render_tweaks(self,states,failed=False,after_change=False):
         """Só mostra a memória: a lista fixa e o último estado lido (num Job)."""
         if not hasattr(self,'tweaks_text'):
             return
         lines=safe_tweaks.intro_lines()+['']
         if failed:
-            lines.append(TWEAKS_READ_FAILED_TEXT)
+            # R-19: depois de aplicar/desfazer, a releitura que falha não diz "Nada foi mudado".
+            lines.append(TWEAKS_REREAD_FAILED_TEXT if after_change else TWEAKS_READ_FAILED_TEXT)
         elif states is None:
             lines.append(TWEAKS_NOT_READ_TEXT)
         else:
@@ -1077,19 +1099,34 @@ class OptimizationPanel(tk.Frame):
         """Depois de desfazer/conferir: relê só se o estado já foi mostrado nesta janela."""
         return self._read_tweaks_work() if self.tweak_states is not None else {}
 
-    def _show_tweak_states(self,outcome):
+    def _show_tweak_states(self,outcome,after_change=False):
         if 'tweaks' not in outcome:
             return
         states=outcome.get('tweaks')
         if states is None:
-            self._render_tweaks(None,failed=True)
+            self._render_tweaks(None,failed=True,after_change=after_change)
             return
         self.tweak_states=states
         self._render_tweaks(states)
 
+    def _tweaks_account_refused(self):
+        """R-55: só segue com a mesma conta que está usando o PC; senão explica e para.
+
+        Roda antes de ler o registro: outra conta ou "não deu para saber" = recusa."""
+        answer=session_owner.session_owner(self._session_owner_probe)
+        if answer==session_owner.SAME:
+            return False
+        message=(TWEAKS_OTHER_ACCOUNT_TEXT if answer==session_owner.OTHER
+                 else TWEAKS_ACCOUNT_UNKNOWN_TEXT)
+        self.tweaks_status.set(message)
+        self._show('warning',TWEAKS_TITLE,message)
+        return True
+
     def refresh_tweaks(self):
         """Só lê, num Job (R-10): sem confirmação, sem administrador."""
         if self._tweaks_busy():
+            return
+        if self._tweaks_account_refused():
             return
         self.tweaks_status.set(TWEAKS_READING_TEXT)
         self._run_power_job(self._read_tweaks_work,self._tweaks_read_done)
@@ -1118,6 +1155,9 @@ class OptimizationPanel(tk.Frame):
             # O app nunca pede elevação: só explica e não lê nem muda nada.
             self.tweaks_status.set(TWEAKS_ADMIN_TEXT)
             self._show('warning',TWEAKS_TITLE,TWEAKS_ADMIN_TEXT)
+            return
+        if self._tweaks_account_refused():
+            # R-55: outra conta ou "não deu para saber": não lê, não pergunta, sem ponto de restauração.
             return
         self.tweaks_status.set(TWEAKS_READING_TEXT)
         self._run_power_job(self._read_tweaks_work,self._tweaks_ready)
@@ -1169,7 +1209,7 @@ class OptimizationPanel(tk.Frame):
         self._run_power_job(work,lambda outcome:self._tweaks_apply_done(outcome,tweaks))
 
     def _tweaks_apply_done(self,outcome,tweaks):
-        self._show_tweak_states(outcome)
+        self._show_tweak_states(outcome,after_change=True)
         status=outcome.get('status')
         if status=='applied':
             message='\n'.join([TWEAKS_APPLIED_TEXT,'Quando cada ajuste passa a valer:']
@@ -1189,9 +1229,11 @@ class OptimizationPanel(tk.Frame):
             self.tweaks_status.set(message)
             self._show('warning',TWEAKS_TITLE,message)
         else:
-            # R-07: nunca o texto do Windows.
-            self.tweaks_status.set(TWEAKS_GENERIC_FAIL)
-            self._show('error',TWEAKS_TITLE,TWEAKS_GENERIC_FAIL)
+            # R-27 (como no "Desfazer tudo"): no meio do lote algo pode já ter mudado; o diário
+            # em memória não é confiável, então desliga até reabrir o app. R-07: nunca o texto do Windows.
+            message=TWEAKS_UNEXPECTED_ERROR_TEXT
+            self.tweaks_status.set(message)
+            self._journal_failed(message,title=TWEAKS_TITLE,off_text=None)
 
     def _build_benchmarks(self,parent):
         area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
@@ -1758,7 +1800,8 @@ class OptimizationPanel(tk.Frame):
     def _after_power_job(self,outcome):
         if outcome.get('plans'):
             self._render_plans(outcome['plans'],outcome.get('active'))
-        self._show_tweak_states(outcome)
+        # Só chega 'tweaks' depois de desfazer/conferir: a releitura que falha usa texto neutro.
+        self._show_tweak_states(outcome,after_change=True)
 
     def _apply_done(self,outcome):
         self._after_power_job(outcome)
