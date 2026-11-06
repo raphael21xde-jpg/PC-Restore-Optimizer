@@ -75,29 +75,37 @@ ser formatado. Uma partição no mesmo disco do Windows não protege seus dados.
 3. **Faça o backup.** Ainda em "Preservação", clique em
    "Próximo: revisar backup dos arquivos escolhidos →". Nessa tela, clique em
    "Escolher destino" e escolha uma pasta no outro disco. Clique em
-   "1. Recalcular plano e espaço" para ver se cabe. Depois clique em
-   "2. Iniciar backup (confirmação dupla)". O app pergunta duas vezes antes de começar.
-4. **Caiu a energia ou o PC travou?** Na mesma tela, clique em
+   "1. Recalcular plano e espaço" para ver se cabe. O botão
+   "2. Iniciar backup (confirmação dupla)" só liga depois desse passo 1. Clique nele:
+   o app mostra o resumo (quantos arquivos, tamanho e destino) e pergunta se pode
+   começar.
+4. **Caiu a energia ou o PC travou?** Abra a mesma tela, com as mesmas escolhas de
+   antes, e clique primeiro em "1. Recalcular plano e espaço". Depois clique em
    "Retomar backup interrompido" e escolha o arquivo `manifest.json` do backup que
-   parou. O app continua esse backup.
+   parou. O app continua esse backup e confere com SHA-256 o que já tinha sido copiado.
 
 Os arquivos originais nunca são mexidos: o backup só lê e copia.
 
 **Navegadores.** A tela de backup do navegador ainda não está ligada ao menu do app.
 Antes de formatar, confira se a sincronização da conta do navegador está ligada. Se
 você exportar as senhas pelo próprio navegador para um arquivo CSV, lembre: ele é
-texto legível. Nunca o envie por chat ou e-mail e não o deixe desprotegido.
+texto legível. Nunca o envie por chat ou e-mail e não o deixe desprotegido. Depois
+de importar as senhas no navegador novo, apague esse CSV pelo Explorador de Arquivos
+(e esvazie a Lixeira).
 
 ## Testar e restaurar
 
 **Antes de formatar, teste o backup.** Um backup que nunca foi testado pode esconder
 um problema.
 
-1. No menu, clique em "Histórico e relatórios". Escolha o backup e clique em
-   "Testar restauração de arquivo pequeno". O app traz um arquivo de volta para uma
-   pasta nova de conferência.
-2. No menu, clique em "Recuperação" e em "5. Conferir TODO o backup (SHA-256)". O app
-   confere cada arquivo do backup. Pode demorar; se precisar, use "Cancelar auditoria".
+1. No menu, clique em "Histórico e relatórios". A lista mostra os backups da pasta
+   escolhida em "Escolher destino" (na tela de revisão do backup); se a lista estiver
+   vazia, escolha essa pasta lá e clique em "Atualizar histórico". Escolha o backup e
+   clique em "Testar restauração de arquivo pequeno". O app traz um arquivo de volta
+   para uma pasta nova de conferência.
+2. Com o backup ainda selecionado em "Histórico e relatórios", vá no menu
+   "Recuperação" e clique em "5. Conferir TODO o backup (SHA-256)". O app confere
+   cada arquivo desse backup. Pode demorar; se precisar, use "Cancelar auditoria".
    No fim, você pode clicar em "Salvar relatório de auditoria".
 3. Para o navegador (no Windows novo), em "Depois de formatar", na etapa
    "Navegador e senhas", clique em "Abrir". Abre o assistente "Restaurar navegador",
@@ -105,11 +113,13 @@ um problema.
    Cookies, sessões abertas (logins) e passkeys **não voltam**: você vai precisar entrar nas contas de novo.
 
 Para restaurar de verdade, em "Histórico e relatórios" use
-"Escolher arquivo para testar". Por padrão, os arquivos vão para uma pasta nova.
-O botão "Colocar no lugar original" mostra antes uma prévia: se já existe lá um
-arquivo diferente, o app guarda o antigo com o nome terminado em `.antes-pcro-DATA`
-e coloca o novo. Nada é apagado. Lembre: o app recusa restaurar se estiver aberto
-como administrador.
+"Escolher arquivo para testar". Primeiro, os arquivos sempre vão para uma pasta nova
+(chamada `TESTE-RESTAURACAO`). Depois, se quiser, use "Colocar no lugar original" e
+escolha essa pasta de uma restauração já concluída. O app mostra antes uma prévia: se
+já existe lá um arquivo diferente, ele guarda o antigo com o nome terminado em
+`.antes-pcro-DATA` e coloca o novo. Nada é apagado. Arquivos de pastas do sistema
+(Program Files, ProgramData ou Windows) precisam de administrador e não são
+colocados, porque o app recusa restaurar se estiver aberto como administrador.
 
 ## Reinstalação guiada
 
@@ -123,13 +133,23 @@ O app **não formata e não instala o Windows**. Quem formata e instala é o
 - os botões "Revisar preservação", "Diagnóstico dos discos" e
   "Recuperação depois do Windows" levam às telas de cada etapa;
 - na tela "Recuperação", clique em "1. Exportar plano para usar depois" e guarde o
-  arquivo no disco do backup.
+  arquivo no disco do backup. No Windows novo, na mesma tela, clique em
+  "2. Abrir plano após reinstalar" e escolha esse arquivo: o app mostra o resumo do
+  plano (não instala nada nem muda arquivos).
 
 **Cuidado na hora de instalar.** O instalador apaga as partições que você excluir ou
-formatar naquele disco, sem volta. Antes, anote o tamanho e o modelo do disco do Windows que
-aparecem em "Analisar computador e discos" (menu "Diagnóstico") e confira os mesmos
-dados no instalador. O mais seguro é deixar o disco do backup desconectado durante
-a instalação (desconecte com o PC desligado e fora da tomada, e reconecte depois).
+formatar naquele disco, sem volta.
+
+- **Regra principal:** desconecte o disco do backup antes de instalar, com o PC
+  desligado e fora da tomada, e reconecte só depois.
+- Antes, em "Analisar computador e discos" (menu "Diagnóstico"), anote o número do
+  disco do Windows (`#0`, `#1`...) e o tamanho dele. O app mostra o tamanho em bytes;
+  o instalador mostra *Disco 0*, *Disco 1*... (ou *Unidade 0*) e o tamanho em GB. Para
+  comparar, divida os bytes por 1.073.741.824: o resultado é, de forma aproximada, o
+  número de GB que o instalador mostra.
+- O número do disco no app costuma ser o mesmo do instalador, mas isso não é
+  garantido. Confira também o tamanho.
+- Na dúvida, cancele a instalação: o que é apagado ali não volta.
 
 **Depois de formatar** ("Depois de formatar"):
 
@@ -147,8 +167,8 @@ Se a letra de uma unidade mudou, o app mostra como trocá-la à mão no
 No menu, clique em "Otimização". As abas são numeradas.
 
 1. **Conheça o PC.** Na aba "1  Diagnóstico", clique em "Analisar este PC". Só lê.
-2. **Meça antes.** Feche os programas e clique em "Medir ANTES (1 min)". Não use o
-   PC durante a medição.
+2. **Meça antes.** Deixe abertos só os programas de sempre e clique em
+   "Medir ANTES (1 min)". Não use o PC durante a medição.
 3. **Aplique os ajustes seguros.** Abra o app como administrador (veja a seção
    Instalar e abrir). Na aba "8  Ajustes seguros", clique em "Ver estado atual"
    e depois em "Aplicar ajustes seguros". O app mostra o que vai mudar, pergunta antes
@@ -156,7 +176,7 @@ No menu, clique em "Otimização". As abas são numeradas.
 4. **Ajustes avançados (opcional).** Na aba "9  Ajustes avançados", cada ajuste é
    aplicado um de cada vez. A pergunta mostra o lado ruim do ajuste e vem com **Não**
    marcado: apertar Enter não aplica nada. Só responda **Sim** se entendeu o aviso.
-5. **Meça depois.** Feche os mesmos programas e clique em "Medir DEPOIS (1 min)".
+5. **Meça depois.** Com os mesmos programas abertos, clique em "Medir DEPOIS (1 min)".
    O app compara processador, memória, processos, programas que abrem com o Windows
    e plano de energia.
 

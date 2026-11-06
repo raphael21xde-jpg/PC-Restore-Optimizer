@@ -8,7 +8,13 @@ _nav_entry/_nav_action ou a lista de abas/etapas que a função usa) DENTRO da
 função que monta a tela citada, e essa função precisa ser alcançável a partir
 de App.__init__, seguindo chamadas e referências por nome com ``ast``.
 Comentários, docstrings, funções nunca chamadas e as páginas escondidas
-(abas do notebook sem menu) não contam.
+(abas do notebook sem menu) não contam; o que só é aberto a partir de uma página
+escondida também não conta (as arestas dela não são seguidas).
+
+Limite: o mapa UI_LABELS e a lista HIDDEN_BUILDERS são escritos à mão. O teste
+não abre a interface; ele confia que a função do mapa é mesmo a da tela citada
+no manual e que toda página escondida está em HIDDEN_BUILDERS. Uma página nova
+escondida, ou um rótulo trocado de tela, precisa ser atualizado aqui à mão.
 """
 import ast
 import re
@@ -76,6 +82,7 @@ UI_LABELS = {
     # testar e restaurar
     'Testar restauração de arquivo pequeno': HISTORY,
     'Escolher arquivo para testar': HISTORY,
+    'Atualizar histórico': HISTORY,
     '5. Conferir TODO o backup (SHA-256)': RECOVERY,
     'Cancelar auditoria': RECOVERY,
     'Salvar relatório de auditoria': RECOVERY,
@@ -86,6 +93,7 @@ UI_LABELS = {
     'Diagnóstico dos discos': INSTALL,
     'Recuperação depois do Windows': INSTALL,
     '1. Exportar plano para usar depois': RECOVERY,
+    '2. Abrir plano após reinstalar': RECOVERY,
     'Conferir discos e letras': AFTER,
     'Restaurar os arquivos': AFTER,
     'Reinstalar os programas': AFTER,
@@ -129,6 +137,16 @@ HIDDEN_BUILDERS = {
     ('app.py', 'App._build_browsers'),   # "Navegadores"
     ('app.py', 'App._build_legacy_home'),
 }
+# App._build só põe os rótulos das abas escondidas; as páginas que ele monta seguem
+# pelas próprias funções. As outras páginas escondidas não abrem nada visível.
+BLOCKED_EDGES = HIDDEN_BUILDERS - {('app.py', 'App._build')}
+
+# Lado negativo da reinstalação guiada: sujeito, verbos auxiliares opcionais e o verbo.
+_APP_DOES = re.compile(
+    r'\b(o app|o aplicativo|ele)((?: (?:vai|pode|irá|ira|consegue|deve|precisa|tenta|'
+    r'costuma|chega a|começa a|passa a))*)(?: a)? '
+    r'(formata|formatar|formatará|particiona|particionar|instala|instalar|instalará|'
+    r'apaga|apagar|apagará)\b')
 
 _LABEL_CALLS = {'_nav_entry', '_nav_action'}
 
@@ -230,13 +248,16 @@ class _Project:
                 out += [(filename, q) for q in mod.methods.get(node.attr, [])]
         return out
 
-    def reachable(self, roots=ROOTS):
+    def reachable(self, roots=ROOTS, blocked=()):
+        """Funções alcançáveis; as de ``blocked`` entram no conjunto, mas o que só
+        elas abrem não (página escondida não leva a lugar nenhum visível)."""
         seen, stack = set(), list(roots)
         while stack:
             node = stack.pop()
             if node not in seen:
                 seen.add(node)
-                stack.extend(self.edges(*node))
+                if node not in blocked:
+                    stack.extend(self.edges(*node))
         return seen
 
     def _const_labels(self, value):
@@ -366,10 +387,18 @@ class ScreenAnalyzerTests(unittest.TestCase):
         '        ttk.Button(frame, text="Abrir janela", command=janela)\n'
         '        def nunca_usada():\n'
         '            ttk.Button(frame, text="Botão Interno Morto")\n'
+        '        self._build_escondida()\n'
+        '    def _build_escondida(self):\n'
+        '        def janela_escondida():\n'
+        '            ttk.Button(frame, text="Botão Da Janela Escondida")\n'
+        '        ttk.Button(frame, text="Abrir", command=janela_escondida)\n'
+        '        ttk.Button(frame, text="Outra", command=lambda: so_da_escondida())\n'
         '    def _build_morta(self):\n'
         '        ttk.Button(frame, text="Botão Morto")\n'
         'def solta():\n'
         '    ttk.Button(frame, text="Botão Solto Morto")\n'
+        'def so_da_escondida():\n'
+        '    ttk.Button(frame, text="Botão Só Da Página Escondida")\n'
         'SOLTOS = ("Texto Numa Tupla Do Módulo",)\n')
 
     def setUp(self):
@@ -403,6 +432,27 @@ class ScreenAnalyzerTests(unittest.TestCase):
         for dead in ('Botão Morto', 'Botão Solto Morto', 'Botão Interno Morto'):
             self.assertNotIn(dead, hits)
 
+    def test_window_opened_only_by_hidden_page_does_not_count(self):
+        hidden = ('tela.py', 'App._build_escondida')
+        reach = self.project.reachable((('tela.py', 'App.__init__'),), blocked={hidden})
+        self.assertIn(hidden, reach)
+        self.assertNotIn(('tela.py', 'App._build_escondida.janela_escondida'), reach)
+        self.assertNotIn(('tela.py', 'so_da_escondida'), reach)
+        hits = {lab for node in reach for lab in self.project.labels(*node)}
+        self.assertNotIn('Botão Da Janela Escondida', hits)
+        self.assertNotIn('Botão Só Da Página Escondida', hits)
+        # Sem o bloqueio, a janela seria alcançável: o bloqueio é que a tira.
+        self.assertIn(('tela.py', 'so_da_escondida'), self.reach)
+
+    def test_app_does_regex_catches_auxiliary_verbs(self):
+        for bad in ('o app formata o disco', 'O app vai formatar o C:', 'o app pode apagar',
+                    'ele irá instalar o Windows', 'o aplicativo consegue particionar',
+                    'o app vai a apagar'):
+            self.assertIsNotNone(_APP_DOES.search(bad.lower()), bad)
+        for ok in ('o app não formata', 'o app nunca apaga', 'ele só orienta',
+                   'o app guarda o antigo'):
+            self.assertIsNone(_APP_DOES.search(ok), ok)
+
     def test_curly_quotes_are_extracted(self):
         self.assertEqual(_quoted_names('clique em “Abrir” e em "Feito"'), {'Abrir', 'Feito'})
 
@@ -411,7 +461,7 @@ class ManualTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.project = _Project()
-        cls.reach = cls.project.reachable()
+        cls.reach = cls.project.reachable(blocked=BLOCKED_EDGES)
 
     def test_manual_exists_and_is_short(self):
         self.assertTrue(MANUAL.is_file())
@@ -500,8 +550,36 @@ class ManualTests(unittest.TestCase):
         # Lado negativo: fora da seção NUNCA, nenhuma frase diz que o app formata ou instala.
         never = _section(text, 'O que o app NUNCA faz')
         rest = _norm(text.replace(never, '').replace('*', '')).lower()
-        self.assertIsNone(
-            re.search(r'\b(o app|ele) (formata|particiona|instala|apaga)\b', rest))
+        self.assertIsNone(_APP_DOES.search(rest), _APP_DOES.search(rest) and
+                          rest[max(0, _APP_DOES.search(rest).start() - 40):][:120])
+
+    def test_backup_confirmation_matches_the_app(self):
+        # R-31/R-63: begin_backup faz uma pergunta só; o botão liga depois do passo 1.
+        flat = _norm(_manual_text()).lower()
+        for wrong in ('pergunta duas vezes', 'duas perguntas', 'pergunta 2 vezes'):
+            self.assertNotIn(wrong, flat)
+        backup = _norm(_section(_manual_text(), 'Backup'))
+        self.assertIn('só liga depois desse passo 1', backup)
+        self.assertIn('pergunta se pode começar', backup)
+        resume = [p for p in re.split(r'\n(?=\d\. )', _section(_manual_text(), 'Backup'))
+                  if 'Retomar backup interrompido' in p]
+        self.assertTrue(resume)
+        for item in resume:
+            self.assertIn('1. Recalcular plano e espaço', _norm(item))
+
+    def test_install_disk_check_uses_what_the_installer_shows(self):
+        # R-63: o instalador mostra número do disco e GB, nunca o modelo; o app mostra bytes.
+        body = _section(_manual_text(), 'Reinstalação guiada')
+        items = [_norm(p) for p in re.split(r'\n(?=- )|\n\s*\n', body)]
+        compare = [p for p in items if 'instalador' in p and ('anote' in p or 'confira' in p.lower()
+                                                               or 'comparar' in p)]
+        self.assertTrue(compare)
+        for item in compare:
+            self.assertNotIn('modelo', item.lower())
+        flat = _norm(body)
+        for needed in ('bytes', '1.073.741.824', 'GB', 'não é garantido', 'desconecte o disco do backup',
+                       'fora da tomada', 'cancele a instalação'):
+            self.assertIn(needed, flat)
 
     def test_protected_copy_not_presented_as_ready(self):
         paragraphs = [_norm(p) for p in _paragraphs(_manual_text())
