@@ -1,7 +1,8 @@
 """Task-oriented Optimization page integrated into PC Restore & Optimizer.
 
 No system mutation happens during construction, scanning or CSV import.
-Only the Power tab can request a reversible power-plan change after confirmation.
+Only the Power tab (power plan) and the "Ajustes seguros" tab (P3-04: closed
+HKCU list in ``safe_tweaks``) can request a reversible change, after confirmation.
 """
 from __future__ import annotations
 import json
@@ -30,6 +31,8 @@ import security_checkup as checkup_engine
 from security_checkup import CHECKUP_CONFIRMATION, IDLE_CONFIRMATION
 import pc_measure
 from pc_measure import MEASURE_CONFIRMATION
+import safe_tweaks
+from safe_tweaks import RegistryTweakAdapter, TWEAK_KIND
 from atomic_write import atomic_write_text
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
@@ -57,6 +60,10 @@ MEASURE_FAILED_TEXT=('A medição do PC não pôde ser concluída ou guardada. N
                      'Tente de novo mais tarde.')
 MEASURE_HISTORY_UNREADABLE=('Não foi possível ler as medições guardadas. Uma medição nova não '
                             'apaga nada: ela só é guardada quando o arquivo puder ser lido.')
+# Ressalvas da PR #200: o histórico é lido num Job (R-10) e, ilegível, a medição é recusada antes.
+MEASURE_LOADING_TEXT='Lendo as medições guardadas...'
+MEASURE_HISTORY_REFUSED=('Não foi possível ler as medições guardadas, então o app não vai medir agora: '
+                         'a medição nova não poderia ser guardada. Nada foi apagado nem mudado.')
 
 # ---------- P3-03 fatia 2a: textos da troca de plano (sem caminhos, R-07) ----------
 POWER_ADMIN_TEXT = (
@@ -129,6 +136,35 @@ CHANGES_RECHECK_ERROR_TEXT = (
     'O diário e os botões de aplicar e desfazer ajustes ficam desligados até você fechar e abrir '
     'o app de novo.')
 _NOTHING_SAVED = ' Nada foi gravado.'
+# ---------- P3-04: aba "Ajustes seguros" (textos fixos, R-07) ----------
+TWEAKS_TAB_LABEL = '8  Ajustes seguros'
+TWEAKS_TITLE = 'Ajustes seguros'
+TWEAKS_INTRO_TEXT = (
+    'Três ajustes simples do próprio Windows, só na sua conta, que você também pode mudar nas '
+    'Configurações do Windows. Nada de segurança é desligado. Com 1 clique o app aplica os que '
+    'faltam: antes, cria um ponto de restauração e anota tudo no diário de alterações.')
+TWEAKS_UNDO_WHERE_TEXT = ('Para desfazer: aba "' + CHANGES_TAB_LABEL + '", botão "Desfazer tudo". '
+                          'O "Conferir de novo" de lá também confere estes ajustes.')
+TWEAKS_NOT_READ_TEXT = 'Estado atual: ainda não lido. Clique em "Ver estado atual" (só lê).'
+TWEAKS_READING_TEXT = 'Lendo o estado atual dos ajustes (somente leitura)…'
+TWEAKS_READ_FAILED_TEXT = 'Não foi possível ler o estado dos ajustes. Nada foi mudado.'
+TWEAKS_NOTHING_TEXT = ('Não há ajuste seguro para aplicar: os que o app pode mexer já estão no '
+                       'valor certo. Nada foi mudado.')
+TWEAKS_CANCEL_TEXT = 'Aplicar ajustes seguros cancelado. Nada foi mudado.'
+TWEAKS_RUNNING_TEXT = 'Criando o ponto de restauração e aplicando os ajustes… Isto pode demorar um pouco.'
+TWEAKS_APPLIED_TEXT = ('Ajustes aplicados e anotados no diário de alterações. Para desfazer, use '
+                       '"Desfazer tudo" na aba "' + CHANGES_TAB_LABEL + '".')
+TWEAKS_GENERIC_FAIL = ('O Windows não confirmou a operação. Confira na aba "' + CHANGES_TAB_LABEL + '" '
+                       'com "Conferir de novo".')
+TWEAKS_UNKNOWN_TEXT = ('{n} ajuste(s) com estado desconhecido. Use "Conferir de novo" na aba "'
+                       + CHANGES_TAB_LABEL + '". Por segurança, novos ajustes ficam bloqueados.')
+TWEAKS_ADMIN_TEXT = (
+    'Para aplicar os ajustes, o app cria antes um ponto de restauração do Windows, e isso só '
+    'funciona com o app aberto como administrador. O app nunca pede isso sozinho. Se quiser '
+    'aplicar: feche o app, clique com o botão direito no atalho dele e escolha "Executar como '
+    'administrador". Atenção: se o Windows pedir a senha de OUTRA conta, os ajustes valeriam '
+    'para aquela conta e não para a sua; nesse caso, não aplique. Depois, para fazer backup ou '
+    'restaurar, abra o app de novo do jeito normal. Desfazer funciona sem administrador.')
 _LEGACY_KNOWN_MESSAGES = {
     'Nenhuma alteração anterior registrada neste aplicativo.',
     'Registro de reversão está ilegível.',
@@ -205,7 +241,8 @@ def build_presentmon_args(executable, process, output_file, seconds, session_nam
 
 class OptimizationPanel(tk.Frame):
     def __init__(self, master, app_dir, *, state_dir=None, power_adapter=None,
-                 restore_point=None, elevated_probe=None, ask=None, show=None):
+                 restore_point=None, elevated_probe=None, ask=None, show=None,
+                 tweak_adapter=None):
         super().__init__(master, bg=BG)
         self.app_dir=Path(app_dir)
         if state_dir is not None:
@@ -218,6 +255,10 @@ class OptimizationPanel(tk.Frame):
         # P3-03 fatia 2a: toda troca de plano passa pelo diário de alterações.
         self.change_journal_path=self.state_dir/'otimizacao-diario.json'
         self.power_adapter=power_adapter or PowerPlanAdapter()
+        # P3-04: ajustes seguros (lista fechada em HKCU); o registro só é lido num Job.
+        self.tweak_adapter=tweak_adapter or RegistryTweakAdapter()
+        self.tweak_states=None
+        self._tweaks_measuring=False
         self._restore_point=restore_point or create_restore_point
         self._elevated_probe=elevated_probe
         self._ask=ask or (lambda title, text: messagebox.askyesno(title, text))
@@ -270,6 +311,9 @@ class OptimizationPanel(tk.Frame):
         # P3-02: medição antes e depois (Job) e o arquivo com as medições.
         self._measure_job=None
         self.measure_path=self.state_dir/pc_measure.MEASURE_FILE
+        # Ressalvas da PR #200: o histórico é lido num Job; 'ok', 'unreadable' ou None (lendo).
+        self._history_job=None
+        self._measure_history_state=None
         self.scenario=tk.StringVar(value='Counter-Strike 2 | mesmo mapa, resolução e ajustes')
         self.phase=tk.StringVar(value='antes')
         self.plan_choice=tk.StringVar(value='')
@@ -324,10 +368,11 @@ class OptimizationPanel(tk.Frame):
         firmware=ttk.Frame(self.tabs)
         stutters=ttk.Frame(self.tabs)
         changes=ttk.Frame(self.tabs)
+        tweaks=ttk.Frame(self.tabs)
         for frame,name in ((diagnose,'1  Diagnóstico'),(monitor,'2  Temperaturas e sessões'),
                            (stutters,'3  Stutters / quadros'),(power,'4  Energia reversível'),
                            (compare,'5  Benchmarks'),(firmware,'6  BIOS e drivers'),
-                           (changes,CHANGES_TAB_LABEL)):
+                           (changes,CHANGES_TAB_LABEL),(tweaks,TWEAKS_TAB_LABEL)):
             self.tabs.add(frame,text=name)
         self._build_diagnostics(diagnose)
         self._build_monitor(monitor)
@@ -336,6 +381,7 @@ class OptimizationPanel(tk.Frame):
         self._build_benchmarks(compare)
         self._build_firmware(firmware)
         self._build_changes(changes)
+        self._build_tweaks(tweaks)
         tk.Label(outer,textvariable=self.note,bg=BG,fg=GREEN,anchor='w',
                  wraplength=900,justify='left',font=('Segoe UI',9)).pack(fill='x',pady=(10,1))
 
@@ -375,7 +421,8 @@ class OptimizationPanel(tk.Frame):
         self.measure_text=tk.Text(box,bg=PANEL,fg=TEXT,relief='flat',bd=0,wrap='word',
                                   font=('Consolas',10),padx=16,pady=6,height=9)
         self.measure_text.pack(fill='x',padx=(0,4),pady=(0,8))
-        self._render_measures()
+        self._write(self.measure_text,MEASURE_LOADING_TEXT)
+        self._load_measures()
         self.report_text=self._text_area(area)
         self._write(self.report_text,'Nenhuma análise executada. Clique em “Analisar este PC”.\n\n'
                     'Princípio do estudo Honest: avaliar Windows, GPU, firmware e resultados com benchmarks.\n'
@@ -973,6 +1020,179 @@ class OptimizationPanel(tk.Frame):
         self.changes_text=self._text_area(area)
         self._update_power_buttons()
 
+    def _build_tweaks(self,parent):
+        """P3-04: lista fechada de ajustes seguros. Montar não lê o registro (só no Job)."""
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        self._paragraph(area,'Ajustes seguros com 1 clique',TWEAKS_INTRO_TEXT)
+        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(2,8))
+        self.btn_tweaks_apply=ttk.Button(buttons,text='Aplicar ajustes seguros',style='Primary.TButton',
+                                         command=self.apply_safe_tweaks)
+        self.btn_tweaks_apply.pack(side='left')
+        self.btn_tweaks_refresh=ttk.Button(buttons,text='Ver estado atual',command=self.refresh_tweaks)
+        self.btn_tweaks_refresh.pack(side='left',padx=(9,0))
+        self.tweaks_status=tk.StringVar(value='')
+        tk.Label(area,textvariable=self.tweaks_status,bg=BG,fg=AMBER,anchor='w',justify='left',
+                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
+        self.tweaks_text=self._text_area(area)
+        self._render_tweaks(None)
+        self._update_tweak_buttons()
+
+    def _render_tweaks(self,states,failed=False):
+        """Só mostra a memória: a lista fixa e o último estado lido (num Job)."""
+        if not hasattr(self,'tweaks_text'):
+            return
+        lines=safe_tweaks.intro_lines()+['']
+        if failed:
+            lines.append(TWEAKS_READ_FAILED_TEXT)
+        elif states is None:
+            lines.append(TWEAKS_NOT_READ_TEXT)
+        else:
+            lines+=safe_tweaks.state_lines(states)
+        lines+=['',TWEAKS_UNDO_WHERE_TEXT]
+        self._write(self.tweaks_text,'\n'.join(lines))
+
+    def _update_tweak_buttons(self,measuring=None):
+        if measuring is not None:
+            self._tweaks_measuring=measuring
+        if not hasattr(self,'btn_tweaks_apply'):
+            return
+        # Um de cada vez: nada roda junto com outra tarefa da aba.
+        busy=self.power_busy or self._tweaks_measuring or self._any_measure_running()
+        usable=self.journal is not None and not self.journal_error
+        can_apply=usable and not busy and not self._count_status('unknown')
+        self.btn_tweaks_apply.state(['!disabled'] if can_apply else ['disabled'])
+        self.btn_tweaks_refresh.state(['disabled'] if busy else ['!disabled'])
+
+    def _tweaks_busy(self):
+        return self.power_busy or self._tweaks_measuring or self._any_measure_running()
+
+    def _read_tweaks_work(self):
+        """Roda no Job: só lê os valores da lista fechada."""
+        try:
+            return {'tweaks':safe_tweaks.read_states(self.tweak_adapter)}
+        except Exception:
+            return {'tweaks':None}
+
+    def _read_tweaks_after(self):
+        """Depois de desfazer/conferir: relê só se o estado já foi mostrado nesta janela."""
+        return self._read_tweaks_work() if self.tweak_states is not None else {}
+
+    def _show_tweak_states(self,outcome):
+        if 'tweaks' not in outcome:
+            return
+        states=outcome.get('tweaks')
+        if states is None:
+            self._render_tweaks(None,failed=True)
+            return
+        self.tweak_states=states
+        self._render_tweaks(states)
+
+    def refresh_tweaks(self):
+        """Só lê, num Job (R-10): sem confirmação, sem administrador."""
+        if self._tweaks_busy():
+            return
+        self.tweaks_status.set(TWEAKS_READING_TEXT)
+        self._run_power_job(self._read_tweaks_work,self._tweaks_read_done)
+
+    def _tweaks_read_done(self,outcome):
+        self._show_tweak_states(outcome)
+        if outcome.get('tweaks') is None:
+            self.tweaks_status.set(TWEAKS_READ_FAILED_TEXT)
+        else:
+            self.tweaks_status.set('Estado atual lido. Nada foi mudado.')
+
+    def apply_safe_tweaks(self):
+        """1 clique: lê (Job), pergunta com a lista do que muda e aplica num único lote (Job)."""
+        if self._tweaks_busy():
+            return
+        if self.journal is None or self.journal_error:
+            self._show('error',TWEAKS_TITLE,self._journal_error_text())
+            return
+        unknown=self._count_status('unknown')
+        if unknown:
+            message=TWEAKS_UNKNOWN_TEXT.format(n=unknown)
+            self.tweaks_status.set(message)
+            self._show('warning',TWEAKS_TITLE,message)
+            return
+        if not self._is_elevated():
+            # O app nunca pede elevação: só explica e não lê nem muda nada.
+            self.tweaks_status.set(TWEAKS_ADMIN_TEXT)
+            self._show('warning',TWEAKS_TITLE,TWEAKS_ADMIN_TEXT)
+            return
+        self.tweaks_status.set(TWEAKS_READING_TEXT)
+        self._run_power_job(self._read_tweaks_work,self._tweaks_ready)
+
+    def _tweaks_ready(self,outcome):
+        self._show_tweak_states(outcome)
+        states=outcome.get('tweaks')
+        if states is None:
+            self.tweaks_status.set(TWEAKS_READ_FAILED_TEXT)
+            self._show('warning',TWEAKS_TITLE,TWEAKS_READ_FAILED_TEXT)
+            return
+        changes=safe_tweaks.pending_changes(states)
+        tweaks=safe_tweaks.pending_tweaks(states)
+        if not changes:
+            self.tweaks_status.set(TWEAKS_NOTHING_TEXT)
+            self._show('info',TWEAKS_TITLE,TWEAKS_NOTHING_TEXT)
+            return
+        if not self._ask(TWEAKS_TITLE,safe_tweaks.confirmation_text(tweaks)):
+            self.tweaks_status.set(TWEAKS_CANCEL_TEXT)
+            return
+        journal=self.journal
+        if journal is None or self.journal_error:
+            self._show('error',TWEAKS_TITLE,self._journal_error_text())
+            return
+        adapter=self.tweak_adapter
+        def work():
+            try:
+                if journal.has_blocking():
+                    journal.recover_interrupted()
+                # Relê agora: só entra o que continua faltando e estava na pergunta.
+                asked={change['key'] for change in changes}
+                todo=[c for c in safe_tweaks.pending_changes(safe_tweaks.read_states(adapter))
+                      if c['key'] in asked]
+                if not todo:
+                    outcome={'status':'unchanged'}
+                else:
+                    self.state_dir.mkdir(parents=True,exist_ok=True)
+                    journal.apply_batch(todo)
+                    outcome={'status':'applied'}
+            except BatchRefused as exc:
+                outcome={'status':'refused','message':str(exc)}
+            except JournalError as exc:
+                outcome={'status':'journal','message':str(exc)}
+            except Exception:
+                outcome={'status':'error'}
+            outcome.update(self._read_tweaks_work())
+            return outcome
+        self.tweaks_status.set(TWEAKS_RUNNING_TEXT)
+        self._run_power_job(work,lambda outcome:self._tweaks_apply_done(outcome,tweaks))
+
+    def _tweaks_apply_done(self,outcome,tweaks):
+        self._show_tweak_states(outcome)
+        status=outcome.get('status')
+        if status=='applied':
+            message='\n'.join([TWEAKS_APPLIED_TEXT,'Quando cada ajuste passa a valer:']
+                              +safe_tweaks.applied_lines(tweaks))
+            self.tweaks_status.set(message)
+            self.note.set('Ajustes seguros aplicados e registrados para desfazer.')
+            self._show('info',TWEAKS_TITLE,message)
+        elif status=='unchanged':
+            self.tweaks_status.set(TWEAKS_NOTHING_TEXT)
+        elif status=='journal':
+            self.tweaks_status.set('')
+            self._journal_failed(outcome.get('message',''))
+        elif status=='refused':
+            message=outcome.get('message','')
+            if 'ponto de restauração' in message:
+                message+=' '+POWER_RESTORE_POINT_HELP
+            self.tweaks_status.set(message)
+            self._show('warning',TWEAKS_TITLE,message)
+        else:
+            # R-07: nunca o texto do Windows.
+            self.tweaks_status.set(TWEAKS_GENERIC_FAIL)
+            self._show('error',TWEAKS_TITLE,TWEAKS_GENERIC_FAIL)
+
     def _build_benchmarks(self,parent):
         area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
         self._paragraph(area,'Etapa 3: medir ganhos reais, sem promessas de FPS',
@@ -1222,18 +1442,46 @@ class OptimizationPanel(tk.Frame):
             button=getattr(self,name,None)
             if button is not None:
                 button.configure(state=state)
+        # P3-04: enquanto o check-up, o uso parado ou a medição rodam, os ajustes esperam.
+        self._update_tweak_buttons(measuring=(state=='disabled'))
 
-    def _render_measures(self):
-        try:
-            history=pc_measure.read_measures(self.measure_path)
-        except ValueError:
+    def _render_measures(self,history):
+        """Só mostra (R-10): o histórico já vem lido num Job; None = ilegível."""
+        if history is None:
             self._write(self.measure_text,MEASURE_HISTORY_UNREADABLE+'\n\n'+pc_measure.MEASURE_WARNING)
             return
         self._write(self.measure_text,'\n'.join(pc_measure.compare_measures(history)))
 
+    def _load_measures(self):
+        """Lê o histórico de medições num Job (R-10) e mostra a comparação."""
+        if self._history_job is not None:
+            return
+        path=self.measure_path
+        job=Job(lambda cancelled,progress:pc_measure.read_measures(path))
+        self._history_job=job
+        def poll():
+            outcome=job.poll()
+            if outcome is None:
+                self._timers.after(50,poll)
+                return
+            self._history_job=None
+            kind,value=outcome
+            if kind=='done':
+                self._measure_history_state='ok'
+                self._render_measures(value)
+            else:
+                self._measure_history_state='unreadable'
+                self._render_measures(None)
+        self._timers.after(10,poll)
+
     def measure_pc(self,phase):
         """P3-02: pergunta antes; mede ~1 minuto (só leitura) num Job e guarda; retorno por WindowTimers."""
-        if phase not in pc_measure.PHASES or self._any_measure_running():
+        if phase not in pc_measure.PHASES or self._any_measure_running() or self._history_job is not None:
+            return
+        if self._measure_history_state=='unreadable':
+            # Ressalva 2 da PR #200: recusa antes da pergunta, sem medir 1 minuto à toa.
+            self.note.set('O app não vai medir agora: as medições guardadas não puderam ser lidas.')
+            self._show('warning',MEASURE_TITLE,MEASURE_HISTORY_REFUSED)
             return
         if not self._ask(MEASURE_TITLE,MEASURE_CONFIRMATION):
             self.note.set('Medição cancelada. Nada foi lido nem alterado.')
@@ -1256,11 +1504,13 @@ class OptimizationPanel(tk.Frame):
                 self._timers.after(200,poll)
                 return
             self._measure_job=None
-            kind,_value=outcome
+            kind,value=outcome
             self._measure_done()
             if kind=='done':
                 self.note.set('Medição '+phase.upper()+' concluída e guardada. Nada foi mudado.')
-                self._render_measures()
+                # R-10: usa o histórico que save_measure devolveu (lido no Job).
+                self._measure_history_state='ok'
+                self._render_measures(value)
             else:
                 # R-07: nunca a mensagem original (pode ter caminho com nome de usuário).
                 self.note.set('A medição do PC não pôde ser concluída. Nada foi mudado.')
@@ -1317,7 +1567,8 @@ class OptimizationPanel(tk.Frame):
     def _load_change_journal(self):
         """Só lê arquivos: abrir o painel nunca roda comando nenhum."""
         try:
-            self.journal=ChangeJournal(self.change_journal_path,{POWER_KIND:self.power_adapter},
+            self.journal=ChangeJournal(self.change_journal_path,
+                                       {POWER_KIND:self.power_adapter,TWEAK_KIND:self.tweak_adapter},
                                        self._restore_point)
             self.journal_error=''
         except JournalError as exc:
@@ -1394,6 +1645,7 @@ class OptimizationPanel(tk.Frame):
                          and self._count_status('applied')+self._count_status('unknown')>0)
             self.btn_recheck.state(['!disabled'] if can_recheck else ['disabled'])
             self._render_changes()
+        self._update_tweak_buttons()
 
     def _journal_failed(self,message,title='Diário de alterações',off_text=POWER_JOURNAL_OFF_TEXT):
         # R-28: esta função já mostra a janela de erro; quem chama não abre outra.
@@ -1506,6 +1758,7 @@ class OptimizationPanel(tk.Frame):
     def _after_power_job(self,outcome):
         if outcome.get('plans'):
             self._render_plans(outcome['plans'],outcome.get('active'))
+        self._show_tweak_states(outcome)
 
     def _apply_done(self,outcome):
         self._after_power_job(outcome)
@@ -1601,6 +1854,7 @@ class OptimizationPanel(tk.Frame):
             except Exception:
                 outcome={'status':'error'}
             outcome.update(self._read_plans_work())
+            outcome.update(self._read_tweaks_after())
             return outcome
         self.changes_status.set('Desfazendo as alterações, da mais nova para a mais antiga…')
         self._run_power_job(work,self._undo_all_done)
@@ -1662,6 +1916,7 @@ class OptimizationPanel(tk.Frame):
             except Exception:
                 outcome={'status':'error'}
             outcome.update(self._read_plans_work())
+            outcome.update(self._read_tweaks_after())
             return outcome
         self.changes_status.set(CHANGES_RECHECK_RUNNING_TEXT)
         self._run_power_job(work,self._recheck_done)

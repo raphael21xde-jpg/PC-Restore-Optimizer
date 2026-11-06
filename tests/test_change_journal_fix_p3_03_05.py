@@ -45,7 +45,8 @@ class ChangesTabLabelAndOtherErrorsTests(f2b.ChangesTabHelpers):
         panel = self.panel()
         self.root.update()
         tabs = panel.tabs.tabs()
-        self.assertEqual(len(tabs), 7)
+        # P3-04: a aba 8 "Ajustes seguros" veio depois; a 7 continua sendo "Alterações feitas".
+        self.assertEqual(len(tabs), 8)
         self.assertEqual(panel.tabs.tab(tabs[6], 'text'), ou.CHANGES_TAB_LABEL)
 
     def test_other_journal_error_still_ends_with_off_text(self):

@@ -66,7 +66,7 @@ class SourceTests(unittest.TestCase):
         source = (ROOT / 'optimization_ui.py').read_text(encoding='utf-8')
         self.assertIn("MEASURE_BEFORE_TEXT='Medir ANTES (1 min)'", source)
         self.assertIn("MEASURE_AFTER_TEXT='Medir DEPOIS (1 min)'", source)
-        for name in ('measure_pc', '_measure_done', '_render_measures'):
+        for name in ('measure_pc', '_measure_done', '_render_measures', '_load_measures'):
             code = ast.unparse(_function(name))
             for forbidden in ('powercfg', 'Stop-Process', 'Remove-', 'RunAs', 'subprocess', 'webbrowser',
                               'startfile', 'http'):
@@ -102,7 +102,7 @@ class MeasureBlockTests(unittest.TestCase):
                                           ask=self._ask, show=lambda *a: self.shown.append(a))
         self.panel.pack()
         deadline = time.monotonic() + 5
-        while self.panel.power_busy and time.monotonic() < deadline:
+        while (self.panel.power_busy or self.panel._history_job is not None) and time.monotonic() < deadline:
             self.root.update()
             time.sleep(0.01)
         self.addCleanup(self._join)  # R-29: roda antes da limpeza da pasta.
@@ -112,7 +112,7 @@ class MeasureBlockTests(unittest.TestCase):
         return self.answer
 
     def _join(self):
-        for name in ('_measure_job', '_checkup_job', '_idle_job'):
+        for name in ('_measure_job', '_checkup_job', '_idle_job', '_history_job'):
             job = getattr(self.panel, name, None)
             if job is not None:
                 job.thread.join(timeout=5)
@@ -191,7 +191,7 @@ class MeasureBlockTests(unittest.TestCase):
             self.panel.measure_pc('depois')
             self._wait(self.panel._measure_job)
         text = self._text()
-        self.assertIn('Uso do processador (média): 20% → 12% (8 pontos a menos)', text)
+        self.assertIn('Uso do processador (média): 20% → 12% (8 pontos percentuais a menos)', text)
         self.assertIn('Processos abertos: 200 → 180 (20 a menos)', text)
         self.assertIn(pm.MEASURE_WARNING, text)
         saved = json.loads((self.tmp / pm.MEASURE_FILE).read_text(encoding='utf-8'))
@@ -255,16 +255,61 @@ class MeasureBlockTests(unittest.TestCase):
         if window is not None:
             window.destroy()
 
-    def test_unreadable_history_is_shown_and_kept(self):
+    def _load(self):
+        self.panel._load_measures()
+        job = self.panel._history_job
+        self.assertIsNotNone(job)
+        job.thread.join(timeout=5)
+        deadline = time.monotonic() + 5
+        while self.panel._history_job is not None and time.monotonic() < deadline:
+            self.root.update()
+            time.sleep(0.01)
+        self.assertIsNone(self.panel._history_job)
+
+    def test_unreadable_history_is_refused_before_asking_and_kept(self):
+        # Ressalva 2 da PR #200: recusa antes da pergunta, sem medir 1 minuto à toa.
         path = self.tmp / pm.MEASURE_FILE
         path.write_text('{quebrado', encoding='utf-8')
-        self.panel._render_measures()
+        self._load()
         self.assertIn(ou.MEASURE_HISTORY_UNREADABLE, self._text())
-        with mock.patch.object(pm, 'read_measure', return_value=_measure()):
+        job_before = self.panel._measure_job
+        with mock.patch.object(pm, 'read_measure', side_effect=_forbidden) as read:
             self.panel.measure_pc('antes')
-            self._wait(self.panel._measure_job)
+        read.assert_not_called()
+        self.assertIs(self.panel._measure_job, job_before)
+        self.assertEqual(self.asked, [])
+        self.assertEqual(self.shown[0][2], ou.MEASURE_HISTORY_REFUSED)
         self.assertEqual(path.read_text(encoding='utf-8'), '{quebrado')
-        self.assertEqual(self.shown[0][2], ou.MEASURE_FAILED_TEXT)
+        for button in self._buttons():
+            self.assertFalse(button.instate(['disabled']))
+
+    def test_history_is_read_in_a_job_never_on_the_screen_thread(self):
+        # Ressalva 1 da PR #200 (R-10): montar a tela e terminar a medição não leem o arquivo.
+        main = threading.current_thread()
+        calls = []
+        real = pm.read_measures
+
+        def spy(path):
+            calls.append(threading.current_thread() is main)
+            return real(path)
+        with mock.patch.object(pm, 'read_measures', side_effect=spy):
+            panel = ou.OptimizationPanel(self.root, app_dir=self.tmp, state_dir=self.tmp,
+                                         ask=self._ask, show=lambda *a: self.shown.append(a))
+            self.assertEqual(panel.measure_text.get('1.0', 'end').strip(), ou.MEASURE_LOADING_TEXT)
+            job = panel._history_job
+            job.thread.join(timeout=5)
+            deadline = time.monotonic() + 5
+            while panel._history_job is not None and time.monotonic() < deadline:
+                self.root.update()
+                time.sleep(0.01)
+            self.assertIn(pm.MISSING_BEFORE, panel.measure_text.get('1.0', 'end'))
+            with mock.patch.object(pm, 'read_measure', return_value=_measure()):
+                self.panel.measure_pc('antes')
+                self._wait(self.panel._measure_job)
+        self.assertTrue(calls)
+        self.assertNotIn(True, calls)
+        self.assertIn('ANTES: medido em', self._text())
+        panel.destroy()
 
 
 if __name__ == '__main__':
