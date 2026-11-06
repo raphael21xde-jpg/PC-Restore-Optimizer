@@ -174,6 +174,12 @@ TWEAKS_ADMIN_TEXT = (
     'ajustes valeriam para aquela conta e não para a sua; por isso o app confere a conta e, se '
     'não for a sua, não lê nem muda nada. Depois, para fazer backup ou '
     'restaurar, abra o app de novo do jeito normal. Desfazer funciona sem administrador.')
+# R-30: diário com problema ao aplicar ajustes: diz exatamente o que fica desligado.
+TWEAKS_JOURNAL_OFF_TEXT = (
+    'Por segurança, até você fechar e abrir o app de novo, ficam desligados: "Aplicar ajustes '
+    'seguros" (aba "' + TWEAKS_TAB_LABEL + '"), "Desfazer tudo" e "Conferir de novo" (aba "'
+    + CHANGES_TAB_LABEL + '") e os botões de aplicar e desfazer da aba "4  Energia reversível". '
+    '"Ver estado atual" continua funcionando (só lê).')
 # R-55: o HKCU é o da conta do processo; só segue se for a mesma conta que está usando o PC.
 TWEAKS_OTHER_ACCOUNT_TEXT = (
     'O app está aberto com outra conta do Windows, diferente da conta que está usando o computador '
@@ -1109,11 +1115,24 @@ class OptimizationPanel(tk.Frame):
         self.tweak_states=states
         self._render_tweaks(states)
 
-    def _tweaks_account_refused(self):
-        """R-55: só segue com a mesma conta que está usando o PC; senão explica e para.
+    def _checked_read_tweaks_work(self):
+        """Roda no Job (R-10/R-56): primeiro confere a conta, depois só lê.
 
-        Roda antes de ler o registro: outra conta ou "não deu para saber" = recusa."""
+        A consulta da conta pode esperar pela rede (conta de domínio), então nunca roda
+        na thread da tela. Outra conta ou "não deu para saber" = não lê o registro."""
         answer=session_owner.session_owner(self._session_owner_probe)
+        if answer!=session_owner.SAME:
+            return {'account':answer}
+        outcome=self._read_tweaks_work()
+        outcome['account']=answer
+        return outcome
+
+    def _tweaks_account_refused(self,outcome):
+        """R-55: no retorno do Job, só segue com a mesma conta que está usando o PC.
+
+        Outra conta ou "não deu para saber" (inclusive Job que falhou) = explica e para,
+        sem perguntar e sem ponto de restauração."""
+        answer=outcome.get('account',session_owner.UNKNOWN)
         if answer==session_owner.SAME:
             return False
         message=(TWEAKS_OTHER_ACCOUNT_TEXT if answer==session_owner.OTHER
@@ -1126,12 +1145,12 @@ class OptimizationPanel(tk.Frame):
         """Só lê, num Job (R-10): sem confirmação, sem administrador."""
         if self._tweaks_busy():
             return
-        if self._tweaks_account_refused():
-            return
         self.tweaks_status.set(TWEAKS_READING_TEXT)
-        self._run_power_job(self._read_tweaks_work,self._tweaks_read_done)
+        self._run_power_job(self._checked_read_tweaks_work,self._tweaks_read_done)
 
     def _tweaks_read_done(self,outcome):
+        if self._tweaks_account_refused(outcome):
+            return
         self._show_tweak_states(outcome)
         if outcome.get('tweaks') is None:
             self.tweaks_status.set(TWEAKS_READ_FAILED_TEXT)
@@ -1156,13 +1175,14 @@ class OptimizationPanel(tk.Frame):
             self.tweaks_status.set(TWEAKS_ADMIN_TEXT)
             self._show('warning',TWEAKS_TITLE,TWEAKS_ADMIN_TEXT)
             return
-        if self._tweaks_account_refused():
-            # R-55: outra conta ou "não deu para saber": não lê, não pergunta, sem ponto de restauração.
-            return
+        # R-55/R-56: a conta é conferida no Job, antes de ler; a recusa vem no retorno.
         self.tweaks_status.set(TWEAKS_READING_TEXT)
-        self._run_power_job(self._read_tweaks_work,self._tweaks_ready)
+        self._run_power_job(self._checked_read_tweaks_work,self._tweaks_ready)
 
     def _tweaks_ready(self,outcome):
+        if self._tweaks_account_refused(outcome):
+            # Outra conta ou "não deu para saber": não leu, não pergunta, sem ponto de restauração.
+            return
         self._show_tweak_states(outcome)
         states=outcome.get('tweaks')
         if states is None:
@@ -1220,8 +1240,10 @@ class OptimizationPanel(tk.Frame):
         elif status=='unchanged':
             self.tweaks_status.set(TWEAKS_NOTHING_TEXT)
         elif status=='journal':
-            self.tweaks_status.set('')
-            self._journal_failed(outcome.get('message',''))
+            # R-30: texto completo da aba 8, com os botões que de fato ficam desligados.
+            message=(outcome.get('message','')+' '+TWEAKS_JOURNAL_OFF_TEXT).strip()
+            self.tweaks_status.set(message)
+            self._journal_failed(message,title=TWEAKS_TITLE,off_text=None)
         elif status=='refused':
             message=outcome.get('message','')
             if 'ponto de restauração' in message:

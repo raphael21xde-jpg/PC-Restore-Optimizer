@@ -74,11 +74,19 @@ class SourceTests(unittest.TestCase):
         self.assertIn('self._is_elevated()', start)
         self.assertIn('self._run_power_job', start)
         self.assertNotIn('read_states', start)    # a leitura é no Job, não na tela
-        # R-55: a conta é conferida antes de ler (antes do Job), em aplicar e em ver o estado.
+        # R-55/R-56: a conta é conferida dentro do Job, antes de ler; nunca na thread da tela.
         for name in ('apply_safe_tweaks', 'refresh_tweaks'):
             code = ast.unparse(_function(name))
-            self.assertIn('self._tweaks_account_refused()', code)
-            self.assertLess(code.index('self._tweaks_account_refused()'), code.index('self._run_power_job'))
+            self.assertIn('self._checked_read_tweaks_work', code)
+            self.assertNotIn('session_owner', code)
+        work = ast.unparse(_function('_checked_read_tweaks_work'))
+        self.assertLess(work.index('session_owner.session_owner'), work.index('_read_tweaks_work()'))
+        for name in ('_tweaks_ready', '_tweaks_read_done'):
+            code = ast.unparse(_function(name))
+            self.assertNotIn('session_owner.session_owner', code)
+            self.assertIn('self._tweaks_account_refused(outcome)', code)
+        ready_code = ast.unparse(_function('_tweaks_ready'))
+        self.assertLess(ready_code.index('_tweaks_account_refused'), ready_code.index('self._ask'))
         ready = ast.unparse(_function('_tweaks_ready'))
         self.assertIn('self._ask', ready)
         self.assertIn('confirmation_text', ready)
@@ -116,6 +124,8 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.admin = True
         self.owner = so.SAME
         self.owner_calls = 0
+        self.owner_threads = []
+        self.owner_reg_calls = []
         self.restore_ok = True
         self.restore_calls = []
         self.answer = True
@@ -140,6 +150,8 @@ class SafeTweaksTabTests(unittest.TestCase):
 
     def _owner(self):
         self.owner_calls += 1
+        self.owner_threads.append(threading.current_thread() is threading.main_thread())
+        self.owner_reg_calls.append(len(self.reg.calls))
         if isinstance(self.owner, Exception):
             raise self.owner
         return self.owner
@@ -316,10 +328,14 @@ class SafeTweaksTabTests(unittest.TestCase):
 
     # ---------- R-55: mesma conta que está usando o PC ----------
     def assert_refused_without_reading(self, expected):
+        # R-21: o Job rodou (a conta é conferida nele), mas não leu o registro,
+        # não perguntou e não criou ponto de restauração.
+        self.assertIsNotNone(self.panel._power_job)
+        self.assertFalse(self.panel.power_busy)
         self.assertEqual(self.reg.calls, [])
         self.assertEqual(self.asked, [])
         self.assertEqual(self.restore_calls, [])
-        self.assertIsNone(self.panel._power_job)
+        self.assertIsNone(self.panel.tweak_states)
         self.assertEqual(self.shown[-1], ('warning', ou.TWEAKS_TITLE, expected))
         self.assertEqual(self.panel.tweaks_status.get(), expected)
         self.assertFalse(self.panel.journal.entries())
@@ -334,6 +350,41 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.assertEqual(self.owner_calls, 2)
         self.assertEqual(len(self.asked), 1)
         self.assertEqual(len(self.restore_calls), 1)
+
+    def test_account_check_runs_in_the_job_before_reading(self):
+        # R-10/R-56: a consulta da conta pode esperar pela rede; nunca na thread da tela.
+        self.panel.refresh_tweaks()
+        self.settle()
+        self.panel.apply_safe_tweaks()
+        self.settle()
+        self.assertEqual(self.owner_threads, [False, False])
+        # Primeira coisa do Job: antes de qualquer leitura do registro deste Job.
+        self.assertEqual(self.owner_reg_calls[0], 0)
+
+    def test_screen_does_not_wait_for_a_slow_account_check(self):
+        release = threading.Event()
+        started = threading.Event()
+
+        def slow():
+            started.set()
+            release.wait(5)
+            return so.OTHER
+        self.panel._session_owner_probe = slow
+        self.panel.apply_safe_tweaks()   # volta na hora: a espera é no Job
+        self.assertTrue(started.wait(5))
+        self.root.update()
+        self.assertTrue(self.panel.power_busy)
+        self.assertTrue(self.panel.btn_tweaks_apply.instate(['disabled']))
+        self.assertEqual(self.panel.tweaks_status.get(), ou.TWEAKS_READING_TEXT)
+        release.set()
+        self.settle()
+        self.assert_refused_without_reading(ou.TWEAKS_OTHER_ACCOUNT_TEXT)
+
+    def test_failed_job_counts_as_unknown_account(self):
+        self.panel._tweaks_ready({'status': 'error'})
+        self.assertEqual(self.asked, [])
+        self.assertEqual(self.restore_calls, [])
+        self.assertEqual(self.shown[-1], ('warning', ou.TWEAKS_TITLE, ou.TWEAKS_ACCOUNT_UNKNOWN_TEXT))
 
     def test_other_account_refuses_without_reading_or_asking(self):
         self.owner = so.OTHER
@@ -368,8 +419,11 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.addCleanup(panel.destroy)
         with mock.patch.object(so.sys, 'platform', 'linux'):
             panel.apply_safe_tweaks()
+            self.settle(panel)
+            self.assertEqual(self.shown[-1][2], ou.TWEAKS_ACCOUNT_UNKNOWN_TEXT)
             panel.refresh_tweaks()
-        self.assertIsNone(panel._power_job)
+            self.settle(panel)
+        self.assertIsNotNone(panel._power_job)
         self.assertEqual(self.reg.calls, [])
         self.assertEqual(self.asked, [])
         self.assertEqual(self.shown[-1][2], ou.TWEAKS_ACCOUNT_UNKNOWN_TEXT)
@@ -420,6 +474,28 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.panel.apply_safe_tweaks()
         self.assertEqual(len(self.asked), asked)
         self.assertEqual(self.shown[-1], ('error', ou.TWEAKS_TITLE, message))
+
+    def test_journal_error_lists_the_buttons_that_turn_off(self):
+        # R-30: texto próprio da aba 8, completo (off_text=None), sem a frase do plano de energia.
+        with mock.patch.object(self.panel.journal, 'apply_batch',
+                               side_effect=ou.JournalError('Não foi possível gravar o diário de alterações.')):
+            self.panel.apply_safe_tweaks()
+            self.settle()
+        message = 'Não foi possível gravar o diário de alterações. ' + ou.TWEAKS_JOURNAL_OFF_TEXT
+        self.assertEqual(self.shown[-1], ('error', ou.TWEAKS_TITLE, message))
+        self.assertEqual(self.panel.tweaks_status.get(), message)
+        self.assertIsNone(self.panel.journal)
+        self.assertIsNone(self.panel.journal_off_text)
+        self.assertNotIn(ou.POWER_JOURNAL_OFF_TEXT, message)
+        for label in ('Aplicar ajustes seguros', 'Desfazer tudo', 'Conferir de novo', '4  Energia reversível',
+                      'fechar e abrir', 'Ver estado atual'):
+            self.assertIn(label, ou.TWEAKS_JOURNAL_OFF_TEXT)
+        # Os botões citados estão mesmo desligados; "Ver estado atual" continua ligado.
+        for button in (self.panel.btn_tweaks_apply, self.panel.btn_undo_all, self.panel.btn_recheck,
+                       self.panel.btn_apply, self.panel.btn_revert):
+            self.assertTrue(button.instate(['disabled']))
+        self.assertFalse(self.panel.btn_tweaks_refresh.instate(['disabled']))
+        self.assertEqual(self.panel.btn_apply.cget('text'), 'Aplicar plano selecionado')
 
     # ---------- R-19: releitura que falha depois de mudar algo ----------
     def test_reread_failure_after_apply_is_neutral(self):

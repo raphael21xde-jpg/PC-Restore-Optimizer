@@ -84,7 +84,8 @@ class ClosedListTests(Base):
         tweak = st.TWEAKS_BY_ID['game_bar_capture']
         self.assertEqual([v.name for v in tweak.values], ['HistoricalCaptureEnabled'])
         self.assertIn('Gravar o que aconteceu', tweak.what)
-        self.assertIn('Tirar print e gravar na hora continuam funcionando', tweak.what)
+        self.assertIn('Tirar print e gravar na hora pelo Game Bar continuam como estavam', tweak.what)
+        self.assertNotIn('continuam funcionando', tweak.what)
         self.assertIn('mesma opção que existe nas Configurações do Windows', tweak.what)
         source = (ROOT / 'safe_tweaks.py').read_text(encoding='utf-8')
         for gone in ('GameDVR_Enabled', 'AppCaptureEnabled', 'GameConfigStore', 'documentad'):

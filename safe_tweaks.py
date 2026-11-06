@@ -86,7 +86,7 @@ SAFE_TWEAKS = (
         what=('Desliga a opção "Gravar o que aconteceu" do Game Bar, que fica gravando '
               'o jogo em segundo plano e usa processador, placa de vídeo e disco. É a '
               'mesma opção que existe nas Configurações do Windows. Tirar print e gravar '
-              'na hora continuam funcionando pelo Game Bar.'),
+              'na hora pelo Game Bar continuam como estavam.'),
         when=('Vale para os jogos abertos depois; se um jogo já estiver aberto, '
               'feche e abra o jogo de novo.'),
         values=(RegistryValue('historical_capture', r'Software\Microsoft\Windows\CurrentVersion\GameDVR',
