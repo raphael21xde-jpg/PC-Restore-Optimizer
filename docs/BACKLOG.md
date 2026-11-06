@@ -837,7 +837,8 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
     - a recomendação (Verificação offline do Microsoft Defender e Malwarebytes) aparece também quando o Defender ou a rede têm item de atenção ou suspeito, ou quando a consulta deles falhou (mesma regra das outras seções);
     - conselhos próprios: Defender "Confira em Segurança do Windows se você reconhece esta configuração..." (atenção) e "Não mude nada por conta própria..." (suspeito); rede "Não encerre o programa nem mexa no arquivo por conta própria...";
     - resultado antigo sem a chave `'defender'` mostra a linha neutra "Não foi possível conferir o Microsoft Defender." (não conta no RESUMO); o `read_checkup` sempre devolve a chave.
-  - Falta a fatia 4: uso de CPU e GPU com o PC parado.
+- **Fatia 4 — `em andamento`** (branch `auto/P3-07-checkup-uso-parado`): uso de CPU e GPU com o PC parado e as ressalvas da revisão da PR #196.
+
 ### P3-02 · Medição antes e depois — `pronto` (depois de P3-01)
 ### P3-04 · Ajustes nível seguro (1 clique) — `pronto` (depois de P3-01 e P3-03)
 - Só ajustes da lista segura do `CLAUDE.md`, cada um com aplicar e desfazer.
