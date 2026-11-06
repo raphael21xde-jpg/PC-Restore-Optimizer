@@ -1412,5 +1412,75 @@ class LaunchersAndVersionsFix0703Tests(unittest.TestCase):
         self.assertEqual(sc.sanitize_path(r'D:\x\fulano@mail.com\a.exe', env), r'D:\x\<e-mail>\a.exe')
 
 
+class QuotedSpaceAndScriptHostVersionsFix0704Tests(unittest.TestCase):
+    """FIX-P3-07-04 (issue #194): ação entre aspas com espaço e versões de SCRIPT_HOSTS (R-50)."""
+
+    VERSIONED_HOSTS = ('pwsh7.exe', 'powershell7.exe', 'cmd2.exe', 'wscript5.exe', 'cscript5.exe',
+                       'mshta2.exe', 'pwsh-7.exe', 'pwsh7.4.exe')
+
+    def setUp(self):
+        for name in ('run', 'Popen', 'check_output', 'call'):
+            patcher = mock.patch.object(subprocess, name, side_effect=_forbidden)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _text(self, result, env=ENV):
+        return '\n'.join(sc.checkup_lines(result, env))
+
+    def _auto(self, command):
+        items = sc.classify_autostart([{'source': 'run_user', 'name': 'A', 'command': command}], ENV)
+        return [(i['state'], i['reason']) for i in items], items
+
+    def _tasks(self, folder, execute):
+        items = sc.classify_tasks([_task(folder, 'T', execute)], ENV)
+        return [(i['state'], i['reason']) for i in items]
+
+    def test_quoted_task_with_space_inside_is_uncertain_name(self):
+        for execute in ('"C:\\Windows\\System32\\defrag.exe "', '"C:\\Windows\\System32\\ctfmon.exe\t"',
+                        '"C:\\Program Files\\App\\app.exe "'):
+            for folder in ('\\', '\\Microsoft\\Windows\\A\\'):
+                with self.subTest(execute=execute, folder=folder):
+                    self.assertEqual(self._tasks(folder, execute),
+                                     [(sc.STATE_ATTENTION, sc.REASON_UNCERTAIN_NAME)])
+        # Sem o espaço, a tarefa da lista fechada em \Microsoft\ continua sumindo.
+        self.assertEqual(self._tasks('\\Microsoft\\Windows\\A\\', '"C:\\Windows\\System32\\defrag.exe"'), [])
+
+    def test_quoted_task_with_space_keeps_stronger_reasons(self):
+        self.assertEqual(self._tasks('\\', '"C:\\Program Files\\nodejs\\node.exe "'),
+                         [(sc.STATE_ATTENTION, sc.REASON_INTERPRETER)])
+        self.assertEqual(self._tasks('\\', '"C:\\Windows\\System32\\cmd.exe "'),
+                         [(sc.STATE_ATTENTION, sc.REASON_SCRIPT_HOST)])
+        self.assertEqual(self._tasks('\\', '"C:\\Temp\\svchost.exe "'),
+                         [(sc.STATE_SUSPECT, sc.REASON_SYSTEM_NAME)])
+        # Espaço no começo, aspas a mais ou algo depois continua sem caminho completo.
+        for execute in ('" C:\\Windows\\System32\\defrag.exe"', '"C:\\a b\\x.exe " --token=1'):
+            with self.subTest(execute=execute):
+                self.assertEqual(self._tasks('\\', execute),
+                                 [(sc.STATE_ATTENTION, sc.REASON_NOT_FULL_PATH)])
+
+    def test_versioned_script_hosts_in_program_files_are_attention(self):
+        for exe in self.VERSIONED_HOSTS:
+            path = 'C:\\Program Files\\Tools\\' + exe
+            with self.subTest(exe=exe):
+                found, items = self._auto('"' + path + '" x')
+                self.assertEqual(found, [(sc.STATE_ATTENTION, sc.REASON_SCRIPT_HOST)])
+                self.assertEqual(self._tasks('\\', '"' + path + '"'),
+                                 [(sc.STATE_ATTENTION, sc.REASON_SCRIPT_HOST)])
+                self.assertEqual([r[0] for r in self._tasks('\\Microsoft\\Windows\\', '"' + path + '"')],
+                                 [sc.STATE_ATTENTION])
+                forged = {'autostart': [dict(items[0], state=sc.STATE_OK, reason=sc.REASON_OK)],
+                          'tasks': [{'source': 'task', 'name': '\\T', 'path': path, 'state': sc.STATE_OK,
+                                     'reason': sc.REASON_OK}], 'errors': []}
+                self.assertIn('RESUMO: OK 0 · atenção 2', self._text(forged))
+
+    def test_common_names_stay_ok(self):
+        for path in (r'C:\Program Files\App\app2.exe', r'C:\Program Files\Steam\steam.exe',
+                     r'C:\Program Files\Cmder\cmder.exe', r'C:\Program Files\Cmd\cmdr.exe',
+                     r'C:\Program Files\Pwsh\pwshell.exe'):
+            with self.subTest(path=path):
+                self.assertEqual(self._auto('"' + path + '"')[0], [(sc.STATE_OK, sc.REASON_OK)])
+                self.assertEqual(self._tasks('\\', '"' + path + '"'), [(sc.STATE_OK, sc.REASON_OK)])
+
+
 if __name__ == '__main__':
     unittest.main()
