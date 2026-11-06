@@ -1,4 +1,4 @@
-"""P3-07 fatia 1: botão "Check-up de segurança" na aba "1 Diagnóstico".
+"""P3-07: botões "Check-up de segurança" e (fatia 4) "Medir uso parado (2 min)" na aba "1 Diagnóstico".
 
 Tk real com ``read_checkup`` simulado: nenhum PowerShell, registro, WMI ou
 subprocess de verdade. Sem Tk (ou sem tela) os testes de janela pulam; os de
@@ -80,6 +80,27 @@ class SourceTests(unittest.TestCase):
             code = ast.unparse(_function(name))
             for forbidden in ('Stop-Process', 'Remove-', 'MpPreference', 'RunAs', 'subprocess',
                               'webbrowser', 'startfile', 'http'):
+                self.assertNotIn(forbidden, code)
+
+    def test_idle_button_and_handlers_are_wired(self):
+        # P3-07 fatia 4: botão separado, pergunta antes, Job e retorno por WindowTimers.
+        build = ast.unparse(_function('_build_diagnostics'))
+        self.assertIn('text=IDLE_BUTTON_TEXT', build)
+        self.assertIn('command=self.measure_idle', build)
+        start = ast.unparse(_function('measure_idle'))
+        self.assertIn('IDLE_CONFIRMATION', start)
+        self.assertIn('self._ask', start)
+        self.assertIn("state='disabled'", start)
+        self.assertIn('IDLE_RUNNING_TEXT', start)
+        self.assertIn('Job(', start)
+        self.assertIn('read_idle', start)
+        self.assertIn('self._timers.after', start)
+        source = (ROOT / 'optimization_ui.py').read_text(encoding='utf-8')
+        self.assertIn("IDLE_BUTTON_TEXT='Medir uso parado (2 min)'", source)
+        self.assertIn("IDLE_RUNNING_TEXT='Medindo... (2 min)'", source)
+        for name in ('measure_idle', '_idle_finished', '_idle_failed', '_idle_done'):
+            code = ast.unparse(_function(name))
+            for forbidden in ('Stop-Process', 'Remove-', 'RunAs', 'subprocess', 'webbrowser', 'startfile', 'http'):
                 self.assertNotIn(forbidden, code)
 
 
@@ -170,6 +191,23 @@ class ShowCheckupWithoutTkTests(unittest.TestCase):
         self.assertIn('[suspeito] mina (2 conexões) — porta 3333', text)
         self.assertIn('RESUMO: OK 0 · atenção 1 · suspeito 1', text)
         self.assertIn(sc.RECOMMENDATION, text)
+
+    def test_idle_only_and_combined_window(self):
+        # P3-07 fatia 4: a medição aparece na mesma janela, sozinha ou junto do check-up.
+        idle = sc.classify_idle({'Cpu': [60], 'Gpu': [1], 'Top': ['mina']}, ENV)
+        self.panel._idle_result = idle
+        self.show(self.panel, {})
+        alone = self.written[-1]
+        self.assertIn('USO COM O PC PARADO — SÓ LEITURA', alone)
+        self.assertIn('[atenção] Processador (CPU): média de 60%', alone)
+        self.assertIn('mina', alone)
+        self.assertIn(sc.RECOMMENDATION, alone)
+        self.assertNotIn('PROCESSOS EM EXECUÇÃO', alone)
+        self.show(self.panel, _result())
+        both = self.written[-1]
+        self.assertIn('PROCESSOS EM EXECUÇÃO', both)
+        self.assertIn('USO COM O PC PARADO', both)
+        self.assertIn('RESUMO: OK 1 · atenção 1 · suspeito 1', both)
 
 
 @unittest.skipIf(NO_DISPLAY, 'Sem Tk ou sem tela gráfica')
@@ -297,6 +335,108 @@ class CheckupButtonTests(unittest.TestCase):
         self.assertEqual(second.winfo_exists(), 1)
         self.assertIs(self.panel._checkup_window, second)
         second.destroy()
+
+    def _idle(self, cpu=60):
+        return sc.classify_idle({'Cpu': [cpu], 'Gpu': [1], 'Top': ['mina']}, ENV)
+
+    def _wait_idle(self, job):
+        job.thread.join(timeout=5)
+        self.assertFalse(job.thread.is_alive())
+        deadline = time.monotonic() + 5
+        while self.panel._idle_job is not None and time.monotonic() < deadline:
+            self.root.update()
+            time.sleep(0.01)
+        self.assertIsNone(self.panel._idle_job)
+
+    def _join_idle(self):
+        job = getattr(self.panel, '_idle_job', None)
+        if job is not None:
+            job.thread.join(timeout=5)
+
+    def test_idle_button_exists_next_to_checkup(self):
+        button = self.panel.btn_idle
+        self.assertEqual(button.cget('text'), 'Medir uso parado (2 min)')
+        self.assertFalse(button.instate(['disabled']))
+        self.assertIs(button.master, self.panel.btn_checkup.master)
+
+    def test_idle_cancel_does_not_measure(self):
+        self.answer = False
+        with mock.patch.object(ou.checkup_engine, 'read_idle', side_effect=_forbidden) as read:
+            self.panel.measure_idle()
+        read.assert_not_called()
+        self.assertEqual(self.asked[0][1], sc.IDLE_CONFIRMATION)
+        self.assertIn('2 minutos', self.asked[0][1])
+        self.assertIsNone(self.panel._idle_job)
+        self.assertFalse(self.panel.btn_idle.instate(['disabled']))
+        self.assertIn('Nada foi lido', self.panel.note.get())
+
+    def test_idle_runs_in_job_and_shows_section(self):
+        self.addCleanup(self._join_idle)
+        release = threading.Event()
+        started = threading.Event()
+
+        def slow(*args, **kwargs):
+            started.set()
+            release.wait(5)
+            return self._idle()
+        with mock.patch.object(ou.checkup_engine, 'read_idle', side_effect=slow) as read:
+            self.panel.measure_idle()
+            job = self.panel._idle_job
+            self.assertIsNotNone(job)
+            self.assertTrue(started.wait(5))
+            self.root.update()
+            self.assertTrue(self.panel.btn_idle.instate(['disabled']))
+            self.assertEqual(self.panel.btn_idle.cget('text'), 'Medindo... (2 min)')
+            # Enquanto mede, o check-up (que usa o processador) não começa.
+            self.assertTrue(self.panel.btn_checkup.instate(['disabled']))
+            with mock.patch.object(ou.checkup_engine, 'read_checkup', side_effect=_forbidden) as check:
+                self.panel.security_checkup()
+                check.assert_not_called()
+            self.panel.measure_idle()  # segundo clique não abre outra medição
+            self.assertIs(self.panel._idle_job, job)
+            self.assertEqual(len(self.asked), 1)
+            release.set()
+            self._wait_idle(job)
+        self.assertEqual(read.call_count, 1)
+        self.assertFalse(self.panel.btn_idle.instate(['disabled']))
+        self.assertEqual(self.panel.btn_idle.cget('text'), 'Medir uso parado (2 min)')
+        self.assertFalse(self.panel.btn_checkup.instate(['disabled']))
+        window = self.panel._checkup_window
+        self.assertIsInstance(window, tk.Toplevel)
+        texts = [g for w in window.winfo_children() for g in w.winfo_children() if isinstance(g, tk.Text)]
+        self.assertEqual(len(texts), 1)
+        self.assertEqual(str(texts[0].cget('state')), 'disabled')
+        content = texts[0].get('1.0', 'end')
+        self.assertIn('USO COM O PC PARADO', content)
+        self.assertIn(sc.IDLE_NOTE, content)
+        self.assertIn(sc.RECOMMENDATION, content)
+        window.destroy()
+
+    def test_idle_after_checkup_shows_both_in_same_window(self):
+        self.addCleanup(self._join_idle)
+        with mock.patch.object(ou.checkup_engine, 'read_checkup', return_value=_result()):
+            self.panel.security_checkup()
+            self._wait_finished(self.panel._checkup_job)
+        with mock.patch.object(ou.checkup_engine, 'read_idle', return_value=self._idle(cpu=3)):
+            self.panel.measure_idle()
+            self._wait_idle(self.panel._idle_job)
+        window = self.panel._checkup_window
+        texts = [g for w in window.winfo_children() for g in w.winfo_children() if isinstance(g, tk.Text)]
+        content = texts[0].get('1.0', 'end')
+        self.assertIn('[suspeito] Falso', content)
+        self.assertIn('[OK] Processador (CPU): média de 3%', content)
+        window.destroy()
+
+    def test_idle_failure_shows_generic_message(self):
+        self.addCleanup(self._join_idle)
+        with mock.patch.object(ou.checkup_engine, 'read_idle', side_effect=RuntimeError(r'C:\Users\Fulano\x')):
+            self.panel.measure_idle()
+            self._wait_idle(self.panel._idle_job)
+        self.assertEqual(len(self.shown), 1)
+        self.assertEqual(self.shown[0][2], ou.IDLE_FAILED_TEXT)
+        self.assertNotIn('Fulano', ' '.join(map(str, self.shown[0])))
+        self.assertFalse(self.panel.btn_idle.instate(['disabled']))
+        self.assertEqual(self.panel.btn_idle.cget('text'), 'Medir uso parado (2 min)')
 
     def test_close_button_closes_window(self):
         from tkinter import ttk

@@ -27,7 +27,7 @@ from ui_timers import WindowTimers
 from hardware_profile import profile_lines, SCAN_CONFIRMATION
 from bios_guidance import bios_guidance_lines, bios_steps_text
 import security_checkup as checkup_engine
-from security_checkup import CHECKUP_CONFIRMATION
+from security_checkup import CHECKUP_CONFIRMATION, IDLE_CONFIRMATION
 from atomic_write import atomic_write_text
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
@@ -39,6 +39,11 @@ from optimization_monitor import (KEYS, LABELS, read_afterburner_log, find_after
 # ---------- P3-07 fatia 1: check-up de segurança (só leitura) ----------
 CHECKUP_FAILED_TEXT = ('O check-up de segurança não pôde ser concluído. Nada foi mudado, '
                        'encerrado ou tirado do lugar. Tente de novo mais tarde.')
+# P3-07 fatia 4: uso de CPU e GPU com o PC parado (botão à parte; o check-up continua rápido).
+IDLE_BUTTON_TEXT='Medir uso parado (2 min)'
+IDLE_RUNNING_TEXT='Medindo... (2 min)'
+IDLE_FAILED_TEXT=('A medição do uso com o PC parado não pôde ser concluída. Nada foi mudado '
+                  'nem encerrado. Tente de novo mais tarde.')
 
 # ---------- P3-03 fatia 2a: textos da troca de plano (sem caminhos, R-07) ----------
 POWER_ADMIN_TEXT = (
@@ -245,6 +250,10 @@ class OptimizationPanel(tk.Frame):
         # P3-07: consulta do check-up em andamento (Job) e janela aberta.
         self._checkup_job=None
         self._checkup_window=None
+        # P3-07 fatia 4: medição do uso parado (Job) e os últimos resultados mostrados juntos.
+        self._idle_job=None
+        self._idle_result=None
+        self._checkup_result=None
         self.scenario=tk.StringVar(value='Counter-Strike 2 | mesmo mapa, resolução e ajustes')
         self.phase=tk.StringVar(value='antes')
         self.plan_choice=tk.StringVar(value='')
@@ -330,6 +339,9 @@ class OptimizationPanel(tk.Frame):
         # P3-07 fatia 1: check-up só de leitura (inicialização e processos), em janela própria.
         self.btn_checkup=ttk.Button(actions,text='Check-up de segurança',command=self.security_checkup)
         self.btn_checkup.pack(side='left',padx=(9,0))
+        # P3-07 fatia 4: mede 2 minutos (só leitura), em botão à parte.
+        self.btn_idle=ttk.Button(actions,text=IDLE_BUTTON_TEXT,command=self.measure_idle)
+        self.btn_idle.pack(side='left',padx=(9,0))
         self.report_text=self._text_area(area)
         self._write(self.report_text,'Nenhuma análise executada. Clique em “Analisar este PC”.\n\n'
                     'Princípio do estudo Honest: avaliar Windows, GPU, firmware e resultados com benchmarks.\n'
@@ -1058,12 +1070,13 @@ class OptimizationPanel(tk.Frame):
 
     def security_checkup(self):
         """P3-07: pergunta antes; a consulta (só leitura) roda num Job e volta por WindowTimers."""
-        if self._checkup_job is not None:
+        if self._checkup_job is not None or self._idle_job is not None:
             return
         if not self._ask('Check-up de segurança',CHECKUP_CONFIRMATION):
             self.note.set('Check-up cancelado. Nada foi lido nem alterado.')
             return
         self.btn_checkup.configure(state='disabled')
+        self.btn_idle.configure(state='disabled')
         self.note.set('Fazendo o check-up de segurança (só leitura)...')
         job=Job(lambda cancelled,progress:checkup_engine.read_checkup())
         self._checkup_job=job
@@ -1082,12 +1095,15 @@ class OptimizationPanel(tk.Frame):
 
     def _checkup_finished(self,result):
         self.btn_checkup.configure(state='normal')
+        self.btn_idle.configure(state='normal')
         self.note.set('Check-up de segurança concluído. Nada foi mudado.')
+        self._checkup_result=result
         self.show_checkup(result)
 
     def _checkup_failed(self):
         # R-07: nunca a mensagem original (pode ter caminho com nome de usuário).
         self.btn_checkup.configure(state='normal')
+        self.btn_idle.configure(state='normal')
         self.note.set('O check-up de segurança não pôde ser concluído. Nada foi mudado.')
         self._show('warning','Check-up de segurança',CHECKUP_FAILED_TEXT)
 
@@ -1096,6 +1112,10 @@ class OptimizationPanel(tk.Frame):
         old=getattr(self,'_checkup_window',None)
         if old is not None and old.winfo_exists():
             old.destroy()
+        # P3-07 fatia 4: a última medição do uso parado aparece na mesma janela.
+        idle=getattr(self,'_idle_result',None)
+        if idle is not None and isinstance(result,dict) and 'idle' not in result:
+            result=dict(result,idle=idle)
         window=tk.Toplevel(self)
         window.title('Check-up de segurança (só leitura)')
         window.configure(bg=BG)
@@ -1109,6 +1129,48 @@ class OptimizationPanel(tk.Frame):
         ttk.Button(window,text='Fechar',command=window.destroy).pack(anchor='e',padx=12,pady=(0,12))
         self._checkup_window=window
         return window
+
+    def measure_idle(self):
+        """P3-07 fatia 4: pergunta antes; mede 2 minutos (só leitura) num Job, com retorno por WindowTimers."""
+        if self._idle_job is not None or self._checkup_job is not None:
+            return
+        if not self._ask('Medir uso parado',IDLE_CONFIRMATION):
+            self.note.set('Medição cancelada. Nada foi lido nem alterado.')
+            return
+        # O check-up também usa o processador: fica desligado enquanto mede.
+        self.btn_idle.configure(state='disabled',text=IDLE_RUNNING_TEXT)
+        self.btn_checkup.configure(state='disabled')
+        self.note.set('Medindo o uso com o PC parado por 2 minutos (só leitura). Não use o PC nesse tempo.')
+        job=Job(lambda cancelled,progress:checkup_engine.read_idle())
+        self._idle_job=job
+        def poll():
+            outcome=job.poll()
+            if outcome is None:
+                self._timers.after(200,poll)
+                return
+            self._idle_job=None
+            kind,value=outcome
+            if kind=='done':
+                self._idle_finished(value)
+            else:
+                self._idle_failed()
+        self._timers.after(10,poll)
+
+    def _idle_done(self):
+        self.btn_idle.configure(state='normal',text=IDLE_BUTTON_TEXT)
+        self.btn_checkup.configure(state='normal')
+
+    def _idle_finished(self,idle):
+        self._idle_done()
+        self._idle_result=idle
+        self.note.set('Medição do uso com o PC parado concluída. Nada foi mudado.')
+        self.show_checkup(self._checkup_result if self._checkup_result is not None else {})
+
+    def _idle_failed(self):
+        # R-07: nunca a mensagem original (pode ter caminho com nome de usuário).
+        self._idle_done()
+        self.note.set('A medição do uso parado não pôde ser concluída. Nada foi mudado.')
+        self._show('warning','Medir uso parado',IDLE_FAILED_TEXT)
 
     def export_report(self):
         if not self.report:
