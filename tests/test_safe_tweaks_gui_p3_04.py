@@ -191,7 +191,8 @@ class SafeTweaksTabTests(unittest.TestCase):
     # ---------- abrir a aba ----------
     def test_tab_lists_the_three_tweaks_without_reading_the_registry(self):
         names = [self.panel.tabs.tab(t, 'text') for t in self.panel.tabs.tabs()]
-        self.assertEqual(names[-1], '8  Ajustes seguros')
+        # P3-05: a aba 9 "Ajustes avançados" veio depois; a 8 continua sendo esta.
+        self.assertEqual(names[7], '8  Ajustes seguros')
         self.assertEqual(names[6], ou.CHANGES_TAB_LABEL)
         self.assertEqual(self.reg.calls, [])
         text = self.text()
