@@ -82,6 +82,9 @@ IDLE_INTERVAL = 5
 IDLE_SAMPLES = 24
 IDLE_TIMEOUT = 300
 IDLE_LIMIT = 25
+# Processos da própria medição (a consulta CIM roda no WmiPrvSE e no PowerShell) e as
+# linhas de total e ocioso do Windows: nunca entram entre os 3 citados.
+IDLE_SELF_PROCESSES = ('wmiprvse', 'powershell', 'pwsh', '_total', 'idle')
 NOT_ALL_CHECKED = ('Nenhum item conferido ficou como atenção ou suspeito, mas o check-up '
                    'não conseguiu conferir tudo (veja acima).')
 
@@ -369,6 +372,7 @@ IDLE_CPU_CLASS = 'Win32_PerfFormattedData_PerfOS_Processor'
 IDLE_GPU_CLASS = 'Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine'
 IDLE_PROCESS_CLASS = 'Win32_PerfFormattedData_PerfProc_Process'
 IDLE_QUERY = (
+    '$skip=@(' + ','.join("'" + n + "'" for n in IDLE_SELF_PROCESSES) + '); '
     "$q=\"Name='_Total'\"; $cpu=@(); $gpu=@(); $hasGpu=$true; $acc=@{}; $n=0; "
     'try{ $null=Get-CimInstance ' + IDLE_CPU_CLASS + ' -Filter $q -ErrorAction Stop }catch{}; '
     'try{ $null=Get-CimInstance ' + IDLE_GPU_CLASS + ' -ErrorAction Stop }catch{}; '
@@ -376,12 +380,16 @@ IDLE_QUERY = (
     'for($i=0; $i -lt ' + str(IDLE_SAMPLES) + '; $i++){ Start-Sleep ' + str(IDLE_INTERVAL) + '; '
     'try{ $c=Get-CimInstance ' + IDLE_CPU_CLASS + ' -Filter $q -Property PercentProcessorTime -ErrorAction Stop; '
     'if($c){ $cpu+=[double]$c.PercentProcessorTime } }catch{}; '
-    'if($hasGpu){ try{ $e=@(Get-CimInstance ' + IDLE_GPU_CLASS + ' -Property UtilizationPercentage -ErrorAction Stop); '
-    'if($e.Count -eq 0){ $hasGpu=$false; $gpu=@() }else{ $g=0.0; '
-    'foreach($x in $e){ $g+=[double]$x.UtilizationPercentage }; $gpu+=$g } }catch{ $hasGpu=$false; $gpu=@() } }; '
+    # GPU como no Gerenciador de Tarefas: soma por tipo de motor (engtype_3D, VideoDecode,
+    # Copy...) e vale o tipo mais usado, não a soma de todos.
+    'if($hasGpu){ try{ $e=@(Get-CimInstance ' + IDLE_GPU_CLASS + ' -Property Name,UtilizationPercentage -ErrorAction Stop); '
+    'if($e.Count -eq 0){ $hasGpu=$false; $gpu=@() }else{ $h=@{}; '
+    "foreach($x in $e){ $k=if([string]$x.Name -match 'engtype_(.+)$'){ $matches[1] }else{ '?' }; "
+    '$h[$k]=[double]$h[$k]+[double]$x.UtilizationPercentage }; '
+    '$gpu+=($h.Values | Measure-Object -Maximum).Maximum } }catch{ $hasGpu=$false; $gpu=@() } }; '
     'try{ foreach($p in @(Get-CimInstance ' + IDLE_PROCESS_CLASS + ' -Property Name,PercentProcessorTime -ErrorAction Stop)){ '
     "$nm=([string]$p.Name) -replace '#\\d+$',''; "
-    "if($nm -and $nm -ne '_Total' -and $nm -ne 'Idle'){ $acc[$nm]=[double]$acc[$nm]+[double]$p.PercentProcessorTime } }; "
+    "if($nm -and $skip -notcontains $nm.ToLower()){ $acc[$nm]=[double]$acc[$nm]+[double]$p.PercentProcessorTime } }; "
     '$n++ }catch{} }; '
     '$top=@(if($n){ $acc.GetEnumerator() | Where-Object { $_.Value -gt 0 } | Sort-Object Value -Descending | '
     'Select-Object -First 3 | ForEach-Object { [string]$_.Key } }); '
@@ -982,9 +990,20 @@ def _exclusion_values(value):
     return [v for v in value if isinstance(v, str) and v.strip()]
 
 
+def _looks_like_path_or_program(text) -> bool:
+    """Tem cara de caminho (unidade, \\\\, %VAR%, barra invertida) ou de arquivo com extensão."""
+    return bool(_LOOKS_LIKE_PATH.match(text) or '\\' in text or re.search(r'\.[a-z0-9]{1,5}[ .]*$', text, re.I))
+
+
 def _exclusion_hidden(text) -> bool:
-    """Aviso do Windows no lugar da exclusão ("N/A: Must be an administrator..." e parecidos)."""
-    return bool(_HIDDEN_EXCLUSION.match(text)) or any(word in text.lower() for word in _ADMIN_WORDS)
+    """Aviso do Windows no lugar da exclusão ("N/A: Must be an administrator..." e parecidos).
+
+    R-52: a palavra "administrador" só conta fora de um caminho ou programa (a pasta
+    ``C:\\Users\\Administrador`` é comum e a exclusão dela continua "suspeito").
+    """
+    if _HIDDEN_EXCLUSION.match(text):
+        return True
+    return not _looks_like_path_or_program(text) and any(word in text.lower() for word in _ADMIN_WORDS)
 
 
 def _exclusion_readable(kind, value) -> bool:
@@ -1220,6 +1239,13 @@ def _idle_state(value):
     return STATE_OK, REASON_IDLE_OK
 
 
+def _idle_self_process(name) -> bool:
+    """Processo da própria medição (ou o total/ocioso do Windows): não é citado."""
+    base = name.strip().lower()
+    base = base[:-4] if base.endswith('.exe') else base
+    return base in IDLE_SELF_PROCESSES
+
+
 def classify_idle(data, env=None):
     """Uso de CPU e GPU com o PC parado (dados já lidos). Só "OK" ou "atenção".
 
@@ -1242,7 +1268,7 @@ def classify_idle(data, env=None):
     raw_top = data.get('Top')
     for name in ([raw_top] if isinstance(raw_top, str) else raw_top if isinstance(raw_top, list) else []):
         name = _clean_name(name, env)
-        if name and name not in top:
+        if name and name not in top and not _idle_self_process(name):
             top.append(name)
         if len(top) == 3:
             break
@@ -1269,10 +1295,10 @@ def _idle_effective(item):
     Vale o mais grave entre o guardado e o recalculado; nunca "suspeito" só pelo número.
     """
     state, reason = _idle_state(item.get('value'))
-    if state == STATE_OK and item.get('reason') in (REASON_IDLE_HIGH, REASON_IDLE_UNKNOWN):
-        return STATE_ATTENTION, item.get('reason')
     if state == STATE_OK and item.get('reason') != REASON_IDLE_OK:
-        return STATE_ATTENTION, REASON_IDLE_UNKNOWN
+        # O estado fica o mais grave, mas o texto vem do número (revisão da PR #197):
+        # "uso alto" nunca aparece ao lado de uma média baixa.
+        return STATE_ATTENTION, reason
     return state, reason
 
 
@@ -1282,6 +1308,10 @@ def _idle_section(idle, env, counts):
     if not isinstance(idle, dict):
         lines += ['  ' + IDLE_NOT_MEASURED, '']
         return lines
+    measured = idle.get('measured_at')
+    if isinstance(measured, str) and re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', measured):
+        # Revisão da PR #197: uma medição reaproveitada diz de quando ela é.
+        lines.append(f'  Medido às {measured}.')
     items = [i for i in _as_list(idle.get('items')) if isinstance(i, dict)]
     if not items:
         items = classify_idle(None, env)['items']
@@ -1299,7 +1329,7 @@ def _idle_section(idle, env, counts):
     top = []
     for name in _as_list(idle.get('top')) if isinstance(idle.get('top'), list) else []:
         name = _clean_name(name, env)
-        if name and name not in top:
+        if name and name not in top and not _idle_self_process(name):
             top.append(name)
     if high and top:
         lines.append('  ' + IDLE_TOP_TEXT + ', '.join(top[:3]) + '.')

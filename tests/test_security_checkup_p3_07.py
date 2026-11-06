@@ -1898,8 +1898,7 @@ class Revisions196Slice4Tests(unittest.TestCase):
     # 4. Valor das exclusões que não parece caminho, extensão ou programa
     def test_unreadable_exclusion_values_hide_system_text(self):
         odd = ('N/D: É preciso ser administrador para ver as exclusões', 'Must be an administrator',
-               'Precisa ser Administrador', 'pasta solta', 'Erro ao ler', 'n/d: x\\y',
-               'C:\\x administrator')
+               'Precisa ser Administrador', 'pasta solta', 'Erro ao ler', 'n/d: x\\y')
         for kind in ('paths', 'procs', 'exts'):
             for value in odd:
                 with self.subTest(kind=kind, value=value):
@@ -1911,7 +1910,7 @@ class Revisions196Slice4Tests(unittest.TestCase):
                     self.assertIn(found[0][1], (sc.REASON_EXCL_HIDDEN, sc.REASON_EXCL_UNKNOWN))
                     text = self._text({'defender': items, 'errors': []})
                     self.assertNotIn(value, text)
-                    for word in ('N/D', 'preciso', 'Must', 'Precisa', 'solta', 'Erro', 'x\\y', 'C:\\x'):
+                    for word in ('N/D', 'preciso', 'Must', 'Precisa', 'solta', 'Erro', 'x\\y'):
                         self.assertNotIn(word, text)
         self.assertEqual(self._exclusions('exts', 'exe exe'), [(sc.STATE_ATTENTION, sc.REASON_EXCL_UNKNOWN)])
         self.assertEqual(self._exclusions('paths', 'N/D: algo'), [(sc.STATE_ATTENTION, sc.REASON_EXCL_HIDDEN)])
@@ -1925,6 +1924,31 @@ class Revisions196Slice4Tests(unittest.TestCase):
         self.assertNotIn('Texto do Windows', text)
         self.assertNotIn('Must be', text)
         self.assertIn('RESUMO: OK 0 · atenção 1 · suspeito 1', text)
+
+    def test_administrator_profile_paths_stay_suspect(self):
+        # Revisão da PR #197 (R-52): a palavra "administrador" num caminho não é o aviso do Windows.
+        env = dict(ENV, USERPROFILE='C:\\Users\\Administrador', USERNAME='Administrador',
+                   LOCALAPPDATA='C:\\Users\\Administrador\\AppData\\Local',
+                   APPDATA='C:\\Users\\Administrador\\AppData\\Roaming',
+                   TEMP='C:\\Users\\Administrador\\AppData\\Local\\Temp')
+        for profile in ('Administrador', 'Administrator'):
+            paths = [f'C:\\Users\\{profile}\\Downloads', f'C:\\Users\\{profile}\\AppData\\Roaming\\x',
+                     f'C:\\Users\\{profile}\\AppData\\Local\\Temp\\miner.exe']
+            procs = [f'C:\\Users\\{profile}\\AppData\\Local\\Temp\\miner.exe', 'Administrador.exe']
+            with self.subTest(profile=profile):
+                items = sc.classify_defender(_defender(paths=paths, procs=procs), env)
+                found = [(i['state'], i['reason']) for i in items if i['reason'] != sc.REASON_RT_ON]
+                self.assertEqual([f[0] for f in found[:4]], [sc.STATE_SUSPECT] * 4)
+                self.assertEqual(found[4], (sc.STATE_ATTENTION, sc.REASON_EXCL_OTHER))
+                self.assertNotIn(sc.REASON_EXCL_HIDDEN, [f[1] for f in found])
+                text = '\n'.join(sc.checkup_lines({'defender': items, 'errors': []}, env))
+                self.assertIn('RESUMO: OK 1 · atenção 1 · suspeito 4', text)
+                self.assertNotIn(sc.REASON_TEXTS[sc.REASON_EXCL_HIDDEN], text)
+        # Na tela (_defender_effective), um dict guardado também continua "suspeito".
+        forged = {'defender': [{'source': 'defender', 'kind': 'path',
+                                'path': 'C:\\Users\\Administrador\\Downloads', 'state': sc.STATE_OK,
+                                'reason': sc.REASON_EXCL_OTHER}], 'errors': []}
+        self.assertIn('RESUMO: OK 0 · atenção 0 · suspeito 1', '\n'.join(sc.checkup_lines(forged, ENV)))
 
     def test_valid_values_still_shown(self):
         for kind, value in (('paths', 'D:\\Jogos'), ('paths', 'D:'), ('paths', '%APPDATA%'),
@@ -1967,7 +1991,7 @@ class IdleUsageSlice4Tests(unittest.TestCase):
         self.assertIn('UtilizationPercentage', query)
         self.assertIn('Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Property Name,PercentProcessorTime',
                       query)
-        self.assertIn("$nm -ne '_Total' -and $nm -ne 'Idle'", query)
+        self.assertIn("$skip -notcontains $nm.ToLower()", query)
         self.assertIn('$i -lt 24', query)
         self.assertIn('Start-Sleep 5', query)
         self.assertEqual(sc.IDLE_SAMPLES * sc.IDLE_INTERVAL, sc.IDLE_SECONDS)
@@ -2088,6 +2112,41 @@ class IdleUsageSlice4Tests(unittest.TestCase):
         self.assertNotIn('[OK]', text)
         self.assertNotIn('[suspeito]', text)
         self.assertIn('RESUMO: OK 0 · atenção 3 · suspeito 0', text)
+
+    def test_stored_high_with_low_value_does_not_say_high(self):
+        # Revisão da PR #197: o texto vem do número; o estado continua o mais grave.
+        forged = {'idle': {'items': [{'kind': 'cpu', 'value': 5, 'state': sc.STATE_ATTENTION,
+                                      'reason': sc.REASON_IDLE_HIGH}], 'top': ['a']}}
+        text = self._text(forged)
+        self.assertIn('[atenção] Processador (CPU): média de 5%', text)
+        self.assertNotIn(sc.REASON_TEXTS[sc.REASON_IDLE_HIGH], text)
+        self.assertNotIn(sc.IDLE_TOP_TEXT, text)
+
+    def test_gpu_uses_busiest_engine_type_and_self_processes_left_out(self):
+        query = sc.IDLE_QUERY
+        self.assertIn('engtype_', query)
+        self.assertIn('-Property Name,UtilizationPercentage', query)
+        for name in ('wmiprvse', 'powershell', 'pwsh', '_total', 'idle'):
+            self.assertIn(name, sc.IDLE_SELF_PROCESSES)
+            self.assertIn("'" + name + "'", query)
+        top = ('WmiPrvSE', 'powershell', 'pwsh.exe', '_Total', 'Idle', 'mina', 'chrome', 'b', 'c')
+        idle = sc.classify_idle(_idle(cpu=(80,), top=top), ENV)
+        self.assertEqual(idle['top'], ['mina', 'chrome', 'b'])
+        forged = {'idle': {'items': idle['items'], 'top': ['powershell', 'WmiPrvSE', 'mina']}}
+        text = self._text(forged)
+        self.assertIn(sc.IDLE_TOP_TEXT + 'mina.', text)
+
+    def test_measured_time_is_shown(self):
+        idle = dict(sc.classify_idle(_idle(), ENV), measured_at='14:05')
+        self.assertIn('Medido às 14:05.', self._text({'idle': idle}))
+        full = sc.read_checkup(_fake_ps(), ENV)
+        full['idle'] = idle
+        self.assertIn('Medido às 14:05.', self._text(full))
+        for bad in ('25:99x', 'C:\\Users\\Fulano Silva', 7, None):
+            with self.subTest(bad=bad):
+                text = self._text({'idle': dict(idle, measured_at=bad)})
+                self.assertNotIn('Medido às', text)
+                self.assertNotIn('Fulano', text)
 
     def test_read_idle_uses_fake_ps_and_never_raises(self):
         calls = []

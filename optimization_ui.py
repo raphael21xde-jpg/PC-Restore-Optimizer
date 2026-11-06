@@ -1162,7 +1162,8 @@ class OptimizationPanel(tk.Frame):
 
     def _idle_finished(self,idle):
         self._idle_done()
-        self._idle_result=idle
+        # Revisão da PR #197: a hora da medição aparece quando ela é mostrada de novo.
+        self._idle_result=dict(idle,measured_at=time.strftime('%H:%M')) if isinstance(idle,dict) else idle
         self.note.set('Medição do uso com o PC parado concluída. Nada foi mudado.')
         self.show_checkup(self._checkup_result if self._checkup_result is not None else {})
 
