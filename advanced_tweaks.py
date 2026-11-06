@@ -42,7 +42,7 @@ do tipo REG_DWORD (um ``bool`` é recusado). Antes de ler o valor, confere a
 versão do Windows (``CurrentBuildNumber``, texto só com algarismos); versão
 antiga (antes da 19041), ausente ou fora do padrão, valor ausente, chave
 ausente, 0, 3 ou outro tipo = ``NotSupportedError`` (texto neutro, R-57: "o
-app não encontrou esta opção num formato que ele sabe mudar com segurança"). O adaptador nunca cria nem apaga
+app não mexe: ele não reconheceu esta opção neste PC"). O adaptador nunca cria nem apaga
 a chave ou o valor: só abre a chave que já existe e troca o número.
 """
 from __future__ import annotations
@@ -71,10 +71,9 @@ MSG_WRITE_FAILED = ('O Windows não aceitou gravar um dos valores; o app voltou 
 MSG_WRITE_FAILED_ONE = 'O Windows não aceitou gravar o valor; nada foi mudado neste ajuste.'
 MSG_NOT_WINDOWS = 'Este recurso só funciona em computadores Windows.'
 # R-57: o estado junta causas diferentes, então o texto é neutro (vale para todas).
-MSG_NOT_SUPPORTED = ('O app não encontrou esta opção num formato que ele sabe mudar com segurança (Windows '
-                     'antigo, a opção não aparece neste PC ou valor diferente); o app não mexe. Nada foi '
-                     'alterado. Se a opção existir em Configurações > Sistema > Tela > Elementos '
-                     'gráficos, ligue por lá.')
+# R-59: o texto de recusa não manda fazer por fora a mesma mudança que o app recusou.
+MSG_NOT_SUPPORTED = ('Por segurança, o app não mexe: ele não reconheceu esta opção neste PC. '
+                     'Nada foi alterado.')
 MEASURE_BEFORE_HINT = 'Para comparar, meça ANTES na aba 1 antes de aplicar.'
 
 
@@ -163,8 +162,7 @@ STATE_TEXT = {
     'not_applied': 'ainda não aplicado.',
     'other_type': ('o app não mexe (o valor no Windows é de outro tipo ou está num '
                    'formato diferente).'),
-    'unsupported': ('o app não encontrou esta opção num formato que ele sabe mudar com segurança '
-                    '(Windows antigo, a opção não aparece neste PC ou valor diferente); o app não mexe.'),
+    'unsupported': 'por segurança, o app não mexe: ele não reconheceu esta opção neste PC.',
     'unreadable': 'Não foi possível ler o estado atual; o app não mexe.',
 }
 

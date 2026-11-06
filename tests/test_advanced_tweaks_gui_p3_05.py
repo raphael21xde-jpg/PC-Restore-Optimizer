@@ -424,16 +424,18 @@ class AdvancedTabTests(unittest.TestCase):
                 self.assertTrue(button.instate(['disabled']))
                 calls, machine_calls = len(self.reg.calls), len(self.machine_reg.calls)
                 asked, shown = len(self.asked), len(self.shown)
+                job_before = panel._power_job
                 panel.apply_advanced(tweak_id)
-                self.assertIsNone(panel._power_job)
+                self.assertIs(panel._power_job, job_before)
                 self.assertEqual(len(self.reg.calls), calls)
                 self.assertEqual(len(self.machine_reg.calls), machine_calls)
                 self.assertEqual(len(self.asked), asked)
                 self.assertEqual(len(self.shown), shown + 1)
                 self.assertEqual(self.shown[-1][2], ou.ADVANCED_UNKNOWN_TEXT.format(n=1))
         calls, asked = len(self.reg.calls), len(self.asked)
+        job_before = panel._power_job
         panel.apply_advanced('mouse_precision')
-        self.assertIsNone(panel._power_job)
+        self.assertIs(panel._power_job, job_before)
         self.assertEqual(len(self.reg.calls), calls)
         self.assertEqual(len(self.asked), asked)
         self.assertEqual(self.shown[-1][2], ou.ADVANCED_UNKNOWN_TEXT.format(n=1))
@@ -576,8 +578,9 @@ class AdvancedTabTests(unittest.TestCase):
         self.assertFalse(self.panel.btn_advanced_refresh.instate(['disabled']))
 
     def test_unknown_tweak_id_does_nothing(self):
+        job_before = self.panel._power_job
         self.panel.apply_advanced('outro')
-        self.assertIsNone(self.panel._power_job)
+        self.assertIs(self.panel._power_job, job_before)
         self.assertEqual(self.reg.calls, [])
 
 

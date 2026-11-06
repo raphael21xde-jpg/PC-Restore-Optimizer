@@ -89,7 +89,10 @@ class SourceTests(unittest.TestCase):
         # R-57: texto neutro, igual ao do adaptador; não culpa o Windows nem a placa.
         self.assertEqual(ou.ADVANCED_UNSUPPORTED_TEXT, at.MSG_NOT_SUPPORTED)
         self.assertNotIn('não oferece', ou.ADVANCED_UNSUPPORTED_TEXT)
-        self.assertIn('não encontrou esta opção', ou.ADVANCED_UNSUPPORTED_TEXT)
+        self.assertIn('não reconheceu esta opção', ou.ADVANCED_UNSUPPORTED_TEXT)
+        # R-59: o aviso não orienta ligar a opção por fora.
+        self.assertNotIn('Configurações', ou.ADVANCED_UNSUPPORTED_TEXT)
+        self.assertNotIn('ligue', ou.ADVANCED_UNSUPPORTED_TEXT.lower())
 
     def test_unchanged_message_follows_the_new_state(self):
         if ou is None:
@@ -346,8 +349,9 @@ class GpuButtonTests(unittest.TestCase):
         self.machine_reg.calls.clear()
         self.reg.calls.clear()
         asked, restore = len(self.asked), len(self.restore_calls)
+        job_before = panel._power_job
         panel.apply_advanced(KEY)
-        self.assertIsNone(panel._power_job)
+        self.assertIs(panel._power_job, job_before)
         self.assertEqual(self.machine_reg.calls, [])
         self.assertEqual(self.reg.calls, [])
         self.assertEqual(len(self.asked), asked)
@@ -368,6 +372,28 @@ class GpuButtonTests(unittest.TestCase):
         self.assertNotIn('Fulano', ' '.join(map(str, self.shown)))
         self.assertEqual(self.panel.journal.entries()[0]['status'], 'failed')
         self.assertIn('• Agendamento de GPU acelerado por hardware ligado: ainda não aplicado.', self.text())
+
+    def test_undo_all_when_windows_version_is_no_longer_readable(self):
+        # Revisão da PR #206: a versão do Windows deixa de ser lida depois de aplicar. O
+        # adaptador recusa antes de gravar, então o ajuste continua aplicado; a tela diz que
+        # continua como estava, nunca que foi desfeito, e a linha segue "applied" (R-27).
+        self.supported()
+        self.apply()
+        self.assertEqual(self.current(), (2, DWORD))
+        self.machine_reg.put(VERSION, 'CurrentBuildNumber', 'xx', FakeWinreg.REG_SZ, hive=HKLM)
+        self.answer = True
+        self.panel.undo_all_changes()
+        self.settle()
+        self.assertEqual(self.current(), (2, DWORD))   # nada foi trocado no registro
+        self.assertEqual(self.writes()[-1][0], 'SetValueEx')   # só a gravação de aplicar
+        self.assertEqual(len([c for c in self.writes() if c[0] == 'SetValueEx']), 1)
+        status = self.panel.changes_status.get()
+        self.assertTrue(status.startswith('0 desfeita(s); 1 continuam como estavam.'), status)
+        self.assertNotIn(ou.CHANGES_ONE_UNDONE_TEXT, status)
+        self.assertEqual(self.shown[-1], ('warning', 'Desfazer tudo', status))
+        self.assertEqual(self.panel.journal.entries()[0]['status'], 'applied')
+        self.assertNotIn('Agendamento de GPU por hardware: desfeita.',
+                         self.panel.changes_text.get('1.0', 'end'))
 
     def test_already_on_does_not_ask(self):
         self.supported(mode=2)

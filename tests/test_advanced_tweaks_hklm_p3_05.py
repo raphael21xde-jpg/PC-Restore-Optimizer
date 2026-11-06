@@ -246,16 +246,16 @@ class StateTests(Base):
                 message = str(raised.exception)
                 text = '\n'.join(at.state_lines([self.gpu_state()]))
                 for shown in (message, text):
-                    self.assertIn('não encontrou esta opção num formato que ele sabe mudar com '
-                                  'segurança', shown)
+                    self.assertIn('não reconheceu esta opção neste PC', shown)
                     self.assertIn('o app não mexe', shown)
                     self.assertNotIn('não oferece', shown)
                     self.assertNotIn('placa de vídeo', shown)
-                    self.assertIn('a opção não aparece neste PC', shown)
                     self.assertNotIn('nunca usada', shown)
+                    # R-59: a recusa não manda ligar a opção por fora.
+                    self.assertNotIn('Configurações', shown)
+                    self.assertNotIn('ligue', shown.lower())
                 self.assertEqual(message, at.MSG_NOT_SUPPORTED)
                 self.assertIn('Nada foi alterado', message)
-                self.assertIn('Configurações > Sistema > Tela > Elementos gráficos', message)
 
     def test_build_unreadable_by_permission_or_system_error_is_unreadable(self):
         # Revisão 2 da PR #206: erro de permissão ou do sistema não é "não suportado".
