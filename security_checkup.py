@@ -4,7 +4,8 @@ Olha os programas que abrem com o Windows (chaves Run/RunOnce e pastas de
 Inicialização), as tarefas agendadas (fatia 2), os processos em execução, a
 situação do Microsoft Defender e as conexões de rede para portas comuns de
 mineração (fatia 3), e marca cada item como OK, atenção ou suspeito, com o
-motivo em português simples.
+motivo em português simples. A fatia 4 mede, num botão à parte, o uso de CPU e
+GPU com o PC parado por 2 minutos (só "OK" ou "atenção", nunca "suspeito").
 
 Regras desta fatia:
 - só lê: nada é mudado, encerrado ou tirado do lugar, e não pede administrador;
@@ -61,6 +62,32 @@ DEFENDER_NO_EXCLUSIONS = ('O Windows não mostrou nenhuma exclusão do Defender 
 DEFENDER_EMPTY = 'Não foi possível conferir o Microsoft Defender.'
 NETWORK_EMPTY = 'Nenhuma conexão para portas comuns de mineração no momento do check-up.'
 NETWORK_NOTE = 'Só as conexões abertas na hora do check-up são vistas; o endereço de destino não é lido.'
+# P3-07 fatia 4: uso de CPU e GPU com o PC parado (medição à parte, 2 minutos).
+IDLE_CONFIRMATION = (
+    'O app vai medir por 2 minutos o uso do processador (CPU) e da placa de vídeo (GPU), só lendo. '
+    'Vai ver também o nome dos 3 programas que mais usaram o processador nesse tempo.\n\n'
+    'Nada é mudado nem encerrado, e não precisa de administrador.\n\n'
+    'Feche os programas que estiver usando e não use o PC nesse tempo (nem o mouse e o teclado); '
+    'senão a medição não vale.\n\nContinuar?')
+IDLE_NOTE = 'A medição só vale se você não usou o PC durante os 2 minutos.'
+IDLE_NOT_MEASURED = 'Não medido. Para medir, use o botão "Medir uso parado (2 min)".'
+IDLE_ONLY_NOTE = ('Esta medição não substitui o check-up de segurança completo '
+                  '(botão "Check-up de segurança").')
+IDLE_ADVICE = ('Feche os programas abertos e meça de novo sem usar o PC. Se o uso continuar alto, '
+               'faça a verificação recomendada no fim desta lista.')
+IDLE_TOP_TEXT = 'Programas que mais usaram o processador: '
+IDLE_KIND_TEXTS = {'cpu': 'Processador (CPU)', 'gpu': 'Placa de vídeo (GPU)'}
+IDLE_SECONDS = 120
+IDLE_INTERVAL = 5
+IDLE_SAMPLES = 24
+IDLE_TIMEOUT = 300
+IDLE_LIMIT = 25
+# Só as linhas de total e ocioso do Windows saem pelo nome. O processo da própria
+# medição sai pelo PID ($PID), nunca pelo nome: um powershell, pwsh ou WmiPrvSE de
+# outro PID aparece normalmente entre os 3 citados (R-45, R-53).
+IDLE_SELF_PROCESSES = ('_total', 'idle')
+IDLE_COST_NOTE = ('A própria medição usa um pouco do processador (o PowerShell e o serviço WMI do '
+                  'Windows, WmiPrvSE), mas o PowerShell dela não entra na lista de programas.')
 NOT_ALL_CHECKED = ('Nenhum item conferido ficou como atenção ou suspeito, mas o check-up '
                    'não conseguiu conferir tudo (veja acima).')
 
@@ -153,6 +180,9 @@ REASON_EXCL_EXTENSION = 'excl_extension'
 REASON_EXCL_SCRIPT_PROCESS = 'excl_script_process'
 REASON_EXCL_OTHER = 'excl_other'
 REASON_MINING_PORT = 'mining_port'
+REASON_IDLE_OK = 'idle_ok'
+REASON_IDLE_HIGH = 'idle_high'
+REASON_IDLE_UNKNOWN = 'idle_unknown'
 
 REASON_TEXTS = {
     REASON_OK: 'Fica numa pasta de programas do Windows (Windows ou Arquivos de Programas).',
@@ -217,6 +247,10 @@ REASON_TEXTS = {
                         '(como jogos ou ferramentas), mas confira se foi você que colocou.'),
     REASON_MINING_PORT: ('Tem uma conexão para uma porta comum de mineração de criptomoedas. Pode ser outro '
                          'programa usando a mesma porta, mas vale conferir.'),
+    REASON_IDLE_OK: 'O uso ficou baixo com o PC parado.',
+    REASON_IDLE_HIGH: ('Uso alto com o PC parado; pode ser um programa em segundo plano, uma atualização '
+                       'do Windows ou, às vezes, um minerador.'),
+    REASON_IDLE_UNKNOWN: 'Não foi possível medir.',
 }
 ADVICE_TEXTS = {
     STATE_SUSPECT: ('Não mexa no arquivo por conta própria. Faça a verificação recomendada '
@@ -316,14 +350,55 @@ DEFENDER_QUERY = (
 # o endereço de destino nem é pedido ao Windows (dado pessoal).
 MINING_PORTS = (3333, 4444, 5555, 7777, 14444, 14433, 45700)
 NETWORK_QUERY = (
-    '$ports=@(' + ','.join(str(p) for p in MINING_PORTS) + '); '
-    '$out=foreach($c in @(Get-NetTCPConnection -State Established -ErrorAction Stop | '
-    'Select-Object RemotePort,OwningProcess)){ if($ports -contains [int]$c.RemotePort){ '
+    '$ports=@(' + ','.join(str(p) for p in MINING_PORTS) + '); $e=$null; '
+    # Sem nenhuma conexão estabelecida o Windows dá "ObjectNotFound": isso é "nenhuma
+    # conexão", não erro. Qualquer outro erro continua derrubando a consulta ('network').
+    '$conns=@(Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue -ErrorVariable e | '
+    'Select-Object RemotePort,OwningProcess); '
+    "foreach($x in @($e)){ if($x -and $x.CategoryInfo.Category -ne 'ObjectNotFound'){ throw 'network' } }; "
+    '$out=foreach($c in $conns){ if($ports -contains [int]$c.RemotePort){ '
     '$n=$null; $x=$null; '
     'try{ $g=Get-Process -Id $c.OwningProcess -ErrorAction Stop; $n=[string]$g.Name; $x=[string]$g.Path }catch{}; '
     '[pscustomobject]@{RemotePort=[int]$c.RemotePort;Name=$n;Path=$x} } }; '
     'ConvertTo-Json -InputObject @($out) -Compress')
-EXECUTABLE_EXTENSIONS = ('exe', 'dll', 'ps1', 'bat', 'cmd', 'vbs', 'js', 'scr')
+# Extensões de programa, script ou atalho: exclusão de qualquer uma delas é "suspeito".
+EXECUTABLE_EXTENSIONS = ('exe', 'dll', 'ps1', 'bat', 'cmd', 'vbs', 'js', 'scr', 'com', 'hta', 'msi', 'jar',
+                         'wsf', 'vbe', 'jse', 'psm1', 'cpl', 'pif', 'lnk', 'sys', 'msc', 'reg')
+
+# P3-07 fatia 4. Só leitura, sem administrador. Classes CIM de desempenho, cujos nomes
+# não mudam com o idioma do Windows (o Get-Counter usa nomes traduzidos). Uma leitura
+# de aquecimento (o primeiro valor costuma vir zerado) e depois 24 amostras com 5 s
+# entre elas (2 minutos): CPU total (_Total), soma dos motores da GPU por amostra
+# (classe ausente ou sem motor = sem dado) e, dos processos, só o nome e o uso de CPU,
+# somados no intervalo para achar os 3 que mais usaram (sem _Total e Idle).
+IDLE_CPU_CLASS = 'Win32_PerfFormattedData_PerfOS_Processor'
+IDLE_GPU_CLASS = 'Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine'
+IDLE_PROCESS_CLASS = 'Win32_PerfFormattedData_PerfProc_Process'
+IDLE_QUERY = (
+    '$skip=@(' + ','.join("'" + n + "'" for n in IDLE_SELF_PROCESSES) + '); '
+    "$q=\"Name='_Total'\"; $cpu=@(); $gpu=@(); $hasGpu=$true; $acc=@{}; $n=0; "
+    'try{ $null=Get-CimInstance ' + IDLE_CPU_CLASS + ' -Filter $q -ErrorAction Stop }catch{}; '
+    'try{ $null=Get-CimInstance ' + IDLE_GPU_CLASS + ' -ErrorAction Stop }catch{}; '
+    'try{ $null=Get-CimInstance ' + IDLE_PROCESS_CLASS + ' -Property Name,PercentProcessorTime -ErrorAction Stop }catch{}; '
+    'for($i=0; $i -lt ' + str(IDLE_SAMPLES) + '; $i++){ Start-Sleep ' + str(IDLE_INTERVAL) + '; '
+    'try{ $c=Get-CimInstance ' + IDLE_CPU_CLASS + ' -Filter $q -Property PercentProcessorTime -ErrorAction Stop; '
+    'if($c){ $cpu+=[double]$c.PercentProcessorTime } }catch{}; '
+    # GPU como no Gerenciador de Tarefas: soma por tipo de motor (engtype_3D, VideoDecode,
+    # Copy...) e vale o tipo mais usado, não a soma de todos.
+    'if($hasGpu){ try{ $e=@(Get-CimInstance ' + IDLE_GPU_CLASS + ' -Property Name,UtilizationPercentage -ErrorAction Stop); '
+    'if($e.Count -eq 0){ $hasGpu=$false; $gpu=@() }else{ $h=@{}; '
+    "foreach($x in $e){ $k=if([string]$x.Name -match 'engtype_(.+)$'){ $matches[1] }else{ '?' }; "
+    '$h[$k]=[double]$h[$k]+[double]$x.UtilizationPercentage }; '
+    '$gpu+=($h.Values | Measure-Object -Maximum).Maximum } }catch{ $hasGpu=$false; $gpu=@() } }; '
+    'try{ foreach($p in @(Get-CimInstance ' + IDLE_PROCESS_CLASS + ' -Property Name,IDProcess,PercentProcessorTime '
+    '-ErrorAction Stop)){ '
+    "$nm=([string]$p.Name) -replace '#\\d+$',''; "
+    "if($nm -and [int]$p.IDProcess -ne $PID -and $skip -notcontains $nm.ToLower()){ $acc[$nm]=[double]$acc[$nm]+[double]$p.PercentProcessorTime } }; "
+    '$n++ }catch{} }; '
+    '$top=@(if($n){ $acc.GetEnumerator() | Where-Object { $_.Value -gt 0 } | Sort-Object Value -Descending | '
+    'Select-Object -First 3 | ForEach-Object { [string]$_.Key } }); '
+    'ConvertTo-Json -InputObject ([pscustomobject]@{Cpu=$(if($cpu.Count){$cpu}else{$null});'
+    'Gpu=$(if($gpu.Count){$gpu}else{$null});Top=$top}) -Depth 3 -Compress')
 
 _DRIVE_PATH = re.compile(r'^[a-z]:\\')
 _DRIVE_ROOT_FILE = re.compile(r'^[a-z]:\\[^\\]+$')
@@ -890,7 +965,12 @@ def classify_tasks(rows, env=None):
 
 # --- P3-07 fatia 3: Microsoft Defender -------------------------------------------------
 
-_HIDDEN_EXCLUSION = re.compile(r'^\s*N/A\b', re.IGNORECASE)
+# "N/A: ...", "N/D: ..." etc.: o Windows mandou um aviso no lugar das exclusões.
+_HIDDEN_EXCLUSION = re.compile(r'^\s*N/[AD]\b', re.IGNORECASE)
+_ADMIN_WORDS = ('administrator', 'administrador')
+_EXTENSION_VALUE = re.compile(r'^\*?\.?[^\s\\/:*?"<>|.]+[ .]*$')
+_LOOKS_LIKE_PATH = re.compile(r'^(?:[a-z]:|\\\\|%[^%\s]+%|\*)', re.IGNORECASE)
+_WILDCARD = re.compile(r'[*?]')
 _EXCL_SUSPECT = (REASON_EXCL_USER, REASON_EXCL_TEMP, REASON_EXCL_APPDATA, REASON_EXCL_PROGRAMDATA,
                  REASON_EXCL_DRIVE_ROOT, REASON_EXCL_WINDOWS, REASON_EXCL_EXTENSION, REASON_EXCL_SCRIPT_PROCESS)
 _EXCL_REASONS = _EXCL_SUSPECT + (REASON_EXCL_OTHER,)
@@ -914,19 +994,75 @@ def _exclusion_values(value):
     return [v for v in value if isinstance(v, str) and v.strip()]
 
 
+def _looks_like_path_or_program(text) -> bool:
+    """Tem cara de caminho (unidade, \\\\, %VAR%, barra invertida) ou de arquivo com extensão."""
+    return bool(_LOOKS_LIKE_PATH.match(text) or '\\' in text or re.search(r'\.[a-z0-9]{1,5}[ .]*$', text, re.I))
+
+
+def _exclusion_hidden(text) -> bool:
+    """Aviso do Windows no lugar da exclusão ("N/A: Must be an administrator..." e parecidos).
+
+    R-52: a palavra "administrador" só conta fora de um caminho ou programa (a pasta
+    ``C:\\Users\\Administrador`` é comum e a exclusão dela continua "suspeito").
+    """
+    # R-52/R-53: nada que pareça caminho ou programa vira o aviso, nem com "N/A" na frente.
+    if _looks_like_path_or_program(text):
+        return False
+    return bool(_HIDDEN_EXCLUSION.match(text)) or any(word in text.lower() for word in _ADMIN_WORDS)
+
+
+def _exclusion_readable(kind, value) -> bool:
+    """O valor parece mesmo um caminho, um programa ou uma extensão? Se não, o texto não aparece (R-07)."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    text = value.strip()
+    if _exclusion_hidden(text):
+        return False
+    if kind == 'extension':
+        return bool(_EXTENSION_VALUE.match(text))
+    if _LOOKS_LIKE_PATH.match(text) or '\\' in text:
+        return True
+    if kind == 'process' and _extension_reason(ntpath.splitext(text.rstrip(' .'))[1] or '-'):
+        return True  # nome de programa com espaço, como "Meu Jogo.exe"
+    return not re.search(r'\s', text)
+
+
 def _extension_reason(text):
-    ext = text.strip().lstrip('*').lstrip('.').strip().lower()
+    # R-51: o Windows ignora ponto e espaço no fim ("exe." vale "exe").
+    ext = text.strip().lstrip('*').lstrip('.').rstrip(' .').strip().lower()
     return REASON_EXCL_EXTENSION if ext in EXECUTABLE_EXTENSIONS else None
 
 
+def _windows_form(value, env) -> str:
+    """R-51: o caminho como o Windows o entende, para comparar (sem diferenciar maiúsculas).
+
+    Tira os prefixos \\\\?\\ e \\??\\, expande as variáveis e tira ponto e espaço do fim
+    de cada pedaço (``C:\\Windows.`` e ``C:\\Users \\x`` são ``C:\\Windows`` e ``C:\\Users\\x``).
+    """
+    text = _expand(_strip_nt_prefix(value.strip()), env).replace('/', '\\')
+    parts = [part if part in ('.', '..') else part.rstrip(' .') for part in text.split('\\')]
+    text = '\\'.join(parts)
+    return _key(text).rstrip('\\') if text.strip('\\') else ''
+
+
 def _folder_reason(value, env):
-    """Motivo "suspeito" de uma pasta ou arquivo excluído, ou None (outros lugares: "atenção")."""
-    norm = _key(_expand(_strip_nt_prefix(value.strip()), env)).rstrip('\\')
+    """Motivo "suspeito" de uma pasta ou arquivo excluído, ou None (outros lugares: "atenção").
+
+    R-51: compara na forma do Windows (sem ponto e espaço no fim de cada pedaço). Um
+    curinga (``*`` ou ``?``) pode pegar qualquer coisa da pasta onde está: vale a pasta
+    de cima (``C:\\*.*`` e ``C:\\Win*`` = a unidade inteira; ``*`` sozinho = tudo).
+    """
+    norm = _windows_form(value, env)
     base = ntpath.basename(norm)
-    if '*' in base and _extension_reason(ntpath.splitext(base)[1] or base):
+    if _WILDCARD.search(base) and _extension_reason(ntpath.splitext(base)[1] or base):
         return REASON_EXCL_EXTENSION
+    pieces = norm.split('\\')
+    for index, piece in enumerate(pieces):
+        if _WILDCARD.search(piece):
+            norm = '\\'.join(pieces[:index]).rstrip('\\')
+            break
     bare = norm.rstrip('\\*').rstrip('\\')
-    if re.match(r'^[a-z]:$', bare) or norm in ('*', ''):
+    if re.match(r'^[a-z]:$', bare) or norm in ('*', '', '.'):
         return REASON_EXCL_DRIVE_ROOT
     root = _key(_system_root(env)).rstrip('\\')
     windows = (root, root + '\\system32', root + '\\syswow64')
@@ -956,6 +1092,8 @@ def classify_exclusion(kind, value, env=None):
     env = _env(env)
     if not isinstance(value, str) or not value.strip():
         return STATE_ATTENTION, REASON_EXCL_OTHER
+    # R-53: a classificação não depende de o texto parecer "normal"; o filtro de texto
+    # estranho (em classify_defender e na tela) só esconde o texto, nunca rebaixa.
     if kind == 'extension':
         reason = _extension_reason(value)
     elif kind == 'process':
@@ -1000,21 +1138,31 @@ def classify_defender(data, env=None):
     if not isinstance(pref, dict):
         items.append(_defender_item(REASON_EXCL_UNKNOWN, env))
         return items
-    hidden = False
+    hidden = unreadable = False
     seen = set()
     for field, kind in _EXCL_FIELDS:
         for value in _exclusion_values(pref.get(field)):
-            if _HIDDEN_EXCLUSION.match(value):
-                hidden = True
-                continue
-            key = (kind, _key(_strip_nt_prefix(value.strip())))
+            state, reason = classify_exclusion(kind, value, env)
+            readable = _exclusion_readable(kind, value)
+            if state != STATE_SUSPECT:
+                # R-53: só o que não dá "suspeito" pode virar aviso ou "não foi possível conferir".
+                if _exclusion_hidden(value.strip()):
+                    hidden = True
+                    continue
+                if not readable:
+                    # R-07: um texto que não parece exclusão não aparece na tela.
+                    unreadable = True
+                    continue
+            key = (kind, _windows_form(value, env) if readable else value.strip().lower())
             if key in seen:
                 continue
             seen.add(key)
-            reason = classify_exclusion(kind, value, env)[1]
-            items.append(_defender_item(reason, env, kind, value))
+            # Texto estranho que dá "suspeito": continua "suspeito", só sem o texto (R-07).
+            items.append(_defender_item(reason, env, kind, value if readable else None))
     if hidden:
         items.append(_defender_item(REASON_EXCL_HIDDEN, env))
+    if unreadable:
+        items.append(_defender_item(REASON_EXCL_UNKNOWN, env))
     return items
 
 
@@ -1053,6 +1201,171 @@ def classify_connections(rows, env=None):
         grouped[key] = {'source': 'network', 'name': _clean_name(name, env), 'path': _clean_path(path, env),
                         'port': port, 'state': STATE_SUSPECT, 'reason': REASON_MINING_PORT, 'count': 1}
     return list(grouped.values())
+
+
+# --- P3-07 fatia 4: uso de CPU e GPU com o PC parado ----------------------------------
+
+def _percent(value):
+    """Um número de porcentagem válido (0 a 100), ou None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value != value or value in (float('inf'), float('-inf')) or value < 0:  # NaN e infinito
+        return None
+    return min(float(value), 100.0)
+
+
+def _samples(value):
+    """Amostras legíveis: um número, uma lista de números ou, por amostra, uma lista a somar."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    found = []
+    for sample in value:
+        if isinstance(sample, list):
+            parts = [_percent(v) for v in sample]
+            parts = [v for v in parts if v is not None]
+            sample = sum(parts) if parts else None
+        sample = _percent(sample)
+        if sample is not None:
+            found.append(sample)
+    return found
+
+
+def _rounded(value):
+    """Arredonda como é mostrado (meio para cima), ou None."""
+    value = _percent(value)
+    return None if value is None else int(value + 0.5)
+
+
+def _idle_state(value):
+    """(estado, motivo) de uma média: o número arredondado decide; nunca "suspeito"."""
+    shown = _rounded(value)
+    if shown is None:
+        return STATE_ATTENTION, REASON_IDLE_UNKNOWN
+    if shown >= IDLE_LIMIT:
+        return STATE_ATTENTION, REASON_IDLE_HIGH
+    return STATE_OK, REASON_IDLE_OK
+
+
+def _idle_self_process(name) -> bool:
+    """Processo da própria medição (ou o total/ocioso do Windows): não é citado."""
+    base = name.strip().lower()
+    base = base[:-4] if base.endswith('.exe') else base
+    return base in IDLE_SELF_PROCESSES
+
+
+def classify_idle(data, env=None):
+    """Uso de CPU e GPU com o PC parado (dados já lidos). Só "OK" ou "atenção".
+
+    Média (arredondada) de 25% ou mais na CPU ou na GPU = "atenção" (pode ser um
+    programa em segundo plano, uma atualização do Windows ou, às vezes, um minerador);
+    abaixo = OK; sem dado ou ilegível = "atenção" ("não foi possível medir"). Só o
+    nome dos 3 programas que mais usaram a CPU fica guardado, limpo por ``_clean_name``.
+    """
+    env = _env(env)
+    rows = _as_list(data)
+    data = rows[0] if rows and isinstance(rows[0], dict) else {}
+    items = []
+    for kind, field in (('cpu', 'Cpu'), ('gpu', 'Gpu')):
+        found = _samples(data.get(field))
+        if kind == 'cpu' and not any(found):
+            # Revisão 2 da PR #197: CPU em 0 nas amostras todas é leitura que falhou, não OK.
+            found = []
+        value = _rounded(sum(found) / len(found)) if found else None
+        state, reason = _idle_state(value)
+        items.append({'source': 'idle', 'kind': kind, 'name': IDLE_KIND_TEXTS[kind], 'value': value,
+                      'state': state, 'reason': reason})
+    top = []
+    raw_top = data.get('Top')
+    for name in ([raw_top] if isinstance(raw_top, str) else raw_top if isinstance(raw_top, list) else []):
+        name = _clean_name(name, env)
+        if name and name not in top and not _idle_self_process(name):
+            top.append(name)
+        if len(top) == 3:
+            break
+    return {'items': items, 'top': top}
+
+
+def read_idle(ps=None, env=None):
+    """Mede por 2 minutos (só leitura) e classifica. Nunca levanta erro: falha = "não foi possível medir"."""
+    if ps is None:
+        from optimization_engine import _ps  # noqa: PLC0415 - preguiçoso de propósito
+
+        def ps(code):
+            return _ps(code, timeout=IDLE_TIMEOUT)
+    try:
+        data = ps(IDLE_QUERY)
+    except Exception:  # noqa: BLE001 - R-07: a mensagem original não é guardada
+        data = None
+    return classify_idle(data, env)
+
+
+def _idle_effective(item):
+    """Estado e motivo de um item do uso parado, a partir do número guardado (R-32).
+
+    Vale o mais grave entre o guardado e o recalculado; nunca "suspeito" só pelo número.
+    """
+    state, reason = _idle_state(item.get('value'))
+    if item.get('state') in (STATE_ATTENTION, STATE_SUSPECT):
+        # R-32: vale o mais grave entre o guardado e o recalculado (nunca "suspeito" aqui).
+        return STATE_ATTENTION, reason
+    if state == STATE_OK and item.get('reason') != REASON_IDLE_OK:
+        # O estado fica o mais grave, mas o texto vem do número (revisão da PR #197):
+        # "uso alto" nunca aparece ao lado de uma média baixa.
+        return STATE_ATTENTION, reason
+    return state, reason
+
+
+def _idle_section(idle, env, counts):
+    """Linhas da seção "USO COM O PC PARADO" (soma os estados em ``counts``)."""
+    lines = ['USO COM O PC PARADO']
+    if not isinstance(idle, dict):
+        lines += ['  ' + IDLE_NOT_MEASURED, '']
+        return lines
+    measured = idle.get('measured_at')
+    if isinstance(measured, str) and re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', measured):
+        # Revisão da PR #197: uma medição reaproveitada diz de quando ela é.
+        lines.append(f'  Medido às {measured}.')
+    items = [i for i in _as_list(idle.get('items')) if isinstance(i, dict)]
+    if not items:
+        items = classify_idle(None, env)['items']
+    high = False
+    for item in items:
+        state, reason = _idle_effective(item)
+        counts[state] += 1
+        high = high or reason == REASON_IDLE_HIGH
+        label = IDLE_KIND_TEXTS.get(item.get('kind'), 'Medição')
+        shown = _rounded(item.get('value')) if reason != REASON_IDLE_UNKNOWN else None
+        lines.append(f'  [{state}] {label}: ' + (f'média de {shown}%' if shown is not None else 'sem dado'))
+        lines.append('      Motivo: ' + REASON_TEXTS[reason])
+        if state != STATE_OK:
+            lines.append('      O que fazer: ' + IDLE_ADVICE)
+    top = []
+    for name in _as_list(idle.get('top')) if isinstance(idle.get('top'), list) else []:
+        name = _clean_name(name, env)
+        if name and name not in top and not _idle_self_process(name):
+            top.append(name)
+    if high and top:
+        lines.append('  ' + IDLE_TOP_TEXT + ', '.join(top[:3]) + '.')
+    lines += ['  ' + IDLE_NOTE, '  ' + IDLE_COST_NOTE, '']
+    return lines
+
+
+_CHECKUP_KEYS = ('autostart', 'tasks', 'processes', 'unchecked', 'defender', 'network', 'errors')
+
+
+def _idle_only_lines(result, env):
+    """Janela só com a medição do uso parado (o check-up completo não rodou)."""
+    counts = {STATE_OK: 0, STATE_ATTENTION: 0, STATE_SUSPECT: 0}
+    lines = ['USO COM O PC PARADO — SÓ LEITURA', NEVER_CHANGES, '']
+    lines += _idle_section(result.get('idle'), env, counts)
+    lines.append(f'RESUMO: OK {counts[STATE_OK]} · atenção {counts[STATE_ATTENTION]} · '
+                 f'suspeito {counts[STATE_SUSPECT]}')
+    lines.append(IDLE_ONLY_NOTE)
+    if counts[STATE_ATTENTION] + counts[STATE_SUSPECT]:
+        lines += ['', NOT_CERTAIN, RECOMMENDATION]
+    return lines
 
 
 def _task_entries(raw):
@@ -1194,9 +1507,17 @@ def _defender_effective(item, env):
     pelo valor guardado e vale o mais grave (nunca promove a OK).
     """
     reason = item.get('reason')
-    if item.get('kind') in DEFENDER_KIND_TEXTS or reason in _EXCL_REASONS:
+    kind = item.get('kind')
+    if kind in DEFENDER_KIND_TEXTS or reason in _EXCL_REASONS:
         # Uma exclusão nunca dá OK: o valor guardado é classificado de novo.
-        new_state, new_reason = classify_exclusion(item.get('kind'), item.get('path'), env)
+        new_state, new_reason = classify_exclusion(kind, item.get('path'), env)
+        if (new_state != STATE_SUSPECT and kind in DEFENDER_KIND_TEXTS
+                and not _exclusion_readable(kind, item.get('path'))):
+            # Valor que não parece exclusão (e não dá "suspeito"): não aparece (R-07);
+            # vale o mais grave entre o guardado e "não foi possível conferir" (R-53).
+            if _DEFENDER_REASONS.get(reason) == STATE_SUSPECT:
+                return STATE_SUSPECT, reason
+            return STATE_ATTENTION, REASON_EXCL_UNKNOWN
         if reason in _EXCL_REASONS and _ORDER[_DEFENDER_REASONS[reason]] <= _ORDER[new_state]:
             return _DEFENDER_REASONS[reason], reason
         return new_state, new_reason
@@ -1228,6 +1549,8 @@ def _special_lines(item, env, with_count=False):
         lines = [f'  [{state}] ' + DEFENDER_KIND_TEXTS.get(kind, 'Microsoft Defender')]
     path = _clean_path(item.get('path'), env)
     network = item.get('source') == 'network'
+    if not network and item.get('kind') in DEFENDER_KIND_TEXTS and not _exclusion_readable(item.get('kind'), path):
+        path = ''
     if path and not network and item.get('kind') == 'extension' and not path.startswith(('.', '*')):
         path = '.' + path
     if path:
@@ -1265,9 +1588,16 @@ def checkup_lines(result, env=None):
     """Texto da janela. Só mostra textos gerados aqui (R-32); nome e caminho são limpos de novo."""
     env = _env(env)
     result = result if isinstance(result, dict) else {}
+    if 'idle' in result and not any(key in result for key in _CHECKUP_KEYS):
+        return _idle_only_lines(result, env)
     errors = [e for e in _as_list(result.get('errors'))]
     counts = {STATE_OK: 0, STATE_ATTENTION: 0, STATE_SUSPECT: 0}
-    lines = ['CHECK-UP DE SEGURANÇA — SÓ LEITURA', NEVER_CHANGES, '']
+    lines = ['CHECK-UP DE SEGURANÇA — SÓ LEITURA', NEVER_CHANGES]
+    checked = result.get('checked_at')
+    if isinstance(checked, str) and re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', checked):
+        # Revisão 2 da PR #197: o check-up mostrado de novo diz de quando ele é.
+        lines.append(f'Check-up feito às {checked}.')
+    lines.append('')
 
     def section(title, items, with_count, empty_text, special=None):
         lines.append(title)
@@ -1313,6 +1643,8 @@ def checkup_lines(result, env=None):
             None if 'network' in errors else NETWORK_EMPTY, special='network')
     if 'network' not in errors:
         lines.insert(len(lines) - 1, '  ' + NETWORK_NOTE)
+    # P3-07 fatia 4: a medição do uso parado é à parte; sem ela, a seção diz como medir.
+    lines.extend(_idle_section(result.get('idle'), env, counts))
     if errors:
         lines.append('CONSULTAS INCOMPLETAS:')
         texts = []
