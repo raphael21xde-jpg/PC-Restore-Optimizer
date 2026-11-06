@@ -78,7 +78,9 @@ IDLE_ADVICE = ('Feche os programas abertos e meça de novo sem usar o PC. Se o u
 IDLE_TOP_TEXT = 'Programas que mais usaram o processador: '
 IDLE_KIND_TEXTS = {'cpu': 'Processador (CPU)', 'gpu': 'Placa de vídeo (GPU)'}
 IDLE_SECONDS = 120
-IDLE_TIMEOUT = 200
+IDLE_INTERVAL = 5
+IDLE_SAMPLES = 24
+IDLE_TIMEOUT = 300
 IDLE_LIMIT = 25
 NOT_ALL_CHECKED = ('Nenhum item conferido ficou como atenção ou suspeito, mas o check-up '
                    'não conseguiu conferir tudo (veja acima).')
@@ -357,25 +359,32 @@ NETWORK_QUERY = (
 EXECUTABLE_EXTENSIONS = ('exe', 'dll', 'ps1', 'bat', 'cmd', 'vbs', 'js', 'scr', 'com', 'hta', 'msi', 'jar',
                          'wsf', 'vbe', 'jse', 'psm1', 'cpl', 'pif', 'lnk', 'sys', 'msc', 'reg')
 
-# P3-07 fatia 4. Só leitura, sem administrador: CPU total e soma dos motores da GPU a
-# cada 5 s por 2 minutos, e no fim o nome (só o nome) dos 3 processos que mais usaram
-# CPU no intervalo. A CPU é a instância "_total"; o resto são os motores da GPU (assim a
-# soma não depende do idioma do Windows). Contador que não existe = sem dado (null).
+# P3-07 fatia 4. Só leitura, sem administrador. Classes CIM de desempenho, cujos nomes
+# não mudam com o idioma do Windows (o Get-Counter usa nomes traduzidos). Uma leitura
+# de aquecimento (o primeiro valor costuma vir zerado) e depois 24 amostras com 5 s
+# entre elas (2 minutos): CPU total (_Total), soma dos motores da GPU por amostra
+# (classe ausente ou sem motor = sem dado) e, dos processos, só o nome e o uso de CPU,
+# somados no intervalo para achar os 3 que mais usaram (sem _Total e Idle).
+IDLE_CPU_CLASS = 'Win32_PerfFormattedData_PerfOS_Processor'
+IDLE_GPU_CLASS = 'Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine'
+IDLE_PROCESS_CLASS = 'Win32_PerfFormattedData_PerfProc_Process'
 IDLE_QUERY = (
-    '$t0=@{}; foreach($p in @(Get-Process -ErrorAction SilentlyContinue)){ '
-    'if($p.Id -ne 0 -and $null -ne $p.CPU){ $t0[$p.Id]=[double]$p.CPU } }; '
-    "$cn=@('\\Processor(_Total)\\% Processor Time','\\GPU Engine(*)\\Utilization Percentage'); "
-    '$s=@(); try{ $s=@(Get-Counter -Counter $cn -SampleInterval 5 -MaxSamples 24 '
-    '-ErrorAction SilentlyContinue) }catch{}; '
-    '$cpu=@(); $gpu=@(); '
-    'foreach($x in $s){ $c=$null; $g=0.0; $n=0; foreach($v in @($x.CounterSamples)){ '
-    "if($v.InstanceName -eq '_total'){ $c=[double]$v.CookedValue }else{ $g+=[double]$v.CookedValue; $n++ } }; "
-    'if($null -ne $c){ $cpu+=$c }; if($n -gt 0){ $gpu+=$g } }; '
-    '$d=foreach($p in @(Get-Process -ErrorAction SilentlyContinue)){ '
-    'if($t0.ContainsKey($p.Id) -and $null -ne $p.CPU){ '
-    '[pscustomobject]@{N=[string]$p.ProcessName;D=([double]$p.CPU-[double]$t0[$p.Id])} } }; '
-    '$top=@($d | Where-Object { $_.D -gt 0 } | Sort-Object D -Descending | Select-Object -First 3 | '
-    'ForEach-Object { $_.N }); '
+    "$q=\"Name='_Total'\"; $cpu=@(); $gpu=@(); $hasGpu=$true; $acc=@{}; $n=0; "
+    'try{ $null=Get-CimInstance ' + IDLE_CPU_CLASS + ' -Filter $q -ErrorAction Stop }catch{}; '
+    'try{ $null=Get-CimInstance ' + IDLE_GPU_CLASS + ' -ErrorAction Stop }catch{}; '
+    'try{ $null=Get-CimInstance ' + IDLE_PROCESS_CLASS + ' -Property Name,PercentProcessorTime -ErrorAction Stop }catch{}; '
+    'for($i=0; $i -lt ' + str(IDLE_SAMPLES) + '; $i++){ Start-Sleep ' + str(IDLE_INTERVAL) + '; '
+    'try{ $c=Get-CimInstance ' + IDLE_CPU_CLASS + ' -Filter $q -Property PercentProcessorTime -ErrorAction Stop; '
+    'if($c){ $cpu+=[double]$c.PercentProcessorTime } }catch{}; '
+    'if($hasGpu){ try{ $e=@(Get-CimInstance ' + IDLE_GPU_CLASS + ' -Property UtilizationPercentage -ErrorAction Stop); '
+    'if($e.Count -eq 0){ $hasGpu=$false; $gpu=@() }else{ $g=0.0; '
+    'foreach($x in $e){ $g+=[double]$x.UtilizationPercentage }; $gpu+=$g } }catch{ $hasGpu=$false; $gpu=@() } }; '
+    'try{ foreach($p in @(Get-CimInstance ' + IDLE_PROCESS_CLASS + ' -Property Name,PercentProcessorTime -ErrorAction Stop)){ '
+    "$nm=([string]$p.Name) -replace '#\\d+$',''; "
+    "if($nm -and $nm -ne '_Total' -and $nm -ne 'Idle'){ $acc[$nm]=[double]$acc[$nm]+[double]$p.PercentProcessorTime } }; "
+    '$n++ }catch{} }; '
+    '$top=@(if($n){ $acc.GetEnumerator() | Where-Object { $_.Value -gt 0 } | Sort-Object Value -Descending | '
+    'Select-Object -First 3 | ForEach-Object { [string]$_.Key } }); '
     'ConvertTo-Json -InputObject ([pscustomobject]@{Cpu=$(if($cpu.Count){$cpu}else{$null});'
     'Gpu=$(if($gpu.Count){$gpu}else{$null});Top=$top}) -Depth 3 -Compress')
 

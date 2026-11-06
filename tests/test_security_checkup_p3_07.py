@@ -1958,15 +1958,23 @@ class IdleUsageSlice4Tests(unittest.TestCase):
 
     def test_query_is_read_only_two_minutes_and_names_only(self):
         query = sc.IDLE_QUERY
-        self.assertIn('Get-Counter', query)
-        self.assertIn('\\Processor(_Total)\\% Processor Time', query)
-        self.assertIn('\\GPU Engine(*)\\Utilization Percentage', query)
-        self.assertIn('-SampleInterval 5', query)
-        self.assertIn('-MaxSamples 24', query)
+        # Classes CIM: os nomes não mudam com o idioma do Windows (o Get-Counter muda).
+        self.assertNotIn('Get-Counter', query)
+        self.assertIn("Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter $q", query)
+        self.assertIn("$q=\"Name='_Total'\"", query)
+        self.assertIn('PercentProcessorTime', query)
+        self.assertIn('Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine', query)
+        self.assertIn('UtilizationPercentage', query)
+        self.assertIn('Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Property Name,PercentProcessorTime',
+                      query)
+        self.assertIn("$nm -ne '_Total' -and $nm -ne 'Idle'", query)
+        self.assertIn('$i -lt 24', query)
+        self.assertIn('Start-Sleep 5', query)
+        self.assertEqual(sc.IDLE_SAMPLES * sc.IDLE_INTERVAL, sc.IDLE_SECONDS)
         self.assertIn('-Compress', query)
-        self.assertIn('Get-Process', query)
-        for word in ('CommandLine', 'Stop-Process', 'Remove-', 'Set-', 'RunAs', 'Path', 'Win32_Process',
-                     'Disable', 'Start-Process'):
+        self.assertNotIn('Get-Process', query)
+        for word in ('CommandLine', 'ExecutablePath', 'Stop-Process', 'Remove-', 'Set-', 'RunAs', 'Path',
+                     'Win32_Process', 'Disable', 'Start-Process', 'Invoke-'):
             self.assertNotIn(word, query)
         self.assertEqual(sc.IDLE_SECONDS, 120)
         self.assertGreater(sc.IDLE_TIMEOUT, 120)
