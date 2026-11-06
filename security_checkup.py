@@ -82,12 +82,12 @@ IDLE_INTERVAL = 5
 IDLE_SAMPLES = 24
 IDLE_TIMEOUT = 300
 IDLE_LIMIT = 25
-# Só as linhas de total e ocioso do Windows saem pelo nome. O processo da própria
-# medição sai pelo PID ($PID), nunca pelo nome: um powershell, pwsh ou WmiPrvSE de
-# outro PID aparece normalmente entre os 3 citados (R-45, R-53).
-IDLE_SELF_PROCESSES = ('_total', 'idle')
-IDLE_COST_NOTE = ('A própria medição usa um pouco do processador (o PowerShell e o serviço WMI do '
-                  'Windows, WmiPrvSE), mas o PowerShell dela não entra na lista de programas.')
+# Nenhum programa sai da lista pelo nome (R-45, R-53, FIX-P3-07-05). Saem só, pelo
+# PID: o "Ocioso" do Windows (PID 0), a linha _Total (não tem PID de processo) e o
+# processo da própria medição ($PID). Um programa chamado Idle.exe, powershell, pwsh
+# ou WmiPrvSE de outro PID aparece normalmente entre os 3 citados.
+IDLE_COST_NOTE = ('A própria medição usa um pouco do processador; por isso o uso pode '
+                  'aparecer um pouco acima do normal.')
 NOT_ALL_CHECKED = ('Nenhum item conferido ficou como atenção ou suspeito, mas o check-up '
                    'não conseguiu conferir tudo (veja acima).')
 
@@ -368,14 +368,13 @@ EXECUTABLE_EXTENSIONS = ('exe', 'dll', 'ps1', 'bat', 'cmd', 'vbs', 'js', 'scr', 
 # P3-07 fatia 4. Só leitura, sem administrador. Classes CIM de desempenho, cujos nomes
 # não mudam com o idioma do Windows (o Get-Counter usa nomes traduzidos). Uma leitura
 # de aquecimento (o primeiro valor costuma vir zerado) e depois 24 amostras com 5 s
-# entre elas (2 minutos): CPU total (_Total), soma dos motores da GPU por amostra
+# entre elas (2 minutos): CPU total (_Total), GPU do tipo de motor mais usado por amostra
 # (classe ausente ou sem motor = sem dado) e, dos processos, só o nome e o uso de CPU,
-# somados no intervalo para achar os 3 que mais usaram (sem _Total e Idle).
+# somados no intervalo para achar os 3 que mais usaram (sem o PID 0, sem PID e sem $PID).
 IDLE_CPU_CLASS = 'Win32_PerfFormattedData_PerfOS_Processor'
 IDLE_GPU_CLASS = 'Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine'
 IDLE_PROCESS_CLASS = 'Win32_PerfFormattedData_PerfProc_Process'
 IDLE_QUERY = (
-    '$skip=@(' + ','.join("'" + n + "'" for n in IDLE_SELF_PROCESSES) + '); '
     "$q=\"Name='_Total'\"; $cpu=@(); $gpu=@(); $hasGpu=$true; $acc=@{}; $n=0; "
     'try{ $null=Get-CimInstance ' + IDLE_CPU_CLASS + ' -Filter $q -ErrorAction Stop }catch{}; '
     'try{ $null=Get-CimInstance ' + IDLE_GPU_CLASS + ' -ErrorAction Stop }catch{}; '
@@ -393,7 +392,8 @@ IDLE_QUERY = (
     'try{ foreach($p in @(Get-CimInstance ' + IDLE_PROCESS_CLASS + ' -Property Name,IDProcess,PercentProcessorTime '
     '-ErrorAction Stop)){ '
     "$nm=([string]$p.Name) -replace '#\\d+$',''; "
-    "if($nm -and [int]$p.IDProcess -ne $PID -and $skip -notcontains $nm.ToLower()){ $acc[$nm]=[double]$acc[$nm]+[double]$p.PercentProcessorTime } }; "
+    "$id=[long]0; "
+    "if($nm -and [long]::TryParse([string]$p.IDProcess,[ref]$id) -and $id -gt 0 -and $id -ne $PID){ $acc[$nm]=[double]$acc[$nm]+[double]$p.PercentProcessorTime } }; "
     '$n++ }catch{} }; '
     '$top=@(if($n){ $acc.GetEnumerator() | Where-Object { $_.Value -gt 0 } | Sort-Object Value -Descending | '
     'Select-Object -First 3 | ForEach-Object { [string]$_.Key } }); '
@@ -1248,13 +1248,6 @@ def _idle_state(value):
     return STATE_OK, REASON_IDLE_OK
 
 
-def _idle_self_process(name) -> bool:
-    """Processo da própria medição (ou o total/ocioso do Windows): não é citado."""
-    base = name.strip().lower()
-    base = base[:-4] if base.endswith('.exe') else base
-    return base in IDLE_SELF_PROCESSES
-
-
 def classify_idle(data, env=None):
     """Uso de CPU e GPU com o PC parado (dados já lidos). Só "OK" ou "atenção".
 
@@ -1280,7 +1273,7 @@ def classify_idle(data, env=None):
     raw_top = data.get('Top')
     for name in ([raw_top] if isinstance(raw_top, str) else raw_top if isinstance(raw_top, list) else []):
         name = _clean_name(name, env)
-        if name and name not in top and not _idle_self_process(name):
+        if name and name not in top:
             top.append(name)
         if len(top) == 3:
             break
@@ -1328,8 +1321,10 @@ def _idle_section(idle, env, counts):
         # Revisão da PR #197: uma medição reaproveitada diz de quando ela é.
         lines.append(f'  Medido às {measured}.')
     items = [i for i in _as_list(idle.get('items')) if isinstance(i, dict)]
-    if not items:
-        items = classify_idle(None, env)['items']
+    # FIX-P3-07-05 (R-32): CPU ou GPU que falta no resultado guardado aparece como
+    # "sem dado" (atenção); nunca some e nunca deixa a seção toda OK.
+    kinds = {i.get('kind') for i in items}
+    items += [i for i in classify_idle(None, env)['items'] if i['kind'] not in kinds]
     high = False
     for item in items:
         state, reason = _idle_effective(item)
@@ -1344,7 +1339,7 @@ def _idle_section(idle, env, counts):
     top = []
     for name in _as_list(idle.get('top')) if isinstance(idle.get('top'), list) else []:
         name = _clean_name(name, env)
-        if name and name not in top and not _idle_self_process(name):
+        if name and name not in top:
             top.append(name)
     if high and top:
         lines.append('  ' + IDLE_TOP_TEXT + ', '.join(top[:3]) + '.')

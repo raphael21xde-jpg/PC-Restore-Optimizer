@@ -2021,7 +2021,7 @@ class IdleUsageSlice4Tests(unittest.TestCase):
         self.assertIn('UtilizationPercentage', query)
         self.assertIn('Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Property Name,PercentProcessorTime',
                       query)
-        self.assertIn("$skip -notcontains $nm.ToLower()", query)
+        self.assertIn('$id -gt 0 -and $id -ne $PID', query)
         self.assertIn('$i -lt 24', query)
         self.assertIn('Start-Sleep 5', query)
         self.assertEqual(sc.IDLE_SAMPLES * sc.IDLE_INTERVAL, sc.IDLE_SECONDS)
@@ -2158,10 +2158,10 @@ class IdleUsageSlice4Tests(unittest.TestCase):
         self.assertIn('-Property Name,UtilizationPercentage', query)
         # Revisão 2 da PR #197 (R-45, R-53): só o processo da própria medição sai, pelo PID.
         self.assertIn('-Property Name,IDProcess,PercentProcessorTime', query)
-        self.assertIn('[int]$p.IDProcess -ne $PID', query)
-        for name in ('wmiprvse', 'powershell', 'pwsh'):
-            self.assertNotIn("'" + name + "'", query)
-            self.assertNotIn(name, sc.IDLE_SELF_PROCESSES)
+        # FIX-P3-07-05: o "Ocioso" (PID 0) e a linha _Total (sem PID) também saem pelo PID.
+        self.assertIn('$id -ne $PID', query)
+        for name in ('wmiprvse', 'powershell', 'pwsh', 'idle'):
+            self.assertNotIn("'" + name + "'", query.lower())
         top = ('powershell', 'WmiPrvSE', 'pwsh.exe', '_Total', 'Idle', 'mina')
         idle = sc.classify_idle(_idle(cpu=(80,), top=top), ENV)
         self.assertEqual(idle['top'], ['powershell', 'WmiPrvSE', 'pwsh.exe'])
@@ -2235,6 +2235,73 @@ class IdleUsageSlice4Tests(unittest.TestCase):
             for line in sc.checkup_lines({'idle': sc.classify_idle(data, ENV)}, ENV):
                 for word in FORBIDDEN_WORDS:
                     self.assertNotIn(word, line.lower())
+
+
+
+class IdleRevisions197Fix0705Tests(unittest.TestCase):
+    """FIX-P3-07-05: "Ocioso" pelo PID, item que falta = "sem dado", nota em linguagem simples."""
+
+    def setUp(self):
+        for name in ('run', 'Popen', 'check_output', 'call'):
+            patcher = mock.patch.object(subprocess, name, side_effect=_forbidden)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _text(self, result):
+        return '\n'.join(sc.checkup_lines(result, ENV))
+
+    def test_query_skips_idle_and_total_by_pid_not_by_name(self):
+        query = sc.IDLE_QUERY
+        # O "Ocioso" do Windows tem PID 0 e a linha _Total não tem PID de processo:
+        # só passa um IDProcess numérico maior que 0 e diferente do PID da medição.
+        self.assertIn('[long]::TryParse([string]$p.IDProcess,[ref]$id)', query)
+        self.assertIn('$id -gt 0', query)
+        self.assertIn('$id -ne $PID', query)
+        self.assertNotIn('$skip', query)
+        self.assertNotIn("'idle'", query.lower())
+        self.assertNotIn("'_total')", query.lower())
+        self.assertFalse(hasattr(sc, 'IDLE_SELF_PROCESSES'))
+
+    def test_program_named_idle_is_listed(self):
+        for top in (('Idle', 'chrome'), ('Idle.exe', 'chrome'), ('_Total', 'idle')):
+            with self.subTest(top=top):
+                idle = sc.classify_idle(_idle(cpu=(80,), top=top), ENV)
+                self.assertEqual(idle['top'], list(top))
+                text = self._text({'idle': idle})
+                self.assertIn(sc.IDLE_TOP_TEXT + ', '.join(top) + '.', text)
+
+    def test_stored_result_missing_gpu_shows_no_data(self):
+        stored = {'idle': {'items': [{'kind': 'cpu', 'value': 3, 'state': sc.STATE_OK,
+                                      'reason': sc.REASON_IDLE_OK}], 'top': []}}
+        text = self._text(stored)
+        self.assertIn('[OK] Processador (CPU): média de 3%', text)
+        self.assertIn('[atenção] Placa de vídeo (GPU): sem dado', text)
+        self.assertIn(sc.REASON_TEXTS[sc.REASON_IDLE_UNKNOWN], text)
+        self.assertIn('RESUMO: OK 1 · atenção 1 · suspeito 0', text)
+        self.assertIn(sc.RECOMMENDATION, text)
+
+    def test_stored_result_missing_cpu_shows_no_data(self):
+        stored = {'idle': {'items': [{'kind': 'gpu', 'value': 2, 'state': sc.STATE_OK,
+                                      'reason': sc.REASON_IDLE_OK}], 'top': []}}
+        text = self._text(stored)
+        self.assertIn('[atenção] Processador (CPU): sem dado', text)
+        self.assertIn('[OK] Placa de vídeo (GPU): média de 2%', text)
+        self.assertIn('RESUMO: OK 1 · atenção 1 · suspeito 0', text)
+
+    def test_missing_item_inside_full_checkup(self):
+        full = sc.read_checkup(_fake_ps(), ENV)
+        full['idle'] = {'items': [{'kind': 'cpu', 'value': 3, 'state': sc.STATE_OK,
+                                   'reason': sc.REASON_IDLE_OK}], 'top': []}
+        text = self._text(full)
+        self.assertIn('[atenção] Placa de vídeo (GPU): sem dado', text)
+
+    def test_cost_note_is_plain_language(self):
+        note = sc.IDLE_COST_NOTE
+        self.assertEqual(note, 'A própria medição usa um pouco do processador; por isso o uso pode '
+                               'aparecer um pouco acima do normal.')
+        for word in ('WMI', 'WmiPrvSE', 'PowerShell', 'serviço'):
+            self.assertNotIn(word, note)
+        self.assertIn(note, self._text({'idle': sc.classify_idle(_idle(), ENV)}))
 
 
 if __name__ == '__main__':
