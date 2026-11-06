@@ -93,9 +93,18 @@ INTERPRETERS = ('python.exe', 'pythonw.exe', 'python3.exe', 'py.exe', 'pyw.exe',
 _SHORT_NAME = re.compile(r'~\d')
 # R-49: qualquer nome da lista com versão (ex.: python3.13.exe, node18.exe, java8.exe,
 # javaw17.exe, wish86.exe, php-8.exe). Do lado seguro: "-" ou "_" antes do número também conta.
-_VERSIONED_INTERPRETER = re.compile(
-    r'^(' + '|'.join(sorted((re.escape(n[:-4]) for n in INTERPRETERS), key=len, reverse=True))
-    + r')[-_]?\d+(\.\d+)*t?w?\.exe$')
+
+
+def _versioned_names(names):
+    """Padrão de nome com versão para uma lista que tira o OK (R-49, R-50)."""
+    return re.compile(
+        r'^(' + '|'.join(sorted((re.escape(n[:-4]) for n in names), key=len, reverse=True))
+        + r')[-_]?\d+(\.\d+)*t?w?\.exe$')
+
+
+_VERSIONED_INTERPRETER = _versioned_names(INTERPRETERS)
+# R-50: o mesmo padrão vale para SCRIPT_HOSTS (ex.: pwsh7.exe, cmd2.exe, wscript5.exe).
+_VERSIONED_SCRIPT_HOST = _versioned_names(SCRIPT_HOSTS)
 
 REASON_OK = 'ok'
 REASON_SYSTEM_NAME = 'system_name'
@@ -492,6 +501,13 @@ def _is_interpreter(path, env) -> bool:
     return any(base in INTERPRETERS or _VERSIONED_INTERPRETER.match(base) for base in _exe_names(path, env))
 
 
+def _is_script_host(path, env) -> bool:
+    """Programa da lista ``SCRIPT_HOSTS`` (ou nome com versão, R-50), em qualquer pasta (R-45)."""
+    if not isinstance(path, str) or not path.strip():
+        return False
+    return any(base in SCRIPT_HOSTS or _VERSIONED_SCRIPT_HOST.match(base) for base in _exe_names(path, env))
+
+
 def _code_runner_reason(path, env, allow_known):
     """Motivo de "atenção" para um programa que pode rodar o que vem nos argumentos, ou None.
 
@@ -504,7 +520,7 @@ def _code_runner_reason(path, env, allow_known):
     if not isinstance(path, str) or not path.strip():
         return None
     norm = _norm_exe(path, env)
-    if any(base in SCRIPT_HOSTS for base in _exe_names(path, env)):
+    if _is_script_host(path, env):
         return REASON_SCRIPT_HOST
     if _is_interpreter(path, env):
         return REASON_INTERPRETER
@@ -693,6 +709,15 @@ def _classify_task(row, env):
         # Ação COM não tem arquivo nem é conferida: sempre "atenção", nunca some nem dá OK.
         return STATE_ATTENTION, (REASON_MS_COM_HANDLER if in_ms else REASON_COM_HANDLER), ''
     exe = _task_executable(execute)
+    quoted_space = False
+    if not exe and _quoted_trailing_space(execute):
+        # FIX-P3-07-04: "C:\...\defrag.exe " (só espaço no fim, dentro das aspas, e nada
+        # depois) tem caminho completo, mas o nome é incerto (R-48): nunca some nem dá OK.
+        text = execute.strip()
+        inner = text[1:-1] if text.endswith('"') and text.count('"') == 2 else ''
+        if inner and inner == inner.lstrip():
+            exe = _task_executable('"' + inner.rstrip() + '"')
+            quoted_space = bool(exe)
     if not exe:
         empty = not (isinstance(execute, str) and execute.strip())
         state, reason = STATE_ATTENTION, (REASON_UNREADABLE if empty else REASON_NOT_FULL_PATH)
@@ -701,8 +726,8 @@ def _classify_task(row, env):
             state, reason = STATE_SUSPECT, REASON_SYSTEM_NAME
         return state, reason, ''
     state, reason = classify_path(None, exe, env)
-    runs_code = any(base in SCRIPT_HOSTS for base in _exe_names(exe, env))
-    if (state == STATE_OK and execute != execute.rstrip() and not runs_code
+    runs_code = _is_script_host(exe, env)
+    if (state == STATE_OK and (execute != execute.rstrip() or quoted_space) and not runs_code
             and not _is_interpreter(exe, env)):
         # R-48: espaço no fim do caminho: nunca some nem dá OK, nem em \Microsoft\.
         return STATE_ATTENTION, REASON_UNCERTAIN_NAME, exe
