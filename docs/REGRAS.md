@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 1 (última poda: 06/11/2026, pedido `regras-20261106-poda-r45-r56`, issue #203). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-57.
+poda: 2 (última poda: 06/11/2026, pedido `regras-20261106-poda-r45-r56`, issue #203). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-57.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -72,3 +72,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-55 | Ajuste que grava em HKCU ou no perfil do usuário (registro, %LOCALAPPDATA%) e exige administrador só roda se o usuário do processo for o mesmo dono da sessão interativa; diferente ou desconhecido = recusa antes de ler ou perguntar. Tem teste com "outra conta" e "não deu para saber". | Revisão da PR #201 (P3-04) | 2026-11-06 |
 | R-56 | Consulta ao Windows que resolve nome ou SID de conta (LookupAccountName/LookupAccountSid, WTS, domínio) conta como operação que pode esperar (pode ir à rede) e roda no Job, nunca na thread do Tk; a recusa vem no retorno do Job, antes de ler ou mudar qualquer coisa. | Revisão 2 da PR #201 (P3-04, 93d21e1005ff) | 2026-11-06 |
 | R-57 | Estado "não suportado" ou "o app não mexe" que junta causas diferentes (Windows antigo, chave ou valor ausente, valor fora da lista, outro tipo) usa texto neutro que vale para todas; só diz "o Windows/a placa não oferece" quando o código conferiu exatamente isso. Tem teste com valor ausente e com valor de outro tipo conferindo o texto. | Revisão da PR #206 (P3-05 fatia 2, 83d5dfdf439b) | 2026-11-06 |
+| R-58 | Botão novo que entra num grupo já citado por um texto de bloqueio ("os botões de aplicar da aba N") ganha os mesmos testes de "disabled" e de recusa (diário desligado, item unknown, ocupado) do primeiro botão do grupo; o teste percorre todos os botões do grupo, nunca só um pelo nome. | Revisão da PR #206 (P3-05 fatia 2, 678b0c85eebc) | 2026-11-06 |

@@ -419,7 +419,18 @@ class AdvancedTabTests(unittest.TestCase):
         path.write_text(json.dumps(data), encoding='utf-8')
         panel = self.make_panel()
         self.addCleanup(panel.destroy)
-        self.assertTrue(panel.advanced_buttons['mouse_precision'].instate(['disabled']))
+        for tweak_id, button in panel.advanced_buttons.items():   # R-58: todos os botões
+            with self.subTest(tweak=tweak_id):
+                self.assertTrue(button.instate(['disabled']))
+                calls, machine_calls = len(self.reg.calls), len(self.machine_reg.calls)
+                asked, shown = len(self.asked), len(self.shown)
+                panel.apply_advanced(tweak_id)
+                self.assertIsNone(panel._power_job)
+                self.assertEqual(len(self.reg.calls), calls)
+                self.assertEqual(len(self.machine_reg.calls), machine_calls)
+                self.assertEqual(len(self.asked), asked)
+                self.assertEqual(len(self.shown), shown + 1)
+                self.assertEqual(self.shown[-1][2], ou.ADVANCED_UNKNOWN_TEXT.format(n=1))
         calls, asked = len(self.reg.calls), len(self.asked)
         panel.apply_advanced('mouse_precision')
         self.assertIsNone(panel._power_job)
@@ -464,15 +475,19 @@ class AdvancedTabTests(unittest.TestCase):
         self.assertEqual(self.panel.advanced_status.get(), message)
         self.assertIsNone(self.panel.journal)
         self.assertIsNone(self.panel.journal_off_text)
-        for button in (self.panel.advanced_buttons['mouse_precision'], self.panel.btn_tweaks_apply,
+        self.assertEqual(list(self.panel.advanced_buttons), [t.id for t in at.ADVANCED_TWEAKS])
+        for button in (*self.panel.advanced_buttons.values(), self.panel.btn_tweaks_apply,
                        self.panel.btn_undo_all, self.panel.btn_recheck):
             self.assertTrue(button.instate(['disabled']))
         self.assertFalse(self.panel.btn_advanced_refresh.instate(['disabled']))
         self.assertNotIn('Fulano', ' '.join(map(str, self.shown)))
-        asked = len(self.asked)
-        self.panel.apply_advanced('mouse_precision')
-        self.assertEqual(len(self.asked), asked)
-        self.assertEqual(self.shown[-1], ('error', ou.ADVANCED_TITLE, message))
+        for tweak_id in self.panel.advanced_buttons:   # R-58: todos os botões do grupo
+            with self.subTest(tweak=tweak_id):
+                asked, job = len(self.asked), self.panel._power_job
+                self.panel.apply_advanced(tweak_id)
+                self.assertEqual(len(self.asked), asked)
+                self.assertIs(self.panel._power_job, job)
+                self.assertEqual(self.shown[-1], ('error', ou.ADVANCED_TITLE, message))
 
     def test_journal_error_lists_the_buttons_that_turn_off(self):
         self.windows_default()
@@ -482,7 +497,14 @@ class AdvancedTabTests(unittest.TestCase):
         message = 'Não foi possível gravar o diário de alterações. ' + ou.ADVANCED_JOURNAL_OFF_TEXT
         self.assertEqual(self.shown[-1], ('error', ou.ADVANCED_TITLE, message))
         self.assertIsNone(self.panel.journal)
-        self.assertTrue(self.panel.advanced_buttons['mouse_precision'].instate(['disabled']))
+        for tweak_id, button in self.panel.advanced_buttons.items():   # R-58
+            with self.subTest(tweak=tweak_id):
+                self.assertTrue(button.instate(['disabled']))
+                asked, job = len(self.asked), self.panel._power_job
+                self.panel.apply_advanced(tweak_id)
+                self.assertEqual(len(self.asked), asked)
+                self.assertIs(self.panel._power_job, job)
+                self.assertEqual(self.shown[-1][0], 'error')
         self.assertTrue(self.panel.btn_tweaks_apply.instate(['disabled']))
 
     def test_reread_failure_after_apply_is_neutral(self):
@@ -536,17 +558,21 @@ class AdvancedTabTests(unittest.TestCase):
         self.panel.refresh_advanced()
         self.assertTrue(started.wait(5))
         self.root.update()
-        self.assertTrue(self.panel.advanced_buttons['mouse_precision'].instate(['disabled']))
+        for button in self.panel.advanced_buttons.values():   # R-58: todos os botões
+            self.assertTrue(button.instate(['disabled']))
         self.assertTrue(self.panel.btn_advanced_refresh.instate(['disabled']))
         self.assertTrue(self.panel.btn_tweaks_apply.instate(['disabled']))
         job = self.panel._power_job
-        self.panel.apply_advanced('mouse_precision')
+        for tweak_id in self.panel.advanced_buttons:
+            self.panel.apply_advanced(tweak_id)
+            self.assertIs(self.panel._power_job, job)
         self.panel.apply_safe_tweaks()
         self.assertIs(self.panel._power_job, job)
         self.assertEqual(self.asked, [])
         release.set()
         self.settle()
-        self.assertFalse(self.panel.advanced_buttons['mouse_precision'].instate(['disabled']))
+        for button in self.panel.advanced_buttons.values():
+            self.assertFalse(button.instate(['disabled']))
         self.assertFalse(self.panel.btn_advanced_refresh.instate(['disabled']))
 
     def test_unknown_tweak_id_does_nothing(self):

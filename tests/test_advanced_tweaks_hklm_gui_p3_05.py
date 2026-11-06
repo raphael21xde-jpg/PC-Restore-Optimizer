@@ -6,6 +6,7 @@ powercfg de verdade. Arquivos só em TemporaryDirectory. Sem Tk (ou sem tela)
 os testes de janela pulam; os de código-fonte rodam sempre.
 """
 import ast
+import json
 import os
 import subprocess
 import sys
@@ -331,6 +332,42 @@ class GpuButtonTests(unittest.TestCase):
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.panel.advanced_status.get(), ou.ADVANCED_ALREADY_TEXT)
         self.assertFalse(self.panel.journal.entries())
+
+    def test_unknown_entry_in_journal_blocks_the_gpu_button_before_reading(self):
+        self.supported()
+        self.apply()
+        path = self.tmp / 'otimizacao-diario.json'
+        data = json.loads(path.read_text(encoding='utf-8'))
+        data['entries'][0]['status'] = 'unknown'
+        path.write_text(json.dumps(data), encoding='utf-8')
+        panel = self.make_panel()
+        self.addCleanup(panel.destroy)
+        self.assertTrue(panel.advanced_buttons[KEY].instate(['disabled']))
+        self.machine_reg.calls.clear()
+        self.reg.calls.clear()
+        asked, restore = len(self.asked), len(self.restore_calls)
+        panel.apply_advanced(KEY)
+        self.assertIsNone(panel._power_job)
+        self.assertEqual(self.machine_reg.calls, [])
+        self.assertEqual(self.reg.calls, [])
+        self.assertEqual(len(self.asked), asked)
+        self.assertEqual(len(self.restore_calls), restore)
+        self.assertEqual(self.shown[-1], ('warning', ou.ADVANCED_TITLE, ou.ADVANCED_UNKNOWN_TEXT.format(n=1)))
+        self.assertEqual(self.current(), (2, DWORD))
+
+    def test_hklm_write_failure_refuses_the_batch_and_marks_failed(self):
+        self.supported()
+        self.machine_reg.fail_set.add('HwSchMode')
+        self.apply()
+        self.assertEqual(len(self.asked), 1)
+        self.assertEqual(len(self.restore_calls), 1)
+        self.assertEqual(self.current(), (1, DWORD))
+        kind, title, message = self.shown[-1]
+        self.assertEqual((kind, title), ('warning', ou.ADVANCED_TITLE))
+        self.assertIn('desfeitos', message)
+        self.assertNotIn('Fulano', ' '.join(map(str, self.shown)))
+        self.assertEqual(self.panel.journal.entries()[0]['status'], 'failed')
+        self.assertIn('• Agendamento de GPU acelerado por hardware ligado: ainda não aplicado.', self.text())
 
     def test_already_on_does_not_ask(self):
         self.supported(mode=2)

@@ -219,15 +219,12 @@ class StateTests(Base):
         cases = {'18363': ('18363', SZ), '19040': ('19040', SZ), 'abc': ('abc', SZ),
                  'vazio': ('', SZ), 'espaco': (' 19045', SZ), 'outra lingua': ('١٩٠٤٥', SZ),
                  'dword': (19045, DWORD), 'expansivel': ('19045', FakeWinreg.REG_EXPAND_SZ),
-                 'ausente': None, 'ilegivel': 'fail'}
+                 'ausente': None}
         for name, case in cases.items():
             with self.subTest(case=name):
                 self.new_registry()
                 self.mode(1)
-                if case == 'fail':
-                    self.build()
-                    self.reg.fail_read.add('CurrentBuildNumber')
-                elif case is not None:
+                if case is not None:
                     self.build(*case)
                 self.assert_unsupported()
                 # Build ruim: nem chega a ler o HwSchMode.
@@ -254,9 +251,51 @@ class StateTests(Base):
                     self.assertIn('o app não mexe', shown)
                     self.assertNotIn('não oferece', shown)
                     self.assertNotIn('placa de vídeo', shown)
+                    self.assertIn('a opção não aparece neste PC', shown)
+                    self.assertNotIn('nunca usada', shown)
                 self.assertEqual(message, at.MSG_NOT_SUPPORTED)
                 self.assertIn('Nada foi alterado', message)
                 self.assertIn('Configurações > Sistema > Tela > Elementos gráficos', message)
+
+    def test_build_unreadable_by_permission_or_system_error_is_unreadable(self):
+        # Revisão 2 da PR #206: erro de permissão ou do sistema não é "não suportado".
+        errors = {'permissao': PermissionError(5, r'Acesso negado C:\Users\Fulano'),
+                  'sistema': OSError(1450, 'recursos insuficientes')}
+        for name, error in errors.items():
+            with self.subTest(case=name):
+                self.new_registry()
+                self.build()
+                self.mode(1)
+                real = self.reg.QueryValueEx
+
+                def query(key, value_name, _error=error, _real=real):
+                    if value_name == 'CurrentBuildNumber':
+                        raise _error
+                    return _real(key, value_name)
+                self.reg.QueryValueEx = query
+                before = self.snapshot()
+                state = self.gpu_state()
+                self.assertEqual(state, {'id': KEY, 'state': 'unreadable', 'changes': []})
+                text = '\n'.join(at.state_lines([state]))
+                self.assertIn(at.STATE_TEXT['unreadable'], text)
+                self.assertNotIn('Fulano', text)
+                for call in (lambda: self.machine.read(KEY), lambda: self.machine.apply(KEY, 2),
+                             lambda: self.machine.revert(KEY, 1)):
+                    with self.assertRaises(OSError):
+                        call()
+                self.assertEqual(self.snapshot(), before)
+                self.assertEqual(self.writes(), [])
+                self.assertFalse([c for c in self.reg.calls if c[0] == 'QueryValueEx'
+                                  and c[2] == 'HwSchMode'])
+
+    def test_build_absent_or_out_of_pattern_is_unsupported(self):
+        for case in (None, ('19045a', SZ)):
+            with self.subTest(case=case):
+                self.new_registry()
+                self.mode(1)
+                if case is not None:
+                    self.build(*case)
+                self.assertEqual(self.gpu_state()['state'], 'unsupported')
 
     def test_reading_hwschmode_fails_is_unreadable(self):
         self.build()
@@ -326,7 +365,9 @@ class OnlyTheListTests(Base):
         self.reg.fail_set.add('HwSchMode')
         with self.assertRaises(at.AdvancedTweakError) as raised:
             self.machine.apply(KEY, 2)
-        self.assertEqual(str(raised.exception), at.MSG_WRITE_FAILED)
+        self.assertEqual(str(raised.exception), at.MSG_WRITE_FAILED_ONE)
+        self.assertIn('nada foi mudado neste ajuste', str(raised.exception))
+        self.assertNotIn('voltou', str(raised.exception))
         self.assertNotIn('Fulano', str(raised.exception))
         self.assertEqual(self.current(), (1, DWORD))
         journal = self.journal()

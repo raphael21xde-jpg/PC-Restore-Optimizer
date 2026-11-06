@@ -40,7 +40,7 @@ as contas) e só depois de reiniciar:
 (1 -> 2); desfazer volta exatamente ao 1 anotado. Só aceita os números 1 e 2,
 do tipo REG_DWORD (um ``bool`` é recusado). Antes de ler o valor, confere a
 versão do Windows (``CurrentBuildNumber``, texto só com algarismos); versão
-antiga (antes da 19041), ilegível ou fora do padrão, valor ausente, chave
+antiga (antes da 19041), ausente ou fora do padrão, valor ausente, chave
 ausente, 0, 3 ou outro tipo = ``NotSupportedError`` (texto neutro, R-57: "o
 app não encontrou esta opção num formato que ele sabe mudar com segurança"). O adaptador nunca cria nem apaga
 a chave ou o valor: só abre a chave que já existe e troca o número.
@@ -67,10 +67,12 @@ MSG_NOT_TEXT = ('O valor no Windows é de outro tipo ou está num formato difere
                 'segurança, o app não mexe neste ajuste. Nada foi alterado.')
 MSG_WRITE_FAILED = ('O Windows não aceitou gravar um dos valores; o app voltou os que já '
                     'tinha gravado.')
+# R-19: o adaptador do computador grava um valor só; se o Windows recusa, nada mudou.
+MSG_WRITE_FAILED_ONE = 'O Windows não aceitou gravar o valor; nada foi mudado neste ajuste.'
 MSG_NOT_WINDOWS = 'Este recurso só funciona em computadores Windows.'
 # R-57: o estado junta causas diferentes, então o texto é neutro (vale para todas).
 MSG_NOT_SUPPORTED = ('O app não encontrou esta opção num formato que ele sabe mudar com segurança (Windows '
-                     'antigo, opção nunca usada ou valor diferente); o app não mexe. Nada foi '
+                     'antigo, a opção não aparece neste PC ou valor diferente); o app não mexe. Nada foi '
                      'alterado. Se a opção existir em Configurações > Sistema > Tela > Elementos '
                      'gráficos, ligue por lá.')
 MEASURE_BEFORE_HINT = 'Para comparar, meça ANTES na aba 1 antes de aplicar.'
@@ -162,7 +164,7 @@ STATE_TEXT = {
     'other_type': ('o app não mexe (o valor no Windows é de outro tipo ou está num '
                    'formato diferente).'),
     'unsupported': ('o app não encontrou esta opção num formato que ele sabe mudar com segurança '
-                    '(Windows antigo, opção nunca usada ou valor diferente); o app não mexe.'),
+                    '(Windows antigo, a opção não aparece neste PC ou valor diferente); o app não mexe.'),
     'unreadable': 'Não foi possível ler o estado atual; o app não mexe.',
 }
 
@@ -339,8 +341,9 @@ class MachineDwordAdapter:
             with reg.OpenKey(reg.HKEY_LOCAL_MACHINE, VERSION_PATH, 0,
                              reg.KEY_READ | reg.KEY_WOW64_64KEY) as handle:
                 value, value_type = reg.QueryValueEx(handle, BUILD_NAME)
-        except OSError:
+        except FileNotFoundError:
             raise NotSupportedError(MSG_NOT_SUPPORTED) from None
+        # Outro erro (permissão, sistema) sobe: o estado fica "não foi possível ler".
         if (value_type != reg.REG_SZ or not isinstance(value, str)
                 or _BUILD_RE.fullmatch(value) is None or int(value) < needed):
             raise NotSupportedError(MSG_NOT_SUPPORTED)
@@ -382,7 +385,7 @@ class MachineDwordAdapter:
             try:
                 reg.SetValueEx(handle, target.names[0], 0, reg.REG_DWORD, number)
             except Exception:
-                raise AdvancedTweakError(MSG_WRITE_FAILED) from None
+                raise AdvancedTweakError(MSG_WRITE_FAILED_ONE) from None
 
     def apply(self, key, value):
         target = self._target(key)
