@@ -426,6 +426,7 @@ class CheckupButtonTests(unittest.TestCase):
         self.assertIn('[suspeito] Falso', content)
         self.assertIn('[OK] Processador (CPU): média de 3%', content)
         self.assertRegex(content, r'Medido às \d{2}:\d{2}\.')  # revisão da PR #197
+        self.assertRegex(content, r'Check-up feito às \d{2}:\d{2}\.')  # revisão 2 da PR #197
         window.destroy()
 
     def test_idle_failure_shows_generic_message(self):

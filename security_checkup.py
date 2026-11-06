@@ -82,9 +82,12 @@ IDLE_INTERVAL = 5
 IDLE_SAMPLES = 24
 IDLE_TIMEOUT = 300
 IDLE_LIMIT = 25
-# Processos da própria medição (a consulta CIM roda no WmiPrvSE e no PowerShell) e as
-# linhas de total e ocioso do Windows: nunca entram entre os 3 citados.
-IDLE_SELF_PROCESSES = ('wmiprvse', 'powershell', 'pwsh', '_total', 'idle')
+# Só as linhas de total e ocioso do Windows saem pelo nome. O processo da própria
+# medição sai pelo PID ($PID), nunca pelo nome: um powershell, pwsh ou WmiPrvSE de
+# outro PID aparece normalmente entre os 3 citados (R-45, R-53).
+IDLE_SELF_PROCESSES = ('_total', 'idle')
+IDLE_COST_NOTE = ('A própria medição usa um pouco do processador (o PowerShell e o serviço WMI do '
+                  'Windows, WmiPrvSE), mas o PowerShell dela não entra na lista de programas.')
 NOT_ALL_CHECKED = ('Nenhum item conferido ficou como atenção ou suspeito, mas o check-up '
                    'não conseguiu conferir tudo (veja acima).')
 
@@ -387,9 +390,10 @@ IDLE_QUERY = (
     "foreach($x in $e){ $k=if([string]$x.Name -match 'engtype_(.+)$'){ $matches[1] }else{ '?' }; "
     '$h[$k]=[double]$h[$k]+[double]$x.UtilizationPercentage }; '
     '$gpu+=($h.Values | Measure-Object -Maximum).Maximum } }catch{ $hasGpu=$false; $gpu=@() } }; '
-    'try{ foreach($p in @(Get-CimInstance ' + IDLE_PROCESS_CLASS + ' -Property Name,PercentProcessorTime -ErrorAction Stop)){ '
+    'try{ foreach($p in @(Get-CimInstance ' + IDLE_PROCESS_CLASS + ' -Property Name,IDProcess,PercentProcessorTime '
+    '-ErrorAction Stop)){ '
     "$nm=([string]$p.Name) -replace '#\\d+$',''; "
-    "if($nm -and $skip -notcontains $nm.ToLower()){ $acc[$nm]=[double]$acc[$nm]+[double]$p.PercentProcessorTime } }; "
+    "if($nm -and [int]$p.IDProcess -ne $PID -and $skip -notcontains $nm.ToLower()){ $acc[$nm]=[double]$acc[$nm]+[double]$p.PercentProcessorTime } }; "
     '$n++ }catch{} }; '
     '$top=@(if($n){ $acc.GetEnumerator() | Where-Object { $_.Value -gt 0 } | Sort-Object Value -Descending | '
     'Select-Object -First 3 | ForEach-Object { [string]$_.Key } }); '
@@ -962,7 +966,7 @@ def classify_tasks(rows, env=None):
 # --- P3-07 fatia 3: Microsoft Defender -------------------------------------------------
 
 # "N/A: ...", "N/D: ..." etc.: o Windows mandou um aviso no lugar das exclusões.
-_HIDDEN_EXCLUSION = re.compile(r'^\s*[a-z]{1,3}/[a-z]{1,3}\b', re.IGNORECASE)
+_HIDDEN_EXCLUSION = re.compile(r'^\s*N/[AD]\b', re.IGNORECASE)
 _ADMIN_WORDS = ('administrator', 'administrador')
 _EXTENSION_VALUE = re.compile(r'^\*?\.?[^\s\\/:*?"<>|.]+[ .]*$')
 _LOOKS_LIKE_PATH = re.compile(r'^(?:[a-z]:|\\\\|%[^%\s]+%|\*)', re.IGNORECASE)
@@ -1001,9 +1005,10 @@ def _exclusion_hidden(text) -> bool:
     R-52: a palavra "administrador" só conta fora de um caminho ou programa (a pasta
     ``C:\\Users\\Administrador`` é comum e a exclusão dela continua "suspeito").
     """
-    if _HIDDEN_EXCLUSION.match(text):
-        return True
-    return not _looks_like_path_or_program(text) and any(word in text.lower() for word in _ADMIN_WORDS)
+    # R-52/R-53: nada que pareça caminho ou programa vira o aviso, nem com "N/A" na frente.
+    if _looks_like_path_or_program(text):
+        return False
+    return bool(_HIDDEN_EXCLUSION.match(text)) or any(word in text.lower() for word in _ADMIN_WORDS)
 
 
 def _exclusion_readable(kind, value) -> bool:
@@ -1087,8 +1092,8 @@ def classify_exclusion(kind, value, env=None):
     env = _env(env)
     if not isinstance(value, str) or not value.strip():
         return STATE_ATTENTION, REASON_EXCL_OTHER
-    if kind in DEFENDER_KIND_TEXTS and not _exclusion_readable(kind, value):
-        return STATE_ATTENTION, REASON_EXCL_UNKNOWN
+    # R-53: a classificação não depende de o texto parecer "normal"; o filtro de texto
+    # estranho (em classify_defender e na tela) só esconde o texto, nunca rebaixa.
     if kind == 'extension':
         reason = _extension_reason(value)
     elif kind == 'process':
@@ -1137,19 +1142,23 @@ def classify_defender(data, env=None):
     seen = set()
     for field, kind in _EXCL_FIELDS:
         for value in _exclusion_values(pref.get(field)):
-            if _exclusion_hidden(value.strip()):
-                hidden = True
-                continue
-            if not _exclusion_readable(kind, value):
-                # R-07: um texto que não parece exclusão não aparece na tela.
-                unreadable = True
-                continue
-            key = (kind, _windows_form(value, env))
+            state, reason = classify_exclusion(kind, value, env)
+            readable = _exclusion_readable(kind, value)
+            if state != STATE_SUSPECT:
+                # R-53: só o que não dá "suspeito" pode virar aviso ou "não foi possível conferir".
+                if _exclusion_hidden(value.strip()):
+                    hidden = True
+                    continue
+                if not readable:
+                    # R-07: um texto que não parece exclusão não aparece na tela.
+                    unreadable = True
+                    continue
+            key = (kind, _windows_form(value, env) if readable else value.strip().lower())
             if key in seen:
                 continue
             seen.add(key)
-            reason = classify_exclusion(kind, value, env)[1]
-            items.append(_defender_item(reason, env, kind, value))
+            # Texto estranho que dá "suspeito": continua "suspeito", só sem o texto (R-07).
+            items.append(_defender_item(reason, env, kind, value if readable else None))
     if hidden:
         items.append(_defender_item(REASON_EXCL_HIDDEN, env))
     if unreadable:
@@ -1260,6 +1269,9 @@ def classify_idle(data, env=None):
     items = []
     for kind, field in (('cpu', 'Cpu'), ('gpu', 'Gpu')):
         found = _samples(data.get(field))
+        if kind == 'cpu' and not any(found):
+            # Revisão 2 da PR #197: CPU em 0 nas amostras todas é leitura que falhou, não OK.
+            found = []
         value = _rounded(sum(found) / len(found)) if found else None
         state, reason = _idle_state(value)
         items.append({'source': 'idle', 'kind': kind, 'name': IDLE_KIND_TEXTS[kind], 'value': value,
@@ -1295,6 +1307,9 @@ def _idle_effective(item):
     Vale o mais grave entre o guardado e o recalculado; nunca "suspeito" só pelo número.
     """
     state, reason = _idle_state(item.get('value'))
+    if item.get('state') in (STATE_ATTENTION, STATE_SUSPECT):
+        # R-32: vale o mais grave entre o guardado e o recalculado (nunca "suspeito" aqui).
+        return STATE_ATTENTION, reason
     if state == STATE_OK and item.get('reason') != REASON_IDLE_OK:
         # O estado fica o mais grave, mas o texto vem do número (revisão da PR #197):
         # "uso alto" nunca aparece ao lado de uma média baixa.
@@ -1333,7 +1348,7 @@ def _idle_section(idle, env, counts):
             top.append(name)
     if high and top:
         lines.append('  ' + IDLE_TOP_TEXT + ', '.join(top[:3]) + '.')
-    lines += ['  ' + IDLE_NOTE, '']
+    lines += ['  ' + IDLE_NOTE, '  ' + IDLE_COST_NOTE, '']
     return lines
 
 
@@ -1492,14 +1507,17 @@ def _defender_effective(item, env):
     pelo valor guardado e vale o mais grave (nunca promove a OK).
     """
     reason = item.get('reason')
-    if item.get('kind') in DEFENDER_KIND_TEXTS and not _exclusion_readable(item.get('kind'), item.get('path')):
-        # Valor que não parece exclusão: não aparece (R-07); vale o mais grave.
-        if _DEFENDER_REASONS.get(reason) == STATE_SUSPECT:
-            return STATE_SUSPECT, reason
-        return STATE_ATTENTION, REASON_EXCL_UNKNOWN
-    if item.get('kind') in DEFENDER_KIND_TEXTS or reason in _EXCL_REASONS:
+    kind = item.get('kind')
+    if kind in DEFENDER_KIND_TEXTS or reason in _EXCL_REASONS:
         # Uma exclusão nunca dá OK: o valor guardado é classificado de novo.
-        new_state, new_reason = classify_exclusion(item.get('kind'), item.get('path'), env)
+        new_state, new_reason = classify_exclusion(kind, item.get('path'), env)
+        if (new_state != STATE_SUSPECT and kind in DEFENDER_KIND_TEXTS
+                and not _exclusion_readable(kind, item.get('path'))):
+            # Valor que não parece exclusão (e não dá "suspeito"): não aparece (R-07);
+            # vale o mais grave entre o guardado e "não foi possível conferir" (R-53).
+            if _DEFENDER_REASONS.get(reason) == STATE_SUSPECT:
+                return STATE_SUSPECT, reason
+            return STATE_ATTENTION, REASON_EXCL_UNKNOWN
         if reason in _EXCL_REASONS and _ORDER[_DEFENDER_REASONS[reason]] <= _ORDER[new_state]:
             return _DEFENDER_REASONS[reason], reason
         return new_state, new_reason
@@ -1574,7 +1592,12 @@ def checkup_lines(result, env=None):
         return _idle_only_lines(result, env)
     errors = [e for e in _as_list(result.get('errors'))]
     counts = {STATE_OK: 0, STATE_ATTENTION: 0, STATE_SUSPECT: 0}
-    lines = ['CHECK-UP DE SEGURANÇA — SÓ LEITURA', NEVER_CHANGES, '']
+    lines = ['CHECK-UP DE SEGURANÇA — SÓ LEITURA', NEVER_CHANGES]
+    checked = result.get('checked_at')
+    if isinstance(checked, str) and re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', checked):
+        # Revisão 2 da PR #197: o check-up mostrado de novo diz de quando ele é.
+        lines.append(f'Check-up feito às {checked}.')
+    lines.append('')
 
     def section(title, items, with_count, empty_text, special=None):
         lines.append(title)

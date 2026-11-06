@@ -1097,8 +1097,9 @@ class OptimizationPanel(tk.Frame):
         self.btn_checkup.configure(state='normal')
         self.btn_idle.configure(state='normal')
         self.note.set('Check-up de segurança concluído. Nada foi mudado.')
-        self._checkup_result=result
-        self.show_checkup(result)
+        # Revisão 2 da PR #197: a hora do check-up aparece quando ele volta na janela.
+        self._checkup_result=dict(result,checked_at=time.strftime('%H:%M')) if isinstance(result,dict) else result
+        self.show_checkup(self._checkup_result)
 
     def _checkup_failed(self):
         # R-07: nunca a mensagem original (pode ter caminho com nome de usuário).

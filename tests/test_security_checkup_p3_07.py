@@ -1898,7 +1898,8 @@ class Revisions196Slice4Tests(unittest.TestCase):
     # 4. Valor das exclusões que não parece caminho, extensão ou programa
     def test_unreadable_exclusion_values_hide_system_text(self):
         odd = ('N/D: É preciso ser administrador para ver as exclusões', 'Must be an administrator',
-               'Precisa ser Administrador', 'pasta solta', 'Erro ao ler', 'n/d: x\\y')
+               'Precisa ser Administrador', 'pasta solta', 'Erro ao ler')
+        # 'n/d: x\\y' tem barra invertida: parece caminho e não vira aviso (R-52/R-53).
         for kind in ('paths', 'procs', 'exts'):
             for value in odd:
                 with self.subTest(kind=kind, value=value):
@@ -1910,7 +1911,7 @@ class Revisions196Slice4Tests(unittest.TestCase):
                     self.assertIn(found[0][1], (sc.REASON_EXCL_HIDDEN, sc.REASON_EXCL_UNKNOWN))
                     text = self._text({'defender': items, 'errors': []})
                     self.assertNotIn(value, text)
-                    for word in ('N/D', 'preciso', 'Must', 'Precisa', 'solta', 'Erro', 'x\\y'):
+                    for word in ('N/D', 'preciso', 'Must', 'Precisa', 'solta', 'Erro'):
                         self.assertNotIn(word, text)
         self.assertEqual(self._exclusions('exts', 'exe exe'), [(sc.STATE_ATTENTION, sc.REASON_EXCL_UNKNOWN)])
         self.assertEqual(self._exclusions('paths', 'N/D: algo'), [(sc.STATE_ATTENTION, sc.REASON_EXCL_HIDDEN)])
@@ -1949,6 +1950,35 @@ class Revisions196Slice4Tests(unittest.TestCase):
                                 'path': 'C:\\Users\\Administrador\\Downloads', 'state': sc.STATE_OK,
                                 'reason': sc.REASON_EXCL_OTHER}], 'errors': []}
         self.assertIn('RESUMO: OK 0 · atenção 0 · suspeito 1', '\n'.join(sc.checkup_lines(forged, ENV)))
+
+    def test_filter_only_hides_never_downgrades(self):
+        # Revisão 2 da PR #197 (R-53): mesma classificação de antes do filtro (main).
+        cases = (('procs', 'bin/cmd.exe', sc.STATE_SUSPECT, sc.REASON_EXCL_SCRIPT_PROCESS),
+                 ('procs', 'a/cmd.exe', sc.STATE_SUSPECT, sc.REASON_EXCL_SCRIPT_PROCESS),
+                 ('procs', 'ab/cd\\miner.exe', sc.STATE_ATTENTION, sc.REASON_EXCL_OTHER),
+                 ('procs', 'usr/bin', sc.STATE_ATTENTION, sc.REASON_EXCL_OTHER),
+                 ('exts', '**.exe', sc.STATE_SUSPECT, sc.REASON_EXCL_EXTENSION),
+                 ('exts', '*. exe', sc.STATE_SUSPECT, sc.REASON_EXCL_EXTENSION),
+                 ('exts', '. exe', sc.STATE_SUSPECT, sc.REASON_EXCL_EXTENSION),
+                 ('paths', 'C:\\Users\\x administrator\\AppData\\Roaming', sc.STATE_SUSPECT,
+                  sc.REASON_EXCL_APPDATA))
+        for kind, value, state, reason in cases:
+            with self.subTest(kind=kind, value=value):
+                items = sc.classify_defender(_defender(**{kind: [value]}), ENV)
+                found = [(i['state'], i['reason']) for i in items if i['reason'] != sc.REASON_RT_ON]
+                self.assertEqual(found, [(state, reason)])
+                text = self._text({'defender': items, 'errors': []})
+                expected = {sc.STATE_SUSPECT: 'suspeito 1', sc.STATE_ATTENTION: 'atenção 1'}[state]
+                self.assertIn(expected, text)
+                self.assertNotIn(sc.REASON_TEXTS[sc.REASON_EXCL_HIDDEN], text)
+        # Texto estranho que dá "suspeito" continua "suspeito", só sem aparecer.
+        items = sc.classify_defender(_defender(exts=['**.exe']), ENV)
+        self.assertNotIn('**.exe', self._text({'defender': items, 'errors': []}))
+        forged = {'defender': [{'source': 'defender', 'kind': 'extension', 'path': '**.exe',
+                                'state': sc.STATE_OK, 'reason': sc.REASON_EXCL_OTHER}], 'errors': []}
+        text = self._text(forged)
+        self.assertIn('RESUMO: OK 0 · atenção 0 · suspeito 1', text)
+        self.assertNotIn('**.exe', text)
 
     def test_valid_values_still_shown(self):
         for kind, value in (('paths', 'D:\\Jogos'), ('paths', 'D:'), ('paths', '%APPDATA%'),
@@ -2122,19 +2152,48 @@ class IdleUsageSlice4Tests(unittest.TestCase):
         self.assertNotIn(sc.REASON_TEXTS[sc.REASON_IDLE_HIGH], text)
         self.assertNotIn(sc.IDLE_TOP_TEXT, text)
 
-    def test_gpu_uses_busiest_engine_type_and_self_processes_left_out(self):
+    def test_gpu_uses_busiest_engine_type_and_own_process_by_pid(self):
         query = sc.IDLE_QUERY
         self.assertIn('engtype_', query)
         self.assertIn('-Property Name,UtilizationPercentage', query)
-        for name in ('wmiprvse', 'powershell', 'pwsh', '_total', 'idle'):
-            self.assertIn(name, sc.IDLE_SELF_PROCESSES)
-            self.assertIn("'" + name + "'", query)
-        top = ('WmiPrvSE', 'powershell', 'pwsh.exe', '_Total', 'Idle', 'mina', 'chrome', 'b', 'c')
+        # Revisão 2 da PR #197 (R-45, R-53): só o processo da própria medição sai, pelo PID.
+        self.assertIn('-Property Name,IDProcess,PercentProcessorTime', query)
+        self.assertIn('[int]$p.IDProcess -ne $PID', query)
+        for name in ('wmiprvse', 'powershell', 'pwsh'):
+            self.assertNotIn("'" + name + "'", query)
+            self.assertNotIn(name, sc.IDLE_SELF_PROCESSES)
+        top = ('powershell', 'WmiPrvSE', 'pwsh.exe', '_Total', 'Idle', 'mina')
         idle = sc.classify_idle(_idle(cpu=(80,), top=top), ENV)
-        self.assertEqual(idle['top'], ['mina', 'chrome', 'b'])
-        forged = {'idle': {'items': idle['items'], 'top': ['powershell', 'WmiPrvSE', 'mina']}}
+        self.assertEqual(idle['top'], ['powershell', 'WmiPrvSE', 'pwsh.exe'])
+        text = self._text({'idle': idle})
+        self.assertIn(sc.IDLE_TOP_TEXT + 'powershell, WmiPrvSE, pwsh.exe.', text)
+        self.assertIn(sc.IDLE_COST_NOTE, text)
+
+    def test_all_zero_cpu_cannot_measure(self):
+        for cpu in ((0,) * 24, (0.0, 0), ()):
+            with self.subTest(cpu=cpu):
+                self.assertEqual(self._states(_idle(cpu=cpu))[0],
+                                 ('cpu', sc.STATE_ATTENTION, sc.REASON_IDLE_UNKNOWN))
+        self.assertEqual(self._states(_idle(cpu=(0, 0, 1)))[0], ('cpu', sc.STATE_OK, sc.REASON_IDLE_OK))
+
+    def test_stored_state_more_severe_is_kept(self):
+        forged = {'idle': {'items': [{'kind': 'cpu', 'value': 5, 'state': sc.STATE_ATTENTION,
+                                      'reason': sc.REASON_IDLE_OK},
+                                     {'kind': 'gpu', 'value': 5, 'state': sc.STATE_SUSPECT,
+                                      'reason': sc.REASON_IDLE_OK}], 'top': []}}
         text = self._text(forged)
-        self.assertIn(sc.IDLE_TOP_TEXT + 'mina.', text)
+        self.assertNotIn('[OK]', text)
+        self.assertNotIn('[suspeito]', text)
+        self.assertIn('RESUMO: OK 0 · atenção 2 · suspeito 0', text)
+
+    def test_checkup_time_is_shown(self):
+        full = dict(sc.read_checkup(_fake_ps(), ENV), checked_at='09:41')
+        self.assertIn('Check-up feito às 09:41.', self._text(full))
+        for bad in ('9:41', 'C:\\Users\\Fulano Silva', None, 941):
+            with self.subTest(bad=bad):
+                text = self._text(dict(full, checked_at=bad))
+                self.assertNotIn('Check-up feito às', text)
+                self.assertNotIn('Fulano', text)
 
     def test_measured_time_is_shown(self):
         idle = dict(sc.classify_idle(_idle(), ENV), measured_at='14:05')

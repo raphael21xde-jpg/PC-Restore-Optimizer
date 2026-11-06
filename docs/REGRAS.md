@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 8 (última poda: 01/11/2026, pedido `regras-20261101-poda-r35-r44`, issue #187). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-45.
+poda: 9 (última poda: 01/11/2026, pedido `regras-20261101-poda-r35-r44`, issue #187). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-45.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -67,3 +67,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-50 | O padrão de nome com versão vale para todas as listas que tiram o OK (INTERPRETERS e SCRIPT_HOSTS); teste com pwsh7.exe e cmd2.exe em Program Files. | Revisão da PR #193, issue #194, FIX-P3-07-04 | 2026-11-06 |
 | R-51 | Valor lido do sistema que o app compara com uma pasta ou uma extensão perigosa (exclusão, caminho) passa pela mesma normalização do Windows antes da comparação (sem ponto e espaço no fim de cada pedaço, sem prefixo \\?\, curingas como *.* = tudo); na dúvida, vale a classificação mais grave. Tem teste com C:\Windows. e C:\*.* | Revisão da PR #196 (P3-07 fatia 3) | 2026-11-06 |
 | R-52 | Filtro que esconde ou reclassifica um valor lido do sistema pelo texto (aviso do Windows, palavra como "administrador") nunca vale para um valor que parece caminho ou programa; tem teste com exclusões em C:\Users\Administrador\... que continuam "suspeito" | Revisão da PR #197 (P3-07 fatia 4) | 2026-11-06 |
+| R-53 | Filtro que esconde um valor "estranho" ou o troca por aviso só pode esconder, nunca rebaixar: se a classificação sem o filtro dá "suspeito", continua "suspeito"; exceção de processo (o da própria medição) é pelo PID, nunca pelo nome de um programa da R-45. Tem teste comparando com a classificação anterior (bin/cmd.exe, **.exe, powershell de outro PID) | Revisão 2 da PR #197 (P3-07 fatia 4) | 2026-11-06 |
