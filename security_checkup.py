@@ -134,14 +134,14 @@ _SHORT_NAME = re.compile(r'~\d')
 
 
 def _versioned_names(names):
-    """Padrão de nome com versão para uma lista que tira o OK (R-49, R-50)."""
+    """Padrão de nome com versão para uma lista que tira o OK (R-49)."""
     return re.compile(
         r'^(' + '|'.join(sorted((re.escape(n[:-4]) for n in names), key=len, reverse=True))
         + r')[-_]?\d+(\.\d+)*t?w?\.exe$')
 
 
 _VERSIONED_INTERPRETER = _versioned_names(INTERPRETERS)
-# R-50: o mesmo padrão vale para SCRIPT_HOSTS (ex.: pwsh7.exe, cmd2.exe, wscript5.exe).
+# R-49: o mesmo padrão vale para SCRIPT_HOSTS (ex.: pwsh7.exe, cmd2.exe, wscript5.exe).
 _VERSIONED_SCRIPT_HOST = _versioned_names(SCRIPT_HOSTS)
 
 REASON_OK = 'ok'
@@ -670,7 +670,7 @@ def _is_interpreter(path, env) -> bool:
 
 
 def _is_script_host(path, env) -> bool:
-    """Programa da lista ``SCRIPT_HOSTS`` (ou nome com versão, R-50), em qualquer pasta (R-45)."""
+    """Programa da lista ``SCRIPT_HOSTS`` (ou nome com versão, R-49), em qualquer pasta (R-45)."""
     if not isinstance(path, str) or not path.strip():
         return False
     return any(base in SCRIPT_HOSTS or _VERSIONED_SCRIPT_HOST.match(base) for base in _exe_names(path, env))
@@ -910,7 +910,7 @@ def _classify_task(row, env):
                 return STATE_ATTENTION, runner, exe
             if runner == REASON_SCRIPT_HOST and not any(b in SCRIPT_HOSTS for b in _exe_names(exe, env)):
                 # Ressalva da PR #195: "cmd2.exe" não é programa do Windows; o texto de
-                # "comum nas tarefas da Microsoft" seria falso (R-50).
+                # "comum nas tarefas da Microsoft" seria falso (R-49).
                 return STATE_ATTENTION, REASON_SCRIPT_HOST, exe
             if runner:
                 return STATE_ATTENTION, REASON_MS_WINDOWS_PROGRAM, exe
@@ -1002,10 +1002,10 @@ def _looks_like_path_or_program(text) -> bool:
 def _exclusion_hidden(text) -> bool:
     """Aviso do Windows no lugar da exclusão ("N/A: Must be an administrator..." e parecidos).
 
-    R-52: a palavra "administrador" só conta fora de um caminho ou programa (a pasta
+    R-53: a palavra "administrador" só conta fora de um caminho ou programa (a pasta
     ``C:\\Users\\Administrador`` é comum e a exclusão dela continua "suspeito").
     """
-    # R-52/R-53: nada que pareça caminho ou programa vira o aviso, nem com "N/A" na frente.
+    # R-53: nada que pareça caminho ou programa vira o aviso, nem com "N/A" na frente.
     if _looks_like_path_or_program(text):
         return False
     return bool(_HIDDEN_EXCLUSION.match(text)) or any(word in text.lower() for word in _ADMIN_WORDS)

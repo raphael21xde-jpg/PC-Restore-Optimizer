@@ -1427,7 +1427,7 @@ class LaunchersAndVersionsFix0703Tests(unittest.TestCase):
 
 
 class QuotedSpaceAndScriptHostVersionsFix0704Tests(unittest.TestCase):
-    """FIX-P3-07-04 (issue #194): ação entre aspas com espaço e versões de SCRIPT_HOSTS (R-50)."""
+    """FIX-P3-07-04 (issue #194): ação entre aspas com espaço e versões de SCRIPT_HOSTS (R-49)."""
 
     VERSIONED_HOSTS = ('pwsh7.exe', 'powershell7.exe', 'cmd2.exe', 'wscript5.exe', 'cscript5.exe',
                        'mshta2.exe', 'pwsh-7.exe', 'pwsh7.4.exe')
@@ -1899,7 +1899,7 @@ class Revisions196Slice4Tests(unittest.TestCase):
     def test_unreadable_exclusion_values_hide_system_text(self):
         odd = ('N/D: É preciso ser administrador para ver as exclusões', 'Must be an administrator',
                'Precisa ser Administrador', 'pasta solta', 'Erro ao ler')
-        # 'n/d: x\\y' tem barra invertida: parece caminho e não vira aviso (R-52/R-53).
+        # 'n/d: x\\y' tem barra invertida: parece caminho e não vira aviso (R-53).
         for kind in ('paths', 'procs', 'exts'):
             for value in odd:
                 with self.subTest(kind=kind, value=value):
@@ -1927,7 +1927,7 @@ class Revisions196Slice4Tests(unittest.TestCase):
         self.assertIn('RESUMO: OK 0 · atenção 1 · suspeito 1', text)
 
     def test_administrator_profile_paths_stay_suspect(self):
-        # Revisão da PR #197 (R-52): a palavra "administrador" num caminho não é o aviso do Windows.
+        # Revisão da PR #197 (R-53, antiga R-52): a palavra "administrador" num caminho não é o aviso do Windows.
         env = dict(ENV, USERPROFILE='C:\\Users\\Administrador', USERNAME='Administrador',
                    LOCALAPPDATA='C:\\Users\\Administrador\\AppData\\Local',
                    APPDATA='C:\\Users\\Administrador\\AppData\\Roaming',
