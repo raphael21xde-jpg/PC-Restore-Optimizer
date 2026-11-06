@@ -1,4 +1,4 @@
-"""Registro do Windows falso, só em memória, para os testes do P3-04.
+"""Registro do Windows falso, só em memória, para os testes do P3-04 e do P3-05.
 
 Imita o pedaço do módulo ``winreg`` que ``safe_tweaks`` usa. Nunca toca no
 registro de verdade. ``DeleteKey`` e qualquer acesso fora de HKCU falham o teste.
@@ -24,6 +24,7 @@ class FakeWinreg:
     HKEY_CURRENT_USER = 'HKCU'
     HKEY_LOCAL_MACHINE = 'HKLM'
     REG_SZ = 1
+    REG_EXPAND_SZ = 2
     REG_BINARY = 3
     REG_DWORD = 4
     REG_QWORD = 11

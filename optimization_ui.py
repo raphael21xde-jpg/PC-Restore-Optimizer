@@ -1,8 +1,9 @@
 """Task-oriented Optimization page integrated into PC Restore & Optimizer.
 
 No system mutation happens during construction, scanning or CSV import.
-Only the Power tab (power plan) and the "Ajustes seguros" tab (P3-04: closed
-HKCU list in ``safe_tweaks``) can request a reversible change, after confirmation.
+Only the Power tab (power plan), the "Ajustes seguros" tab (P3-04: closed
+HKCU list in ``safe_tweaks``) and the "Ajustes avançados" tab (P3-05: closed
+HKCU list in ``advanced_tweaks``) can request a reversible change, after confirmation.
 """
 from __future__ import annotations
 import json
@@ -34,6 +35,8 @@ import pc_measure
 from pc_measure import MEASURE_CONFIRMATION
 import safe_tweaks
 from safe_tweaks import RegistryTweakAdapter, TWEAK_KIND
+import advanced_tweaks
+from advanced_tweaks import AdvancedRegistryAdapter, ADVANCED_KIND
 from atomic_write import atomic_write_text
 from optimization_bench import parse_csv_file, insert_run, summarize, read_history
 from stutter_analysis import analyze_file, correlate_with_session, summary_text, analyze_sampled_fps_session
@@ -175,9 +178,12 @@ TWEAKS_ADMIN_TEXT = (
     'não for a sua, não lê nem muda nada. Depois, para fazer backup ou '
     'restaurar, abra o app de novo do jeito normal. Desfazer funciona sem administrador.')
 # R-30: diário com problema ao aplicar ajustes: diz exatamente o que fica desligado.
+# P3-05: a aba 9 também usa este texto (os botões dela também ficam desligados).
+ADVANCED_TAB_LABEL = '9  Ajustes avançados'
 TWEAKS_JOURNAL_OFF_TEXT = (
     'Por segurança, até você fechar e abrir o app de novo, ficam desligados: "Aplicar ajustes '
-    'seguros" (aba "' + TWEAKS_TAB_LABEL + '"), "Desfazer tudo" e "Conferir de novo" (aba "'
+    'seguros" (aba "' + TWEAKS_TAB_LABEL + '"), os botões de aplicar da aba "' + ADVANCED_TAB_LABEL
+    + '", "Desfazer tudo" e "Conferir de novo" (aba "'
     + CHANGES_TAB_LABEL + '") e os botões de aplicar e desfazer da aba "4  Energia reversível". '
     '"Ver estado atual" continua funcionando (só lê).')
 # R-55: o HKCU é o da conta do processo; só segue se for a mesma conta que está usando o PC.
@@ -191,6 +197,35 @@ TWEAKS_ACCOUNT_UNKNOWN_TEXT = (
     'segurança, o app não leu nem mudou nada. Para usar os ajustes: feche o app, clique com o '
     'botão direito no atalho dele, escolha "Executar como administrador" e entre com a SUA '
     'própria conta.')
+# ---------- P3-05: aba "Ajustes avançados" (textos fixos, R-07) ----------
+ADVANCED_TITLE = 'Ajustes avançados'
+ADVANCED_INTRO_TEXT = (
+    'Ajustes do próprio Windows que ajudam algumas pessoas, mas têm um lado ruim. Só na sua conta. '
+    'Cada ajuste tem o seu botão, e o app sempre pergunta antes, mostrando o lado ruim (a resposta '
+    'já vem marcada em "Não"). Se você aceitar, o app cria antes um ponto de restauração e anota '
+    'tudo no diário de alterações.')
+ADVANCED_UNDO_WHERE_TEXT = ('Para desfazer: aba "' + CHANGES_TAB_LABEL + '", botão "Desfazer tudo". '
+                            'O "Conferir de novo" de lá também confere estes ajustes.')
+ADVANCED_NOT_READ_TEXT = 'Estado atual: ainda não lido. Clique em "Ver estado atual" (só lê).'
+ADVANCED_READING_TEXT = 'Lendo o estado atual dos ajustes avançados (somente leitura)…'
+ADVANCED_READ_FAILED_TEXT = 'Não foi possível ler o estado dos ajustes avançados. Nada foi mudado.'
+ADVANCED_REREAD_FAILED_TEXT = ('Não foi possível ler de novo o estado dos ajustes avançados. Confira '
+                               'com "Ver estado atual" ou com o "Conferir de novo" da aba "'
+                               + CHANGES_TAB_LABEL + '".')
+ADVANCED_ALREADY_TEXT = 'Este ajuste já está aplicado. Nada foi mudado.'
+ADVANCED_NOT_TOUCHED_TEXT = ('O app não mexe neste ajuste: o valor no Windows é de outro tipo ou '
+                             'está num formato diferente. Nada foi mudado.')
+ADVANCED_CANCEL_TEXT = 'Ajuste avançado cancelado. Nada foi mudado.'
+ADVANCED_RUNNING_TEXT = ('Criando o ponto de restauração e aplicando o ajuste… '
+                         'Isto pode demorar um pouco.')
+ADVANCED_APPLIED_TEXT = ('Ajuste aplicado e anotado no diário de alterações. Para desfazer, use '
+                         '"Desfazer tudo" na aba "' + CHANGES_TAB_LABEL + '".')
+ADVANCED_UNEXPECTED_ERROR_TEXT = (
+    'Ocorreu um erro inesperado ao aplicar o ajuste. Parte dele pode já ter mudado no Windows. '
+    'O diário e os botões de aplicar e desfazer ajustes ficam desligados até você fechar e abrir '
+    'o app de novo. Depois disso, confira na aba "' + CHANGES_TAB_LABEL + '" com "Conferir de novo".')
+ADVANCED_UNKNOWN_TEXT = TWEAKS_UNKNOWN_TEXT
+ADVANCED_JOURNAL_OFF_TEXT = TWEAKS_JOURNAL_OFF_TEXT
 _LEGACY_KNOWN_MESSAGES = {
     'Nenhuma alteração anterior registrada neste aplicativo.',
     'Registro de reversão está ilegível.',
@@ -268,7 +303,7 @@ def build_presentmon_args(executable, process, output_file, seconds, session_nam
 class OptimizationPanel(tk.Frame):
     def __init__(self, master, app_dir, *, state_dir=None, power_adapter=None,
                  restore_point=None, elevated_probe=None, ask=None, show=None,
-                 tweak_adapter=None, session_owner_probe=None):
+                 tweak_adapter=None, session_owner_probe=None, advanced_adapter=None):
         super().__init__(master, bg=BG)
         self.app_dir=Path(app_dir)
         if state_dir is not None:
@@ -285,10 +320,16 @@ class OptimizationPanel(tk.Frame):
         self.tweak_adapter=tweak_adapter or RegistryTweakAdapter()
         self.tweak_states=None
         self._tweaks_measuring=False
+        # P3-05: ajustes avançados (lista fechada em HKCU); o registro só é lido num Job.
+        self.advanced_adapter=advanced_adapter or AdvancedRegistryAdapter()
+        self.advanced_states=None
         self._restore_point=restore_point or create_restore_point
         self._elevated_probe=elevated_probe
         self._session_owner_probe=session_owner_probe
         self._ask=ask or (lambda title, text: messagebox.askyesno(title, text))
+        # P3-05: a pergunta dos ajustes avançados já vem com "Não" marcado.
+        self._ask_advanced=ask or (lambda title, text: messagebox.askyesno(
+            title, text, icon=messagebox.WARNING, default=messagebox.NO))
         self._show=show or self._messagebox
         self._timers=WindowTimers(self)
         self.power_busy=False
@@ -396,10 +437,12 @@ class OptimizationPanel(tk.Frame):
         stutters=ttk.Frame(self.tabs)
         changes=ttk.Frame(self.tabs)
         tweaks=ttk.Frame(self.tabs)
+        advanced=ttk.Frame(self.tabs)
         for frame,name in ((diagnose,'1  Diagnóstico'),(monitor,'2  Temperaturas e sessões'),
                            (stutters,'3  Stutters / quadros'),(power,'4  Energia reversível'),
                            (compare,'5  Benchmarks'),(firmware,'6  BIOS e drivers'),
-                           (changes,CHANGES_TAB_LABEL),(tweaks,TWEAKS_TAB_LABEL)):
+                           (changes,CHANGES_TAB_LABEL),(tweaks,TWEAKS_TAB_LABEL),
+                           (advanced,ADVANCED_TAB_LABEL)):
             self.tabs.add(frame,text=name)
         self._build_diagnostics(diagnose)
         self._build_monitor(monitor)
@@ -409,6 +452,7 @@ class OptimizationPanel(tk.Frame):
         self._build_firmware(firmware)
         self._build_changes(changes)
         self._build_tweaks(tweaks)
+        self._build_advanced(advanced)
         tk.Label(outer,textvariable=self.note,bg=BG,fg=GREEN,anchor='w',
                  wraplength=900,justify='left',font=('Segoe UI',9)).pack(fill='x',pady=(10,1))
 
@@ -1090,6 +1134,7 @@ class OptimizationPanel(tk.Frame):
         can_apply=usable and not busy and not self._count_status('unknown')
         self.btn_tweaks_apply.state(['!disabled'] if can_apply else ['disabled'])
         self.btn_tweaks_refresh.state(['disabled'] if busy else ['!disabled'])
+        self._update_advanced_buttons()
 
     def _tweaks_busy(self):
         return self.power_busy or self._tweaks_measuring or self._any_measure_running()
@@ -1256,6 +1301,217 @@ class OptimizationPanel(tk.Frame):
             message=TWEAKS_UNEXPECTED_ERROR_TEXT
             self.tweaks_status.set(message)
             self._journal_failed(message,title=TWEAKS_TITLE,off_text=None)
+
+    # ---------- P3-05: aba "Ajustes avançados" ----------
+    def _build_advanced(self,parent):
+        """Lista fechada de ajustes avançados, um botão por ajuste. Montar não lê o registro."""
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        self.advanced_frame=area
+        self._paragraph(area,'Ajustes avançados (com confirmação)',ADVANCED_INTRO_TEXT)
+        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(2,8))
+        self.advanced_buttons={}
+        for tweak in advanced_tweaks.ADVANCED_TWEAKS:
+            button=ttk.Button(buttons,text='Aplicar: '+tweak.name,
+                              command=lambda tweak_id=tweak.id:self.apply_advanced(tweak_id))
+            button.pack(side='left',padx=(0,9))
+            self.advanced_buttons[tweak.id]=button
+        self.btn_advanced_refresh=ttk.Button(buttons,text='Ver estado atual',command=self.refresh_advanced)
+        self.btn_advanced_refresh.pack(side='left')
+        self.advanced_status=tk.StringVar(value='')
+        tk.Label(area,textvariable=self.advanced_status,bg=BG,fg=AMBER,anchor='w',justify='left',
+                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
+        self.advanced_text=self._text_area(area)
+        self._render_advanced(None)
+        self._update_advanced_buttons()
+
+    def _render_advanced(self,states,failed=False,after_change=False):
+        """Só mostra a memória: a lista fixa e o último estado lido (num Job)."""
+        if not hasattr(self,'advanced_text'):
+            return
+        lines=advanced_tweaks.intro_lines()+['']
+        if failed:
+            # R-19: depois de aplicar/desfazer, a releitura que falha não diz "Nada foi mudado".
+            lines.append(ADVANCED_REREAD_FAILED_TEXT if after_change else ADVANCED_READ_FAILED_TEXT)
+        elif states is None:
+            lines.append(ADVANCED_NOT_READ_TEXT)
+        else:
+            lines+=advanced_tweaks.state_lines(states)
+        lines+=['',ADVANCED_UNDO_WHERE_TEXT]
+        self._write(self.advanced_text,'\n'.join(lines))
+
+    def _update_advanced_buttons(self):
+        if not hasattr(self,'advanced_buttons'):
+            return
+        # Um de cada vez, como na aba 8.
+        busy=self._tweaks_busy()
+        usable=self.journal is not None and not self.journal_error
+        can_apply=usable and not busy and not self._count_status('unknown')
+        for button in self.advanced_buttons.values():
+            button.state(['!disabled'] if can_apply else ['disabled'])
+        self.btn_advanced_refresh.state(['disabled'] if busy else ['!disabled'])
+
+    def _read_advanced_work(self):
+        """Roda no Job: só lê os valores da lista fechada."""
+        try:
+            return {'advanced':advanced_tweaks.read_states(self.advanced_adapter)}
+        except Exception:
+            return {'advanced':None}
+
+    def _read_advanced_after(self):
+        """Depois de desfazer/conferir: relê só se o estado já foi mostrado nesta janela."""
+        return self._read_advanced_work() if self.advanced_states is not None else {}
+
+    def _show_advanced_states(self,outcome,after_change=False):
+        if 'advanced' not in outcome:
+            return
+        states=outcome.get('advanced')
+        if states is None:
+            self._render_advanced(None,failed=True,after_change=after_change)
+            return
+        self.advanced_states=states
+        self._render_advanced(states)
+
+    def _checked_read_advanced_work(self):
+        """Roda no Job (R-10/R-56): primeiro confere a conta, depois só lê."""
+        answer=session_owner.session_owner(self._session_owner_probe)
+        if answer!=session_owner.SAME:
+            return {'account':answer}
+        outcome=self._read_advanced_work()
+        outcome['account']=answer
+        return outcome
+
+    def _advanced_account_refused(self,outcome):
+        """R-55: só segue com a mesma conta que está usando o PC (inclusive Job que falhou)."""
+        answer=outcome.get('account',session_owner.UNKNOWN)
+        if answer==session_owner.SAME:
+            return False
+        message=(TWEAKS_OTHER_ACCOUNT_TEXT if answer==session_owner.OTHER
+                 else TWEAKS_ACCOUNT_UNKNOWN_TEXT)
+        self.advanced_status.set(message)
+        self._show('warning',ADVANCED_TITLE,message)
+        return True
+
+    def refresh_advanced(self):
+        """Só lê, num Job (R-10): sem confirmação, sem administrador."""
+        if self._tweaks_busy():
+            return
+        self.advanced_status.set(ADVANCED_READING_TEXT)
+        self._run_power_job(self._checked_read_advanced_work,self._advanced_read_done)
+
+    def _advanced_read_done(self,outcome):
+        if self._advanced_account_refused(outcome):
+            return
+        self._show_advanced_states(outcome)
+        if outcome.get('advanced') is None:
+            self.advanced_status.set(ADVANCED_READ_FAILED_TEXT)
+        else:
+            self.advanced_status.set('Estado atual lido. Nada foi mudado.')
+
+    def apply_advanced(self,tweak_id):
+        """Um ajuste por clique: lê (Job), pergunta com o lado ruim ("Não" marcado) e aplica (Job)."""
+        tweak=advanced_tweaks.TWEAKS_BY_ID.get(tweak_id)
+        if tweak is None or self._tweaks_busy():
+            return
+        if self.journal is None or self.journal_error:
+            self._show('error',ADVANCED_TITLE,self._journal_error_text())
+            return
+        unknown=self._count_status('unknown')
+        if unknown:
+            message=ADVANCED_UNKNOWN_TEXT.format(n=unknown)
+            self.advanced_status.set(message)
+            self._show('warning',ADVANCED_TITLE,message)
+            return
+        if not self._is_elevated():
+            # O app nunca pede elevação: só explica e não lê nem muda nada.
+            self.advanced_status.set(TWEAKS_ADMIN_TEXT)
+            self._show('warning',ADVANCED_TITLE,TWEAKS_ADMIN_TEXT)
+            return
+        # R-55/R-56: a conta é conferida no Job, antes de ler; a recusa vem no retorno.
+        self.advanced_status.set(ADVANCED_READING_TEXT)
+        self._run_power_job(self._checked_read_advanced_work,
+                            lambda outcome:self._advanced_ready(outcome,tweak))
+
+    def _advanced_ready(self,outcome,tweak):
+        if self._advanced_account_refused(outcome):
+            return
+        self._show_advanced_states(outcome)
+        states=outcome.get('advanced')
+        if states is None:
+            self.advanced_status.set(ADVANCED_READ_FAILED_TEXT)
+            self._show('warning',ADVANCED_TITLE,ADVANCED_READ_FAILED_TEXT)
+            return
+        item=advanced_tweaks.state_for(states,tweak.id) or {}
+        state=item.get('state')
+        if state=='applied':
+            self.advanced_status.set(ADVANCED_ALREADY_TEXT)
+            self._show('info',ADVANCED_TITLE,ADVANCED_ALREADY_TEXT)
+            return
+        if state!='not_applied' or not item.get('changes'):
+            message=(ADVANCED_NOT_TOUCHED_TEXT if state=='other_type' else ADVANCED_READ_FAILED_TEXT)
+            self.advanced_status.set(message)
+            self._show('warning',ADVANCED_TITLE,message)
+            return
+        # "Não" vem marcado: só segue com um "Sim" de verdade.
+        if self._ask_advanced(ADVANCED_TITLE,advanced_tweaks.confirmation_text(tweak)) is not True:
+            self.advanced_status.set(ADVANCED_CANCEL_TEXT)
+            return
+        journal=self.journal
+        if journal is None or self.journal_error:
+            self._show('error',ADVANCED_TITLE,self._journal_error_text())
+            return
+        adapter=self.advanced_adapter
+        asked={change['key'] for change in item['changes']}
+        def work():
+            try:
+                if journal.has_blocking():
+                    journal.recover_interrupted()
+                # Relê agora: só entra o que continua faltando e estava na pergunta.
+                fresh=advanced_tweaks.state_for(advanced_tweaks.read_states(adapter),tweak.id) or {}
+                todo=([dict(c) for c in fresh.get('changes',[]) if c['key'] in asked]
+                      if fresh.get('state')=='not_applied' else [])
+                if not todo:
+                    outcome={'status':'unchanged'}
+                else:
+                    self.state_dir.mkdir(parents=True,exist_ok=True)
+                    journal.apply_batch(todo)
+                    outcome={'status':'applied'}
+            except BatchRefused as exc:
+                outcome={'status':'refused','message':str(exc)}
+            except JournalError as exc:
+                outcome={'status':'journal','message':str(exc)}
+            except Exception:
+                outcome={'status':'error'}
+            outcome.update(self._read_advanced_work())
+            return outcome
+        self.advanced_status.set(ADVANCED_RUNNING_TEXT)
+        self._run_power_job(work,lambda outcome:self._advanced_apply_done(outcome,tweak))
+
+    def _advanced_apply_done(self,outcome,tweak):
+        self._show_advanced_states(outcome,after_change=True)
+        status=outcome.get('status')
+        if status=='applied':
+            message=ADVANCED_APPLIED_TEXT+'\n'+tweak.when
+            self.advanced_status.set(message)
+            self.note.set('Ajuste avançado aplicado e registrado para desfazer.')
+            self._show('info',ADVANCED_TITLE,message)
+        elif status=='unchanged':
+            self.advanced_status.set(ADVANCED_ALREADY_TEXT)
+        elif status=='journal':
+            # R-30: o texto completo diz os botões que de fato ficam desligados.
+            message=(outcome.get('message','')+' '+ADVANCED_JOURNAL_OFF_TEXT).strip()
+            self.advanced_status.set(message)
+            self._journal_failed(message,title=ADVANCED_TITLE,off_text=None)
+        elif status=='refused':
+            message=outcome.get('message','')
+            if 'ponto de restauração' in message:
+                message+=' '+POWER_RESTORE_POINT_HELP
+            self.advanced_status.set(message)
+            self._show('warning',ADVANCED_TITLE,message)
+        else:
+            # R-27: algo pode já ter mudado; o diário fica desligado até reabrir o app (R-07: texto fixo).
+            message=ADVANCED_UNEXPECTED_ERROR_TEXT
+            self.advanced_status.set(message)
+            self._journal_failed(message,title=ADVANCED_TITLE,off_text=None)
 
     def _build_benchmarks(self,parent):
         area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
@@ -1632,7 +1888,8 @@ class OptimizationPanel(tk.Frame):
         """Só lê arquivos: abrir o painel nunca roda comando nenhum."""
         try:
             self.journal=ChangeJournal(self.change_journal_path,
-                                       {POWER_KIND:self.power_adapter,TWEAK_KIND:self.tweak_adapter},
+                                       {POWER_KIND:self.power_adapter,TWEAK_KIND:self.tweak_adapter,
+                                        ADVANCED_KIND:self.advanced_adapter},
                                        self._restore_point)
             self.journal_error=''
         except JournalError as exc:
@@ -1824,6 +2081,7 @@ class OptimizationPanel(tk.Frame):
             self._render_plans(outcome['plans'],outcome.get('active'))
         # Só chega 'tweaks' depois de desfazer/conferir: a releitura que falha usa texto neutro.
         self._show_tweak_states(outcome,after_change=True)
+        self._show_advanced_states(outcome,after_change=True)
 
     def _apply_done(self,outcome):
         self._after_power_job(outcome)
@@ -1920,6 +2178,7 @@ class OptimizationPanel(tk.Frame):
                 outcome={'status':'error'}
             outcome.update(self._read_plans_work())
             outcome.update(self._read_tweaks_after())
+            outcome.update(self._read_advanced_after())
             return outcome
         self.changes_status.set('Desfazendo as alterações, da mais nova para a mais antiga…')
         self._run_power_job(work,self._undo_all_done)
@@ -1982,6 +2241,7 @@ class OptimizationPanel(tk.Frame):
                 outcome={'status':'error'}
             outcome.update(self._read_plans_work())
             outcome.update(self._read_tweaks_after())
+            outcome.update(self._read_advanced_after())
             return outcome
         self.changes_status.set(CHANGES_RECHECK_RUNNING_TEXT)
         self._run_power_job(work,self._recheck_done)
