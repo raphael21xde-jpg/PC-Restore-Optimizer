@@ -826,6 +826,7 @@ Issue "Validar M2": rodar o benchmark e abrir a central de recuperação com um 
     - sem pedir administrador: a seção sempre mostra a nota "Sem administrador, o Windows pode não mostrar algumas tarefas."; por isso a frase "não apareceu nenhum sinal de alerta" foi tirada do módulo (a constante `ALL_CLEAR` e o caminho que a mostrava saíram na revisão 2): sem item de atenção ou suspeito, a frase do fim é sempre a neutra ("o check-up não conseguiu conferir tudo");
     - sem tarefa para mostrar, o texto diz o que fica de fora: só as tarefas da Microsoft que usam um programa da pasta do Windows de uma lista curta de programas conhecidos (como o desfragmentador de disco), que não rodam scripts, comandos nem bibliotecas;
     - o texto da tela classifica de novo o caminho guardado e vale o mais grave (um dict com OK falso não vira OK).
+- **Fatia 3 — `em andamento`** (branch `auto/P3-07-checkup-defender-rede`): situação do Microsoft Defender (proteção em tempo real e exclusões) e conexões de rede para portas comuns de mineração, só leitura.
 ### P3-02 · Medição antes e depois — `pronto` (depois de P3-01)
 ### P3-04 · Ajustes nível seguro (1 clique) — `pronto` (depois de P3-01 e P3-03)
 - Só ajustes da lista segura do `CLAUDE.md`, cada um com aplicar e desfazer.
