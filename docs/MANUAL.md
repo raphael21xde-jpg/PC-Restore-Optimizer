@@ -1,7 +1,7 @@
 # Manual curto do PC Restore & Optimizer
 
 Este manual explica, em poucas palavras, como usar o app. Os nomes entre aspas são
-exatamente os nomes dos menus, abas e botões que aparecem na tela.
+exatamente os nomes dos menus, abas e botões que aparecem na tela (ou do Windows).
 
 ## O que o app faz
 
@@ -10,7 +10,8 @@ a deixar o computador mais rápido com segurança. Ele:
 
 - mostra os discos e o que existe em cada um (só olha, não muda nada);
 - deixa você escolher o que guardar: pastas, arquivos, jogos e saves;
-- faz um backup conferido (cada arquivo copiado é conferido com SHA-256);
+- faz um backup conferido do que está no disco do Windows (C:), e cada arquivo copiado
+  é conferido com SHA-256; os outros discos ficam onde estão e não são formatados;
 - testa se o backup consegue ser restaurado antes de você formatar;
 - orienta a reinstalação do Windows e a volta dos seus dados depois;
 - mede o computador e aplica ajustes de desempenho, anotando cada um para poder desfazer.
@@ -64,6 +65,10 @@ ser formatado. Uma partição no mesmo disco do Windows não protege seus dados.
 
 ## Backup
 
+O backup copia só o que você marcar no disco do Windows (C:), que é o disco que vai
+ser formatado. Os outros discos ficam onde estão: o app não copia nem formata nada
+neles. Os arquivos originais nunca são mexidos: o backup só lê e copia.
+
 1. **Procure o que existe.** Em "Meu computador", marque as unidades e clique em
    "Examinar unidades marcadas". O app lista jogos, aplicativos e arquivos. Ele só
    olha. Na lista, use "Manter selecionados" para guardar ou "Não preservar" para
@@ -83,8 +88,6 @@ ser formatado. Uma partição no mesmo disco do Windows não protege seus dados.
    antes, e clique primeiro em "1. Recalcular plano e espaço". Depois clique em
    "Retomar backup interrompido" e escolha o arquivo `manifest.json` do backup que
    parou. O app continua esse backup e confere com SHA-256 o que já tinha sido copiado.
-
-Os arquivos originais nunca são mexidos: o backup só lê e copia.
 
 **Navegadores.** A tela de backup do navegador ainda não está ligada ao menu do app.
 Antes de formatar, confira se a sincronização da conta do navegador está ligada. Se
@@ -107,19 +110,28 @@ um problema.
    "Recuperação" e clique em "5. Conferir TODO o backup (SHA-256)". O app confere
    cada arquivo desse backup. Pode demorar; se precisar, use "Cancelar auditoria".
    No fim, você pode clicar em "Salvar relatório de auditoria".
-3. Para o navegador (no Windows novo), em "Depois de formatar", na etapa
-   "Navegador e senhas", clique em "Abrir". Abre o assistente "Restaurar navegador",
-   que ajuda a trazer favoritos e senhas importando pelo próprio navegador.
-   Cookies, sessões abertas (logins) e passkeys **não voltam**: você vai precisar entrar nas contas de novo.
+3. Navegador (no Windows novo): em "Depois de formatar", na etapa
+   "Navegador e senhas", o botão "Abrir" abre o assistente "Restaurar navegador".
+   Hoje ele tem dois limites: só aceita um cofre do app (arquivo `.pcbrowser` ou
+   `.opgx`) ou uma pasta `CONFERIR-NAVEGADOR`, que só são criados por uma tela que
+   ainda não está ligada ao menu; e só orienta a importação no Opera e no Opera GX.
+   Para os outros navegadores, ou se você não tem esse cofre, entre na conta do
+   navegador novo e ligue a sincronização, ou importe o CSV de senhas pelo próprio
+   navegador e depois apague o CSV. Cookies, sessões abertas (logins) e passkeys
+   **não voltam**: você vai precisar entrar nas contas de novo.
 
-Para restaurar de verdade, em "Histórico e relatórios" use
-"Escolher arquivo para testar". Primeiro, os arquivos sempre vão para uma pasta nova
-(chamada `TESTE-RESTAURACAO`). Depois, se quiser, use "Colocar no lugar original" e
-escolha essa pasta de uma restauração já concluída. O app mostra antes uma prévia: se
-já existe lá um arquivo diferente, ele guarda o antigo com o nome terminado em
-`.antes-pcro-DATA` e coloca o novo. Nada é apagado. Arquivos de pastas do sistema
-(Program Files, ProgramData ou Windows) precisam de administrador e não são
-colocados, porque o app recusa restaurar se estiver aberto como administrador.
+Para restaurar de verdade, em "Histórico e relatórios" escolha o backup e clique em
+"Escolher arquivo para testar". Na janela que abre, marque os arquivos, clique em
+"Restaurar arquivos marcados para pasta nova" e escolha onde criar a pasta. Os
+arquivos sempre vão primeiro para uma pasta nova (`TESTE-RESTAURACAO`).
+
+Depois, se quiser, use "Colocar no lugar original" e escolha essa pasta de uma
+restauração já concluída. O app mostra antes uma prévia: se já existe lá um arquivo
+diferente, ele guarda o antigo com o nome terminado em `.antes-pcro-DATA` e coloca o
+novo. Nada é apagado. Arquivos de Program Files e ProgramData, por padrão, não são
+colocados: não marque a opção
+"Incluir arquivos de Program Files/ProgramData ao colocar no lugar original", porque
+eles precisam de administrador e o app recusa restaurar aberto como administrador.
 
 ## Reinstalação guiada
 
@@ -141,9 +153,13 @@ O app **não formata e não instala o Windows**. Quem formata e instala é o
 formatar naquele disco, sem volta.
 
 - **Regra principal:** desconecte o disco do backup antes de instalar, com o PC
-  desligado e fora da tomada, e reconecte só depois.
-- Antes, em "Analisar computador e discos" (menu "Diagnóstico"), anote o número do
-  disco do Windows (`#0`, `#1`...) e o tamanho dele. O app mostra o tamanho em bytes;
+  desligado e fora da tomada, e reconecte só depois. Se for um disco interno, é
+  preciso abrir o gabinete; se você não souber fazer isso, peça ajuda a alguém que
+  saiba. Ao reconectar, a letra do disco pode mudar: confira em
+  "Conferir discos e letras" (no "Depois de formatar").
+- Antes, em "Analisar computador e discos" (menu "Diagnóstico"), ache o disco do
+  Windows: é a linha com `Boot=True` e `System=True`. Anote o número desse disco
+  (`#0`, `#1`...) e o tamanho dele. O app mostra o tamanho em bytes;
   o instalador mostra *Disco 0*, *Disco 1*... (ou *Unidade 0*) e o tamanho em GB. Para
   comparar, divida os bytes por 1.073.741.824: o resultado é, de forma aproximada, o
   número de GB que o instalador mostra.
@@ -160,7 +176,9 @@ formatar naquele disco, sem volta.
 3. em cada etapa use "Abrir", e no fim marque "Feito" ou "Pular".
 
 Se a letra de uma unidade mudou, o app mostra como trocá-la à mão no
-"Gerenciamento de Disco". Ele nunca troca letras sozinho.
+"Gerenciamento de Disco". Ele nunca troca letras sozinho. Cuidado: programas e
+atalhos que usam a letra antiga param de achar os arquivos até a letra voltar. Para
+desfazer, troque de novo para a letra antiga, pelo mesmo caminho.
 
 ## Otimização
 
@@ -179,9 +197,6 @@ No menu, clique em "Otimização". As abas são numeradas.
 5. **Meça depois.** Com os mesmos programas abertos, clique em "Medir DEPOIS (1 min)".
    O app compara processador, memória, processos, programas que abrem com o Windows
    e plano de energia.
-
-Também existe "Medir uso parado (2 min)", que mostra o que usa o PC quando você não
-está mexendo nele.
 
 ## Desfazer
 

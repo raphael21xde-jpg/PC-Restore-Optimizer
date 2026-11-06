@@ -15,6 +15,13 @@ Limite: o mapa UI_LABELS e a lista HIDDEN_BUILDERS são escritos à mão. O test
 não abre a interface; ele confia que a função do mapa é mesmo a da tela citada
 no manual e que toda página escondida está em HIDDEN_BUILDERS. Uma página nova
 escondida, ou um rótulo trocado de tela, precisa ser atualizado aqui à mão.
+
+Outros dois limites conhecidos:
+- aresta por atributo: ``algo.nome`` liga a TODOS os métodos chamados ``nome`` do
+  mesmo módulo, de qualquer classe; um método de mesmo nome que outro realmente
+  usado parece alcançável mesmo se nunca for chamado;
+- ``_APP_DOES`` só pega os verbos e auxiliares da lista dele; uma frase com outro
+  verbo ("o app limpa o disco") ou outra construção passa despercebida.
 """
 import ast
 import re
@@ -87,6 +94,9 @@ UI_LABELS = {
     'Cancelar auditoria': RECOVERY,
     'Salvar relatório de auditoria': RECOVERY,
     'Colocar no lugar original': ('restore_ui.py', 'show_restore'),
+    'Restaurar arquivos marcados para pasta nova': ('restore_ui.py', 'show_restore'),
+    'Incluir arquivos de Program Files/ProgramData ao colocar no lugar original':
+        ('restore_ui.py', 'show_restore'),
     'Restaurar navegador': ('browser_recovery_ui.py', 'show_recovery'),
     # reinstalação guiada
     'Revisar preservação': INSTALL,
@@ -567,6 +577,23 @@ class ManualTests(unittest.TestCase):
         for item in resume:
             self.assertIn('1. Recalcular plano e espaço', _norm(item))
 
+    def test_browser_restore_states_its_limits(self):
+        # R-64: o assistente só aceita o cofre do app e só orienta Opera / Opera GX.
+        blocks = [_norm(b) for b in re.split(r'\n\s*\n|\n(?=\d\. )', _manual_text())]
+        hits = [b for b in blocks if 'Restaurar navegador' in b]
+        self.assertTrue(hits)
+        for block in hits:
+            with self.subTest(block=block[:60]):
+                for needed in ('Opera', 'Opera GX', '.pcbrowser', 'CONFERIR-NAVEGADOR',
+                               'sincronização', 'apague o CSV'):
+                    self.assertIn(needed, block)
+        self.assertNotIn('ajuda a trazer favoritos e senhas', _norm(_manual_text()))
+
+    def test_backup_copies_only_the_windows_disk(self):
+        backup = _norm(_section(_manual_text(), 'Backup'))
+        self.assertIn('só o que você marcar no disco do Windows (C:)', backup)
+        self.assertIn('Os outros discos ficam onde estão', backup)
+
     def test_install_disk_check_uses_what_the_installer_shows(self):
         # R-63: o instalador mostra número do disco e GB, nunca o modelo; o app mostra bytes.
         body = _section(_manual_text(), 'Reinstalação guiada')
@@ -578,7 +605,9 @@ class ManualTests(unittest.TestCase):
             self.assertNotIn('modelo', item.lower())
         flat = _norm(body)
         for needed in ('bytes', '1.073.741.824', 'GB', 'não é garantido', 'desconecte o disco do backup',
-                       'fora da tomada', 'cancele a instalação'):
+                       'fora da tomada', 'cancele a instalação', 'Boot=True', 'System=True',
+                       'abrir o gabinete', 'Conferir discos e letras',
+                       'param de achar os arquivos', 'troque de novo para a letra antiga'):
             self.assertIn(needed, flat)
 
     def test_protected_copy_not_presented_as_ready(self):
