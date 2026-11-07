@@ -18,7 +18,7 @@ import subprocess
 from datetime import datetime, timezone
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from optimization_engine import (inspect_pc, available_power_plans, active_power_guid,
+from optimization_engine import (inspect_pc, available_power_plans, active_power_guid, power_plan_text,
                                  revert_power_plan, export_snapshot,
                                  OptimizationError, PowerPlanAdapter, create_app_restore_point,
                                  confirm_app_restore_point,
@@ -1715,8 +1715,8 @@ class OptimizationPanel(tk.Frame):
         lines.append('RAM:')
         for ram in (hw.get('ram') if isinstance(hw.get('ram'),list) else ([hw['ram']] if hw.get('ram') else [])):
             lines.append('  '+str(round((ram.get('Capacity') or 0)/1024**3,1))+' GiB | '+str(ram.get('ConfiguredClockSpeed','?'))+' MT/s (configurado)')
-        plans=report.get('power',{})
-        lines.extend(['','Plano de energia: '+str(plans.get('active_guid') or 'indisponível'),''])
+        # FIX-M3-T4: nome do plano (o mesmo das Opções de Energia) e o GUID.
+        lines.extend(['','Plano de energia: '+power_plan_text(report.get('power')),''])
         lines.extend(profile_lines(report.get('profile') or {}))
         lines.extend(bios_guidance_lines(report.get('bios_guidance') or {}))
         lines.append('OBSERVAÇÕES:')
