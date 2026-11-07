@@ -214,7 +214,7 @@ ADVANCED_REREAD_FAILED_TEXT = ('Não foi possível ler de novo o estado dos ajus
                                'com "Ver estado atual" ou com o "Conferir de novo" da aba "'
                                + CHANGES_TAB_LABEL + '".')
 ADVANCED_ALREADY_TEXT = 'Este ajuste já está aplicado. Nada foi mudado.'
-# P3-05 fatia 2 (R-57): junta causas diferentes (Windows antigo, opção ausente, valor fora da
+# P3-05 fatia 2 (R-57): junta causas diferentes (Windows antigo, chave ausente, valor fora da
 # lista, outro tipo), então o texto é neutro e vale para todas.
 ADVANCED_UNSUPPORTED_TEXT = advanced_tweaks.MSG_NOT_SUPPORTED
 ADVANCED_WINDOWS_DEFAULT_TEXT = advanced_tweaks.MSG_WINDOWS_DEFAULT

@@ -87,6 +87,10 @@ _WINDOWS_DEFAULT_BODY = ('o app não mexe: neste PC a opção não tem valor gra
                          'gráficos > "Configurações gráficas avançadas" (em versões anteriores, '
                          '"Alterar configurações gráficas padrão").')
 MSG_WINDOWS_DEFAULT = 'O' + _WINDOWS_DEFAULT_BODY[1:] + ' Nada foi alterado.'
+# Revisão da PR #211: no "Desfazer", diz claramente que o desfazer não foi feito.
+MSG_UNDO_WINDOWS_DEFAULT = ('Não foi possível desfazer: o valor desta opção foi apagado fora do '
+                            'app, e o Windows passou a usar o padrão do driver. Nada foi '
+                            'alterado; o ajuste continua na lista de alterações.')
 MEASURE_BEFORE_HINT = 'Para comparar, meça ANTES na aba 1 antes de aplicar.'
 
 
@@ -104,6 +108,9 @@ class NotSupportedError(AdvancedTweakError):
 
 class WindowsDefaultError(NotSupportedError):
     """Versão e chave conferidas, valor ausente: vale o padrão do Windows/driver; o app não mexe."""
+
+    # O diário usa este texto quando o desfazer é recusado (o valor sumiu por fora).
+    undo_reason = MSG_UNDO_WINDOWS_DEFAULT
 
 
 @dataclass(frozen=True)

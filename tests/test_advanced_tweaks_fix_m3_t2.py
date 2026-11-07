@@ -190,11 +190,34 @@ class JournalTests(Base):
         done, pending, reason = journal.undo_all()
         self.assertEqual(done, [])
         self.assertTrue(pending)
-        self.assertTrue(reason)
+        self.assertEqual(reason, at.MSG_UNDO_WINDOWS_DEFAULT)
+        self.assertEqual(reason, 'Não foi possível desfazer: o valor desta opção foi apagado fora '
+                                 'do app, e o Windows passou a usar o padrão do driver. Nada foi '
+                                 'alterado; o ajuste continua na lista de alterações.')
+        # Desfazer um item só dá o mesmo motivo.
+        ok, single = journal.undo(journal.entries()[0]['id'])
+        self.assertEqual((ok, single), (False, at.MSG_UNDO_WINDOWS_DEFAULT))
+        self.assertEqual(self.writes(), [])
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.snapshot(), before)
         self.assertIsNone(self.current())   # não recriado
         self.assertEqual(journal.entries()[0]['status'], 'applied')
+
+
+class JournalGenericReasonTests(Base):
+    def test_other_read_failure_keeps_the_general_text(self):
+        self.reg.put(VERSION, 'CurrentBuildNumber', '26300', SZ, hive=HKLM)
+        self.reg.put(GRAPHICS, 'HwSchMode', 1, DWORD, hive=HKLM)
+        journal = cj.ChangeJournal(self.tmp / 'diario.json',
+                                   {at.ADVANCED_KIND: self.user, at.MACHINE_KIND: self.machine},
+                                   self.restore_point)
+        journal.apply_batch(self.gpu_state()['changes'])
+        self.reg.fail_read.add('HwSchMode')   # permissão negada
+        self.reg.calls.clear()
+        done, pending, reason = journal.undo_all()
+        self.assertEqual((done, reason), ([], cj.MSG_UNDO_NOT_READ))
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.current(), (2, DWORD))
 
 
 class FakePower:
