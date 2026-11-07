@@ -22,6 +22,7 @@ for _folder in (ROOT, ROOT / 'tests'):
 
 import change_journal as cj  # noqa: E402
 import optimization_engine as oe  # noqa: E402
+import session_owner as so  # noqa: E402
 from tests import test_change_journal_p3_03_fatia2 as f2  # noqa: E402
 from tests.test_change_journal_p3_03_fatia2 import (  # noqa: E402
     A, B, C, NO_DISPLAY, FakePowercfg, SafetyNet, _forbidden)
@@ -146,6 +147,9 @@ class ChangesTabHelpers(SafetyNet):
         panel = ou.OptimizationPanel(
             self.root, app_dir=self.tmp, state_dir=self.tmp, power_adapter=adapter,
             restore_point=self.restore_point, elevated_probe=lambda: self.admin['value'],
+            # FIX-P4-01-04 (R-03): o "Desfazer tudo" confere a conta; sem probe, fora do
+            # Windows a resposta seria "não deu para saber".
+            session_owner_probe=lambda: so.SAME,
             ask=ask, show=lambda kind, title, text: self.messages.append((kind, title, text)))
         panel.pack()
         return panel
