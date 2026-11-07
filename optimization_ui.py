@@ -80,7 +80,8 @@ POWER_ADMIN_TEXT = (
 POWER_RESTORE_POINT_HELP = (
     'Possíveis motivos: a Proteção do sistema está desligada no disco do Windows, ou o '
     'Windows já criou um ponto de restauração nas últimas 24 horas (ele não cria outro '
-    'antes disso). O app não liga a Proteção do sistema sozinho.')
+    'antes disso). O app só reaproveita um ponto criado por ele mesmo nas últimas 24 horas. '
+    'O app não liga a Proteção do sistema sozinho.')
 POWER_LEGACY_TEXT = (
     'Existe uma troca de plano feita por uma versão antiga do app. Por segurança, novas '
     'trocas ficam bloqueadas até ela ser desfeita. Use "Desfazer alteração antiga".')
@@ -148,7 +149,8 @@ TWEAKS_TITLE = 'Ajustes seguros'
 TWEAKS_INTRO_TEXT = (
     'Três ajustes simples do próprio Windows, só na sua conta, que você também pode mudar nas '
     'Configurações do Windows. Nada de segurança é desligado. Com 1 clique o app aplica os que '
-    'faltam: antes, cria um ponto de restauração e anota tudo no diário de alterações.')
+    'faltam: antes, cria um ponto de restauração ou usa o que o próprio app criou nas últimas '
+    '24 horas, e anota tudo no diário de alterações.')
 TWEAKS_UNDO_WHERE_TEXT = ('Para desfazer: aba "' + CHANGES_TAB_LABEL + '", botão "Desfazer tudo". '
                           'O "Conferir de novo" de lá também confere estes ajustes.')
 TWEAKS_NOT_READ_TEXT = 'Estado atual: ainda não lido. Clique em "Ver estado atual" (só lê).'
@@ -175,7 +177,8 @@ TWEAKS_UNEXPECTED_ERROR_TEXT = (
 TWEAKS_UNKNOWN_TEXT = ('{n} ajuste(s) com estado desconhecido. Use "Conferir de novo" na aba "'
                        + CHANGES_TAB_LABEL + '". Por segurança, novos ajustes ficam bloqueados.')
 TWEAKS_ADMIN_TEXT = (
-    'Para aplicar os ajustes, o app cria antes um ponto de restauração do Windows, e isso só '
+    'Para aplicar os ajustes, o app cria antes um ponto de restauração do Windows (ou confere o '
+    'que o próprio app criou nas últimas 24 horas), e isso só '
     'funciona com o app aberto como administrador. O app nunca pede isso sozinho. Se quiser '
     'aplicar: feche o app, clique com o botão direito no atalho dele e escolha "Executar como '
     'administrador" com a SUA própria conta. Se o Windows pedir a senha de OUTRA conta, os '
@@ -208,8 +211,8 @@ ADVANCED_INTRO_TEXT = (
     'Ajustes do próprio Windows que ajudam algumas pessoas, mas têm um lado ruim. A maioria vale só '
     'na sua conta; o que vale para o computador inteiro avisa na pergunta. '
     'Cada ajuste tem o seu botão, e o app sempre pergunta antes, mostrando o lado ruim (a resposta '
-    'já vem marcada em "Não"). Se você aceitar, o app cria antes um ponto de restauração e anota '
-    'tudo no diário de alterações.')
+    'já vem marcada em "Não"). Se você aceitar, o app cria antes um ponto de restauração ou usa o '
+    'que o próprio app criou nas últimas 24 horas, e anota tudo no diário de alterações.')
 ADVANCED_UNDO_WHERE_TEXT = ('Para desfazer: aba "' + CHANGES_TAB_LABEL + '", botão "Desfazer tudo". '
                             'O "Conferir de novo" de lá também confere estes ajustes.')
 ADVANCED_NOT_READ_TEXT = 'Estado atual: ainda não lido. Clique em "Ver estado atual" (só lê).'

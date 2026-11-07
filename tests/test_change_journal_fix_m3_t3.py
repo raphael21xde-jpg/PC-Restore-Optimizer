@@ -373,6 +373,43 @@ class JournalTests(NoRealCommands):
             journal.apply_batch(self.change('b'), reuse_restore_point=True)
         self.assertEqual(self.checks, [])
 
+    def test_reuse_with_journal_changed_outside_refuses_before_checking(self):
+        journal = self.journal()
+        journal.apply_batch(self.change('a'))
+        self.path.write_text(json.dumps({'schema': cj.SCHEMA, 'entries': []}), encoding='utf-8')
+        digest = _sha(self.path)
+        self.checks.clear()
+        self.adapter.applied.clear()
+        with self.assertRaises(cj.JournalError) as raised:
+            journal.apply_batch(self.change('b'), reuse_restore_point=True)
+        self.assertEqual(str(raised.exception), cj.MSG_OTHER_WINDOW)
+        self.assertEqual(self.checks, [])          # não conferiu o ponto
+        self.assertEqual(self.adapter.applied, [])
+        self.assertEqual(len(self.created), 1)
+        self.assertEqual(_sha(self.path), digest)
+
+    def test_reuse_with_journal_turned_into_link_refuses_before_checking(self):
+        journal = self.journal()
+        journal.apply_batch(self.change('a'))
+        real = self.tmp / 'copia.json'
+        real.write_bytes(self.path.read_bytes())   # mesmo conteúdo: só o link é diferente
+        self.path.unlink()
+        try:
+            os.symlink(real, self.path)
+        except (OSError, NotImplementedError):
+            self.skipTest('sem permissão para criar link')
+        digest = _sha(real)
+        self.checks.clear()
+        self.adapter.applied.clear()
+        with self.assertRaises(cj.JournalError) as raised:
+            journal.apply_batch(self.change('b'), reuse_restore_point=True)
+        self.assertIn('atalho (link)', str(raised.exception))
+        self.assertEqual(self.checks, [])
+        self.assertEqual(self.adapter.applied, [])
+        self.assertEqual(len(self.created), 1)
+        self.assertEqual(_sha(real), digest)
+        self.assertTrue(os.path.islink(self.path))
+
     def test_confirm_must_be_callable(self):
         with self.assertRaises(cj.JournalError):
             cj.ChangeJournal(self.path, {'teste': self.adapter}, self.create, 'sim')
@@ -488,7 +525,8 @@ class TextTests(unittest.TestCase):
             'Antes, o app cria um ponto de restauração do Windows e anota tudo no diário de '
             'alterações.', 'O app vai usar o ponto de restauração que ele mesmo criou hoje às '
             '16:16 (o Windows só cria um ponto novo a cada 24 horas) e anota tudo no diário de '
-            'alterações.'))
+            'alterações. Voltar a esse ponto desfaz também o que foi feito depois dele.'))
+        self.assertNotIn('desfaz também', old)
         for forbidden in ('\\', 'C:', 'HK'):
             self.assertNotIn(forbidden, text)
 
@@ -501,9 +539,37 @@ class TextTests(unittest.TestCase):
                                     now=self.now)
         self.assertIn('O app vai usar o ponto de restauração que ele mesmo criou ontem às 20:05 '
                       '(o Windows só cria um ponto novo a cada 24 horas)', text)
+        self.assertIn('Voltar a esse ponto desfaz também o que foi feito depois dele.', text)
         self.assertNotIn('Antes, o app cria', text)
         for forbidden in ('\\', 'C:', 'HK'):
             self.assertNotIn(forbidden, text)
+
+
+class IntroAndManualTextTests(unittest.TestCase):
+    """R-72: introdução, ajuda e manual descrevem o mesmo passo da pergunta."""
+    NEW = 'usa o que o próprio app criou nas últimas 24 horas'
+
+    def test_intro_and_help_texts_of_tabs_8_and_9(self):
+        if ou is None:
+            self.skipTest('sem Tk')
+        self.assertIn('antes, cria um ponto de restauração ou ' + self.NEW, ou.TWEAKS_INTRO_TEXT)
+        self.assertIn('o app cria antes um ponto de restauração ou ' + self.NEW, ou.ADVANCED_INTRO_TEXT)
+        self.assertIn('(ou confere o que o próprio app criou nas últimas 24 horas)',
+                      ou.TWEAKS_ADMIN_TEXT)
+        self.assertIn('O app só reaproveita um ponto criado por ele mesmo nas últimas 24 horas.',
+                      ou.POWER_RESTORE_POINT_HELP)
+        for text in (ou.TWEAKS_INTRO_TEXT, ou.ADVANCED_INTRO_TEXT):
+            self.assertNotIn('cria um ponto de restauração e anota', text)
+            self.assertNotIn('cria antes um ponto de restauração e anota', text)
+
+    def test_manual_describes_the_reuse(self):
+        manual = ' '.join((ROOT / 'docs' / 'MANUAL.md').read_text(encoding='utf-8').split())
+        self.assertIn('o app cria um ponto de restauração do Windows ou ' + self.NEW, manual)
+        self.assertIn('e cria um ponto de restauração ou ' + self.NEW + ' (a pergunta diz qual)',
+                      manual)
+        self.assertIn('Voltar a esse ponto desfaz também o que foi feito depois dele.', manual)
+        self.assertNotIn('o app cria um ponto de restauração do Windows, e isso exige', manual)
+        self.assertNotIn('pergunta antes e cria um ponto de restauração.', manual)
 
 
 # ---------- tela ----------

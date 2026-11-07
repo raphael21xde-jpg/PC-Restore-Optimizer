@@ -275,7 +275,8 @@ RESTORE_POINT_NEW_TEXT = ('Antes, o app cria um ponto de restauração do Window
 # FIX-M3-T3: {quando} vem de restore_point_when ("hoje às 16:16" ou "ontem às 20:05").
 RESTORE_POINT_REUSE_TEXT = ('O app vai usar o ponto de restauração que ele mesmo criou {quando} '
                             '(o Windows só cria um ponto novo a cada 24 horas) e anota tudo no '
-                            'diário de alterações.')
+                            'diário de alterações. Voltar a esse ponto desfaz também o que foi '
+                            'feito depois dele.')
 
 
 def _aware(moment) -> bool:
