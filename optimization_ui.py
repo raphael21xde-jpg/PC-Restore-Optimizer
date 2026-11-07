@@ -49,6 +49,15 @@ from optimization_monitor import (KEYS, LABELS, read_afterburner_log, find_after
 # ---------- P3-07 fatia 1: check-up de segurança (só leitura) ----------
 CHECKUP_FAILED_TEXT = ('O check-up de segurança não pôde ser concluído. Nada foi mudado, '
                        'encerrado ou tirado do lugar. Tente de novo mais tarde.')
+# FIX-M3-T6: o .txt com o check-up completo (cada tarefa da Microsoft numa linha) só é
+# gravado quando o usuário clica no botão e escolhe onde salvar.
+# O mesmo texto que a dica da linha de resumo cita (security_checkup.CHECKUP_SAVE_FULL_BUTTON).
+CHECKUP_SAVE_FULL_BUTTON='Salvar check-up completo (.txt)'
+CHECKUP_SAVE_TITLE='Salvar check-up completo'
+CHECKUP_SAVED_TEXT='Check-up completo salvo no arquivo escolhido. Nada foi mudado no PC.'
+CHECKUP_SAVE_CANCELLED_TEXT='Nada foi salvo.'
+CHECKUP_SAVE_FAILED_TEXT=('Não foi possível salvar o check-up completo. Nada foi mudado no PC. '
+                          'Escolha outra pasta e tente de novo.')
 # P3-07 fatia 4: uso de CPU e GPU com o PC parado (botão à parte; o check-up continua rápido).
 IDLE_BUTTON_TEXT='Medir uso parado (2 min)'
 IDLE_RUNNING_TEXT='Medindo... (2 min)'
@@ -1813,9 +1822,33 @@ class OptimizationPanel(tk.Frame):
         txt.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');txt.pack(side='left',fill='both',expand=True)
         self._write(txt,'\n'.join(checkup_engine.checkup_lines(result)))
-        ttk.Button(window,text='Fechar',command=window.destroy).pack(anchor='e',padx=12,pady=(0,12))
+        ttk.Button(window,text='Fechar',command=window.destroy).pack(side='right',padx=12,pady=(0,12))
+        # FIX-M3-T6: a janela resume as tarefas da Microsoft; o .txt traz cada uma.
+        ttk.Button(window,text=CHECKUP_SAVE_FULL_BUTTON,
+                   command=lambda:self.save_checkup_full(result)).pack(side='left',padx=12,pady=(0,12))
         self._checkup_window=window
         return window
+
+    def save_checkup_full(self,result):
+        """FIX-M3-T6: grava o check-up completo (cada tarefa numa linha) no .txt que o usuário escolher.
+
+        Só grava o arquivo escolhido; cancelar não grava nada. Erro = mensagem genérica (R-07).
+        """
+        target=filedialog.asksaveasfilename(title=CHECKUP_SAVE_TITLE,defaultextension='.txt',
+                                            filetypes=[('Texto','*.txt')],
+                                            initialfile=time.strftime('checkup-seguranca-%Y%m%d-%H%M.txt'))
+        if not target:
+            self.note.set(CHECKUP_SAVE_CANCELLED_TEXT)
+            return None
+        try:
+            text='\n'.join(checkup_engine.checkup_lines(result,full=True))+'\n'
+            atomic_write_text(Path(target),text,encoding='utf-8')
+        except Exception:  # noqa: BLE001 - R-07: nunca a mensagem original (pode ter caminho)
+            self.note.set(CHECKUP_SAVE_FAILED_TEXT)
+            self._show('warning',CHECKUP_SAVE_TITLE,CHECKUP_SAVE_FAILED_TEXT)
+            return None
+        self.note.set(CHECKUP_SAVED_TEXT)
+        return target
 
     def measure_idle(self):
         """P3-07 fatia 4: pergunta antes; mede 2 minutos (só leitura) num Job, com retorno por WindowTimers."""

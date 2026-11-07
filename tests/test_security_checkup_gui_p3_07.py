@@ -155,7 +155,7 @@ class ShowCheckupWithoutTkTests(unittest.TestCase):
         fake_tk = types.SimpleNamespace(Toplevel=_FakeToplevel, Frame=_FakeWidget, Text=_FakeWidget)
         fake_ttk = types.SimpleNamespace(Scrollbar=_FakeWidget, Button=_FakeButton)
         namespace = {'tk': fake_tk, 'ttk': fake_ttk, 'BG': '#000', 'PANEL': '#111', 'TEXT': '#fff',
-                     'checkup_engine': sc}
+                     'checkup_engine': sc, 'CHECKUP_SAVE_FULL_BUTTON': sc.CHECKUP_SAVE_FULL_BUTTON}
         exec(compile(module, 'optimization_ui.py', 'exec'), namespace)
         self.show = namespace['show_checkup']
         self.written = []

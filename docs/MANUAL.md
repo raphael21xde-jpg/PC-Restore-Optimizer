@@ -172,8 +172,7 @@ formatar naquele disco, sem volta.
 
 1. abra o app no Windows novo e escolha o backup;
 2. siga as cinco etapas: "Conferir discos e letras", "Restaurar os arquivos",
-   "Reinstalar os programas", "Religar os launchers de jogos" e
-   "Navegador e senhas";
+   "Reinstalar os programas", "Religar os launchers de jogos" e "Navegador e senhas";
 3. em cada etapa use "Abrir", e no fim marque "Feito" ou "Pular".
 
 Se a letra de uma unidade mudou, o app mostra como trocá-la à mão no
@@ -229,9 +228,10 @@ Voltar a esse ponto desfaz também o que foi feito depois dele.
 
 - "Analisar este PC" (aba "1  Diagnóstico"): mostra Windows, processador, placa de
   vídeo, memória, discos, placa-mãe e versão da BIOS. Só lê.
-- "Check-up de segurança" (também na aba "1  Diagnóstico"): olha os programas que
-  abrem com o Windows, os processos e o Defender, e aponta o que merece atenção. Nada
-  é mudado, encerrado ou tirado do lugar, e não precisa de administrador.
+- "Check-up de segurança" (também na aba "1  Diagnóstico"): olha o que abre com o Windows,
+  as tarefas agendadas, os processos e o Defender, e aponta o que merece atenção, sem mudar,
+  encerrar ou tirar nada do lugar. As tarefas do próprio Windows vêm numa linha só; para ver
+  cada uma, use o botão "Salvar check-up completo (.txt)", no fim da janela do check-up.
 
 ## BIOS e drivers
 

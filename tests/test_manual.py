@@ -125,6 +125,7 @@ UI_LABELS = {
     'Medir ANTES (1 min)': OPT_DIAG,
     'Medir DEPOIS (1 min)': OPT_DIAG,
     'Medir uso parado (2 min)': OPT_DIAG,
+    'Salvar check-up completo (.txt)': ('optimization_ui.py', 'OptimizationPanel.show_checkup'),
     'Ver estado atual': ('optimization_ui.py', 'OptimizationPanel._build_tweaks'),
     'Aplicar ajustes seguros': ('optimization_ui.py', 'OptimizationPanel._build_tweaks'),
     'Desfazer tudo': ('optimization_ui.py', 'OptimizationPanel._build_changes'),
