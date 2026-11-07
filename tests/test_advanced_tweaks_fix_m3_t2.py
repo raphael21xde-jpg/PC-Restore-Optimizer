@@ -153,7 +153,10 @@ class TextTests(unittest.TestCase):
                          'Desfazer {n} alteração(ões) feitas pelo app?\n\n'
                          'O app desfaz da mais nova para a mais antiga; não cria ponto de '
                          'restauração; se uma não puder ser desfeita, o app para ali; só pula '
-                         'um ajuste cujo valor foi apagado fora do app, que continua na lista.')
+                         'um ajuste cujo valor foi apagado fora do app, que continua na lista. '
+                         # FIX-P4-01-08 (R-72): a recusa por conta também aparece na pergunta.
+                         'Se o app estiver aberto com outra conta do Windows, ou se não der para '
+                         'confirmar a conta, o app não desfaz nada.')
 
 
 class StillUnsupportedTests(Base):
