@@ -352,7 +352,7 @@ MS_TASKS_SUMMARY_ONE = '1 tarefa da Microsoft na pasta \\Microsoft\\Windows\\ (r
 MS_TASKS_REASON = ('São tarefas da pasta \\Microsoft\\Windows\\ que rodam o rundll32 da pasta do Windows '
                    '(System32 ou SysWOW64) ou abrem um componente do Windows. Isso é comum nas tarefas da '
                    'Microsoft, mas o app não confere o que elas rodam.')
-# R-77/R-78: lista FECHADA do que pode ir para a linha de resumo (nome exato, direto em
+# R-77 (inclui a antiga R-78): lista FECHADA do que pode ir para a linha de resumo (nome exato, direto em
 # System32 ou SysWOW64). Só o rundll32: a R-77 substitui o caso "esconder" da R-45/R-46 só para ele.
 MS_SUMMARY_PROGRAMS = ('rundll32.exe',)
 MS_TASKS_FULL_HINT = (f'Para ver cada tarefa, use o botão "{CHECKUP_SAVE_FULL_BUTTON}", no fim desta janela '
@@ -1610,7 +1610,7 @@ def _item_lines(item, env, with_count=False):
 
 
 def _ms_windows_routine(item, env) -> bool:
-    """True só para uma tarefa de rotina da Microsoft que pode ir para a linha de resumo (FIX-M3-T6, R-77, R-78).
+    """True só para uma tarefa de rotina da Microsoft que pode ir para a linha de resumo (FIX-M3-T6, R-77, antiga R-78).
 
     Tudo é conferido de novo na hora de mostrar; nada guardado no resultado decide sozinho:
     - é tarefa e o nome começa com ``\\Microsoft\\Windows\\`` (sem diferenciar maiúsculas;
