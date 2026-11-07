@@ -84,7 +84,13 @@ class NeverProbablyOnTests(unittest.TestCase):
 
 class CheckStepsTests(unittest.TestCase):
     def test_three_steps_wording(self):
-        self.assertEqual(len(bg.REBAR_CHECK_STEPS), 3)
+        self.assertEqual(bg.REBAR_CHECK_STEPS, (
+            'NVIDIA: abra o Painel de controle da NVIDIA > Informações do sistema (canto de baixo à esquerda) '
+            'e veja a linha "BAR redimensionável" (Resizable BAR).',
+            'AMD: abra o AMD Software: Adrenalin Edition e procure "Smart Access Memory" (o lugar muda '
+            'conforme a versão).',
+            'Se você já usa o GPU-Z, veja o campo "Resizable BAR" na primeira aba.',
+        ))
         self.assertIn('Painel de controle da NVIDIA', bg.REBAR_CHECK_STEPS[0])
         self.assertIn('"BAR redimensionável"', bg.REBAR_CHECK_STEPS[0])
         self.assertIn('Smart Access Memory', bg.REBAR_CHECK_STEPS[1])
@@ -99,7 +105,7 @@ class CheckStepsTests(unittest.TestCase):
         for offset, step in enumerate(bg.REBAR_CHECK_STEPS, 3):
             self.assertIn(step, lines[index + offset])
         steps_text = bg.bios_steps_text(guidance)
-        self.assertIn('Como conferir sem entrar na BIOS:', steps_text)
+        self.assertIn('\nResizable BAR (fora da BIOS) — como conferir:\n', steps_text)
         for step in bg.REBAR_CHECK_STEPS:
             self.assertIn(step, steps_text)
         for text in ('\n'.join(lines), steps_text):

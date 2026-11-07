@@ -97,12 +97,14 @@ _REBAR_REASONS = {
 }
 _REBAR_DEFAULTS = {REBAR_UNKNOWN: REBAR_REASON_DEFAULT}
 REBAR_CHECK_TITLE = 'Como conferir sem entrar na BIOS:'
+# Subtítulo da mesma lista na janela "Ver passo a passo".
+REBAR_CHECK_WINDOW_TITLE = 'Resizable BAR (fora da BIOS) — como conferir:'
 # Onde a pessoa confere o estado real, sem link e sem download.
 REBAR_CHECK_STEPS = (
     'NVIDIA: abra o Painel de controle da NVIDIA > Informações do sistema (canto de baixo à esquerda) '
     'e veja a linha "BAR redimensionável" (Resizable BAR).',
-    'AMD: abra o AMD Software: Adrenalin Edition e procure "Smart Access Memory" (área de '
-    'Desempenho/Ajuste).',
+    'AMD: abra o AMD Software: Adrenalin Edition e procure "Smart Access Memory" (o lugar muda '
+    'conforme a versão).',
     'Se você já usa o GPU-Z, veja o campo "Resizable BAR" na primeira aba.',
 )
 _BAR_LIMIT = 256 * 1024 ** 2
@@ -391,7 +393,7 @@ def bios_steps_text(guidance):
              f'{NEVER_CHANGES} Aqui só mostramos como conferir; qualquer mudança é sua.',
              f'Fabricante da placa: {FAMILY_LABELS[family]}', '']
     lines.extend(f'{number}. {step}' for number, step in enumerate(_steps(family), 1))
-    lines.extend(['', f'Resizable BAR — {REBAR_CHECK_TITLE}'])
+    lines.extend(['', REBAR_CHECK_WINDOW_TITLE])
     lines.extend(f'- {step}' for step in REBAR_CHECK_STEPS)
     return '\n'.join(lines)
 

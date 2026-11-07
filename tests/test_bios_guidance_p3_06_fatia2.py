@@ -513,6 +513,8 @@ class StepsButtonTests(unittest.TestCase):
         self.assertIn('BIOS — SÓ ORIENTAÇÃO', text)
         self.assertIn('Resizable BAR: não confirmado', text)
         self.assertIn(bg.REBAR_REASON_BIG, text)
+        for step in bg.REBAR_CHECK_STEPS:
+            self.assertIn(step, text)
 
     def test_window_is_read_only_text_and_closes_without_timer(self):
         report = self._report()
@@ -529,6 +531,9 @@ class StepsButtonTests(unittest.TestCase):
         content = texts[0].get('1.0', 'end')
         self.assertIn(bg.NEVER_CHANGES, content)
         self.assertIn('AI Tweaker', content)
+        self.assertIn('Resizable BAR (fora da BIOS) — como conferir:', content)
+        for step in bg.REBAR_CHECK_STEPS:
+            self.assertIn(step, content)
         self.assertNotIn('http', content)
         window.destroy()
         self.root.update()
