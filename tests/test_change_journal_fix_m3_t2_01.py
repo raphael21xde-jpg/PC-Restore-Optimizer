@@ -161,8 +161,10 @@ class GeneralReadFailureAfterOtherUndoneTests(Base):
 
 
 def _undo_reasons():
-    """Todos os motivos que ``ChangeJournal.undo`` devolve (constantes e textos literais)."""
-    source = textwrap.dedent(inspect.getsource(cj.ChangeJournal.undo))
+    """Todos os motivos que ``ChangeJournal.undo`` devolve (constantes e textos literais).
+
+    Desde o FIX-M3-T2-02 os motivos ficam em ``_undo_entry``, que ``undo`` chama."""
+    source = textwrap.dedent(inspect.getsource(cj.ChangeJournal._undo_entry))
     found = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Return) or not isinstance(node.value, ast.Tuple):

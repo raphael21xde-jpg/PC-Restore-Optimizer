@@ -397,22 +397,35 @@ class ChangeJournal:
         """Desfaz um item aplicado; devolve (ok, motivo).
 
         Se o diário mudou por fora, recusa com ``JournalError`` sem chamar o adaptador."""
+        ok, reason, _skippable = self._undo_entry(change_id)
+        return ok, reason
+
+    def _undo_entry(self, change_id):
+        """Como ``undo``, mas devolve (ok, motivo, pulavel).
+
+        ``pulavel`` só é verdadeiro quando a leitura foi recusada por uma exceção
+        do adaptador marcada com ``undo_skip_safe = True`` (o valor foi apagado
+        fora do app). Nesse caso nada foi revertido nem gravado (FIX-M3-T2-02)."""
         self._check_disk_unchanged()
         entry = self._find(change_id)
         if entry is None:
-            return False, 'Essa alteração não está no diário.'
+            return False, 'Essa alteração não está no diário.', False
         if entry['status'] != 'applied':
-            return False, 'Essa alteração não está aplicada; não há o que desfazer.'
+            return False, 'Essa alteração não está aplicada; não há o que desfazer.', False
         if entry['kind'] not in self._adapters:
-            return False, 'O app não sabe mais desfazer esse tipo de ajuste.'
+            return False, 'O app não sabe mais desfazer esse tipo de ajuste.', False
         try:
             current = self._adapters[entry['kind']].read(entry['key'])
         except Exception as exc:
             # O adaptador pode dar o motivo exato (texto em ``undo_reason``); senão, o texto geral.
             reason = getattr(exc, 'undo_reason', None)
-            return False, reason if isinstance(reason, str) and reason else MSG_UNDO_NOT_READ
+            # Só a marca explícita (``is True``) deixa o "Desfazer tudo" pular o item.
+            skippable = getattr(exc, 'undo_skip_safe', False) is True
+            if isinstance(reason, str) and reason:
+                return False, reason, skippable
+            return False, MSG_UNDO_NOT_READ, skippable
         if not same_value(current, entry['after']):
-            return False, MSG_CHANGED_OUTSIDE
+            return False, MSG_CHANGED_OUTSIDE, False
         try:
             self._adapters[entry['kind']].revert(entry['key'], entry['before'])
         except Exception:
@@ -425,46 +438,70 @@ class ChangeJournal:
                 self._set(entry, 'reverted')
             except JournalError:
                 raise JournalError(MSG_UNDO_NOT_NOTED) from None
-            return True, ''
+            return True, '', False
         if ok and same_value(current, entry['after']):
-            return False, 'O ajuste não voltou ao valor anterior; ele continua aplicado.'
+            return False, 'O ajuste não voltou ao valor anterior; ele continua aplicado.', False
         try:
             # P3-03 fatia 2b-2: a nota diz que o "unknown" veio de um desfazer, para o
             # "Conferir de novo" saber que voltar ao valor anterior é "desfeita".
             self._set(entry, 'unknown', note=NOTE_UNDO)
         except JournalError:
             raise JournalError(MSG_UNDO_UNKNOWN_NOT_NOTED) from None
-        return False, 'Não foi possível confirmar que o ajuste voltou ao valor anterior; confira manualmente.'
+        return False, 'Não foi possível confirmar que o ajuste voltou ao valor anterior; confira manualmente.', False
 
     def undo_all(self):
         """Desfaz do mais novo para o mais antigo; para na primeira falha.
 
         Devolve (ids desfeitos, ``pending``, motivo). ``pending`` são os ids que
-        estavam aplicados e não foram desfeitos agora: o que falhou (primeiro da
-        lista) e os mais antigos, que nem foram tentados. Eles continuam no
-        estado em que estavam (``applied``, ou ``unknown`` se o próprio desfazer
-        não pôde ser confirmado). Se o diário mudou por fora, recusa com
-        ``JournalError`` antes de qualquer coisa; se a anotação de um item falhar
-        depois de ele ter sido desfeito no sistema, o ``JournalError`` de ``undo``
-        sobe com o texto que diz isso (os itens anteriores já ficaram anotados).
+        estavam aplicados e não foram desfeitos agora, do mais novo para o mais
+        antigo: os pulados, o que falhou e os mais antigos, que nem foram
+        tentados. Eles continuam no estado em que estavam (``applied``, ou
+        ``unknown`` se o próprio desfazer não pôde ser confirmado). Se o diário
+        mudou por fora, recusa com ``JournalError`` antes de qualquer coisa; se a
+        anotação de um item falhar depois de ele ter sido desfeito no sistema, o
+        ``JournalError`` de ``undo`` sobe com o texto que diz isso (os itens
+        anteriores já ficaram anotados).
 
         P3-03 fatia 2b-1: um ``JournalError`` no meio do laço sobe com
         ``exc.done`` (ids já desfeitos antes do erro), para a tela nunca dizer
-        "Nada foi gravado" depois de algo desfeito. O texto não muda."""
+        "Nada foi gravado" depois de algo desfeito. O texto não muda.
+
+        FIX-M3-T2-02: a única recusa que não para o lote é a de uma exceção do
+        adaptador marcada com ``undo_skip_safe = True`` (valor apagado fora do
+        app), lida antes de qualquer revert, e só se não houver item mais antigo
+        ``applied`` com o mesmo (kind, key). O item pulado não é regravado
+        (continua ``applied``, sem mudar ``updated`` nem ``note``) e vai para
+        ``pending``. O motivo é o do item que parou o lote; se nenhum parou, o do
+        primeiro pulado."""
         self._check_disk_unchanged()
         applied = [e['id'] for e in reversed(self._entries) if e['status'] == 'applied']
         done = []
+        first_skip_reason = ''
         for change_id in applied:
             try:
-                ok, reason = self.undo(change_id)
+                ok, reason, skippable = self._undo_entry(change_id)
             except JournalError as exc:
                 exc.done = list(done)
                 raise
             if not ok:
+                if skippable and not self._older_applied_same_key(change_id):
+                    if not first_skip_reason:
+                        first_skip_reason = reason
+                    continue
                 pending = [i for i in applied if i not in done]
                 return done, pending, reason
             done.append(change_id)
-        return done, [], ''
+        pending = [i for i in applied if i not in done]
+        return done, pending, first_skip_reason
+
+    def _older_applied_same_key(self, change_id):
+        """Há item mais antigo, ainda ``applied``, com o mesmo (kind, key)?"""
+        for index, entry in enumerate(self._entries):
+            if entry['id'] == change_id:
+                target = (entry['kind'], entry['key'])
+                return any(e['status'] == 'applied' and (e['kind'], e['key']) == target
+                           for e in self._entries[:index])
+        return False
 
     def recover_interrupted(self):
         """Confere itens ``prepared`` sem aplicar nem desfazer nada.

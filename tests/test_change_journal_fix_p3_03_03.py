@@ -47,7 +47,7 @@ class ChangesReviewFixTests(f2b.ChangesTabHelpers):
     # ---------- 1. erro inesperado no meio do "Desfazer tudo" ----------
     def test_unexpected_error_after_partial_undo_warns_and_disables_journal(self):
         panel = self.two_changes()
-        original = panel.journal.undo
+        original = panel.journal._undo_entry  # FIX-M3-T2-02: o que undo_all chama
         state = {'calls': 0}
 
         def undo(change_id):
@@ -55,7 +55,7 @@ class ChangesReviewFixTests(f2b.ChangesTabHelpers):
             if state['calls'] == 1:
                 return original(change_id)  # item 2 é desfeito de verdade (no falso)
             raise RuntimeError('C:\\Users\\Fulano\\x')  # item 1: erro cru
-        with mock.patch.object(panel.journal, 'undo', side_effect=undo):
+        with mock.patch.object(panel.journal, '_undo_entry', side_effect=undo):
             self.undo_all(panel)
         self.assertEqual(self.fake.current, B)  # parte já mudou no "sistema"
         expected = ou.CHANGES_UNEXPECTED_ERROR_TEXT

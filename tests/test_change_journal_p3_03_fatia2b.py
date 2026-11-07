@@ -43,8 +43,10 @@ def _entry(number, status, before, after):
 
 
 def _swap_after_first_undo(journal, path, payload):
-    """Troca o arquivo do diário (como outra janela) logo depois do 1º desfazer."""
-    original = journal.undo
+    """Troca o arquivo do diário (como outra janela) logo depois do 1º desfazer.
+
+    Desde o FIX-M3-T2-02 o ``undo_all`` chama ``_undo_entry`` (o mesmo de ``undo``)."""
+    original = journal._undo_entry
     state = {'calls': 0}
 
     def undo(change_id):
@@ -53,7 +55,7 @@ def _swap_after_first_undo(journal, path, payload):
         if state['calls'] == 1:
             Path(path).write_bytes(payload)
         return result
-    return mock.patch.object(journal, 'undo', side_effect=undo)
+    return mock.patch.object(journal, '_undo_entry', side_effect=undo)
 
 
 class UndoAllEngineTests(SafetyNet):
@@ -271,7 +273,7 @@ class ChangesTabTests(ChangesTabHelpers):
 
     def test_undo_all_stops_on_outside_change(self):
         panel = self.two_changes()
-        original = panel.journal.undo
+        original = panel.journal._undo_entry  # FIX-M3-T2-02: o que undo_all chama
         state = {'calls': 0}
 
         def undo(change_id):
@@ -280,7 +282,7 @@ class ChangesTabTests(ChangesTabHelpers):
             if state['calls'] == 1:
                 self.fake.current = C  # outro programa trocou de novo
             return result
-        with mock.patch.object(panel.journal, 'undo', side_effect=undo):
+        with mock.patch.object(panel.journal, '_undo_entry', side_effect=undo):
             self.undo_all(panel)
         self.assertEqual(self.fake.current, C)
         self.assertEqual([e['status'] for e in self.entries()], ['applied', 'reverted'])
