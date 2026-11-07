@@ -90,6 +90,8 @@ POWER_RUNNING_TEXT = 'Criando o ponto de restauração e trocando o plano… Ist
 POWER_RUNNING_REUSE_TEXT = ('Conferindo o ponto de restauração e trocando o plano… '
                             'Isto pode demorar um pouco.')
 POWER_CANCEL_TEXT = 'Troca cancelada. Nada foi alterado.'
+# R-74: a pergunta cita o rótulo exato do botão de desfazer da aba 4 (o mesmo de _build_power).
+POWER_UNDO_BUTTON_TEXT = 'Desfazer minha última mudança'
 POWER_LEGACY_TEXT = (
     'Existe uma troca de plano feita por uma versão antiga do app. Por segurança, novas '
     'trocas ficam bloqueadas até ela ser desfeita. Use "Desfazer alteração antiga".')
@@ -2185,7 +2187,7 @@ class OptimizationPanel(tk.Frame):
                 'Deseja selecionar o plano “'+target['name']+'” no Windows?\n\n'
                 'Pode alterar temperatura, consumo e autonomia. Sem ganho de FPS garantido.\n'
                 +safe_tweaks.restore_point_sentence(reuse_at)+
-                ' Para voltar, use o botão Desfazer desta aba.\n\n'
+                ' Para voltar, use o botão "'+POWER_UNDO_BUTTON_TEXT+'" desta aba.\n\n'
                 'Esta é uma alteração real do sistema, não apenas um teste.'):
             self.power_status.set(POWER_CANCEL_TEXT)
             return

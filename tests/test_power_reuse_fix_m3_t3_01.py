@@ -31,8 +31,9 @@ import change_journal as cj  # noqa: E402
 import optimization_engine as oe  # noqa: E402
 import safe_tweaks as st  # noqa: E402
 import session_owner as so  # noqa: E402
+import test_change_journal_fix_m3_t3 as m3t3  # noqa: E402
 from test_change_journal_fix_m3_t3 import (  # noqa: E402
-    GUID, NO_DISPLAY, FakePower, NoRealCommands, _iso, ou, tk, track_tk_root)
+    GUID, NO_DISPLAY, NoRealCommands, _iso, ou, tk, track_tk_root)
 
 OTHER_GUID = '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'
 REUSE_TEXT = 'O app vai usar o ponto de restauração que ele mesmo criou '
@@ -194,6 +195,9 @@ class PowerFlowTests(FlowHelpers):
         when = st.restore_point_when(moment, datetime.now(timezone.utc))
         self.assertIn(REUSE_TEXT + when, self.asked[-1][1])
         self.assertIn('“Alto desempenho”', self.asked[-1][1])
+        # B1 (revisão da PR #217, R-74): cita o rótulo exato do botão de desfazer da aba 4.
+        self.assertIn('Para voltar, use o botão "Desfazer minha última mudança" desta aba.',
+                      self.asked[-1][1])
         self.assertEqual(len(self.checks), 2)        # antes da pergunta e dentro do apply_batch
         self.assertEqual(self.created, [])            # nenhum ponto novo (Checkpoint-Computer)
         self.assertEqual(self.power.applied, [OTHER_GUID])
@@ -412,6 +416,22 @@ class SourceTests(unittest.TestCase):
         self.assertNotIn('restore_point_when', names)
         self.assertNotIn('noqa', (ROOT / 'advanced_tweaks.py').read_text(encoding='utf-8'))
 
+    def test_undo_button_named_in_the_question_exists_in_build_power(self):
+        # B1 (revisão da PR #217, R-74): o rótulo citado na pergunta é o de um botão da aba 4.
+        tree = ast.parse((ROOT / 'optimization_ui.py').read_text(encoding='utf-8'))
+        build = next(n for n in ast.walk(tree)
+                     if isinstance(n, ast.FunctionDef) and n.name == '_build_power')
+        labels = {kw.value.value for call in ast.walk(build) if isinstance(call, ast.Call)
+                  for kw in call.keywords
+                  if kw.arg == 'text' and isinstance(kw.value, ast.Constant)}
+        self.assertEqual(UI.POWER_UNDO_BUTTON_TEXT, 'Desfazer minha última mudança')
+        self.assertIn(UI.POWER_UNDO_BUTTON_TEXT, labels)
+        self.assertIn('Desfazer alteração antiga', labels)
+        self.assertNotIn('Desfazer', labels)
+        ready = ast.unparse(next(n for n in ast.walk(tree)
+                                 if isinstance(n, ast.FunctionDef) and n.name == '_power_ready'))
+        self.assertIn('Para voltar, use o botão "\' + POWER_UNDO_BUTTON_TEXT + \'" desta aba.', ready)
+
     def test_apply_plan_asks_only_after_the_job(self):
         functions = self.functions('optimization_ui.py')
         self.assertNotIn('self._ask(', functions['apply_plan'])
@@ -507,6 +527,75 @@ class PowerGuiTests(NoRealCommands):
         self.assertEqual(self.asked, [])
         self.assertEqual(self.power.applied, [])
         self.assertIn(cj.MSG_OTHER_WINDOW, self.shown[-1][2])
+
+
+@unittest.skipIf(NO_DISPLAY, 'sem Tk ou sem tela')
+class TweakTabsGuiJournalChangedTests(NoRealCommands):
+    """R3 (revisão da PR #217): abas 8 e 9 com Tk, diário mudado por fora antes da pergunta.
+
+    Mesma montagem da tela de tests/test_change_journal_fix_m3_t3.py (GuiTests)."""
+    def setUp(self):
+        super().setUp()
+        self.reg = m3t3.FakeWinreg()
+        self.machine_reg = m3t3.FakeWinreg(hives=('HKLM',))
+        for name, value in zip(m3t3.MOUSE_NAMES, ('1', '6', '10')):
+            self.reg.put(m3t3.MOUSE, name, value, m3t3.SZ)
+        self.restore_ok = False
+        self.restore_calls = []
+        self.check_answers = []
+        self.checks = []
+        self.asked = []
+        self.shown = []
+        self.root = tk.Tk()
+        self.root.withdraw()
+        track_tk_root(self, self.root)
+        self.panel = ou.OptimizationPanel(
+            self.root, app_dir=self.tmp, state_dir=self.tmp, power_adapter=m3t3.FakePower(),
+            tweak_adapter=st.RegistryTweakAdapter(registry=self.reg),
+            advanced_adapter=at.AdvancedRegistryAdapter(registry=self.reg),
+            machine_adapter=at.MachineDwordAdapter(registry=self.machine_reg),
+            restore_point=self._restore_point, restore_point_check=self._check,
+            elevated_probe=lambda: True, session_owner_probe=lambda: so.SAME,
+            ask=self._ask, show=lambda *a: self.shown.append(a))
+        self.panel.pack()
+        self.settle()
+        self.addCleanup(self._join)  # R-29: roda antes da limpeza da pasta.
+
+    _restore_point = m3t3.GuiTests._restore_point
+    _check = m3t3.GuiTests._check
+    _ask = m3t3.GuiTests._ask
+    _join = m3t3.GuiTests._join
+    settle = m3t3.GuiTests.settle
+    writes = m3t3.GuiTests.writes
+    run_tab = m3t3.GuiTests.run_tab
+    status = m3t3.GuiTests.status
+
+    def test_buttons_named_in_the_journal_off_text_are_disabled(self):
+        for label in ('Aplicar ajustes seguros', 'Desfazer tudo', 'Conferir de novo',
+                      '4  Energia reversível', 'Ver estado atual'):
+            self.assertIn(label, ou.TWEAKS_JOURNAL_OFF_TEXT)
+        for tab in (8, 9):
+            with self.subTest(tab=tab):
+                self.asked.clear()
+                (self.tmp / 'otimizacao-diario.json').write_text(
+                    json.dumps({'schema': cj.SCHEMA, 'entries': []}), encoding='utf-8')
+                self.panel._load_change_journal()
+                self.panel._update_power_buttons()
+                (self.tmp / 'otimizacao-diario.json').write_text(
+                    json.dumps({'schema': cj.SCHEMA, 'entries': [], 'x': tab}), encoding='utf-8')
+                self.run_tab(tab)
+                self.assertEqual(self.asked, [])
+                self.assertEqual(self.restore_calls, [])
+                self.assertEqual(self.writes(), [])
+                self.assertIsNone(self.panel.journal)
+                self.assertIn(cj.MSG_OTHER_WINDOW, self.shown[-1][2])
+                self.assertIn(ou.TWEAKS_JOURNAL_OFF_TEXT, self.status(tab))
+                buttons = [self.panel.btn_tweaks_apply, self.panel.btn_undo_all, self.panel.btn_recheck,
+                           self.panel.btn_apply, self.panel.btn_revert]
+                buttons += list(self.panel.advanced_buttons.values())
+                for button in buttons:
+                    self.assertTrue(button.instate(['disabled']))
+                self.assertFalse(self.panel.btn_tweaks_refresh.instate(['disabled']))
 
 
 if __name__ == '__main__':
