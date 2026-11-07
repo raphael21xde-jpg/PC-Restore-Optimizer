@@ -228,10 +228,10 @@ Voltar a esse ponto desfaz também o que foi feito depois dele.
 
 - "Analisar este PC" (aba "1  Diagnóstico"): mostra Windows, processador, placa de
   vídeo, memória, discos, placa-mãe e versão da BIOS. Só lê.
-- "Check-up de segurança" (também na aba "1  Diagnóstico"): olha o que abre com o Windows,
-  as tarefas agendadas, os processos e o Defender, e aponta o que merece atenção, sem mudar,
-  encerrar ou tirar nada do lugar. As tarefas do próprio Windows vêm numa linha só; para ver
-  cada uma, use o botão "Salvar check-up completo (.txt)", no fim da janela do check-up.
+- "Check-up de segurança" (também na aba "1  Diagnóstico"): olha o que abre com o Windows, as
+  tarefas agendadas, os processos e o Defender e aponta o que merece atenção, sem mudar,
+  encerrar ou tirar nada do lugar e sem administrador. Tarefas comuns da Microsoft vêm numa
+  linha só; para ver cada uma, use o botão "Salvar check-up completo (.txt)", no fim da janela.
 
 ## BIOS e drivers
 
