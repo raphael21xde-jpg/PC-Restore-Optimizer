@@ -119,7 +119,8 @@ CHANGES_DONE_BEFORE_ERROR_TEXT = '{n} alteração(ões) já foram desfeitas ante
 CHANGES_CONFIRM_TEXT = (
     'Desfazer {n} alteração(ões) feitas pelo app?\n\n'
     'O app desfaz da mais nova para a mais antiga; não cria ponto de restauração; '
-    'se uma não puder ser desfeita, o app para ali.')
+    'se uma não puder ser desfeita, o app para ali; só pula um ajuste cujo valor foi '
+    'apagado fora do app, que continua na lista.')
 # ---------- P3-03 fatia 2b-2: "Conferir de novo" (textos fixos, R-07) ----------
 CHANGES_RECHECK_TITLE = 'Conferir de novo'
 CHANGES_RECHECK_RUNNING_TEXT = 'Conferindo o valor atual de cada alteração (somente leitura)…'

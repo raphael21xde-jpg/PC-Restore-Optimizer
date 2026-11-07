@@ -145,6 +145,16 @@ class TextTests(unittest.TestCase):
         self.assertEqual(message('windows_default'), ou.ADVANCED_WINDOWS_DEFAULT_TEXT)
         self.assertEqual(message('unsupported'), ou.ADVANCED_UNSUPPORTED_TEXT)
 
+    def test_undo_all_confirm_text_mentions_the_skip(self):
+        """FIX-M3-T2-02: a confirmação do "Desfazer tudo" cita a exceção do pulo."""
+        if ou is None:
+            self.skipTest('sem Tk')
+        self.assertEqual(ou.CHANGES_CONFIRM_TEXT,
+                         'Desfazer {n} alteração(ões) feitas pelo app?\n\n'
+                         'O app desfaz da mais nova para a mais antiga; não cria ponto de '
+                         'restauração; se uma não puder ser desfeita, o app para ali; só pula '
+                         'um ajuste cujo valor foi apagado fora do app, que continua na lista.')
+
 
 class StillUnsupportedTests(Base):
     def test_key_absent_zero_three_or_text_stay_neutral(self):
@@ -202,6 +212,52 @@ class JournalTests(Base):
         self.assertEqual(self.snapshot(), before)
         self.assertIsNone(self.current())   # não recriado
         self.assertEqual(journal.entries()[0]['status'], 'applied')
+
+
+class JournalSkipGpuTests(unittest.TestCase):
+    """FIX-M3-T2-02: GPU apagado por fora é pulado; o mouse, mais antigo, é desfeito."""
+
+    def setUp(self):
+        for name in ('run', 'Popen'):
+            patcher = mock.patch.object(subprocess, name, side_effect=_forbidden)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+
+    def test_older_mouse_is_undone_and_only_it_is_written(self):
+        reg = FakeWinreg(hives=('HKLM', 'HKCU'))
+        mouse = r'Control Panel\Mouse'
+        for name, value in (('MouseSpeed', '1'), ('MouseThreshold1', '6'),
+                            ('MouseThreshold2', '10')):
+            reg.put(mouse, name, value, SZ)
+        reg.put(VERSION, 'CurrentBuildNumber', '26300', SZ, hive=HKLM)
+        reg.put(GRAPHICS, 'HwSchMode', 1, DWORD, hive=HKLM)
+        user = at.AdvancedRegistryAdapter(registry=reg)
+        machine = at.MachineDwordAdapter(registry=reg)
+        journal = cj.ChangeJournal(self.tmp / 'diario.json',
+                                   {at.ADVANCED_KIND: user, at.MACHINE_KIND: machine},
+                                   lambda description: True)
+        journal.apply_batch(at.state_for(at.read_states(user, machine), 'mouse_precision')['changes'])
+        journal.apply_batch(at.state_for(at.read_states(user, machine), KEY)['changes'])
+        mouse_id, gpu_id = [e['id'] for e in journal.entries()]
+        self.assertEqual(reg.get(mouse, 'MouseSpeed'), ('0', SZ))
+        del reg.machine_keys[GRAPHICS.lower()]['HwSchMode']   # apagado por fora
+        machine_before = {p: dict(v) for p, v in reg.machine_keys.items()}
+        gpu_entry = dict(journal.entries()[1])
+        reg.calls.clear()
+        done, pending, reason = journal.undo_all()
+        self.assertEqual((done, pending, reason), ([mouse_id], [gpu_id], at.MSG_UNDO_WINDOWS_DEFAULT))
+        written = [c for c in reg.calls if c[0] in WRITES]
+        self.assertTrue(written)
+        self.assertEqual({c[1].lower() for c in written}, {mouse.lower()})   # só o mouse foi gravado
+        self.assertEqual(reg.get(mouse, 'MouseSpeed'), ('1', SZ))
+        self.assertEqual(reg.get(mouse, 'MouseThreshold1'), ('6', SZ))
+        self.assertEqual({p: dict(v) for p, v in reg.machine_keys.items()}, machine_before)
+        self.assertIsNone(reg.get(GRAPHICS, 'HwSchMode', hive=HKLM))   # não recriado
+        self.assertEqual(journal.entries()[1], gpu_entry)              # nem regravado
+        self.assertEqual(journal.entries()[0]['status'], 'reverted')
 
 
 class JournalGenericReasonTests(Base):
@@ -309,6 +365,35 @@ class GuiTests(unittest.TestCase):
         self.assertIn('• Agendamento de GPU acelerado por hardware ligado: '
                       + at.STATE_TEXT['windows_default'], self.panel.advanced_text.get('1.0', 'end'))
         self.assertFalse(self.panel.journal.entries())
+
+    def test_undo_all_skips_deleted_gpu_and_undoes_older_mouse(self):
+        """FIX-M3-T2-02: a tela confirma com o texto novo e mostra o motivo do GPU."""
+        mouse = r'Control Panel\Mouse'
+        for name, value in (('MouseSpeed', '1'), ('MouseThreshold1', '6'),
+                            ('MouseThreshold2', '10')):
+            self.reg.put(mouse, name, value, SZ)
+        self.machine_reg.put(VERSION, 'CurrentBuildNumber', '26300', SZ, hive=HKLM)
+        self.machine_reg.put(GRAPHICS, 'HwSchMode', 1, DWORD, hive=HKLM)
+        user = at.AdvancedRegistryAdapter(registry=self.reg)
+        machine = at.MachineDwordAdapter(registry=self.machine_reg)
+        journal = self.panel.journal
+        journal.apply_batch(at.state_for(at.read_states(user, machine), 'mouse_precision')['changes'])
+        journal.apply_batch(at.state_for(at.read_states(user, machine), KEY)['changes'])
+        del self.machine_reg.machine_keys[GRAPHICS.lower()]['HwSchMode']   # apagado por fora
+        self.panel.undo_all_changes()
+        self.settle()
+        self.assertEqual(self.asked[-1], ('Desfazer tudo', ou.CHANGES_CONFIRM_TEXT.format(n=2)))
+        self.assertIn('o app para ali; só pula um ajuste cujo valor foi apagado fora do app, '
+                      'que continua na lista.', self.asked[-1][1])
+        message = ou.CHANGES_STOPPED_TEXT.format(done=1, pending=1,
+                                                 reason=at.MSG_UNDO_WINDOWS_DEFAULT)
+        self.assertEqual(self.shown[-1], ('warning', 'Desfazer tudo', message))
+        self.assertEqual(self.panel.changes_status.get(), message)
+        self.assertEqual(self.reg.get(mouse, 'MouseSpeed'), ('1', SZ))
+        self.assertIsNone(self.machine_reg.get(GRAPHICS, 'HwSchMode', hive=HKLM))
+        status = [e['status'] for e in self.panel.journal.entries()]
+        self.assertEqual(status, ['reverted', 'applied'])
+        self.assertTrue(self.panel.btn_undo_all.instate(['!disabled']))   # continua ligado
 
 
 if __name__ == '__main__':

@@ -115,6 +115,8 @@ class WindowsDefaultError(NotSupportedError):
 
     # O diário usa este texto quando o desfazer é recusado (o valor sumiu por fora).
     undo_reason = MSG_UNDO_WINDOWS_DEFAULT
+    # FIX-M3-T2-02: recusa permanente; o "Desfazer tudo" pode pular este item (só este).
+    undo_skip_safe = True
 
 
 @dataclass(frozen=True)

@@ -210,7 +210,9 @@ Cada ajuste que o app aplica fica anotado na aba "7  Alterações feitas".
   própria conta), e o desfazer deles só vale depois de reiniciar o computador.
 - Se um item não puder ser desfeito, o desfazer **para nesse item**: os mais antigos
   que ele continuam aplicados. Leia a mensagem, resolva (por exemplo, abrindo como
-  administrador) e clique em "Desfazer tudo" de novo.
+  administrador) e clique em "Desfazer tudo" de novo. **Exceção:** um ajuste cujo valor
+  foi apagado fora do app (por exemplo, o agendamento de GPU) é pulado: ele continua na
+  lista, e o desfazer segue para os mais antigos.
 - "Conferir de novo" lê de novo o estado real do Windows, para confirmar o que está
   aplicado.
 - Uma troca de plano de energia feita por uma versão antiga do app se desfaz pelo

@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 12 (última poda: 06/11/2026, pedido `regras-20261106-poda-r45-r56`, issue #203). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-57 (já chegaram: R-57 a R-68).
+poda: 12 (última poda: 06/11/2026, pedido `regras-20261106-poda-r45-r56`, issue #203). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-57 (já chegaram: R-57 a R-69).
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -83,3 +83,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-66 | Estado "o app não mexe" de um ajuste separa "valor ausente com a chave e o Windows conferidos" (padrão do Windows/driver, com onde conferir) de "não reconhecido"; ausente nunca vira "já aplicado" nem é criado pelo app, e o texto cita o nome atual da tela do Windows com o antigo entre parênteses. Tem teste com o valor ausente simulado (substitui, na R-57, o caso valor ausente com versão e chave conferidas). | FIX-M3-T2 (Windows 11 build 26300), issue #207 | 2026-11-07 |
 | R-67 | Regra nova que muda o caso de outra regra (ex.: R-66 tira "valor ausente" do texto neutro da R-57) diz na própria linha qual regra e qual caso ela substitui; a regra antiga é ajustada na próxima poda. | Revisão da PR #211 (FIX-M3-T2) | 2026-11-07 |
 | R-68 | Motivo de recusa de um item que pode aparecer numa mensagem de lote ("N desfeita(s)… Motivo: …") fala só do item ("este ajuste não foi alterado/desfeito"), nunca "Nada foi alterado/desfeito" geral; tem teste com um item desfeito antes da recusa. | Revisão 2 da PR #211 (FIX-M3-T2, 259c7e6acf2f) | 2026-11-07 |
+| R-69 | O "Desfazer tudo" só pula um item quando a recusa vem de uma exceção do adaptador marcada como permanente (undo_skip_safe), antes de qualquer revert e sem outro item mais antigo da mesma chave; o item pulado não é regravado no diário (continua applied) e não se cria estado novo; qualquer outra recusa continua parando o lote; tem teste com item mais antigo desfeito depois do pulo. | FIX-M3-T2-02 | 2026-11-07 |
