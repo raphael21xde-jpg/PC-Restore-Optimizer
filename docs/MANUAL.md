@@ -153,11 +153,10 @@ O app **não formata e não instala o Windows**. Quem formata e instala é o
 **Cuidado na hora de instalar.** O instalador apaga as partições que você excluir ou
 formatar naquele disco, sem volta.
 
-- **Regra principal:** desconecte o disco do backup antes de instalar, com o PC
-  desligado e fora da tomada, e reconecte só depois. Se for um disco interno, é
-  preciso abrir o gabinete; se você não souber fazer isso, peça ajuda a alguém que
-  saiba. Ao reconectar, a letra do disco pode mudar: confira em
-  "Conferir discos e letras" (no "Depois de formatar").
+- **Regra principal:** desconecte o disco do backup antes de instalar, com o PC desligado e fora
+  da tomada, e reconecte só depois. Se for um disco interno, é preciso abrir o gabinete; se você
+  não souber fazer isso, peça ajuda a alguém que saiba. Ao reconectar, a letra do disco pode
+  mudar: confira em "Conferir discos e letras" (no "Depois de formatar").
 - Antes, em "Analisar computador e discos" (menu "Diagnóstico"), ache o disco do
   Windows: é a linha com `Boot=True` e `System=True`. Anote o número desse disco
   (`#0`, `#1`...) e o tamanho dele. O app mostra o tamanho em bytes;
@@ -175,10 +174,11 @@ formatar naquele disco, sem volta.
    "Reinstalar os programas", "Religar os launchers de jogos" e "Navegador e senhas";
 3. em cada etapa use "Abrir", e no fim marque "Feito" ou "Pular".
 
-Se a letra de uma unidade mudou, o app mostra como trocá-la à mão no
-"Gerenciamento de Disco". Ele nunca troca letras sozinho. Cuidado: programas e
-atalhos que usam a letra antiga param de achar os arquivos até a letra voltar. Para
-desfazer, troque de novo para a letra antiga, pelo mesmo caminho.
+Se a letra de uma unidade mudou, o app mostra como trocá-la à mão no "Gerenciamento de Disco".
+Ele nunca troca letras sozinho. Cuidado: programas e atalhos que usam a letra que a unidade
+tinha antes da troca param de achar os arquivos até essa letra voltar. Depois de trocar,
+clique em "Abrir" na etapa "Conferir discos e letras" para conferir de novo. Para desfazer,
+volte para a letra que a unidade tinha antes da troca, pelo mesmo caminho.
 
 ## Otimização
 

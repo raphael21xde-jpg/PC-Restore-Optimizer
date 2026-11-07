@@ -15,9 +15,21 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import after_format as af
 
-WARN = ('Cuidado: programas e atalhos que usam a letra antiga param de achar os '
-        'arquivos até a letra voltar.')
-UNDO = 'Para desfazer, troque de novo para a letra antiga, pelo mesmo caminho.'
+# Cada parte da R-41 (R-80): risco, condição segura, o que fazer depois,
+# como desfazer e se ignorar resolve.
+WARN = ('Cuidado: programas e atalhos que usam a letra que a unidade tinha antes da troca '
+        'param de achar os arquivos até essa letra voltar.')
+SAFE = 'Não mude a letra do disco do Windows.'
+AFTER = ('Depois de trocar, clique em "Abrir" na etapa "Conferir discos e letras" para '
+         'conferir de novo.')
+UNDO = 'Para desfazer, volte para a letra que a unidade tinha antes da troca, pelo mesmo caminho.'
+SKIP = ('Se preferir não trocar a letra, ainda dá para restaurar os arquivos com "Restaurar '
+        'arquivos marcados para pasta nova"; só o "Colocar no lugar original" precisa que a '
+        'unidade volte a ter a letra de quando o backup foi feito.')
+PARTS = (WARN, SAFE, AFTER, UNDO, SKIP)
+# O manual tem limite de linhas (tests/test_manual.py); a frase de "não trocar"
+# fica só na tela.
+SHARED = (WARN, AFTER, UNDO)
 FORBIDDEN = ('formate', 'formatar o', 'apague', 'apagar', 'exclua', 'excluir',
              'desinstal', 'particion')
 WIN_ENV = {'SystemRoot': r'C:\Windows', 'SystemDrive': 'C:'}
@@ -32,10 +44,22 @@ def _flat(text):
 
 
 class LetterGuideTextTests(unittest.TestCase):
-    def test_guide_has_warning_and_undo(self):
+    def test_guide_has_every_r41_part(self):
         text = _flat(af.CHANGE_LETTER_GUIDE.format(letters='D:'))
-        self.assertIn(WARN, text)
-        self.assertIn(UNDO, text)
+        for part in PARTS:
+            with self.subTest(part=part[:40]):
+                self.assertIn(part, text)
+
+    def test_old_ambiguous_wording_gone(self):
+        self.assertNotIn('letra antiga', af.CHANGE_LETTER_GUIDE)
+
+    def test_after_step_names_real_button_and_step(self):
+        self.assertIn('Conferir discos e letras', [s['title'] for s in af.STEPS])
+        ui = (ROOT / 'after_format_ui.py').read_text(encoding='utf-8')
+        self.assertIn("text='Abrir'", ui)
+        restore = (ROOT / 'restore_ui.py').read_text(encoding='utf-8')
+        self.assertIn("text='Restaurar arquivos marcados para pasta nova'", restore)
+        self.assertIn("text='Colocar no lugar original'", restore)
 
     def test_guide_keeps_old_safety_lines(self):
         self.assertIn('{letters}', af.CHANGE_LETTER_GUIDE)
@@ -51,8 +75,10 @@ class LetterGuideTextTests(unittest.TestCase):
 
     def test_same_sentences_as_manual(self):
         manual = _flat((ROOT / 'docs' / 'MANUAL.md').read_text(encoding='utf-8'))
-        self.assertIn(WARN, manual)
-        self.assertIn(UNDO, manual)
+        for part in SHARED:
+            with self.subTest(part=part[:40]):
+                self.assertIn(part, manual)
+        self.assertNotIn('letra antiga', manual)
 
 
 class CheckDrivesGuidanceTests(unittest.TestCase):
@@ -70,13 +96,14 @@ class CheckDrivesGuidanceTests(unittest.TestCase):
         self.manifest.write_text(json.dumps({'schema': 'pc-restore-backup-v0.5',
                                              'files': files}), encoding='utf-8')
 
-    def test_guidance_has_warning_and_undo(self):
+    def test_guidance_has_every_r41_part(self):
         result = af.check_drives(self.manifest, roots=['C:\\', 'E:\\'], usage=_usage,
                                  environ=WIN_ENV, drive_type=lambda root: 'Disco local')
         self.assertEqual(result['missing'], ['D:'])
         text = _flat(result['guidance'])
-        self.assertIn(WARN, text)
-        self.assertIn(UNDO, text)
+        for part in PARTS:
+            with self.subTest(part=part[:40]):
+                self.assertIn(part, text)
         for word in FORBIDDEN:
             self.assertNotIn(word, text.lower())
 
