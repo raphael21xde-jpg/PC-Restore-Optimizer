@@ -241,7 +241,7 @@ class NeverSummarizedTests(unittest.TestCase):
         self.assertTrue(sc._ms_windows_routine(dict(base, reason=sc.REASON_MS_COM_HANDLER, path=''), ENV))
 
     def test_only_exact_rundll32_in_system32_or_syswow64(self):
-        """R-45/R-46/R-78: programa da pasta do Windows que não é o rundll32 direto em
+        """R-45/R-46/R-77 (antiga R-78): programa da pasta do Windows que não é o rundll32 direto em
         System32/SysWOW64 continua numa linha própria (tarefa lida e item guardado)."""
         paths = ['C:\\Windows\\System32\\' + exe for exe in (
             'powershell.exe', 'pwsh.exe', 'cmd.exe', 'mshta.exe', 'wscript.exe', 'cscript.exe', 'regsvr32.exe',

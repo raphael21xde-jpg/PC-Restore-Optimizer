@@ -910,7 +910,7 @@ class ScheduledTaskTests(unittest.TestCase):
                 self.assertEqual((item['state'], item['reason']),
                                  (sc.STATE_ATTENTION, sc.REASON_MS_WINDOWS_PROGRAM))
                 result = {'tasks': [item], 'errors': []}
-                # FIX-M3-T6 (R-77/R-78): só o rundll32 vai para o resumo; os outros, uma linha cada.
+                # FIX-M3-T6 (R-77, antiga R-78): só o rundll32 vai para o resumo; os outros, uma linha cada.
                 self.assertEqual(sc.MS_TASKS_SUMMARY_ONE in self._text(result), exe == 'rundll32.exe')
                 text = '\n'.join(sc.checkup_lines(result, ENV, full=True))
                 self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', text)
@@ -1021,7 +1021,7 @@ class ClosedListRevision2Tests(unittest.TestCase):
                 self.assertEqual([(i['state'], i['reason']) for i in items],
                                  [(sc.STATE_ATTENTION, _expected_runner(path, sc.REASON_MS_WINDOWS_PROGRAM))])
                 result = sc.read_checkup(_fake_ps(tasks=rows), ENV)
-                # FIX-M3-T6 (R-46/R-78): nenhum destes programas vai para o resumo; aparecem um por um.
+                # FIX-M3-T6 (R-46/R-77, antiga R-78): nenhum destes programas vai para o resumo; aparecem um por um.
                 self.assertNotIn('resumid', self._text(result))
                 self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', self._text(result))
                 text = '\n'.join(sc.checkup_lines(result, ENV, full=True))
