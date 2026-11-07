@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 5 (última poda: 06/11/2026, pedido `regras-20261107-poda-r57-r67`, issue #212). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-68 (já chegaram: R-68 a R-74).
+poda: 9 (última poda: 06/11/2026, pedido `regras-20261107-poda-r57-r67`, issue #212). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-68 (já chegaram: R-68 a R-76).
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -90,3 +90,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-73 | Texto de ajuda ou trecho do manual compartilhado por várias abas, que descreve um comportamento novo, diz para quais abas ele vale; aba que ainda não tem o comportamento (item pendente no backlog) é citada como exceção no mesmo trecho, e a ajuda mostrada nela não promete o comportamento; tem teste com o texto da aba de fora. | Revisão da PR #216 (FIX-M3-T3, 8f5c9accbcba) | 2026-11-07 |
 | R-74 | Pergunta, aviso ou status que manda o usuário usar um botão cita o rótulo exato desse botão, entre aspas, e a aba onde ele fica; nunca um nome encurtado quando a tela tem mais de um botão parecido; tem teste que confere a frase e o rótulo na função que monta a tela. | Revisão da PR #217 (FIX-M3-T3-01, d9b047745612) | 2026-11-07 |
 | R-75 | Valor lido do Windows que aparece para o usuário (nome de plano, opção) tem teste com a saída simulada em português, com acento e com caractere ilegível, e não depende de uma única fonte (WMI) sem alternativa só de leitura. | FIX-M3-T4, teste real da issue #207 | 2026-11-07 |
+| R-76 | Ajuste que lê valor do registro define o padrão efetivo do Windows para valor ausente (confirmado no Windows real, com a versão onde foi visto) ou deixa 'desconhecido' e trata ausente como não aplicado; tem teste com o valor ausente e com o valor explícito. Substitui, na R-66, o caso "ausente nunca vira 'já aplicado'" só para ajuste com padrão confirmado, que aparece como "já aplicado (padrão do Windows)" e nunca é gravado pelo app. | FIX-M3-T5, teste real da issue #207 | 2026-11-07 |

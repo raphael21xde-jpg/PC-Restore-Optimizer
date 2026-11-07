@@ -22,7 +22,17 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
 - ajuste com algum valor de outro tipo, ou que não pôde ser lido, fica fora
   do lote inteiro;
 - o Game Bar muda só "Gravar o que aconteceu" (``HistoricalCaptureEnabled``):
-  print e gravar na hora continuam como estavam (escolha do coordenador).
+  print e gravar na hora continuam como estavam (escolha do coordenador);
+- FIX-M3-T5: valor ausente = padrão efetivo do Windows (``absent_default``),
+  só quando esse padrão foi confirmado no Windows real: Modo de Jogo ligado (1)
+  e "Gravar o que aconteceu" desligado (0), vistos no Windows 11 build 26300
+  (PC do Raphael, issue #207). O código não confere a versão do Windows: no
+  pior caso (outra versão com outro padrão) o app só deixa de oferecer o
+  ajuste, sem gravar nada. Transparência: padrão não confirmado (``None``). Se o padrão já é o
+  desejado, o ajuste aparece como "já aplicado (padrão do Windows)", não entra
+  no lote e o app nunca grava o valor padrão por cima do ausente. Padrão
+  desconhecido (``None``) = ausente continua "ainda não aplicado". O desfazer
+  não muda: volta ao valor anterior exato, inclusive "ausente".
 """
 from __future__ import annotations
 
@@ -60,6 +70,10 @@ class RegistryValue:
     name: str       # nome do valor
     desired: int    # valor que o ajuste grava
     label: str      # nome curto para a aba "Alterações feitas"
+    # FIX-M3-T5: o que o Windows usa quando o valor não existe (confirmado no
+    # Windows real; Windows 11 build 26300, issue #207). None = desconhecido:
+    # ausente continua "ainda não aplicado".
+    absent_default: int | None = None
 
 
 @dataclass(frozen=True)
@@ -79,7 +93,8 @@ SAFE_TWEAKS = (
               'de drivers e mostrar avisos de reinício durante o jogo.'),
         when='Vale na hora.',
         values=(RegistryValue('game_mode', r'Software\Microsoft\GameBar',
-                              'AutoGameModeEnabled', 1, 'Modo de Jogo'),),
+                              'AutoGameModeEnabled', 1, 'Modo de Jogo',
+                              absent_default=1),),   # sem o valor: Modo de Jogo ligado
     ),
     SafeTweak(
         id='game_bar_capture',
@@ -92,7 +107,8 @@ SAFE_TWEAKS = (
               'feche e abra o jogo de novo.'),
         values=(RegistryValue('historical_capture', r'Software\Microsoft\Windows\CurrentVersion\GameDVR',
                               'HistoricalCaptureEnabled', 0,
-                              'Gravação em segundo plano do Game Bar'),),
+                              'Gravação em segundo plano do Game Bar',
+                              absent_default=0),),   # sem o valor: gravação desligada
     ),
     SafeTweak(
         id='transparency',
@@ -101,7 +117,10 @@ SAFE_TWEAKS = (
               'de vidro; a tela fica um pouco mais leve para a placa de vídeo.'),
         when='Vale na hora.',
         values=(RegistryValue('transparency', r'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize',
-                              'EnableTransparency', 0, 'Efeitos de transparência'),),
+                              'EnableTransparency', 0, 'Efeitos de transparência',
+                              # Padrão sem o valor não confirmado no Windows real:
+                              # desconhecido, então ausente continua "ainda não aplicado".
+                              absent_default=None),),
     ),
 )
 TWEAKS_BY_ID = {tweak.id: tweak for tweak in SAFE_TWEAKS}
@@ -109,6 +128,7 @@ TWEAK_VALUES = {value.key: value for tweak in SAFE_TWEAKS for value in tweak.val
 
 STATE_TEXT = {
     'applied': 'já aplicado.',
+    'applied_default': 'já aplicado (padrão do Windows; o app não grava nada).',
     'not_applied': 'ainda não aplicado.',
     'other_type': 'o app não mexe (o valor no Windows é de outro tipo).',
     'unreadable': 'Não foi possível ler o estado atual; o app não mexe.',
@@ -218,11 +238,16 @@ def read_states(adapter):
 
     ``state``: ``applied`` (tudo no valor desejado), ``not_applied``, ``other_type``
     ou ``unreadable``. Nos dois últimos, ``changes`` fica vazio (o ajuste inteiro
-    fica fora do lote)."""
+    fica fora do lote).
+
+    FIX-M3-T5: valor ausente cujo padrão do Windows (``absent_default``) já é o
+    desejado conta como aplicado e não entra no lote; se todos os valores do
+    ajuste estão nesse caso, o item ganha ``by_default: True``."""
     states = []
     for tweak in SAFE_TWEAKS:
         state = 'applied'
         changes = []
+        by_default = bool(tweak.values)
         for value in tweak.values:
             try:
                 current = adapter.read(value.key)
@@ -232,13 +257,20 @@ def read_states(adapter):
             except Exception:  # permissão, sistema, adaptador: "não foi possível ler"
                 state = 'unreadable'
                 break
+            if (current is ABSENT and value.absent_default is not None
+                    and value.absent_default == value.desired):
+                continue   # o Windows já usa o desejado; o app não grava nada
+            by_default = False
             if not (_is_dword(current) and current == value.desired):
                 changes.append({'kind': TWEAK_KIND, 'key': value.key, 'after': value.desired})
         if state == 'applied' and changes:
             state = 'not_applied'
         if state in ('other_type', 'unreadable'):
             changes = []
-        states.append({'id': tweak.id, 'state': state, 'changes': changes})
+        item = {'id': tweak.id, 'state': state, 'changes': changes}
+        if state == 'applied' and by_default:
+            item['by_default'] = True
+        states.append(item)
     return states
 
 
@@ -259,7 +291,10 @@ def state_lines(states):
         tweak = TWEAKS_BY_ID.get(item.get('id'))
         if tweak is None:
             continue
-        lines.append(f'• {tweak.name}: {STATE_TEXT.get(item.get("state"), STATE_TEXT["unreadable"])}')
+        state = item.get('state')
+        if state == 'applied' and item.get('by_default') is True:
+            state = 'applied_default'
+        lines.append(f'• {tweak.name}: {STATE_TEXT.get(state, STATE_TEXT["unreadable"])}')
     return lines
 
 

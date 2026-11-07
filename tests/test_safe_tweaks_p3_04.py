@@ -203,6 +203,8 @@ class JournalFlowTests(Base):
         return st.pending_changes(st.read_states(self.adapter))
 
     def test_apply_undo_and_recheck_through_the_journal(self):
+        # FIX-M3-T5: valores explícitos opostos ao desejado (ausente = padrão do Windows).
+        self.reg.put(GAMEBAR, 'AutoGameModeEnabled', 0)
         self.reg.put(THEMES, 'EnableTransparency', 1)
         self.reg.put(DVR, 'HistoricalCaptureEnabled', 1)
         journal = self.journal()
@@ -216,7 +218,7 @@ class JournalFlowTests(Base):
         self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (0, FakeWinreg.REG_DWORD))
         befores = {e['key']: e['before'] for e in journal.entries()}
         self.assertEqual(self.reg.get(DVR, 'HistoricalCaptureEnabled'), (0, FakeWinreg.REG_DWORD))
-        self.assertEqual(befores, {'game_mode': None, 'historical_capture': 1, 'transparency': 1})
+        self.assertEqual(befores, {'game_mode': 0, 'historical_capture': 1, 'transparency': 1})
         self.assertTrue(all(s['state'] == 'applied' for s in st.read_states(self.adapter)))
         self.assertEqual(self.all_changes(), [])
         self.assertIn('1. Modo de Jogo: aplicada.', journal.summary_lines())
@@ -227,10 +229,10 @@ class JournalFlowTests(Base):
         self.assertEqual(len([c for c in self.reg.calls if c[0] in ('SetValueEx', 'DeleteValue')]), writes)
         done, pending, reason = journal.undo_all()
         self.assertEqual((len(done), pending, reason), (3, [], ''))
-        self.assertIsNone(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'))
+        self.assertEqual(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'), (0, FakeWinreg.REG_DWORD))
         self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (1, FakeWinreg.REG_DWORD))
         self.assertEqual(self.reg.get(DVR, 'HistoricalCaptureEnabled'), (1, FakeWinreg.REG_DWORD))
-        # A chave criada pelo app continua lá (vazia): nunca apaga a chave.
+        # A chave continua lá: nunca apaga a chave.
         self.assertIn(GAMEBAR.lower(), self.reg.keys)
         saved = json.loads((self.tmp / 'diario.json').read_text(encoding='utf-8'))
         self.assertTrue(all(e['status'] == 'reverted' for e in saved['entries']))
@@ -253,12 +255,13 @@ class JournalFlowTests(Base):
         self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (1, FakeWinreg.REG_DWORD))
 
     def test_failure_in_the_middle_rolls_back_what_was_applied(self):
+        self.reg.put(GAMEBAR, 'AutoGameModeEnabled', 0)
         self.reg.put(DVR, 'HistoricalCaptureEnabled', 1)
         self.reg.fail_set.add('HistoricalCaptureEnabled')
         journal = self.journal()
         with self.assertRaises(cj.BatchRefused):
             journal.apply_batch(self.all_changes())
-        self.assertIsNone(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'))
+        self.assertEqual(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'), (0, FakeWinreg.REG_DWORD))
         self.assertEqual(self.reg.get(DVR, 'HistoricalCaptureEnabled'), (1, FakeWinreg.REG_DWORD))
         self.assertIsNone(self.reg.get(THEMES, 'EnableTransparency'))
         statuses = [e['status'] for e in journal.entries()]
@@ -283,6 +286,7 @@ class JournalFlowTests(Base):
 class StatesTests(Base):
     def test_states_and_pending_skip_what_is_already_set(self):
         self.reg.put(GAMEBAR, 'AutoGameModeEnabled', 1)
+        self.reg.put(DVR, 'HistoricalCaptureEnabled', 1)   # FIX-M3-T5: ausente = já desligada
         self.reg.put(THEMES, 'EnableTransparency', 1)
         states = {s['id']: s for s in st.read_states(self.adapter)}
         self.assertEqual(states['game_mode']['state'], 'applied')
@@ -295,6 +299,7 @@ class StatesTests(Base):
                          ['game_bar_capture', 'transparency'])
 
     def test_other_type_or_unreadable_tweak_is_left_out_whole(self):
+        self.reg.put(GAMEBAR, 'AutoGameModeEnabled', 0)   # FIX-M3-T5: ausente = já ligado
         self.reg.put(DVR, 'HistoricalCaptureEnabled', '0', FakeWinreg.REG_SZ)
         self.reg.put(THEMES, 'EnableTransparency', 1)
         self.reg.fail_read.add('EnableTransparency')

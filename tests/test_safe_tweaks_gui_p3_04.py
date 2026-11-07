@@ -126,6 +126,10 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name)
         self.reg = FakeWinreg()
+        # FIX-M3-T5: ausente = padrão do Windows (Modo de Jogo ligado, gravação desligada).
+        # Valores explícitos opostos ao desejado deixam os 3 ajustes pendentes.
+        self.reg.put(GAMEBAR, 'AutoGameModeEnabled', 0)
+        self.reg.put(DVR, 'HistoricalCaptureEnabled', 1)
         self.adapter = st.RegistryTweakAdapter(registry=self.reg)
         self.admin = True
         self.owner = so.SAME
@@ -268,7 +272,7 @@ class SafeTweaksTabTests(unittest.TestCase):
         # "Desfazer tudo" da aba 7 também cobre os ajustes seguros.
         self.panel.undo_all_changes()
         self.settle()
-        self.assertIsNone(self.reg.get(DVR, 'HistoricalCaptureEnabled'))   # não existia antes
+        self.assertEqual(self.reg.get(DVR, 'HistoricalCaptureEnabled'), (1, FakeWinreg.REG_DWORD))
         self.assertEqual(self.reg.get(THEMES, 'EnableTransparency'), (1, FakeWinreg.REG_DWORD))
         self.assertEqual(self.reg.get(THEMES, 'AppsUseLightTheme'), (1, FakeWinreg.REG_DWORD))
         self.assertIn(DVR.lower(), self.reg.keys)   # a chave nunca é apagada
@@ -449,8 +453,8 @@ class SafeTweaksTabTests(unittest.TestCase):
         self.reg.fail_set.add('HistoricalCaptureEnabled')
         self.panel.apply_safe_tweaks()
         self.settle()
-        self.assertIsNone(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'))
-        self.assertIsNone(self.reg.get(DVR, 'HistoricalCaptureEnabled'))
+        self.assertEqual(self.reg.get(GAMEBAR, 'AutoGameModeEnabled'), (0, FakeWinreg.REG_DWORD))
+        self.assertEqual(self.reg.get(DVR, 'HistoricalCaptureEnabled'), (1, FakeWinreg.REG_DWORD))
         self.assertIsNone(self.reg.get(THEMES, 'EnableTransparency'))
         self.assertEqual(self.shown[-1][0], 'warning')
         self.assertIn('desfeitos', self.shown[-1][2])
