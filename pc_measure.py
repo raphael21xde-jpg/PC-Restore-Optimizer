@@ -65,7 +65,9 @@ class MeasureError(Exception):
 # análise (costuma vir zerada). Inicialização: só a CONTAGEM das entradas das
 # chaves Run/RunOnce e dos arquivos das pastas de Inicialização (nomes não saem);
 # se alguma parte não puder ser lida, a contagem inteira vira null.
-# Plano de energia: só o nome do plano ativo (Win32_PowerPlan, sem powercfg).
+# Plano de energia: só o nome do plano ativo (Win32_PowerPlan, sem powercfg). Se
+# vier vazio (FIX-M3-T4: aconteceu no Windows 11), read_measure pede o nome a
+# ``plan_name`` (padrão: active_power_plan_name, que só lê o powercfg, fora da consulta).
 _CPU_CLASS = 'Win32_PerfFormattedData_PerfOS_Processor'
 MEASURE_QUERY = (
     "$q=\"Name='_Total'\"; $cpu=@(); "
@@ -117,8 +119,8 @@ def _count(value, minimum):
 
 
 def _plan_name(value, env):
-    """Nome do plano limpo; texto com cara de caminho (\\ ou /) nunca é guardado."""
-    if not isinstance(value, str) or '\\' in value or '/' in value:
+    """Nome do plano limpo; texto com cara de caminho (\\ ou /) ou ilegível nunca é guardado."""
+    if not isinstance(value, str) or '\\' in value or '/' in value or '\ufffd' in value:
         return None
     name = _clean_name(value, env)
     return name[:MAX_PLAN_NAME + 3] or None
@@ -158,13 +160,23 @@ def parse_measure(dados, env=None):
                           'startup': data.get('Startup'), 'power_plan': data.get('Plan')}, env)
 
 
-def read_measure(ps=None, env=None):
-    """Mede (só leitura, ~1 minuto). Falha ou nenhum dado = MeasureError genérico (R-07)."""
+def read_measure(ps=None, env=None, plan_name=None):
+    """Mede (só leitura, ~1 minuto). Falha ou nenhum dado = MeasureError genérico (R-07).
+
+    FIX-M3-T4: se a consulta não trouxe o nome do plano, ``plan_name()`` é a
+    alternativa só de leitura (padrão: ``active_power_plan_name``). Erro nela =
+    plano None, sem derrubar as outras métricas; o nome passa pelo mesmo filtro.
+    """
     if ps is None:
         from optimization_engine import _ps  # noqa: PLC0415 - preguiçoso de propósito
 
         def ps(code):
             return _ps(code, timeout=MEASURE_TIMEOUT)
+    if plan_name is None:
+        def plan_name():
+            from optimization_engine import active_power_plan_name  # noqa: PLC0415
+
+            return active_power_plan_name()
     try:
         data = ps(MEASURE_QUERY)
     except Exception:  # noqa: BLE001 - R-07: a mensagem original não é guardada
@@ -172,6 +184,12 @@ def read_measure(ps=None, env=None):
     result = parse_measure(data, env)
     if all(result[key] is None for key in METRICS):
         raise MeasureError()
+    if result['power_plan'] is None:
+        try:
+            name = plan_name()
+        except Exception:  # noqa: BLE001 - R-07: a mensagem original não é guardada
+            name = None
+        result['power_plan'] = _plan_name(name, _env(env))
     return result
 
 

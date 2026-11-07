@@ -80,29 +80,116 @@ def _data_list(value):
     return value if isinstance(value, list) else [value]
 
 
-def available_power_plans():
-    """Parse GUIDs independently of OS localization (pt-BR, en-US, etc.)."""
-    out = _run(['powercfg', '/list'])
+# FIX-M3-T4: só os 4 planos padrão do Windows (GUIDs fixos). Usada só quando o
+# nome lido do Windows vem vazio ou ilegível ('\ufffd', ex.: powercfg em cp850).
+STANDARD_POWER_PLANS = {
+    BALANCED_GUID: 'Equilibrado',
+    '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c': 'Alto desempenho',
+    'a1841308-3541-4fab-bc81-f71556f20b4a': 'Economia de energia',
+    'e9a42b02-d5df-448d-aa00-03f14749eb61': 'Desempenho máximo',
+}
+_UNREADABLE = '\ufffd'
+_CONTROL_CHARS = re.compile(r'[\x00-\x1f\x7f]')
+
+
+def _plan_tail(text: str, found) -> str:
+    """Nome entre parênteses depois do GUID ('  (Equilibrado) *' -> 'Equilibrado')."""
+    tail = text[found.end():].strip().rstrip('*').strip()
+    return tail.strip('() ')
+
+
+def parse_power_list(text) -> list:
+    """Função pura: saída de ``powercfg /list`` -> lista de planos (pode ser vazia).
+
+    Independe do idioma (pt-BR, en-US...): procura o GUID em cada linha.
+    """
     plans = []
-    for line in out.splitlines():
+    for line in str(text or '').splitlines():
         found = GUID_PATTERN.search(line)
         if not found:
             continue
         guid = found.group().lower()
-        tail = line[found.end():].strip().rstrip('*').strip()
-        label = tail.strip('() ') or guid
-        plans.append({'guid': guid, 'name': label, 'active': '*' in line[found.end():]})
+        plans.append({'guid': guid, 'name': _plan_tail(line, found) or guid,
+                      'active': '*' in line[found.end():]})
+    return plans
+
+
+def parse_active_scheme(text):
+    """Função pura: saída de ``powercfg /getactivescheme`` -> (guid, nome) ou (None, None)."""
+    for line in str(text or '').splitlines():
+        found = GUID_PATTERN.search(line)
+        if found:
+            return found.group().lower(), (_plan_tail(line, found) or None)
+    return None, None
+
+
+def _readable_name(name, guid):
+    """Nome legível para o usuário, ou None (vazio, ilegível, igual ao GUID ou com controle)."""
+    if not isinstance(name, str):
+        return None
+    name = name.strip()
+    if (not name or _UNREADABLE in name or _CONTROL_CHARS.search(name)
+            or name.lower() == guid or GUID_PATTERN.fullmatch(name)):
+        return None
+    return name
+
+
+def power_plan_name(guid, plans):
+    """Nome do plano ``guid``: o da lista do Windows; se ilegível, o da tabela fixa
+    (só os 4 planos padrão); senão None. Nunca devolve texto com '\ufffd'."""
+    if not isinstance(guid, str) or not GUID_PATTERN.fullmatch(guid.strip()):
+        return None
+    guid = guid.strip().lower()
+    for plan in plans if isinstance(plans, list) else []:
+        if isinstance(plan, dict) and str(plan.get('guid') or '').lower() == guid:
+            name = _readable_name(plan.get('name'), guid)
+            if name:
+                return name
+    return STANDARD_POWER_PLANS.get(guid)
+
+
+def available_power_plans():
+    """Parse GUIDs independently of OS localization (pt-BR, en-US, etc.)."""
+    plans = parse_power_list(_run(['powercfg', '/list']))
     if not plans:
         raise OptimizationError('O Windows não informou nenhum plano de energia.')
     return plans
 
 
 def active_power_guid():
-    out = _run(['powercfg', '/getactivescheme'])
-    match = GUID_PATTERN.search(out)
-    if not match:
+    guid, _name = parse_active_scheme(_run(['powercfg', '/getactivescheme']))
+    if not guid:
         raise OptimizationError('Não foi possível identificar o plano ativo.')
-    return match.group().lower()
+    return guid
+
+
+def active_power_plan_name():
+    """FIX-M3-T4: nome do plano ativo, só leitura (``/getactivescheme`` e ``/list``).
+
+    Erro em ``/getactivescheme`` sobe como OptimizationError; erro em ``/list``
+    só faz usar o nome da outra consulta. Nome ilegível = None.
+    """
+    guid, name = parse_active_scheme(_run(['powercfg', '/getactivescheme']))
+    if not guid:
+        raise OptimizationError('Não foi possível identificar o plano ativo.')
+    try:
+        plans = parse_power_list(_run(['powercfg', '/list']))
+    except OptimizationError:
+        plans = []
+    return power_plan_name(guid, plans + [{'guid': guid, 'name': name}])
+
+
+def power_plan_text(power) -> str:
+    """Texto do diagnóstico: 'Nome (GUID)'; sem nome, só o GUID; sem nada, 'indisponível'."""
+    power = power if isinstance(power, dict) else {}
+    guid = power.get('active_guid')
+    if not isinstance(guid, str) or not GUID_PATTERN.fullmatch(guid.strip()):
+        return 'indisponível'
+    guid = guid.strip().lower()
+    name = _readable_name(power.get('active_name'), guid)
+    if name is None and 'active_name' not in power:
+        name = power_plan_name(guid, power.get('plans'))
+    return f'{name} ({guid})' if name else guid
 
 
 def inspect_pc():
@@ -139,7 +226,9 @@ def inspect_pc():
     try:
         plans = available_power_plans()
         active = active_power_guid()
-        result['power'] = {'plans': plans, 'active_guid': active}
+        # FIX-M3-T4: active_name fica só na memória (fora de _EXPORT_COLUMNS).
+        result['power'] = {'plans': plans, 'active_guid': active,
+                           'active_name': power_plan_name(active, plans)}
         result['checks'].append({'type': 'power', 'state': 'observado',
                                  'message': 'Plano de energia detectado. Alterar pode aumentar consumo e calor, sem ganho garantido.'})
     except OptimizationError:
