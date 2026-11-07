@@ -45,7 +45,7 @@ outro tipo = ``NotSupportedError`` (texto neutro, R-57: "o app não mexe: ele
 não reconheceu esta opção neste PC"). FIX-M3-T2: com a versão conferida e a
 chave existente, o valor ``HwSchMode`` ausente (comum no Windows 11) =
 ``WindowsDefaultError``, estado ``windows_default``: o Windows usa o padrão da
-placa de vídeo e do driver, que o app não lê; o texto diz onde conferir. Ausente
+programa da placa de vídeo (driver), que o app não lê; o texto diz onde conferir. Ausente
 nunca vira "já aplicado" (R-65) e o app não cria o valor (aplicar e desfazer
 recusam sem gravar). O adaptador nunca cria nem apaga a chave ou o valor: só
 abre a chave que já existe e troca o número.
@@ -82,15 +82,19 @@ MSG_NOT_SUPPORTED = ('Por segurança, o app não mexe: ele não reconheceu esta 
 # FIX-M3-T2 (R-65/R-66): valor ausente com chave e versão conferidas. Só manda
 # conferir a tela (nunca "ligue"); cita o nome atual com o antigo entre parênteses.
 _WINDOWS_DEFAULT_BODY = ('o app não mexe: neste PC a opção não tem valor gravado, e o Windows usa '
-                         'o padrão da placa de vídeo e do driver, que o app não consegue ler. '
+                         'o padrão do programa da placa de vídeo (driver), que o app não '
+                         'consegue ler. '
                          'Para ver se está ligada: Configurações > Sistema > Tela > Elementos '
                          'gráficos > "Configurações gráficas avançadas" (em versões anteriores, '
                          '"Alterar configurações gráficas padrão").')
 MSG_WINDOWS_DEFAULT = 'O' + _WINDOWS_DEFAULT_BODY[1:] + ' Nada foi alterado.'
 # Revisão da PR #211: no "Desfazer", diz claramente que o desfazer não foi feito.
+# FIX-M3-T2-01 (R-68): o texto também aparece no lote ("N desfeita(s)... Motivo: ..."),
+# então fala só deste ajuste, nunca "Nada foi alterado" geral.
 MSG_UNDO_WINDOWS_DEFAULT = ('Não foi possível desfazer: o valor desta opção foi apagado fora do '
-                            'app, e o Windows passou a usar o padrão do driver. Nada foi '
-                            'alterado; o ajuste continua na lista de alterações.')
+                            'app, e o Windows passou a usar o padrão do programa da placa de '
+                            'vídeo (driver). Este ajuste não foi alterado e continua na lista '
+                            'de alterações.')
 MEASURE_BEFORE_HINT = 'Para comparar, meça ANTES na aba 1 antes de aplicar.'
 
 

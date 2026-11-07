@@ -1,8 +1,8 @@
 """FIX-M3-T2: agendamento de GPU com o valor ``HwSchMode`` ausente (Windows 11).
 
 Com a versão do Windows conferida (19041 ou mais) e a chave GraphicsDrivers
-existente, o valor ausente quer dizer que o Windows usa o padrão da placa de
-vídeo e do driver, que o app não lê. O estado é ``windows_default``: nunca "já
+existente, o valor ausente quer dizer que o Windows usa o padrão do programa
+da placa de vídeo (driver), que o app não lê. O estado é ``windows_default``: nunca "já
 aplicado" (R-65), o app não cria o valor e o texto diz onde conferir.
 
 Só registro falso em memória (``tests/fake_winreg.py``), ponto de restauração
@@ -122,7 +122,7 @@ class TextTests(unittest.TestCase):
             self.assertIn('"Configurações gráficas avançadas"', text)
             self.assertIn('(em versões anteriores, "Alterar configurações gráficas padrão")', text)
             self.assertIn('Configurações > Sistema > Tela > Elementos gráficos', text)
-            self.assertIn('padrão da placa de vídeo e do driver', text)
+            self.assertIn('padrão do programa da placa de vídeo (driver)', text)
             self.assertIn('o app não consegue ler', text)
             self.assertIn('não mexe', text)
             lower = text.lower()
@@ -192,12 +192,12 @@ class JournalTests(Base):
         self.assertTrue(pending)
         self.assertEqual(reason, at.MSG_UNDO_WINDOWS_DEFAULT)
         self.assertEqual(reason, 'Não foi possível desfazer: o valor desta opção foi apagado fora '
-                                 'do app, e o Windows passou a usar o padrão do driver. Nada foi '
-                                 'alterado; o ajuste continua na lista de alterações.')
+                                 'do app, e o Windows passou a usar o padrão do programa da placa '
+                                 'de vídeo (driver). Este ajuste não foi alterado e continua na '
+                                 'lista de alterações.')
         # Desfazer um item só dá o mesmo motivo.
         ok, single = journal.undo(journal.entries()[0]['id'])
         self.assertEqual((ok, single), (False, at.MSG_UNDO_WINDOWS_DEFAULT))
-        self.assertEqual(self.writes(), [])
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.snapshot(), before)
         self.assertIsNone(self.current())   # não recriado
