@@ -3,7 +3,7 @@
 Só lê arquivos do repositório (e um módulo sintético em TemporaryDirectory):
 sem disco real, sem Tk e sem rodar o app.
 
-R-61/R-62: um nome citado entre aspas no manual precisa ser rótulo (text=,
+R-62 (inclui a antiga R-61, poda de 06/11/2026): um nome citado entre aspas no manual precisa ser rótulo (text=,
 _nav_entry/_nav_action ou a lista de abas/etapas que a função usa) DENTRO da
 função que monta a tela citada, e essa função precisa ser alcançável a partir
 de App.__init__, seguindo chamadas e referências por nome com ``ast``.
