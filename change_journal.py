@@ -76,7 +76,8 @@ MSG_UNDO_UNKNOWN_NOT_NOTED = ('O app tentou desfazer o ajuste no sistema, mas n�
                               'e o diário não pôde ser anotado; confira manualmente e '
                               'feche e abra o app de novo.')
 NOTE_UNDO = 'desfazer'
-MSG_UNDO_NOT_READ = 'Não foi possível ler o valor atual; nada foi desfeito.'
+# FIX-M3-T2-01 (R-68): também é o motivo do lote no "Desfazer tudo"; fala só deste ajuste.
+MSG_UNDO_NOT_READ = 'Não foi possível ler o valor atual; este ajuste não foi desfeito.'
 MSG_BATCH_SAVE_FAILED = 'Não foi possível gravar o diário; os ajustes deste lote foram desfeitos.'
 MSG_BATCH_SAVE_FAILED_CHECK = ('Não foi possível gravar o diário; confira manualmente: '
                                '{n} ajuste(s) não voltaram ao valor anterior.')

@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 11 (última poda: 06/11/2026, pedido `regras-20261106-poda-r45-r56`, issue #203). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-57 (já chegaram: R-57 a R-67).
+poda: 12 (última poda: 06/11/2026, pedido `regras-20261106-poda-r45-r56`, issue #203). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-57 (já chegaram: R-57 a R-68).
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -82,3 +82,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-65 | Diagnóstico só diz "provavelmente ligado" ou "sim" com um sinal que, no caso conhecido, nunca aparece com o recurso desligado; indício que já foi visto com o recurso desligado (ex.: janela de memória > 256 MiB com Resizable BAR desligado) vira "não confirmado", com o motivo e onde conferir, e tem teste com esse caso simulado. | FIX-M3-T1 (RTX 5070, driver 621.01), issue #207 | 2026-11-06 |
 | R-66 | Estado "o app não mexe" de um ajuste separa "valor ausente com a chave e o Windows conferidos" (padrão do Windows/driver, com onde conferir) de "não reconhecido"; ausente nunca vira "já aplicado" nem é criado pelo app, e o texto cita o nome atual da tela do Windows com o antigo entre parênteses. Tem teste com o valor ausente simulado (substitui, na R-57, o caso valor ausente com versão e chave conferidas). | FIX-M3-T2 (Windows 11 build 26300), issue #207 | 2026-11-07 |
 | R-67 | Regra nova que muda o caso de outra regra (ex.: R-66 tira "valor ausente" do texto neutro da R-57) diz na própria linha qual regra e qual caso ela substitui; a regra antiga é ajustada na próxima poda. | Revisão da PR #211 (FIX-M3-T2) | 2026-11-07 |
+| R-68 | Motivo de recusa de um item que pode aparecer numa mensagem de lote ("N desfeita(s)… Motivo: …") fala só do item ("este ajuste não foi alterado/desfeito"), nunca "Nada foi alterado/desfeito" geral; tem teste com um item desfeito antes da recusa. | Revisão 2 da PR #211 (FIX-M3-T2, 259c7e6acf2f) | 2026-11-07 |
