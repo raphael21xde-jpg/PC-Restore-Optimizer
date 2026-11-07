@@ -69,10 +69,8 @@ class DefaultsTableTests(unittest.TestCase):
     def test_absent_defaults_are_the_ones_confirmed_on_windows(self):
         self.assertEqual(st.TWEAK_VALUES['game_mode'].absent_default, 1)
         self.assertEqual(st.TWEAK_VALUES['historical_capture'].absent_default, 0)
-        # Sem o valor, a transparência fica ligada: o oposto do desejado.
-        self.assertEqual(st.TWEAK_VALUES['transparency'].absent_default, 1)
-        self.assertNotEqual(st.TWEAK_VALUES['transparency'].absent_default,
-                            st.TWEAK_VALUES['transparency'].desired)
+        # Transparência: padrão não confirmado no Windows real = desconhecido.
+        self.assertIsNone(st.TWEAK_VALUES['transparency'].absent_default)
 
     def test_default_of_new_registry_value_is_unknown(self):
         value = st.RegistryValue('x', r'Software\X', 'X', 1, 'X')

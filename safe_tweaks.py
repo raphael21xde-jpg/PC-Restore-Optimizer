@@ -24,8 +24,11 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
 - o Game Bar muda só "Gravar o que aconteceu" (``HistoricalCaptureEnabled``):
   print e gravar na hora continuam como estavam (escolha do coordenador);
 - FIX-M3-T5: valor ausente = padrão efetivo do Windows (``absent_default``),
-  só quando esse padrão foi confirmado no Windows real (issue #207): Modo de
-  Jogo ligado (1) e "Gravar o que aconteceu" desligado (0). Se o padrão já é o
+  só quando esse padrão foi confirmado no Windows real: Modo de Jogo ligado (1)
+  e "Gravar o que aconteceu" desligado (0), vistos no Windows 11 build 26300
+  (PC do Raphael, issue #207). O código não confere a versão do Windows: no
+  pior caso (outra versão com outro padrão) o app só deixa de oferecer o
+  ajuste, sem gravar nada. Transparência: padrão não confirmado (``None``). Se o padrão já é o
   desejado, o ajuste aparece como "já aplicado (padrão do Windows)", não entra
   no lote e o app nunca grava o valor padrão por cima do ausente. Padrão
   desconhecido (``None``) = ausente continua "ainda não aplicado". O desfazer
@@ -68,7 +71,8 @@ class RegistryValue:
     desired: int    # valor que o ajuste grava
     label: str      # nome curto para a aba "Alterações feitas"
     # FIX-M3-T5: o que o Windows usa quando o valor não existe (confirmado no
-    # Windows real). None = desconhecido: ausente continua "ainda não aplicado".
+    # Windows real; Windows 11 build 26300, issue #207). None = desconhecido:
+    # ausente continua "ainda não aplicado".
     absent_default: int | None = None
 
 
@@ -114,9 +118,9 @@ SAFE_TWEAKS = (
         when='Vale na hora.',
         values=(RegistryValue('transparency', r'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize',
                               'EnableTransparency', 0, 'Efeitos de transparência',
-                              # Sem o valor a transparência fica ligada: o oposto do
-                              # desejado, então ausente continua "ainda não aplicado".
-                              absent_default=1),),
+                              # Padrão sem o valor não confirmado no Windows real:
+                              # desconhecido, então ausente continua "ainda não aplicado".
+                              absent_default=None),),
     ),
 )
 TWEAKS_BY_ID = {tweak.id: tweak for tweak in SAFE_TWEAKS}
