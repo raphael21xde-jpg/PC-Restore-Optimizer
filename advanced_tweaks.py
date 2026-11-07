@@ -57,7 +57,7 @@ import re
 from dataclasses import dataclass
 
 # FIX-M3-T3: a frase do ponto de restauração fica num lugar só (safe_tweaks).
-from safe_tweaks import restore_point_sentence, restore_point_when  # noqa: F401
+from safe_tweaks import restore_point_sentence
 
 ADVANCED_KIND = 'hkcu_sz_advanced'
 MACHINE_KIND = 'hklm_dword_advanced'

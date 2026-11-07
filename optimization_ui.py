@@ -72,16 +72,26 @@ MEASURE_HISTORY_REFUSED=('Não foi possível ler as medições guardadas, então
 
 # ---------- P3-03 fatia 2a: textos da troca de plano (sem caminhos, R-07) ----------
 POWER_ADMIN_TEXT = (
-    'Para trocar o plano de energia, o app cria antes um ponto de restauração do Windows, '
-    'e isso só funciona com o app aberto como administrador. O app nunca pede isso sozinho. '
+    'Para trocar o plano de energia, o app cria antes um ponto de restauração do Windows '
+    'ou usa o que o próprio app criou nas últimas 24 horas, e isso só funciona com o app '
+    'aberto como administrador. O app nunca pede isso sozinho. '
     'Se quiser trocar o plano: feche o app, clique com o botão direito no atalho dele e '
     'escolha "Executar como administrador". Depois, para fazer backup ou restaurar, abra o '
     'app de novo do jeito normal. Desfazer uma troca funciona sem administrador.')
 POWER_RESTORE_POINT_HELP = (
     'Possíveis motivos: a Proteção do sistema está desligada no disco do Windows, ou o '
     'Windows já criou um ponto de restauração nas últimas 24 horas (ele não cria outro '
-    'antes disso). O app só reaproveita um ponto criado por ele mesmo nas últimas 24 horas. '
+    'antes disso). Antes de mudar algo, o app cria um ponto de restauração ou usa o que o '
+    'próprio app criou nas últimas 24 horas; um ponto criado por outro programa não serve. '
     'O app não liga a Proteção do sistema sozinho.')
+# FIX-M3-T3-01: andamento da troca de plano (criar um ponto novo ou conferir o do app).
+POWER_CHECKING_TEXT = 'Conferindo o diário de alterações e o ponto de restauração…'
+POWER_RUNNING_TEXT = 'Criando o ponto de restauração e trocando o plano… Isto pode demorar um pouco.'
+POWER_RUNNING_REUSE_TEXT = ('Conferindo o ponto de restauração e trocando o plano… '
+                            'Isto pode demorar um pouco.')
+POWER_CANCEL_TEXT = 'Troca cancelada. Nada foi alterado.'
+# R-74: a pergunta cita o rótulo exato do botão de desfazer da aba 4 (o mesmo de _build_power).
+POWER_UNDO_BUTTON_TEXT = 'Desfazer minha última mudança'
 POWER_LEGACY_TEXT = (
     'Existe uma troca de plano feita por uma versão antiga do app. Por segurança, novas '
     'trocas ficam bloqueadas até ela ser desfeita. Use "Desfazer alteração antiga".')
@@ -1087,7 +1097,8 @@ class OptimizationPanel(tk.Frame):
                  wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
         self.power_text=self._text_area(area)
         intro=['Nenhum plano consultado. Clique em Atualizar.',
-               'Ao aplicar: o app cria antes um ponto de restauração do Windows e anota a troca no diário de alterações.',
+               'Ao aplicar: o app cria antes um ponto de restauração do Windows ou usa o que o próprio app criou '
+               'nas últimas 24 horas, e anota a troca no diário de alterações.',
                'Se um programa externo mudar o plano depois, o Desfazer não sobrescreve a escolha dele.']
         if self.journal_error:
             intro=[self._journal_error_text()]
@@ -1202,12 +1213,27 @@ class OptimizationPanel(tk.Frame):
         except Exception:
             return None
 
+    def _journal_changed_outside(self):
+        """FIX-M3-T3-01 (no Job): só leitura. O texto do erro se o diário mudou por fora, senão None."""
+        journal=self.journal
+        if journal is None or self.journal_error:
+            return None  # quem chamou já recusa antes da pergunta
+        try:
+            journal.check_unchanged()
+        except JournalError as exc:
+            return str(exc)
+        return None
+
     def _checked_read_tweaks_for_apply_work(self):
         """Roda no Job do botão aplicar: a leitura de sempre e, só com a mesma conta e
         leitura ok, confere se o ponto de restauração do app ainda vale (FIX-M3-T3)."""
         outcome=self._checked_read_tweaks_work()
         if outcome.get('account')==session_owner.SAME and outcome.get('tweaks') is not None:
-            outcome['reuse_at']=self._reuse_at_for_apply()
+            changed=self._journal_changed_outside()
+            if changed is not None:
+                outcome['journal']=changed
+            else:
+                outcome['reuse_at']=self._reuse_at_for_apply()
         return outcome
 
     def _tweaks_account_refused(self,outcome):
@@ -1271,6 +1297,12 @@ class OptimizationPanel(tk.Frame):
         if states is None:
             self.tweaks_status.set(TWEAKS_READ_FAILED_TEXT)
             self._show('warning',TWEAKS_TITLE,TWEAKS_READ_FAILED_TEXT)
+            return
+        if outcome.get('journal'):
+            # FIX-M3-T3-01: diário mudado por fora = recusa antes da pergunta (R-30: texto completo).
+            message=(outcome['journal']+' '+TWEAKS_JOURNAL_OFF_TEXT).strip()
+            self.tweaks_status.set(message)
+            self._journal_failed(message,title=TWEAKS_TITLE,off_text=None)
             return
         changes=safe_tweaks.pending_changes(states)
         tweaks=safe_tweaks.pending_tweaks(states)
@@ -1425,7 +1457,11 @@ class OptimizationPanel(tk.Frame):
         leitura ok, confere se o ponto de restauração do app ainda vale (FIX-M3-T3)."""
         outcome=self._checked_read_advanced_work()
         if outcome.get('account')==session_owner.SAME and outcome.get('advanced') is not None:
-            outcome['reuse_at']=self._reuse_at_for_apply()
+            changed=self._journal_changed_outside()
+            if changed is not None:
+                outcome['journal']=changed
+            else:
+                outcome['reuse_at']=self._reuse_at_for_apply()
         return outcome
 
     def _advanced_account_refused(self,outcome):
@@ -1487,6 +1523,12 @@ class OptimizationPanel(tk.Frame):
         if states is None:
             self.advanced_status.set(ADVANCED_READ_FAILED_TEXT)
             self._show('warning',ADVANCED_TITLE,ADVANCED_READ_FAILED_TEXT)
+            return
+        if outcome.get('journal'):
+            # FIX-M3-T3-01: diário mudado por fora = recusa antes da pergunta (R-30: texto completo).
+            message=(outcome['journal']+' '+ADVANCED_JOURNAL_OFF_TEXT).strip()
+            self.advanced_status.set(message)
+            self._journal_failed(message,title=ADVANCED_TITLE,off_text=None)
             return
         item=advanced_tweaks.state_for(states,tweak.id) or {}
         state=item.get('state')
@@ -2110,15 +2152,46 @@ class OptimizationPanel(tk.Frame):
             self.power_status.set(POWER_ADMIN_TEXT)
             self._show('warning','Plano de energia',POWER_ADMIN_TEXT)
             return
+        # FIX-M3-T3-01: o diário e o ponto do app são conferidos num Job (R-10), antes da pergunta.
+        self.power_status.set(POWER_CHECKING_TEXT)
+        self._run_power_job(self._power_reuse_work,lambda outcome:self._power_ready(outcome,target))
+
+    def _power_reuse_work(self):
+        """FIX-M3-T3-01 (no Job do Aplicar): só leitura. O diário mudou por fora? O ponto do app vale?
+
+        Diário mudado = {'journal': texto}, sem conferir o ponto. Senão {'reuse_at': data ou None};
+        qualquer erro na conferência do ponto = None (o app tenta criar um ponto novo)."""
+        changed=self._journal_changed_outside()
+        if changed is not None:
+            return {'journal':changed}
+        return {'reuse_at':self._reuse_at_for_apply()}
+
+    def _power_ready(self,outcome,target):
+        if outcome.get('journal'):
+            # Diário mudado por fora: recusa sem perguntar e sem rodar nada.
+            self.power_status.set('')
+            self._journal_failed(outcome['journal'])
+            return
+        if 'reuse_at' not in outcome:
+            # O Job falhou: texto fixo (R-07), nada foi mudado.
+            self.power_status.set(POWER_GENERIC_FAIL)
+            self._show('error','Plano de energia',POWER_GENERIC_FAIL)
+            return
+        journal=self.journal
+        if journal is None or self.journal_error:
+            self.power_status.set('')
+            self._show('error','Plano de energia',self._journal_error_text())
+            return
+        reuse_at=outcome.get('reuse_at')
         if not self._ask('Confirmar alteração reversível',
                 'Deseja selecionar o plano “'+target['name']+'” no Windows?\n\n'
                 'Pode alterar temperatura, consumo e autonomia. Sem ganho de FPS garantido.\n'
-                'Antes, o app cria um ponto de restauração do Windows e anota a troca no diário de alterações, '
-                'para você poder desfazer.\n\n'
+                +safe_tweaks.restore_point_sentence(reuse_at)+
+                ' Para voltar, use o botão "'+POWER_UNDO_BUTTON_TEXT+'" desta aba.\n\n'
                 'Esta é uma alteração real do sistema, não apenas um teste.'):
+            self.power_status.set(POWER_CANCEL_TEXT)
             return
         guid=target['guid']
-        journal=self.journal
         def work():
             try:
                 if journal.has_blocking():
@@ -2131,7 +2204,8 @@ class OptimizationPanel(tk.Frame):
                 except Exception:
                     pass
                 self.state_dir.mkdir(parents=True,exist_ok=True)
-                journal.apply_batch([{'kind':POWER_KIND,'key':POWER_KEY,'after':guid}])
+                journal.apply_batch([{'kind':POWER_KIND,'key':POWER_KEY,'after':guid}],
+                                    reuse_restore_point=reuse_at is not None)
                 outcome={'status':'applied'}
             except BatchRefused as exc:
                 outcome={'status':'refused','message':str(exc)}
@@ -2141,7 +2215,7 @@ class OptimizationPanel(tk.Frame):
                 outcome={'status':'error'}
             outcome.update(self._read_plans_work())
             return outcome
-        self.power_status.set('Criando o ponto de restauração e trocando o plano… Isto pode demorar um pouco.')
+        self.power_status.set(POWER_RUNNING_TEXT if reuse_at is None else POWER_RUNNING_REUSE_TEXT)
         self._run_power_job(work,self._apply_done)
 
     def _after_power_job(self,outcome):
@@ -2165,7 +2239,8 @@ class OptimizationPanel(tk.Frame):
             self._journal_failed(outcome.get('message',''))
         elif status=='refused':
             message=outcome.get('message','')
-            if 'ponto de restauração' in message:
+            # FIX-M3-T3-01: a ajuda das 24 h só vale quando o app tentou criar o ponto.
+            if message==MSG_RESTORE_POINT_FAILED:
                 message+=' '+POWER_RESTORE_POINT_HELP
             self.power_status.set(message)
             self._show('warning','Plano de energia',message)

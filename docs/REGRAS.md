@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 5 (última poda: 06/11/2026, pedido `regras-20261107-poda-r57-r67`, issue #212). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-68 (já chegaram: R-68 a R-72).
+poda: 5 (última poda: 06/11/2026, pedido `regras-20261107-poda-r57-r67`, issue #212). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-68 (já chegaram: R-68 a R-74).
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -87,3 +87,5 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-70 | Poda que ajusta uma regra (tira dela um caso que passou para outra) mantém, para cada caso que fica na regra, a exigência de teste que ele já tinha; o caso que sai é citado com a regra que agora o cobre. | Revisão da PR #215 (fc6ea3e173b1) | 2026-11-07 |
 | R-71 | Reaproveitar um ponto de restauração só vale para ponto criado e anotado pelo próprio app, confirmado no Windows (sequência, descrição e hora) antes da pergunta e de novo antes de aplicar, com menos de 24 h; na dúvida, recusa sem aplicar nada; o app nunca muda a frequência de pontos do Windows; tem teste com o ponto sumido entre a pergunta e o aplicar. | FIX-M3-T3, teste real do M3 (issue #207) | 2026-11-07 |
 | R-72 | Mudança de comportamento que altera a pergunta ou o texto de uma ação também reescreve, no mesmo commit, os textos de introdução e de ajuda da mesma aba e o trecho do manual que descrevem esse passo (grep na frase antiga dá zero fora de testes de "texto antigo"); tem teste com a frase nova. | Revisão da PR #216 (FIX-M3-T3, 78ffbfe95242) | 2026-11-07 |
+| R-73 | Texto de ajuda ou trecho do manual compartilhado por várias abas, que descreve um comportamento novo, diz para quais abas ele vale; aba que ainda não tem o comportamento (item pendente no backlog) é citada como exceção no mesmo trecho, e a ajuda mostrada nela não promete o comportamento; tem teste com o texto da aba de fora. | Revisão da PR #216 (FIX-M3-T3, 8f5c9accbcba) | 2026-11-07 |
+| R-74 | Pergunta, aviso ou status que manda o usuário usar um botão cita o rótulo exato desse botão, entre aspas, e a aba onde ele fica; nunca um nome encurtado quando a tela tem mais de um botão parecido; tem teste que confere a frase e o rótulo na função que monta a tela. | Revisão da PR #217 (FIX-M3-T3-01, d9b047745612) | 2026-11-07 |

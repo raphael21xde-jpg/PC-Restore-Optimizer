@@ -508,7 +508,8 @@ class TextTests(unittest.TestCase):
         self.assertEqual(st.restore_point_when(yesterday, self.now), 'ontem às 20:05')
         self.assertEqual(st.restore_point_when(today.astimezone(timezone.utc), self.now),
                          'hoje às 16:16')
-        self.assertIs(at.restore_point_when, st.restore_point_when)
+        # FIX-M3-T3-01: advanced_tweaks não reexporta mais restore_point_when.
+        self.assertFalse(hasattr(at, 'restore_point_when'))
 
     def test_safe_question_mentions_the_point(self):
         tweaks = list(st.SAFE_TWEAKS)
@@ -556,7 +557,8 @@ class IntroAndManualTextTests(unittest.TestCase):
         self.assertIn('o app cria antes um ponto de restauração ou ' + self.NEW, ou.ADVANCED_INTRO_TEXT)
         self.assertIn('(ou confere o que o próprio app criou nas últimas 24 horas)',
                       ou.TWEAKS_ADMIN_TEXT)
-        self.assertIn('O app só reaproveita um ponto criado por ele mesmo nas últimas 24 horas.',
+        self.assertIn('o app cria um ponto de restauração ou ' + self.NEW
+                      + '; um ponto criado por outro programa não serve.',
                       ou.POWER_RESTORE_POINT_HELP)
         for text in (ou.TWEAKS_INTRO_TEXT, ou.ADVANCED_INTRO_TEXT):
             self.assertNotIn('cria um ponto de restauração e anota', text)
