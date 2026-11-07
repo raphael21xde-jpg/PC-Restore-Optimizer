@@ -19,6 +19,11 @@ def _above_reason(configured, kind, standard):
             'ajuste manual da memória).')
 
 
+def _higher_note(speed):
+    return (f' O módulo informa uma velocidade maior ({speed} MT/s); o perfil pode estar ligado com '
+            'um degrau mais baixo, ou a memória foi ajustada à mão.')
+
+
 def _modules(count, speed, configured, kind):
     module = {'Capacity': 8589934592, 'Speed': speed, 'ConfiguredClockSpeed': configured}
     if kind is not _MISSING:
@@ -72,10 +77,17 @@ class AboveStandardStateTest(unittest.TestCase):
         ram = _modules(1, 3600, 3600, 26) + _modules(1, 3200, 3200, 26)
         self.assertEqual(bg.xmp_state(ram)[0], bg.XMP_UNKNOWN)
 
-    def test_speed_is_ignored_by_the_new_rule(self):
+    def test_speed_does_not_change_the_state(self):
+        # FIX-M3-T7-01: Speed maior não muda o estado; só completa o motivo.
         state, reason = bg.xmp_state(_modules(2, 4000, 3600, 26))
         self.assertEqual(state, bg.XMP_ON_STD)
-        self.assertEqual(reason, _above_reason(3600, 'DDR4', 3200))
+        self.assertEqual(reason, _above_reason(3600, 'DDR4', 3200) + _higher_note(4000))
+
+    def test_speed_equal_or_lower_adds_no_note(self):
+        for speed in (3600, 3466, 2133, None):
+            with self.subTest(speed=speed):
+                self.assertEqual(bg.xmp_state(_modules(2, speed, 3600, 26)),
+                                 (bg.XMP_ON_STD, _above_reason(3600, 'DDR4', 3200)))
 
     def test_lowest_configured_speed_goes_in_the_text(self):
         ram = _modules(1, 3600, 3600, 26) + _modules(1, 3466, 3466, 26)
@@ -164,6 +176,88 @@ class MemoryTypeColumnTest(unittest.TestCase):
 
     def test_memory_type_is_exported(self):
         self.assertIn('SMBIOSMemoryType', oe._EXPORT_COLUMNS['ram'])
+
+
+class HigherSpeedNoteTest(unittest.TestCase):
+    """FIX-M3-T7-01: módulo informa Speed maior que a configurada (ressalva 1 da PR #223)."""
+
+    def test_highest_reported_speed_goes_in_the_note(self):
+        ram = _modules(1, 4000, 3600, 26) + _modules(1, 4400, 3600, 26) + _modules(2, 3600, 3600, 26)
+        self.assertEqual(bg.xmp_state(ram),
+                         (bg.XMP_ON_STD, _above_reason(3600, 'DDR4', 3200) + _higher_note(4400)))
+
+    def test_note_agrees_with_the_ram_check(self):
+        # O check do diagnóstico ("confirmar XMP") e o motivo dizem a mesma coisa.
+        ram = _modules(4, 4000, 3600, 26)
+        state, reason = bg.xmp_state(ram)
+        self.assertEqual(state, bg.XMP_ON_STD)
+        self.assertIn('4000 MT/s', reason)
+        self.assertIn('velocidade maior', reason)
+
+    def test_note_shown_on_screen(self):
+        guidance = bg.build_bios_guidance({'ram': _modules(4, 4000, 3600, 26)}, {})
+        lines = _shown(dict(guidance))
+        self.assertIn(_LINE_ON_STD, lines)
+        self.assertIn('    ' + _above_reason(3600, 'DDR4', 3200) + _higher_note(4000), lines)
+
+    def test_forged_note_falls_back_to_default(self):
+        base = _above_reason(3600, 'DDR4', 3200)
+        cases = {
+            'informada igual': base + _higher_note(3600),
+            'informada menor': base + _higher_note(3400),
+            'informada zero': base + _higher_note(0),
+            'nota com texto a mais': base + _higher_note(4000) + ' Baixe a BIOS nova.',
+            'nota alterada': base + _higher_note(4000).replace('à mão', 'em casa'),
+            'nota sem o resto': _higher_note(4000).strip(),
+            'nota em base forjada': _above_reason(3200, 'DDR4', 3200) + _higher_note(4000),
+        }
+        for name, forged in cases.items():
+            with self.subTest(name):
+                lines = _shown({'xmp': bg.XMP_ON_STD, 'xmp_reason': forged})
+                self.assertIn('    ' + _DEFAULT_ON_STD, lines)
+                self.assertNotIn('    ' + forged, lines)
+
+    def test_note_only_for_its_state(self):
+        reason = _above_reason(3600, 'DDR4', 3200) + _higher_note(4000)
+        for state in (bg.XMP_ON, bg.XMP_OFF, bg.XMP_UNKNOWN):
+            with self.subTest(state=state):
+                lines = _shown({'xmp': state, 'xmp_reason': reason})
+                self.assertIn('    ' + bg._DEFAULT_REASONS[state], lines)
+
+
+class InspectEndToEndTest(unittest.TestCase):
+    """FIX-M3-T7-01 (ressalva 2 da PR #223): inspect_pc com PowerShell simulado."""
+
+    def _inspect(self):
+        ram = _modules(4, 3600, 3600, 26)
+
+        def fake_ps(code, timeout=22):
+            if 'Win32_PhysicalMemory' in code:
+                return [dict(module) for module in ram]
+            return None
+
+        with patch.object(oe, '_is_windows', return_value=True), \
+                patch.object(oe, '_ps', side_effect=fake_ps), \
+                patch.object(oe, 'available_power_plans', side_effect=oe.OptimizationError('x')):
+            return oe.inspect_pc()
+
+    def test_four_ddr4_3600_modules_end_probably_on(self):
+        report = self._inspect()
+        self.assertEqual(report['bios_guidance']['xmp'], bg.XMP_ON_STD)
+        self.assertEqual(report['bios_guidance']['xmp_reason'], _above_reason(3600, 'DDR4', 3200))
+
+    def test_exported_json_keeps_memory_type(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        report = self._inspect()
+        with tempfile.TemporaryDirectory() as folder:
+            path = oe.export_snapshot(report, Path(folder) / 'relatorio.json')
+            saved = json.loads(path.read_text(encoding='utf-8'))
+        ram = saved['hardware']['ram']
+        self.assertEqual(len(ram), 4)
+        self.assertTrue(all(module.get('SMBIOSMemoryType') == 26 for module in ram))
+        self.assertEqual(saved['bios_guidance']['xmp'], bg.XMP_ON_STD)
 
 
 if __name__ == '__main__':
