@@ -67,6 +67,16 @@ CHANGE_LETTER_GUIDE = (
     '2. Ache a unidade certa pelo nome e pelo tamanho.\n'
     '3. Clique com o botão direito nela e escolha "Alterar letra de unidade e caminho".\n'
     '4. Clique em "Alterar", escolha a letra {letters} e confirme.\n'
+    'Cuidado: programas e atalhos que usam a letra que a unidade tinha antes da troca '
+    'param de achar os arquivos até essa letra voltar.\n'
+    'Depois de trocar, clique em "Abrir" na etapa "Conferir discos e letras" para conferir '
+    'de novo.\n'
+    'Para desfazer, volte para a letra que a unidade tinha antes da troca, pelo mesmo '
+    'caminho.\n'
+    'Se preferir não trocar a letra, ainda dá para restaurar os arquivos com "Restaurar '
+    'arquivos marcados para pasta nova", na janela que abre pelo "Abrir" da etapa '
+    '"Restaurar os arquivos"; só o "Colocar no lugar original", na mesma janela, precisa '
+    'que a unidade volte a ter a letra de quando o backup foi feito.\n'
     'Não mude a letra do disco do Windows. O aplicativo nunca troca letras sozinho.')
 
 _DRIVE_TYPES = {2: 'Removível (pendrive ou cartão)', 3: 'Disco local', 4: 'Unidade de rede',

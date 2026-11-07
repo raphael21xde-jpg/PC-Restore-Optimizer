@@ -608,7 +608,8 @@ class ManualTests(unittest.TestCase):
         for needed in ('bytes', '1.073.741.824', 'GB', 'não é garantido', 'desconecte o disco do backup',
                        'fora da tomada', 'cancele a instalação', 'Boot=True', 'System=True',
                        'abrir o gabinete', 'Conferir discos e letras',
-                       'param de achar os arquivos', 'troque de novo para a letra antiga'):
+                       'param de achar os arquivos',
+                       'volte para a letra que a unidade tinha antes da troca'):
             self.assertIn(needed, flat)
 
     def test_protected_copy_not_presented_as_ready(self):
