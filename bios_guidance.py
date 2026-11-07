@@ -139,8 +139,8 @@ _REASON_OFF = re.compile(r'^A memória está configurada a (\d{1,6}(?:\.\d+)?) M
 _REASON_ABOVE = re.compile(r'^A memória está configurada a (\d{1,6}(?:\.\d+)?) MT/s, acima do padrão '
                            r'oficial \(JEDEC\) do (DDR[345]), que é (\d{1,6}) MT/s\. Isso costuma '
                            r'indicar o perfil XMP/EXPO ligado \(ou um ajuste manual da memória\)\.'
-                           r'(?: O módulo informa uma velocidade maior \((\d{1,6}(?:\.\d+)?) MT/s\); o '
-                           r'perfil pode estar ligado com um degrau mais baixo, ou a memória foi '
+                           r'(?: Um dos módulos informa uma velocidade maior \((\d{1,6}(?:\.\d+)?) MT/s\); o '
+                           r'perfil pode estar ligado com um perfil mais lento, ou a memória foi '
                            r'ajustada à mão\.)?$')
 _DATE_MS = re.compile(r'^/Date\((-?\d{1,15})\)/$')
 _DATE_DIGITS = re.compile(r'^(\d{4})(\d{2})(\d{2})')
@@ -189,7 +189,8 @@ def _above_standard(modules):
     """(menor configurada, nome, padrão) se todos os módulos estão acima do padrão JEDEC; senão None.
 
     Todos com o mesmo tipo da tabela, configurada válida e padrão < configurada <= 2x
-    padrão (acima do dobro é dado estranho). O campo Speed não entra.
+    padrão (acima do dobro é dado estranho). O campo Speed não entra na decisão (o
+    motivo pode citá-lo, FIX-M3-T7-01).
     """
     kinds = {_memory_type(m.get('SMBIOSMemoryType')) for m in modules}
     if len(kinds) != 1 or None in kinds:
@@ -208,7 +209,8 @@ def xmp_state(ram):
     "não confirmado" com REASON_UNITS (metade exata); todos os módulos do mesmo tipo
     da tabela JEDEC_MAX_MTS com a configurada acima do padrão (até o dobro) é
     XMP_ON_STD, com a menor configurada no texto (FIX-M3-T7) e, se algum módulo
-    informa Speed maior que a própria configurada, a maior informada (FIX-M3-T7-01); depois a regra antiga:
+    informa Speed maior que a própria configurada, a maior informada, se ela for no
+    máximo o dobro do padrão (FIX-M3-T7-01); depois a regra antiga:
     "desligado" só com algum abaixo e nenhum acima; uns abaixo e outros acima é
     "não confirmado" com REASON_MIXED (módulos diferentes).
     """
@@ -228,10 +230,11 @@ def xmp_state(ram):
                   'XMP/EXPO ligado (ou um ajuste manual da memória).')
         # FIX-M3-T7-01: algum módulo informa mais que a configurada; o estado não muda
         # (sempre "provavelmente"), só o motivo diz isso, como o check "ram" do diagnóstico.
+        # Teto: informada acima do dobro do padrão é dado estranho; aí a frase não entra.
         higher = [s for s, c in complete if s > c]
-        if higher:
-            reason += (f' O módulo informa uma velocidade maior ({max(higher):g} MT/s); o perfil '
-                       'pode estar ligado com um degrau mais baixo, ou a memória foi ajustada à mão.')
+        if higher and max(higher) <= 2 * standard:
+            reason += (f' Um dos módulos informa uma velocidade maior ({max(higher):g} MT/s); o perfil '
+                       'pode estar ligado com um perfil mais lento, ou a memória foi ajustada à mão.')
         return XMP_ON_STD, reason
     below = [(s, c) for s, c in complete if c < s]
     above = [(s, c) for s, c in complete if c > s]
@@ -334,7 +337,7 @@ def _above_reason_ok(reason):
 
     Coerente: tipo da tabela JEDEC_MAX_MTS, padrão igual ao da tabela e padrão <
     configurada <= 2x padrão (FIX-M3-T7); com a frase da velocidade informada maior
-    (FIX-M3-T7-01), também configurada < informada. Nunca lança erro.
+    (FIX-M3-T7-01), também configurada < informada <= 2x padrão. Nunca lança erro.
     """
     if not isinstance(reason, str):
         return False
@@ -347,9 +350,9 @@ def _above_reason_ok(reason):
         speed = float(match.group(4)) if match.group(4) is not None else None
     except (TypeError, ValueError):
         return False
-    if speed is not None and not configured < speed:
+    if standard is None or shown != standard or not standard < configured <= 2 * standard:
         return False
-    return standard is not None and shown == standard and standard < configured <= 2 * standard
+    return speed is None or configured < speed <= 2 * standard
 
 
 def board_family(board, bios, form_factor):

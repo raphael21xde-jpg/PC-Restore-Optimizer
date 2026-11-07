@@ -20,8 +20,8 @@ def _above_reason(configured, kind, standard):
 
 
 def _higher_note(speed):
-    return (f' O módulo informa uma velocidade maior ({speed} MT/s); o perfil pode estar ligado com '
-            'um degrau mais baixo, ou a memória foi ajustada à mão.')
+    return (f' Um dos módulos informa uma velocidade maior ({speed} MT/s); o perfil pode estar ligado '
+            'com um perfil mais lento, ou a memória foi ajustada à mão.')
 
 
 def _modules(count, speed, configured, kind):
@@ -194,6 +194,19 @@ class HigherSpeedNoteTest(unittest.TestCase):
         self.assertIn('4000 MT/s', reason)
         self.assertIn('velocidade maior', reason)
 
+    def test_strange_reported_speed_adds_no_note(self):
+        # Teto: informada acima de 2x o padrão (DDR4: 6400) é dado estranho.
+        for speed in (999999, 6401):
+            with self.subTest(speed=speed):
+                ram = _modules(1, speed, 3600, 26) + _modules(1, 4000, 3600, 26)
+                self.assertEqual(bg.xmp_state(ram),
+                                 (bg.XMP_ON_STD, _above_reason(3600, 'DDR4', 3200)))
+
+    def test_reported_speed_at_the_cap_is_accepted(self):
+        reason = _above_reason(3600, 'DDR4', 3200) + _higher_note(6400)
+        self.assertEqual(bg.xmp_state(_modules(2, 6400, 3600, 26)), (bg.XMP_ON_STD, reason))
+        self.assertIn('    ' + reason, _shown({'xmp': bg.XMP_ON_STD, 'xmp_reason': reason}))
+
     def test_note_shown_on_screen(self):
         guidance = bg.build_bios_guidance({'ram': _modules(4, 4000, 3600, 26)}, {})
         lines = _shown(dict(guidance))
@@ -210,6 +223,8 @@ class HigherSpeedNoteTest(unittest.TestCase):
             'nota alterada': base + _higher_note(4000).replace('à mão', 'em casa'),
             'nota sem o resto': _higher_note(4000).strip(),
             'nota em base forjada': _above_reason(3200, 'DDR4', 3200) + _higher_note(4000),
+            'informada absurda': base + _higher_note(999999),
+            'informada acima do dobro': base + _higher_note(6401),
         }
         for name, forged in cases.items():
             with self.subTest(name):
