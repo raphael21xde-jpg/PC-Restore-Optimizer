@@ -194,6 +194,8 @@ TWEAKS_UNEXPECTED_ERROR_TEXT = (
     'o app de novo. Depois disso, confira na aba "' + CHANGES_TAB_LABEL + '" com "Conferir de novo".')
 TWEAKS_UNKNOWN_TEXT = ('{n} ajuste(s) com estado desconhecido. Use "Conferir de novo" na aba "'
                        + CHANGES_TAB_LABEL + '". Por segurança, novos ajustes ficam bloqueados.')
+ADVANCED_TAB_LABEL = '9  Ajustes avançados'
+# FIX-P4-01-01: o desfazer dos ajustes do computador todo (aba 9) precisa de administrador.
 TWEAKS_ADMIN_TEXT = (
     'Para aplicar os ajustes, o app cria antes um ponto de restauração do Windows (ou confere o '
     'que o próprio app criou nas últimas 24 horas), e isso só '
@@ -202,10 +204,14 @@ TWEAKS_ADMIN_TEXT = (
     'administrador" com a SUA própria conta. Se o Windows pedir a senha de OUTRA conta, os '
     'ajustes valeriam para aquela conta e não para a sua; por isso o app confere a conta e, se '
     'não for a sua, não lê nem muda nada. Depois, para fazer backup ou '
-    'restaurar, abra o app de novo do jeito normal. Desfazer funciona sem administrador.')
+    'restaurar, abra o app de novo do jeito normal. Desfazer os ajustes que valem só na sua '
+    'conta funciona sem administrador. Os ajustes que valem para o computador todo (todas as '
+    'contas), como o agendamento de GPU da aba "' + ADVANCED_TAB_LABEL + '", só se desfazem '
+    'com o app aberto como administrador (com a sua própria conta), e o desfazer deles só vale '
+    'depois de reiniciar o computador. Se um ajuste não puder ser desfeito, o "Desfazer tudo" '
+    'para nesse ajuste, e os mais antigos que ele continuam aplicados.')
 # R-30: diário com problema ao aplicar ajustes: diz exatamente o que fica desligado.
 # P3-05: a aba 9 também usa este texto (os botões dela também ficam desligados).
-ADVANCED_TAB_LABEL = '9  Ajustes avançados'
 TWEAKS_JOURNAL_OFF_TEXT = (
     'Por segurança, até você fechar e abrir o app de novo, ficam desligados: "Aplicar ajustes '
     'seguros" (aba "' + TWEAKS_TAB_LABEL + '"), os botões de aplicar da aba "' + ADVANCED_TAB_LABEL
@@ -2327,7 +2333,10 @@ class OptimizationPanel(tk.Frame):
     def undo_all_changes(self):
         """Desfaz tudo o que está aplicado, do mais novo ao mais antigo, numa thread (R-10).
 
-        Não exige administrador e não cria ponto de restauração."""
+        Não cria ponto de restauração. Os ajustes da conta (HKCU) e a troca de plano se desfazem
+        sem administrador; os do computador todo (HKLM, aba 9) precisam do app aberto como
+        administrador e só valem depois de reiniciar. O undo_all para no primeiro item que falha;
+        os mais antigos continuam aplicados."""
         if self.power_busy:
             return
         if self.journal is None or self.journal_error:
