@@ -203,19 +203,19 @@ No menu, clique em "Otimização". As abas são numeradas.
 
 Cada ajuste que o app aplica fica anotado na aba "7  Alterações feitas".
 
-- "Desfazer tudo" volta os ajustes anotados, do mais novo ao mais antigo, para como
-  estavam antes. Os ajustes que valem só na sua conta e a troca de plano de energia
-  se desfazem sem administrador. **Exceção:** os ajustes da aba
-  "9  Ajustes avançados" que valem para o computador todo (todas as contas), como o
-  agendamento de GPU, só se desfazem com o app aberto como administrador (com a sua
-  própria conta), e o desfazer deles só vale depois de reiniciar o computador.
-- Se um item não puder ser desfeito, o desfazer **para nesse item**: os mais antigos
-  que ele continuam aplicados. Leia a mensagem, resolva (por exemplo, abrindo como
-  administrador) e clique em "Desfazer tudo" de novo. **Exceção:** um ajuste cujo valor
-  foi apagado fora do app (por exemplo, o agendamento de GPU) é pulado: ele continua na
-  lista, e o desfazer segue para os mais antigos.
-- "Conferir de novo" lê de novo o estado real do Windows, para confirmar o que está
-  aplicado.
+- "Desfazer tudo" volta os ajustes anotados, do mais novo ao mais antigo, para como estavam
+  antes. Os ajustes que valem só na sua conta e a troca de plano de energia se desfazem
+  sem administrador. **Exceção:** os ajustes da aba "9  Ajustes avançados" que valem para o
+  computador todo (todas as contas), como o agendamento de GPU, só se desfazem com o app aberto
+  como administrador (com a sua própria conta), e o desfazer deles só vale depois de reiniciar.
+- Se um item não puder ser desfeito, o desfazer **para nesse item**: os mais antigos que ele
+  continuam aplicados. Leia a mensagem, resolva (por exemplo, abrindo como administrador) e
+  clique em "Desfazer tudo" de novo. **Exceção:** um ajuste cujo valor foi apagado fora do app
+  (por exemplo, o agendamento de GPU) é pulado: ele continua na lista, e o desfazer segue para
+  os mais antigos.
+- "Conferir de novo" lê de novo o estado real do Windows, para confirmar o que está aplicado.
+- "Desfazer tudo" e "Conferir de novo" conferem a conta antes: com outra conta do Windows, ou
+  sem confirmar a conta, não mudam nada. Abra o app como administrador com a SUA própria conta.
 - Uma troca de plano de energia feita por uma versão antiga do app se desfaz pelo
   botão "Desfazer alteração antiga", na aba "4  Energia reversível".
 

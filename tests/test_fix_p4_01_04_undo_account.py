@@ -169,6 +169,7 @@ class SlowProbeTests(UndoAccountHelpers):
         release.set()
         thread, box, done = jobs[0]
         thread.join(5)
+        self.assertFalse(thread.is_alive())
         done(box['value'])
         self.assertEqual(self.owner_threads, [False])
         self.assertEqual(self.power.reverts, [GUID])

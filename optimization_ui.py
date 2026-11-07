@@ -140,7 +140,8 @@ CHANGES_CONFIRM_TEXT = (
     'Desfazer {n} alteração(ões) feitas pelo app?\n\n'
     'O app desfaz da mais nova para a mais antiga; não cria ponto de restauração; '
     'se uma não puder ser desfeita, o app para ali; só pula um ajuste cujo valor foi '
-    'apagado fora do app, que continua na lista.')
+    'apagado fora do app, que continua na lista. Se o app estiver aberto com outra conta do '
+    'Windows, ou se não der para confirmar a conta, o app não desfaz nada.')
 # ---------- P3-03 fatia 2b-2: "Conferir de novo" (textos fixos, R-07) ----------
 CHANGES_RECHECK_TITLE = 'Conferir de novo'
 CHANGES_RECHECK_RUNNING_TEXT = 'Conferindo o valor atual de cada alteração (somente leitura)…'
@@ -213,7 +214,8 @@ TWEAKS_UNDO_TEXT = (
     'depois de reiniciar o computador. Se um ajuste não puder ser desfeito, o "Desfazer tudo" '
     'para nesse ajuste, e os mais antigos que ele continuam aplicados. Exceção: um ajuste cujo '
     'valor foi apagado fora do app (por exemplo, o agendamento de GPU) é pulado; ele continua '
-    'na lista, e o desfazer segue para os mais antigos.')
+    'na lista, e o desfazer segue para os mais antigos. Se o app estiver aberto com outra conta '
+    'do Windows, ou se não der para confirmar a conta, o app não desfaz nada.')
 TWEAKS_ADMIN_TEXT = TWEAKS_ADMIN_APPLY_TEXT + '\n\n' + TWEAKS_UNDO_TEXT
 # R-30: diário com problema ao aplicar ajustes: diz exatamente o que fica desligado.
 # P3-05: a aba 9 também usa este texto (os botões dela também ficam desligados).
@@ -244,6 +246,16 @@ CHANGES_ACCOUNT_UNKNOWN_TEXT = (
     'Não deu para confirmar se o app está aberto com a sua própria conta do Windows. Nada foi '
     'desfeito, por segurança. Para desfazer: feche o app, clique com o botão direito no '
     'atalho dele, escolha "Executar como administrador" e entre com a SUA própria conta.')
+# FIX-P4-01-08 (R-55): o "Conferir de novo" também confere a conta antes de ler.
+CHANGES_RECHECK_OTHER_ACCOUNT_TEXT = (
+    'O app está aberto com outra conta do Windows, diferente da conta que está usando o computador '
+    'agora. A conferência leria os ajustes daquela outra conta, e não os seus. Nada foi conferido '
+    'nem mudado. Para conferir: feche o app, clique com o botão direito no atalho dele, escolha '
+    '"Executar como administrador" e entre com a SUA própria conta.')
+CHANGES_RECHECK_ACCOUNT_UNKNOWN_TEXT = (
+    'Não deu para confirmar se o app está aberto com a sua própria conta do Windows. Nada foi '
+    'conferido nem mudado, por segurança. Para conferir: feche o app, clique com o botão direito '
+    'no atalho dele, escolha "Executar como administrador" e entre com a SUA própria conta.')
 # ---------- P3-05: aba "Ajustes avançados" (textos fixos, R-07) ----------
 ADVANCED_TITLE = 'Ajustes avançados'
 ADVANCED_INTRO_TEXT = (
@@ -2433,7 +2445,10 @@ class OptimizationPanel(tk.Frame):
     def recheck_changes(self):
         """Lê o valor atual de cada alteração numa thread (R-10) e acerta o diário.
 
-        Só lê: sem confirmação, sem administrador e sem ponto de restauração."""
+        Só lê: sem confirmação, sem administrador e sem ponto de restauração.
+
+        O Job confere a conta (R-55) antes de qualquer leitura, nunca na thread da tela
+        (R-56): com outra conta ou "não deu para saber", nada é conferido nem relido."""
         if self.power_busy:
             return
         if self.journal is None or self.journal_error:
@@ -2444,6 +2459,9 @@ class OptimizationPanel(tk.Frame):
             return
         journal=self.journal
         def work():
+            answer=session_owner.session_owner(self._session_owner_probe)
+            if answer!=session_owner.SAME:
+                return {'status':'account','account':answer}
             try:
                 result=journal.recheck()
                 outcome={'status':'done','changed':len(result['changed']),
@@ -2460,8 +2478,16 @@ class OptimizationPanel(tk.Frame):
         self._run_power_job(work,self._recheck_done)
 
     def _recheck_done(self,outcome):
-        self._after_power_job(outcome)
         status=outcome.get('status')
+        if status=='account':
+            # R-55: nada foi conferido nem relido; não há o que redesenhar.
+            message=(CHANGES_RECHECK_OTHER_ACCOUNT_TEXT
+                     if outcome.get('account')==session_owner.OTHER
+                     else CHANGES_RECHECK_ACCOUNT_UNKNOWN_TEXT)
+            self.changes_status.set(message)
+            self._show('warning',CHANGES_RECHECK_TITLE,message)
+            return
+        self._after_power_job(outcome)
         if status=='done':
             changed=outcome.get('changed',0)
             outside,unreadable=outcome.get('outside',0),outcome.get('unreadable',0)
