@@ -259,7 +259,9 @@ class GpuButtonTests(unittest.TestCase):
         self.assertEqual(self.shown[-1], ('warning', ou.ADVANCED_TITLE, ou.TWEAKS_ADMIN_TEXT))
 
     def test_unsupported_shows_a_warning_without_question(self):
-        for case in ('old_build', 'no_value', 'three'):
+        # FIX-M3-T2: 'no_key' é a chave GraphicsDrivers ausente (continua neutro); o valor
+        # ausente com a chave existente tem texto próprio (test_advanced_tweaks_fix_m3_t2).
+        for case in ('old_build', 'no_key', 'three'):
             with self.subTest(case=case):
                 self.machine_reg.machine_keys.clear()
                 if case == 'old_build':
