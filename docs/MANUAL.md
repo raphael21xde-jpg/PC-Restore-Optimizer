@@ -90,12 +90,12 @@ neles. Os arquivos originais nunca são mexidos: o backup só lê e copia.
    "Retomar backup interrompido" e escolha o arquivo `manifest.json` do backup que
    parou. O app continua esse backup e confere com SHA-256 o que já tinha sido copiado.
 
-**Navegadores.** A tela de backup do navegador ainda não está ligada ao menu do app.
-Antes de formatar, confira se a sincronização da conta do navegador está ligada. Se
-você exportar as senhas pelo próprio navegador para um arquivo CSV, lembre: ele é
-texto legível. Nunca o envie por chat ou e-mail e não o deixe desprotegido. Depois
-de importar as senhas no navegador novo, apague esse CSV pelo Explorador de Arquivos
-(e esvazie a Lixeira).
+**Outros arquivos e navegadores.** No menu, "Seleção avançada" tem a aba "Arquivos pessoais"
+(botão "+ Arquivo ou pasta") e a aba "Navegadores" (botão "Navegadores  →"). Nela, confira se a
+sincronização da conta do navegador está ligada e clique em "Criar backup protegido do navegador"
+para criar o cofre do app. Se você exportar as senhas pelo próprio navegador para um arquivo CSV,
+lembre: ele é texto legível. Nunca o envie por chat ou e-mail e não o deixe desprotegido. Depois
+de importar as senhas no navegador novo, apague esse CSV pelo Explorador de Arquivos (e esvazie a Lixeira).
 
 ## Testar e restaurar
 
@@ -114,8 +114,8 @@ um problema.
 3. Navegador (no Windows novo): em "Depois de formatar", na etapa
    "Navegador e senhas", o botão "Abrir" abre o assistente "Restaurar navegador".
    Hoje ele tem dois limites: só aceita um cofre do app (arquivo `.pcbrowser` ou
-   `.opgx`) ou uma pasta `CONFERIR-NAVEGADOR`, que só são criados por uma tela que
-   ainda não está ligada ao menu; e só orienta a importação no Opera e no Opera GX.
+   `.opgx`) ou uma pasta `CONFERIR-NAVEGADOR`, criados em "Seleção avançada" >
+   "Navegadores"; e só orienta a importação no Opera e no Opera GX.
    Para os outros navegadores, ou se você não tem esse cofre, entre na conta do
    navegador novo e ligue a sincronização, ou importe o CSV de senhas pelo próprio
    navegador e depois apague o CSV. Cookies, sessões abertas (logins) e passkeys
