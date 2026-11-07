@@ -204,7 +204,7 @@ def inspect_pc():
     queries = {
         'cpu': 'Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | ConvertTo-Json -Depth 3',
         'gpu': 'Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | ConvertTo-Json -Depth 3',
-        'ram': 'Get-CimInstance Win32_PhysicalMemory | Select-Object Capacity,Speed,ConfiguredClockSpeed,Manufacturer,DeviceLocator,BankLabel | ConvertTo-Json -Depth 3',
+        'ram': 'Get-CimInstance Win32_PhysicalMemory | Select-Object Capacity,Speed,ConfiguredClockSpeed,SMBIOSMemoryType,Manufacturer,DeviceLocator,BankLabel | ConvertTo-Json -Depth 3',
         'board': 'Get-CimInstance Win32_BaseBoard | Select-Object Manufacturer,Product | ConvertTo-Json -Depth 3',
         'bios': 'Get-CimInstance Win32_BIOS | Select-Object Manufacturer,SMBIOSBIOSVersion,ReleaseDate | ConvertTo-Json -Depth 3',
         'os': 'Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber | ConvertTo-Json -Depth 3',
@@ -575,7 +575,8 @@ def legacy_power_pending(journal_path) -> str:
 _EXPORT_COLUMNS = {
     'cpu': ('Name', 'NumberOfCores', 'NumberOfLogicalProcessors'),
     'gpu': ('Name', 'DriverVersion'),
-    'ram': ('Capacity', 'Speed', 'ConfiguredClockSpeed', 'Manufacturer', 'DeviceLocator', 'BankLabel'),
+    'ram': ('Capacity', 'Speed', 'ConfiguredClockSpeed', 'SMBIOSMemoryType', 'Manufacturer',
+            'DeviceLocator', 'BankLabel'),
     'board': ('Manufacturer',),
     'bios': ('Manufacturer', 'SMBIOSBIOSVersion', 'ReleaseDate'),
     'os': ('Caption', 'Version', 'BuildNumber'),

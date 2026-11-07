@@ -17,9 +17,18 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
   REASON_UNITS (metade exata, MHz x MT/s);
 - "provavelmente ligado": só quando todos os módulos têm os dois valores e a
   configurada é maior; o resto é "não confirmado";
+- "provavelmente ligado (velocidade acima do padrão)" (FIX-M3-T7): com XMP/EXPO
+  ligado o Windows costuma informar a mesma velocidade nos dois campos (3600 e
+  3600), então o app compara a configurada com o maior degrau JEDEC do tipo da
+  memória (SMBIOSMemoryType: DDR3 2133, DDR4 3200, DDR5 8800 MT/s). Só vale se
+  todos os módulos têm o mesmo tipo da tabela e a configurada fica acima do
+  padrão e até o dobro dele; tipo desconhecido, LPDDR, misturado ou sem dado e
+  configurada maior que o dobro (dado estranho) seguem a regra antiga. O texto
+  sempre diz "provavelmente" e cita o ajuste manual da memória;
 - na tela, o motivo de "desligado" com números só é exibido se os números forem
   coerentes (0 < configurada < informada e não metade exata); senão vira o
-  motivo padrão (R-32, antiga R-34);
+  motivo padrão (R-32, antiga R-34); o mesmo vale para o motivo de "acima do
+  padrão" (tipo e padrão da tabela e padrão < configurada <= 2x padrão);
 - Resizable BAR (fatia 2, FIX-P3-06-13, FIX-M3-T1): o estado é sempre "não
   confirmado". O Windows só informa o tamanho dos intervalos de memória de cada
   placa de vídeo, e isso não confirma o estado (RTX 5070, driver 621.01: janela de
@@ -45,10 +54,18 @@ from datetime import datetime, timezone
 XMP_OFF = 'provavelmente_desligado'
 XMP_ON = 'provavelmente_ligado'
 XMP_UNKNOWN = 'nao_confirmado'
+# FIX-M3-T7: configurada acima do padrão JEDEC do tipo da memória.
+XMP_ON_STD = 'provavelmente_ligado_acima_padrao'
+
+# FIX-M3-T7: SMBIOSMemoryType -> (nome, maior velocidade JEDEC em MT/s). O maior degrau
+# oficial evita dizer "ligado" sem motivo; tipo fora daqui (LPDDR, 0, ...) não entra.
+JEDEC_MAX_MTS = {24: ('DDR3', 2133), 26: ('DDR4', 3200), 34: ('DDR5', 8800)}
+_JEDEC_BY_NAME = {name: standard for name, standard in JEDEC_MAX_MTS.values()}
 
 XMP_LABELS = {
     XMP_OFF: 'provavelmente desligado (ou limitado pelo processador/placa)',
     XMP_ON: 'provavelmente ligado',
+    XMP_ON_STD: 'provavelmente ligado (velocidade acima do padrão)',
     XMP_UNKNOWN: 'não confirmado',
 }
 
@@ -66,16 +83,19 @@ NEVER_CHANGES = 'O app nunca altera a BIOS.'
 _DEFAULT_REASONS = {
     XMP_OFF: 'A memória está rodando abaixo da velocidade que o módulo informa.',
     XMP_ON: 'A memória está rodando acima da velocidade básica que o módulo informa.',
+    XMP_ON_STD: 'A memória está configurada acima do padrão oficial (JEDEC) do tipo dela.',
     XMP_UNKNOWN: 'O Windows não deu informação suficiente para saber.',
 }
 REASON_MIXED = 'Os módulos de memória informam velocidades diferentes; não dá para saber.'
 REASON_UNITS = ('A velocidade configurada é metade da informada pelo módulo; pode ser só diferença '
                 'de unidade (MHz e MT/s), então não dá para saber.')
 # Motivos que a tela aceita para cada estado (R-32); o de "desligado" com números
-# é conferido por _off_reason_ok() (padrão _REASON_OFF + números coerentes).
+# é conferido por _off_reason_ok() (padrão _REASON_OFF + números coerentes) e o de
+# "acima do padrão" com números por _above_reason_ok() (FIX-M3-T7).
 _ACCEPTED_REASONS = {
     XMP_OFF: {_DEFAULT_REASONS[XMP_OFF]},
     XMP_ON: {_DEFAULT_REASONS[XMP_ON]},
+    XMP_ON_STD: {_DEFAULT_REASONS[XMP_ON_STD]},
     XMP_UNKNOWN: {_DEFAULT_REASONS[XMP_UNKNOWN], REASON_MIXED, REASON_UNITS},
 }
 
@@ -116,6 +136,9 @@ _VERSION_OK = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 ._()\-]*$')
 _REASON_OFF = re.compile(r'^A memória está configurada a (\d{1,6}(?:\.\d+)?) MT/s e o módulo informa '
                          r'(\d{1,6}(?:\.\d+)?) MT/s\. O perfil XMP/EXPO pode estar desligado, ou o '
                          r'processador/placa limita a velocidade\.$')
+_REASON_ABOVE = re.compile(r'^A memória está configurada a (\d{1,6}(?:\.\d+)?) MT/s, acima do padrão '
+                           r'oficial \(JEDEC\) do (DDR[345]), que é (\d{1,6}) MT/s\. Isso costuma '
+                           r'indicar o perfil XMP/EXPO ligado \(ou um ajuste manual da memória\)\.$')
 _DATE_MS = re.compile(r'^/Date\((-?\d{1,15})\)/$')
 _DATE_DIGITS = re.compile(r'^(\d{4})(\d{2})(\d{2})')
 
@@ -152,12 +175,38 @@ def _manufacturer(value):
     return text if isinstance(text, str) else ''
 
 
-def xmp_state(ram):
-    """(estado, motivo) a partir de Win32_PhysicalMemory (Speed, ConfiguredClockSpeed).
+def _memory_type(value):
+    """SMBIOSMemoryType da tabela JEDEC_MAX_MTS (int de verdade); bool, texto e o resto viram None."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if value in JEDEC_MAX_MTS else None
 
-    "Desligado" só com algum abaixo e nenhum acima; uns abaixo e outros acima é
-    "não confirmado" com REASON_MIXED (módulos diferentes), e configurada metade
-    exata da informada é "não confirmado" com REASON_UNITS (metade exata).
+
+def _above_standard(modules):
+    """(menor configurada, nome, padrão) se todos os módulos estão acima do padrão JEDEC; senão None.
+
+    Todos com o mesmo tipo da tabela, configurada válida e padrão < configurada <= 2x
+    padrão (acima do dobro é dado estranho). O campo Speed não entra.
+    """
+    kinds = {_memory_type(m.get('SMBIOSMemoryType')) for m in modules}
+    if len(kinds) != 1 or None in kinds:
+        return None
+    name, standard = JEDEC_MAX_MTS[kinds.pop()]
+    configured = [_num(m.get('ConfiguredClockSpeed')) for m in modules]
+    if any(c is None or not standard < c <= 2 * standard for c in configured):
+        return None
+    return min(configured), name, standard
+
+
+def xmp_state(ram):
+    """(estado, motivo) a partir de Win32_PhysicalMemory (Speed, ConfiguredClockSpeed, SMBIOSMemoryType).
+
+    Ordem: sem módulos é "não confirmado"; configurada metade exata da informada é
+    "não confirmado" com REASON_UNITS (metade exata); todos os módulos do mesmo tipo
+    da tabela JEDEC_MAX_MTS com a configurada acima do padrão (até o dobro) é
+    XMP_ON_STD, com a menor configurada no texto (FIX-M3-T7); depois a regra antiga:
+    "desligado" só com algum abaixo e nenhum acima; uns abaixo e outros acima é
+    "não confirmado" com REASON_MIXED (módulos diferentes).
     """
     modules = _items(ram)
     if not modules:
@@ -167,6 +216,12 @@ def xmp_state(ram):
     # Metade exata: pode ser o Windows misturando MHz e MT/s; não dá para concluir.
     if any(c * 2 == s for s, c in complete):
         return XMP_UNKNOWN, REASON_UNITS
+    above_std = _above_standard(modules)
+    if above_std:
+        configured, name, standard = above_std
+        return XMP_ON_STD, (f'A memória está configurada a {configured:g} MT/s, acima do padrão oficial '
+                            f'(JEDEC) do {name}, que é {standard} MT/s. Isso costuma indicar o perfil '
+                            'XMP/EXPO ligado (ou um ajuste manual da memória).')
     below = [(s, c) for s, c in complete if c < s]
     above = [(s, c) for s, c in complete if c > s]
     if below and above:
@@ -261,6 +316,25 @@ def _off_reason_ok(reason):
     except (TypeError, ValueError):
         return False
     return 0 < configured < speed and configured * 2 != speed
+
+
+def _above_reason_ok(reason):
+    """True só se o motivo de "acima do padrão" tem o formato gerado e números coerentes.
+
+    Coerente: tipo da tabela JEDEC_MAX_MTS, padrão igual ao da tabela e padrão <
+    configurada <= 2x padrão (FIX-M3-T7). Nunca lança erro.
+    """
+    if not isinstance(reason, str):
+        return False
+    match = _REASON_ABOVE.match(reason)
+    if not match:
+        return False
+    standard = _JEDEC_BY_NAME.get(match.group(2))
+    try:
+        configured, shown = float(match.group(1)), int(match.group(3))
+    except (TypeError, ValueError):
+        return False
+    return standard is not None and shown == standard and standard < configured <= 2 * standard
 
 
 def board_family(board, bios, form_factor):
@@ -406,8 +480,10 @@ def bios_guidance_lines(guidance):
     reason = guidance.get('xmp_reason')
     # R-32: só aceita os motivos que este módulo gera; qualquer outro texto vira o padrão.
     # (R-32, antiga R-34): o motivo de "desligado" com números só vale se os números forem coerentes.
+    # FIX-M3-T7: o motivo de "acima do padrão" com números só vale para XMP_ON_STD e coerente.
     if not (isinstance(reason, str) and (reason in _ACCEPTED_REASONS[state]
-                                         or (state == XMP_OFF and _off_reason_ok(reason)))):
+                                         or (state == XMP_OFF and _off_reason_ok(reason))
+                                         or (state == XMP_ON_STD and _above_reason_ok(reason)))):
         reason = _DEFAULT_REASONS[state]
     family = _family(guidance)
     rebar = guidance.get('rebar')
