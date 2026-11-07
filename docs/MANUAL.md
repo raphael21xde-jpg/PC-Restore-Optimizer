@@ -36,8 +36,9 @@ permissões erradas e a sua conta normal poderia não conseguir abri-los.
 
 **Só abra como administrador para aplicar ajustes de otimização** (abas
 "4  Energia reversível", "8  Ajustes seguros" e "9  Ajustes avançados"). Antes de
-mudar algo, o app cria um ponto de restauração do Windows, e isso exige
-administrador. O app nunca pede isso sozinho. Para abrir assim: feche o app, clique
+mudar algo, o app cria um ponto de restauração do Windows ou usa o que o próprio
+app criou nas últimas 24 horas (o Windows só cria um ponto novo a cada 24 horas),
+e isso exige administrador. O app nunca pede isso sozinho. Para abrir assim: feche o app, clique
 com o botão direito no `INICIAR.bat` (ou no atalho dele), escolha
 "Executar como administrador" e entre com a **sua própria conta**.
 
@@ -190,7 +191,8 @@ No menu, clique em "Otimização". As abas são numeradas.
 3. **Aplique os ajustes seguros.** Abra o app como administrador (veja a seção
    Instalar e abrir). Na aba "8  Ajustes seguros", clique em "Ver estado atual"
    e depois em "Aplicar ajustes seguros". O app mostra o que vai mudar, pergunta antes
-   e cria um ponto de restauração.
+   e cria um ponto de restauração ou usa o que o próprio app criou nas últimas 24 horas
+   (a pergunta diz qual).
 4. **Ajustes avançados (opcional).** Na aba "9  Ajustes avançados", cada ajuste é
    aplicado um de cada vez. A pergunta mostra o lado ruim do ajuste e vem com **Não**
    marcado: apertar Enter não aplica nada. Só responda **Sim** se entendeu o aviso.
@@ -221,6 +223,7 @@ Cada ajuste que o app aplica fica anotado na aba "7  Alterações feitas".
 Alguns ajustes só valem depois de sair da conta e entrar de novo, ou de reiniciar.
 O app avisa quando for assim e nunca reinicia o PC sozinho. Se algo der muito errado,
 você também pode usar o ponto de restauração do Windows criado antes da mudança.
+Voltar a esse ponto desfaz também o que foi feito depois dele.
 
 ## Check-up
 

@@ -30,7 +30,13 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
 - se a gravação falha no meio de um lote, o app desfaz pelo adaptador o que já
   tinha aplicado nesse lote (do mais novo ao mais antigo), sem gravar mais nada.
   Limite conhecido: entre a conferência e a troca do arquivo há uma janela de
-  milissegundos; o app não tranca o arquivo.
+  milissegundos; o app não tranca o arquivo;
+- FIX-M3-T3: o diário anota o ponto de restauração que o próprio app criou
+  (campo ``restore_point`` no topo: só ``sequence`` e ``created``). Um lote
+  seguinte só o reaproveita se ``confirm_restore_point`` (injetada, só leitura)
+  confirmar no Windows, antes da pergunta e de novo antes de aplicar; na dúvida,
+  recusa sem aplicar nada. Reaproveitar não renova o prazo. Registro ilegível é
+  ignorado (dá recusa) e não bloqueia o diário; o schema não muda.
 """
 from __future__ import annotations
 
@@ -79,6 +85,11 @@ NOTE_UNDO = 'desfazer'
 # FIX-M3-T2-01 (R-68): também é o motivo do lote no "Desfazer tudo"; fala só deste ajuste.
 MSG_UNDO_NOT_READ = 'Não foi possível ler o valor atual; este ajuste não foi desfeito.'
 MSG_BATCH_SAVE_FAILED = 'Não foi possível gravar o diário; os ajustes deste lote foram desfeitos.'
+# FIX-M3-T3: o texto de recusa sem ponto continua o mesmo; o do ponto que sumiu é novo.
+MSG_RESTORE_POINT_FAILED = 'Não foi possível criar o ponto de restauração; nenhum ajuste foi aplicado.'
+MSG_REUSE_GONE = ('Não foi possível confirmar no Windows o ponto de restauração que o app ia usar; '
+                  'nenhum ajuste foi aplicado. Clique de novo para o app conferir outra vez.')
+RESTORE_POINT_MAX_SEQUENCE = 2 ** 31
 MSG_BATCH_SAVE_FAILED_CHECK = ('Não foi possível gravar o diário; confira manualmente: '
                                '{n} ajuste(s) não voltaram ao valor anterior.')
 
@@ -127,6 +138,29 @@ def _valid_key(key) -> bool:
     return isinstance(key, str) and bool(_KEY_RE.match(key))
 
 
+def _valid_sequence(value) -> bool:
+    """Inteiro de verdade (``True`` não vale) entre 1 e 2**31."""
+    return (isinstance(value, int) and not isinstance(value, bool)
+            and 1 <= value <= RESTORE_POINT_MAX_SEQUENCE)
+
+
+def _aware_iso(text) -> bool:
+    """Data ISO com fuso."""
+    if not isinstance(text, str):
+        return False
+    try:
+        value = datetime.fromisoformat(text)
+    except ValueError:
+        return False
+    return value.tzinfo is not None and value.utcoffset() is not None
+
+
+def _valid_restore_point(value) -> bool:
+    """FIX-M3-T3: só ``{'sequence': int, 'created': iso com fuso}``, nada a mais."""
+    return (isinstance(value, dict) and set(value) == {'sequence', 'created'}
+            and _valid_sequence(value['sequence']) and _aware_iso(value['created']))
+
+
 def _valid_entry(entry) -> bool:
     if not isinstance(entry, dict) or set(entry) - set(_ENTRY_FIELDS) - {'note'}:
         return False
@@ -147,7 +181,7 @@ def _valid_entry(entry) -> bool:
 
 
 class ChangeJournal:
-    def __init__(self, path, adapters, create_restore_point):
+    def __init__(self, path, adapters, create_restore_point, confirm_restore_point=None):
         self._path = Path(path)
         if not isinstance(adapters, dict) or not adapters:
             raise JournalError('Nenhum tipo de ajuste foi registrado no diário.')
@@ -157,8 +191,12 @@ class ChangeJournal:
                 raise JournalError('Um tipo de ajuste do diário está incompleto.')
         if not callable(create_restore_point):
             raise JournalError('Falta a função que cria o ponto de restauração.')
+        if confirm_restore_point is not None and not callable(confirm_restore_point):
+            raise JournalError('A função que confere o ponto de restauração é inválida.')
         self._adapters = dict(adapters)
         self._restore_point = create_restore_point
+        self._confirm = confirm_restore_point
+        self._rp = None            # FIX-M3-T3: ponto criado e anotado pelo app (ou None)
         self._disk_digest = None   # SHA-256 do arquivo como esta instância o deixou
         self._stale = False        # True: outra janela mudou o diário ou a gravação falhou
         self._stale_message = ''
@@ -184,6 +222,9 @@ class ChangeJournal:
         ids = [e['id'] for e in entries]
         if len(set(ids)) != len(ids):
             raise JournalError('O diário de alterações está ilegível; por segurança, nada será feito.')
+        # FIX-M3-T3: registro do ponto inválido é ignorado; o diário continua usável.
+        point = data.get('restore_point')
+        self._rp = dict(point) if _valid_restore_point(point) else None
         self._disk_digest = hashlib.sha256(raw).hexdigest()
         return entries
 
@@ -222,8 +263,10 @@ class ChangeJournal:
             self._mark_stale(MSG_SAVE_FAILED_BEFORE)
             raise JournalError('O diário de alterações virou um atalho (link); por segurança, nada será gravado.')
         self._check_disk_unchanged()
-        payload = json.dumps({'schema': SCHEMA, 'entries': self._entries},
-                             ensure_ascii=False, indent=2).encode('utf-8')
+        data = {'schema': SCHEMA, 'entries': self._entries}
+        if self._rp is not None:
+            data['restore_point'] = dict(self._rp)
+        payload = json.dumps(data, ensure_ascii=False, indent=2).encode('utf-8')
         tmp = self._path.with_name(f'.{self._path.name}.{uuid.uuid4().hex}.tmp')
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_BINARY', 0)
         try:
@@ -320,22 +363,63 @@ class ChangeJournal:
         return ok and same_value(current, entry['before'])
 
     # ---------- API ----------
-    def apply_batch(self, changes):
+    def reusable_restore_point(self):
+        """FIX-M3-T3: o ponto anotado ainda vale? Devolve o datetime confirmado ou None.
+
+        Só leitura (nunca grava). ``None`` sem registro, sem função de conferir, com
+        o diário mudado por fora ou com qualquer erro ou resposta estranha."""
+        if self._rp is None or self._confirm is None:
+            return None
+        try:
+            self._check_disk_unchanged()
+            confirmed = self._confirm(dict(self._rp))
+        except Exception:
+            return None
+        if (isinstance(confirmed, datetime) and confirmed.tzinfo is not None
+                and confirmed.utcoffset() is not None):
+            return confirmed
+        return None
+
+    def apply_batch(self, changes, reuse_restore_point=False):
         """Aplica um lote; devolve a lista de ids. Recusa com ``BatchRefused``.
 
         Se o diário mudou por fora, recusa com ``JournalError`` antes de criar o
-        ponto de restauração ou chamar qualquer adaptador."""
+        ponto de restauração ou chamar qualquer adaptador.
+
+        FIX-M3-T3: com ``reuse_restore_point`` o app não cria ponto: confere de novo
+        o ponto anotado e, se não confirmar, recusa com ``MSG_REUSE_GONE`` sem
+        tentar criar outro e sem chamar adaptador. Sem ele, cria o ponto como antes;
+        se a resposta for ``{'sequence': n}`` válida, o ponto é anotado e vai junto
+        na primeira gravação do lote (resposta ``True`` não anota nada)."""
         self._check_disk_unchanged()
         self._check_batch(changes)
         if os.path.islink(self._path):
             raise JournalError('O diário de alterações virou um atalho (link); por segurança, nada será feito.')
+        new_point = None
+        if reuse_restore_point:
+            if self.reusable_restore_point() is None:
+                raise BatchRefused(MSG_REUSE_GONE)
+        else:
+            try:
+                created = self._restore_point(f'PC Restore & Optimizer: {len(changes)} ajuste(s)')
+            except Exception:
+                created = False
+            if not created:
+                raise BatchRefused(MSG_RESTORE_POINT_FAILED)
+            if isinstance(created, dict) and _valid_sequence(created.get('sequence')):
+                new_point = {'sequence': created['sequence'], 'created': _now()}
+        if new_point is None:
+            return self._apply_changes(changes)
+        previous_point, self._rp = self._rp, new_point
+        written_before = self._disk_digest
         try:
-            created = self._restore_point(f'PC Restore & Optimizer: {len(changes)} ajuste(s)')
-        except Exception:
-            created = False
-        if not created:
-            raise BatchRefused('Não foi possível criar o ponto de restauração; nenhum ajuste foi aplicado.')
+            return self._apply_changes(changes)
+        finally:
+            # Nada foi gravado neste lote: o ponto novo não fica só na memória.
+            if self._disk_digest == written_before:
+                self._rp = previous_point
 
+    def _apply_changes(self, changes):
         batch = self._next_batch()
         done = []
         touched = []   # itens deste lote em que o adaptador já foi chamado

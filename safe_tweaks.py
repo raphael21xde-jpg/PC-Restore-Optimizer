@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 TWEAK_KIND = 'hkcu_dword'
 ABSENT = None            # marcador de "o valor não existe" (valor simples para o diário)
@@ -269,12 +270,45 @@ def intro_lines():
     return lines
 
 
-def confirmation_text(tweaks):
+RESTORE_POINT_NEW_TEXT = ('Antes, o app cria um ponto de restauração do Windows e anota tudo no '
+                          'diário de alterações.')
+# FIX-M3-T3: {quando} vem de restore_point_when ("hoje às 16:16" ou "ontem às 20:05").
+RESTORE_POINT_REUSE_TEXT = ('O app vai usar o ponto de restauração que ele mesmo criou {quando} '
+                            '(o Windows só cria um ponto novo a cada 24 horas) e anota tudo no '
+                            'diário de alterações. Voltar a esse ponto desfaz também o que foi '
+                            'feito depois dele.')
+
+
+def _aware(moment) -> bool:
+    return isinstance(moment, datetime) and moment.tzinfo is not None and moment.utcoffset() is not None
+
+
+def restore_point_when(reuse_at, now=None) -> str:
+    """FIX-M3-T3: "hoje às HH:MM" ou "ontem às HH:MM", na hora local do PC."""
+    current = now if _aware(now) else datetime.now(timezone.utc)
+    local = reuse_at.astimezone()
+    today = current.astimezone().date()
+    hour = local.strftime('%H:%M')
+    if local.date() == today:
+        return f'hoje às {hour}'
+    if local.date() == today - timedelta(days=1):
+        return f'ontem às {hour}'
+    return f'em {local.strftime("%d/%m")} às {hour}'
+
+
+def restore_point_sentence(reuse_at=None, now=None) -> str:
+    """A frase do ponto de restauração na pergunta (criar um novo ou usar o do app)."""
+    if not _aware(reuse_at):
+        return RESTORE_POINT_NEW_TEXT
+    return RESTORE_POINT_REUSE_TEXT.format(quando=restore_point_when(reuse_at, now))
+
+
+def confirmation_text(tweaks, reuse_at=None, now=None):
     items = '\n'.join(f'• {tweak.name}: {tweak.what} {tweak.when}' for tweak in tweaks)
     return (f'Aplicar {len(tweaks)} ajuste(s) seguro(s) na sua conta do Windows?\n\n'
             f'{items}\n\n'
-            'Antes, o app cria um ponto de restauração do Windows e anota tudo no diário de '
-            'alterações. Para voltar, use "Desfazer tudo" na aba "' + CHANGES_TAB_NAME + '".\n\n'
+            + restore_point_sentence(reuse_at, now) +
+            ' Para voltar, use "Desfazer tudo" na aba "' + CHANGES_TAB_NAME + '".\n\n'
             'Ajustes que já estão no valor certo não são mexidos.\n\n'
             + MEASURE_BEFORE_HINT)
 

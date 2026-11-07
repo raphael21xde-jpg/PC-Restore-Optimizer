@@ -14,7 +14,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from hardware_profile import build_profile
 from bios_guidance import build_bios_guidance
@@ -338,28 +338,118 @@ def _sequence(value):
     return int(value)
 
 
-def create_restore_point(_description=None, *, run=None, elevated=None):
-    """Cria um ponto de restauração e só devolve True se ele foi CONFIRMADO.
+def create_app_restore_point(_description=None, *, run=None, elevated=None):
+    """Cria um ponto de restauração e devolve ``{'sequence': n}`` só se ele foi CONFIRMADO.
 
     Lê o maior número de sequência, roda ``Checkpoint-Computer`` com a descrição
-    fixa e lê de novo: só é True se o número aumentou. Sem administrador devolve
-    False sem rodar nada. Nunca liga a Proteção do sistema. Atenção: o Windows não
+    fixa e lê de novo: só confirma se o número aumentou (senão, ``None``). Sem
+    administrador devolve ``None`` sem rodar nada. Nunca liga a Proteção do
+    sistema e nunca muda a frequência de pontos do Windows. Atenção: o Windows não
     cria um ponto novo se já criou um nas últimas 24 horas; nesse caso o número não
-    sobe e a resposta é False (o lote é recusado). A descrição recebida do diário
-    é ignorada de propósito.
+    sobe e a resposta é ``None``. A descrição recebida do diário é ignorada de
+    propósito.
     """
     try:
         if not (elevated or is_process_elevated)():
-            return False
+            return None
         runner = run or _ps
         before = _sequence(runner(_SEQUENCE_QUERY, timeout=60))
         if before is None:
-            return False
+            return None
         runner(_CHECKPOINT, timeout=300)
         after = _sequence(runner(_SEQUENCE_QUERY, timeout=60))
-        return after is not None and after > before
+        if after is None or after <= before:
+            return None
+        return {'sequence': after}
     except Exception:  # comando, PowerShell ou permissão: não confirmado
-        return False
+        return None
+
+
+def create_restore_point(_description=None, *, run=None, elevated=None):
+    """Como ``create_app_restore_point``, mas só devolve True ou False (uso antigo)."""
+    return bool(create_app_restore_point(_description, run=run, elevated=elevated))
+
+
+# ---------- FIX-M3-T3: reaproveitar o ponto que o próprio app criou ----------
+RESTORE_POINT_REUSE_LIMIT = timedelta(hours=24)
+RESTORE_POINT_CLOCK_TOLERANCE = timedelta(minutes=15)
+RESTORE_POINT_MAX_SEQUENCE = 2 ** 31
+
+
+def valid_restore_point_sequence(value) -> bool:
+    """Número inteiro de verdade (``True`` não vale) entre 1 e 2**31."""
+    return (isinstance(value, int) and not isinstance(value, bool)
+            and 1 <= value <= RESTORE_POINT_MAX_SEQUENCE)
+
+
+def parse_utc(text):
+    """Data ISO com fuso -> datetime em UTC; sem fuso ou estranha -> None."""
+    if not isinstance(text, str):
+        return None
+    try:
+        value = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        return None
+    return value.astimezone(timezone.utc)
+
+
+def _restore_point_query(sequence: int) -> str:
+    """Consulta FIXA, só leitura; o número entra formatado por int() (R-07)."""
+    number = int(sequence)
+    return ('$p=@(Get-ComputerRestorePoint | Where-Object { $_.SequenceNumber -eq %d }); '
+            'if ($p.Count -eq 1) { [pscustomobject]@{Sequence=$p[0].SequenceNumber; '
+            'Description=$p[0].Description; Created=([Management.ManagementDateTimeConverter]'
+            "::ToDateTime($p[0].CreationTime)).ToUniversalTime().ToString('o')} | ConvertTo-Json }"
+            % number)
+
+
+def confirm_app_restore_point(record, *, run=None, elevated=None, now=None):
+    """Só leitura: confere no Windows o ponto que o app anotou no diário.
+
+    Devolve a data de criação no Windows (datetime em UTC) ou ``None``. Só confirma
+    se: é Windows e o app está como administrador; o registro tem ``sequence``
+    válida e ``created`` com fuso; o Windows devolve exatamente um ponto com a
+    mesma sequência e a descrição fixa do app; o ponto tem menos de 24 horas (data
+    no futuro recusa); e a hora do Windows bate com a anotada (até 15 minutos).
+    Qualquer dúvida ou erro dá ``None``. Nunca cria nem muda nada.
+    """
+    try:
+        if not _is_windows():
+            return None
+        if not (elevated or is_process_elevated)():
+            return None
+        if not isinstance(record, dict):
+            return None
+        sequence = record.get('sequence')
+        if not valid_restore_point_sequence(sequence):
+            return None
+        noted = parse_utc(record.get('created'))
+        if noted is None:
+            return None
+        current = datetime.now(timezone.utc) if now is None else now
+        if not isinstance(current, datetime) or current.tzinfo is None or current.utcoffset() is None:
+            return None
+        answer = (run or _ps)(_restore_point_query(sequence), timeout=60)
+        if not isinstance(answer, dict):
+            return None
+        found = answer.get('Sequence')
+        if isinstance(found, bool) or not isinstance(found, int) or found != sequence:
+            return None
+        if answer.get('Description') != RESTORE_POINT_DESCRIPTION:
+            return None
+        created = parse_utc(answer.get('Created'))
+        if created is None:
+            return None
+        age = current.astimezone(timezone.utc) - created
+        if age < timedelta(0) or age >= RESTORE_POINT_REUSE_LIMIT:
+            return None
+        if abs(created - noted) > RESTORE_POINT_CLOCK_TOLERANCE:
+            return None
+        return created
+    except Exception:  # PowerShell, permissão ou dado estranho: não confirmado
+        return None
 
 
 def legacy_power_pending(journal_path) -> str:

@@ -75,7 +75,11 @@ class SourceTests(unittest.TestCase):
         start = ast.unparse(_function('apply_advanced'))
         self.assertIn('self._is_elevated()', start)
         self.assertIn('self._run_power_job', start)
-        self.assertIn('self._checked_read_advanced_work', start)
+        # FIX-M3-T3: o Job do aplicar usa a mesma leitura e só depois confere o ponto.
+        self.assertIn('self._checked_read_advanced_for_apply_work', start)
+        for_apply = ast.unparse(_function('_checked_read_advanced_for_apply_work'))
+        self.assertLess(for_apply.index('self._checked_read_advanced_work()'),
+                        for_apply.index('self._reuse_at_for_apply()'))
         self.assertNotIn('read_states', start)
         refresh = ast.unparse(_function('refresh_advanced'))
         self.assertIn('self._run_power_job(self._checked_read_advanced_work', refresh)

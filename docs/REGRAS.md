@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 3 (última poda: 06/11/2026, pedido `regras-20261107-poda-r57-r67`, issue #212). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-68 (já chegaram: R-68 a R-70).
+poda: 5 (última poda: 06/11/2026, pedido `regras-20261107-poda-r57-r67`, issue #212). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-68 (já chegaram: R-68 a R-72).
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -85,3 +85,5 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-68 | Motivo de recusa de um item que pode aparecer numa mensagem de lote ("N desfeita(s)… Motivo: …") fala só do item ("este ajuste não foi alterado/desfeito"), nunca "Nada foi alterado/desfeito" geral; tem teste com um item desfeito antes da recusa. | Revisão 2 da PR #211 (FIX-M3-T2, 259c7e6acf2f) | 2026-11-07 |
 | R-69 | O "Desfazer tudo" só pula um item quando a recusa vem de uma exceção do adaptador marcada como permanente (undo_skip_safe), antes de qualquer revert e sem outro item mais antigo da mesma chave; o item pulado não é regravado no diário (continua applied) e não se cria estado novo; qualquer outra recusa continua parando o lote; tem teste com item mais antigo desfeito depois do pulo. | FIX-M3-T2-02 | 2026-11-07 |
 | R-70 | Poda que ajusta uma regra (tira dela um caso que passou para outra) mantém, para cada caso que fica na regra, a exigência de teste que ele já tinha; o caso que sai é citado com a regra que agora o cobre. | Revisão da PR #215 (fc6ea3e173b1) | 2026-11-07 |
+| R-71 | Reaproveitar um ponto de restauração só vale para ponto criado e anotado pelo próprio app, confirmado no Windows (sequência, descrição e hora) antes da pergunta e de novo antes de aplicar, com menos de 24 h; na dúvida, recusa sem aplicar nada; o app nunca muda a frequência de pontos do Windows; tem teste com o ponto sumido entre a pergunta e o aplicar. | FIX-M3-T3, teste real do M3 (issue #207) | 2026-11-07 |
+| R-72 | Mudança de comportamento que altera a pergunta ou o texto de uma ação também reescreve, no mesmo commit, os textos de introdução e de ajuda da mesma aba e o trecho do manual que descrevem esse passo (grep na frase antiga dá zero fora de testes de "texto antigo"); tem teste com a frase nova. | Revisão da PR #216 (FIX-M3-T3, 78ffbfe95242) | 2026-11-07 |
