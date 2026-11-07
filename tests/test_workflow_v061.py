@@ -101,7 +101,11 @@ class NavigationTests(unittest.TestCase):
         except tk.TclError:
             self.skipTest('display unavailable')
         track_tk_root(self, root)
-        self.assertEqual(len(root.nav_buttons), 8)
+        # FIX-P4-01-02: "Seleção avançada" (catalog) entrou no menu lateral.
+        self.assertEqual(len(root.nav_buttons), 9)
+        self.assertIn('catalog', root.nav_buttons)
+        root.navigate(root.catalog)
+        self.assertEqual(root.tabs.select(), str(root.catalog))
         self.assertEqual(root.tabs.select(), str(root.overview))
         root.navigate(root.installation)
         self.assertEqual(root.tabs.select(), str(root.installation))

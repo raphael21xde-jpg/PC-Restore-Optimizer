@@ -272,6 +272,7 @@ class App(tk.Tk):
         self._nav_entry('overview', '⌂', 'Visão geral')
         self._nav_entry('home', '▣', 'Meu computador')
         self._nav_entry('preservation', '✓', 'Preservação')
+        self._nav_entry('catalog', '☰', 'Seleção avançada')
         self._nav_entry('installation', '↧', 'Instalar Windows')
         self._nav_entry('recovery', '↗', 'Recuperação')
         self.after_format_nav = self._nav_action('✚', 'Depois de formatar', self.open_after_format)
@@ -374,6 +375,8 @@ class App(tk.Tk):
                     'Arquivos organizados por disco, jogo e aplicativo.'),
             'preservation':('PRESERVAÇÃO  /  PRÉVIA', 'Escolher o que manter',
                             'No C: requer cópia; nas outras unidades pode permanecer no local.'),
+            'catalog':('SELEÇÃO AVANÇADA  /  PRÉVIA', 'Escolher jogos, apps, arquivos e navegadores',
+                       'Marcar Manter não é backup. Nada é apagado.'),
             'installation':('WINDOWS  /  PREPARAÇÃO', 'Reinstalar com segurança',
                             'Checklist do backup do C:, EFI e mídia de instalação.'),
             'recovery':('RECUPERAÇÃO  /  REINSTALAÇÃO', 'Recuperar jogos e saves',
@@ -402,7 +405,7 @@ class App(tk.Tk):
             self.refresh_scan_groups()
         if selected == str(self.catalog) and hasattr(self, 'catalog_tabs'):
             self._catalog_tab_changed()
-        if selected in (str(self.review), str(self.catalog)):
+        if selected == str(self.review):
             self.page_eyebrow.set('FERRAMENTAS AVANÇADAS  /  COMPATIBILIDADE')
             self.page_title.set('Ferramentas de backup e seleção')
             self.page_description.set('Funções existentes mantidas, sem exclusão ou formatação automática.')
