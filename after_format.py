@@ -74,8 +74,9 @@ CHANGE_LETTER_GUIDE = (
     'Para desfazer, volte para a letra que a unidade tinha antes da troca, pelo mesmo '
     'caminho.\n'
     'Se preferir não trocar a letra, ainda dá para restaurar os arquivos com "Restaurar '
-    'arquivos marcados para pasta nova"; só o "Colocar no lugar original" precisa que a '
-    'unidade volte a ter a letra de quando o backup foi feito.\n'
+    'arquivos marcados para pasta nova", na janela que abre pelo "Abrir" da etapa '
+    '"Restaurar os arquivos"; só o "Colocar no lugar original", na mesma janela, precisa '
+    'que a unidade volte a ter a letra de quando o backup foi feito.\n'
     'Não mude a letra do disco do Windows. O aplicativo nunca troca letras sozinho.')
 
 _DRIVE_TYPES = {2: 'Removível (pendrive ou cartão)', 3: 'Disco local', 4: 'Unidade de rede',
