@@ -56,6 +56,9 @@ import os
 import re
 from dataclasses import dataclass
 
+# FIX-M3-T3: a frase do ponto de restauração fica num lugar só (safe_tweaks).
+from safe_tweaks import restore_point_sentence, restore_point_when  # noqa: F401
+
 ADVANCED_KIND = 'hkcu_sz_advanced'
 MACHINE_KIND = 'hklm_dword_advanced'
 _BUILD_RE = re.compile(r'[0-9]{1,6}')
@@ -507,13 +510,13 @@ def intro_lines():
     return lines
 
 
-def confirmation_text(tweak):
+def confirmation_text(tweak, reuse_at=None, now=None):
     where = ('neste computador (todas as contas)' if tweak.scope == 'computador'
              else 'na sua conta do Windows')
     return (f'Aplicar o ajuste avançado "{tweak.name}" {where}?\n\n'
             f'O que muda: {tweak.what}\n\n'
             f'Lado ruim: {tweak.downside}\n\n'
             f'Quando vale: {tweak.when}\n\n'
-            'Antes, o app cria um ponto de restauração do Windows e anota tudo no diário de '
-            'alterações. Para voltar, use "Desfazer tudo" na aba "' + CHANGES_TAB_NAME + '".\n\n'
+            + restore_point_sentence(reuse_at, now) +
+            ' Para voltar, use "Desfazer tudo" na aba "' + CHANGES_TAB_NAME + '".\n\n'
             + MEASURE_BEFORE_HINT)

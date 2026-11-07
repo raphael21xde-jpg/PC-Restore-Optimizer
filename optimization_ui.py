@@ -20,9 +20,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from optimization_engine import (inspect_pc, available_power_plans, active_power_guid,
                                  revert_power_plan, export_snapshot,
-                                 OptimizationError, PowerPlanAdapter, create_restore_point,
+                                 OptimizationError, PowerPlanAdapter, create_app_restore_point,
+                                 confirm_app_restore_point,
                                  legacy_power_pending, POWER_KIND, POWER_KEY)
-from change_journal import ChangeJournal, JournalError, BatchRefused
+from change_journal import ChangeJournal, JournalError, BatchRefused, MSG_RESTORE_POINT_FAILED
 from elevation_guard import is_process_elevated
 import session_owner
 from restore_jobs import Job
@@ -161,6 +162,9 @@ TWEAKS_NOTHING_TEXT = ('Não há ajuste seguro para aplicar: os que o app pode m
                        'valor certo. Nada foi mudado.')
 TWEAKS_CANCEL_TEXT = 'Aplicar ajustes seguros cancelado. Nada foi mudado.'
 TWEAKS_RUNNING_TEXT = 'Criando o ponto de restauração e aplicando os ajustes… Isto pode demorar um pouco.'
+# FIX-M3-T3: quando o app usa o ponto que ele mesmo criou (confere de novo antes de aplicar).
+TWEAKS_RUNNING_REUSE_TEXT = ('Conferindo o ponto de restauração e aplicando os ajustes… '
+                             'Isto pode demorar um pouco.')
 TWEAKS_APPLIED_TEXT = ('Ajustes aplicados e anotados no diário de alterações. Para desfazer, use '
                        '"Desfazer tudo" na aba "' + CHANGES_TAB_LABEL + '".')
 # R-27: erro inesperado no meio do lote; algo pode já ter mudado no Windows.
@@ -222,6 +226,8 @@ ADVANCED_WINDOWS_DEFAULT_TEXT = advanced_tweaks.MSG_WINDOWS_DEFAULT
 ADVANCED_NOT_TOUCHED_TEXT = ('O app não mexe neste ajuste: o valor no Windows é de outro tipo ou '
                              'está num formato diferente. Nada foi mudado.')
 ADVANCED_CANCEL_TEXT = 'Ajuste avançado cancelado. Nada foi mudado.'
+ADVANCED_RUNNING_REUSE_TEXT = ('Conferindo o ponto de restauração e aplicando o ajuste… '
+                               'Isto pode demorar um pouco.')
 ADVANCED_RUNNING_TEXT = ('Criando o ponto de restauração e aplicando o ajuste… '
                          'Isto pode demorar um pouco.')
 ADVANCED_APPLIED_TEXT = ('Ajuste aplicado e anotado no diário de alterações. Para desfazer, use '
@@ -310,7 +316,7 @@ class OptimizationPanel(tk.Frame):
     def __init__(self, master, app_dir, *, state_dir=None, power_adapter=None,
                  restore_point=None, elevated_probe=None, ask=None, show=None,
                  tweak_adapter=None, session_owner_probe=None, advanced_adapter=None,
-                 machine_adapter=None):
+                 machine_adapter=None, restore_point_check=None):
         super().__init__(master, bg=BG)
         self.app_dir=Path(app_dir)
         if state_dir is not None:
@@ -332,7 +338,9 @@ class OptimizationPanel(tk.Frame):
         # P3-05 fatia 2: ajustes do computador (lista fechada em HKLM), também lidos só num Job.
         self.machine_adapter=machine_adapter or MachineDwordAdapter()
         self.advanced_states=None
-        self._restore_point=restore_point or create_restore_point
+        self._restore_point=restore_point or create_app_restore_point
+        # FIX-M3-T3: só leitura; confere no Windows o ponto que o app anotou no diário.
+        self._restore_point_check=restore_point_check or confirm_app_restore_point
         self._elevated_probe=elevated_probe
         self._session_owner_probe=session_owner_probe
         self._ask=ask or (lambda title, text: messagebox.askyesno(title, text))
@@ -1181,6 +1189,24 @@ class OptimizationPanel(tk.Frame):
         outcome['account']=answer
         return outcome
 
+    def _reuse_at_for_apply(self):
+        """FIX-M3-T3 (no Job): o ponto do app ainda vale? Qualquer erro = None (cria um novo)."""
+        journal=self.journal
+        if journal is None or self.journal_error:
+            return None
+        try:
+            return journal.reusable_restore_point()
+        except Exception:
+            return None
+
+    def _checked_read_tweaks_for_apply_work(self):
+        """Roda no Job do botão aplicar: a leitura de sempre e, só com a mesma conta e
+        leitura ok, confere se o ponto de restauração do app ainda vale (FIX-M3-T3)."""
+        outcome=self._checked_read_tweaks_work()
+        if outcome.get('account')==session_owner.SAME and outcome.get('tweaks') is not None:
+            outcome['reuse_at']=self._reuse_at_for_apply()
+        return outcome
+
     def _tweaks_account_refused(self,outcome):
         """R-55: no retorno do Job, só segue com a mesma conta que está usando o PC.
 
@@ -1231,7 +1257,7 @@ class OptimizationPanel(tk.Frame):
             return
         # R-55/R-56: a conta é conferida no Job, antes de ler; a recusa vem no retorno.
         self.tweaks_status.set(TWEAKS_READING_TEXT)
-        self._run_power_job(self._checked_read_tweaks_work,self._tweaks_ready)
+        self._run_power_job(self._checked_read_tweaks_for_apply_work,self._tweaks_ready)
 
     def _tweaks_ready(self,outcome):
         if self._tweaks_account_refused(outcome):
@@ -1249,7 +1275,8 @@ class OptimizationPanel(tk.Frame):
             self.tweaks_status.set(TWEAKS_NOTHING_TEXT)
             self._show('info',TWEAKS_TITLE,TWEAKS_NOTHING_TEXT)
             return
-        if not self._ask(TWEAKS_TITLE,safe_tweaks.confirmation_text(tweaks)):
+        reuse_at=outcome.get('reuse_at')
+        if not self._ask(TWEAKS_TITLE,safe_tweaks.confirmation_text(tweaks,reuse_at=reuse_at)):
             self.tweaks_status.set(TWEAKS_CANCEL_TEXT)
             return
         journal=self.journal
@@ -1269,7 +1296,7 @@ class OptimizationPanel(tk.Frame):
                     outcome={'status':'unchanged'}
                 else:
                     self.state_dir.mkdir(parents=True,exist_ok=True)
-                    journal.apply_batch(todo)
+                    journal.apply_batch(todo,reuse_restore_point=reuse_at is not None)
                     outcome={'status':'applied'}
             except BatchRefused as exc:
                 outcome={'status':'refused','message':str(exc)}
@@ -1279,7 +1306,7 @@ class OptimizationPanel(tk.Frame):
                 outcome={'status':'error'}
             outcome.update(self._read_tweaks_work())
             return outcome
-        self.tweaks_status.set(TWEAKS_RUNNING_TEXT)
+        self.tweaks_status.set(TWEAKS_RUNNING_TEXT if reuse_at is None else TWEAKS_RUNNING_REUSE_TEXT)
         self._run_power_job(work,lambda outcome:self._tweaks_apply_done(outcome,tweaks))
 
     def _tweaks_apply_done(self,outcome,tweaks):
@@ -1300,7 +1327,8 @@ class OptimizationPanel(tk.Frame):
             self._journal_failed(message,title=TWEAKS_TITLE,off_text=None)
         elif status=='refused':
             message=outcome.get('message','')
-            if 'ponto de restauração' in message:
+            # FIX-M3-T3: a ajuda das 24 h só vale quando o app tentou criar o ponto.
+            if message==MSG_RESTORE_POINT_FAILED:
                 message+=' '+POWER_RESTORE_POINT_HELP
             self.tweaks_status.set(message)
             self._show('warning',TWEAKS_TITLE,message)
@@ -1389,6 +1417,14 @@ class OptimizationPanel(tk.Frame):
         outcome['account']=answer
         return outcome
 
+    def _checked_read_advanced_for_apply_work(self):
+        """Roda no Job do botão aplicar: a leitura de sempre e, só com a mesma conta e
+        leitura ok, confere se o ponto de restauração do app ainda vale (FIX-M3-T3)."""
+        outcome=self._checked_read_advanced_work()
+        if outcome.get('account')==session_owner.SAME and outcome.get('advanced') is not None:
+            outcome['reuse_at']=self._reuse_at_for_apply()
+        return outcome
+
     def _advanced_account_refused(self,outcome):
         """R-55: só segue com a mesma conta que está usando o PC (inclusive Job que falhou)."""
         answer=outcome.get('account',session_owner.UNKNOWN)
@@ -1437,7 +1473,7 @@ class OptimizationPanel(tk.Frame):
             return
         # R-55/R-56: a conta é conferida no Job, antes de ler; a recusa vem no retorno.
         self.advanced_status.set(ADVANCED_READING_TEXT)
-        self._run_power_job(self._checked_read_advanced_work,
+        self._run_power_job(self._checked_read_advanced_for_apply_work,
                             lambda outcome:self._advanced_ready(outcome,tweak))
 
     def _advanced_ready(self,outcome,tweak):
@@ -1461,7 +1497,9 @@ class OptimizationPanel(tk.Frame):
             self._show('warning',ADVANCED_TITLE,message)
             return
         # "Não" vem marcado: só segue com um "Sim" de verdade.
-        if self._ask_advanced(ADVANCED_TITLE,advanced_tweaks.confirmation_text(tweak)) is not True:
+        reuse_at=outcome.get('reuse_at')
+        if self._ask_advanced(ADVANCED_TITLE,advanced_tweaks.confirmation_text(
+                tweak,reuse_at=reuse_at)) is not True:
             self.advanced_status.set(ADVANCED_CANCEL_TEXT)
             return
         journal=self.journal
@@ -1484,7 +1522,7 @@ class OptimizationPanel(tk.Frame):
                     outcome={'status':'unchanged'}
                 else:
                     self.state_dir.mkdir(parents=True,exist_ok=True)
-                    journal.apply_batch(todo)
+                    journal.apply_batch(todo,reuse_restore_point=reuse_at is not None)
                     outcome={'status':'applied'}
             except BatchRefused as exc:
                 outcome={'status':'refused','message':str(exc)}
@@ -1494,7 +1532,8 @@ class OptimizationPanel(tk.Frame):
                 outcome={'status':'error'}
             outcome.update(self._read_advanced_work())
             return outcome
-        self.advanced_status.set(ADVANCED_RUNNING_TEXT)
+        self.advanced_status.set(ADVANCED_RUNNING_TEXT if reuse_at is None
+                                 else ADVANCED_RUNNING_REUSE_TEXT)
         self._run_power_job(work,lambda outcome:self._advanced_apply_done(outcome,tweak))
 
     @staticmethod
@@ -1527,7 +1566,8 @@ class OptimizationPanel(tk.Frame):
             self._journal_failed(message,title=ADVANCED_TITLE,off_text=None)
         elif status=='refused':
             message=outcome.get('message','')
-            if 'ponto de restauração' in message:
+            # FIX-M3-T3: a ajuda das 24 h só vale quando o app tentou criar o ponto.
+            if message==MSG_RESTORE_POINT_FAILED:
                 message+=' '+POWER_RESTORE_POINT_HELP
             self.advanced_status.set(message)
             self._show('warning',ADVANCED_TITLE,message)
@@ -1915,7 +1955,7 @@ class OptimizationPanel(tk.Frame):
                                        {POWER_KIND:self.power_adapter,TWEAK_KIND:self.tweak_adapter,
                                         ADVANCED_KIND:self.advanced_adapter,
                                         MACHINE_KIND:self.machine_adapter},
-                                       self._restore_point)
+                                       self._restore_point,self._restore_point_check)
             self.journal_error=''
         except JournalError as exc:
             self.journal=None

@@ -77,8 +77,14 @@ class SourceTests(unittest.TestCase):
         # R-55/R-56: a conta é conferida dentro do Job, antes de ler; nunca na thread da tela.
         for name in ('apply_safe_tweaks', 'refresh_tweaks'):
             code = ast.unparse(_function(name))
-            self.assertIn('self._checked_read_tweaks_work', code)
+            self.assertIn('self._checked_read_tweaks_', code)
             self.assertNotIn('session_owner', code)
+        # FIX-M3-T3: o Job do aplicar usa a mesma leitura e só depois confere o ponto.
+        self.assertIn('self._checked_read_tweaks_for_apply_work', ast.unparse(_function('apply_safe_tweaks')))
+        self.assertIn('self._checked_read_tweaks_work', ast.unparse(_function('refresh_tweaks')))
+        for_apply = ast.unparse(_function('_checked_read_tweaks_for_apply_work'))
+        self.assertLess(for_apply.index('self._checked_read_tweaks_work()'),
+                        for_apply.index('self._reuse_at_for_apply()'))
         work = ast.unparse(_function('_checked_read_tweaks_work'))
         self.assertLess(work.index('session_owner.session_owner'), work.index('_read_tweaks_work()'))
         for name in ('_tweaks_ready', '_tweaks_read_done'):
