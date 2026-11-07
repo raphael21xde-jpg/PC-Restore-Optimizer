@@ -67,6 +67,9 @@ CHANGE_LETTER_GUIDE = (
     '2. Ache a unidade certa pelo nome e pelo tamanho.\n'
     '3. Clique com o botão direito nela e escolha "Alterar letra de unidade e caminho".\n'
     '4. Clique em "Alterar", escolha a letra {letters} e confirme.\n'
+    'Cuidado: programas e atalhos que usam a letra antiga param de achar os arquivos '
+    'até a letra voltar.\n'
+    'Para desfazer, troque de novo para a letra antiga, pelo mesmo caminho.\n'
     'Não mude a letra do disco do Windows. O aplicativo nunca troca letras sozinho.')
 
 _DRIVE_TYPES = {2: 'Removível (pendrive ou cartão)', 3: 'Disco local', 4: 'Unidade de rede',
