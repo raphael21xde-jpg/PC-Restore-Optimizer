@@ -40,10 +40,15 @@ as contas) e só depois de reiniciar:
 (1 -> 2); desfazer volta exatamente ao 1 anotado. Só aceita os números 1 e 2,
 do tipo REG_DWORD (um ``bool`` é recusado). Antes de ler o valor, confere a
 versão do Windows (``CurrentBuildNumber``, texto só com algarismos); versão
-antiga (antes da 19041), ausente ou fora do padrão, valor ausente, chave
-ausente, 0, 3 ou outro tipo = ``NotSupportedError`` (texto neutro, R-57: "o
-app não mexe: ele não reconheceu esta opção neste PC"). O adaptador nunca cria nem apaga
-a chave ou o valor: só abre a chave que já existe e troca o número.
+antiga (antes da 19041), ausente ou fora do padrão, chave ausente, 0, 3 ou
+outro tipo = ``NotSupportedError`` (texto neutro, R-57: "o app não mexe: ele
+não reconheceu esta opção neste PC"). FIX-M3-T2: com a versão conferida e a
+chave existente, o valor ``HwSchMode`` ausente (comum no Windows 11) =
+``WindowsDefaultError``, estado ``windows_default``: o Windows usa o padrão da
+placa de vídeo e do driver, que o app não lê; o texto diz onde conferir. Ausente
+nunca vira "já aplicado" (R-65) e o app não cria o valor (aplicar e desfazer
+recusam sem gravar). O adaptador nunca cria nem apaga a chave ou o valor: só
+abre a chave que já existe e troca o número.
 """
 from __future__ import annotations
 
@@ -74,6 +79,18 @@ MSG_NOT_WINDOWS = 'Este recurso só funciona em computadores Windows.'
 # R-59: o texto de recusa não manda fazer por fora a mesma mudança que o app recusou.
 MSG_NOT_SUPPORTED = ('Por segurança, o app não mexe: ele não reconheceu esta opção neste PC. '
                      'Nada foi alterado.')
+# FIX-M3-T2 (R-65/R-66): valor ausente com chave e versão conferidas. Só manda
+# conferir a tela (nunca "ligue"); cita o nome atual com o antigo entre parênteses.
+_WINDOWS_DEFAULT_BODY = ('o app não mexe: neste PC a opção não tem valor gravado, e o Windows usa '
+                         'o padrão da placa de vídeo e do driver, que o app não consegue ler. '
+                         'Para ver se está ligada: Configurações > Sistema > Tela > Elementos '
+                         'gráficos > "Configurações gráficas avançadas" (em versões anteriores, '
+                         '"Alterar configurações gráficas padrão").')
+MSG_WINDOWS_DEFAULT = 'O' + _WINDOWS_DEFAULT_BODY[1:] + ' Nada foi alterado.'
+# Revisão da PR #211: no "Desfazer", diz claramente que o desfazer não foi feito.
+MSG_UNDO_WINDOWS_DEFAULT = ('Não foi possível desfazer: o valor desta opção foi apagado fora do '
+                            'app, e o Windows passou a usar o padrão do driver. Nada foi '
+                            'alterado; o ajuste continua na lista de alterações.')
 MEASURE_BEFORE_HINT = 'Para comparar, meça ANTES na aba 1 antes de aplicar.'
 
 
@@ -86,7 +103,14 @@ class NotTextError(AdvancedTweakError):
 
 
 class NotSupportedError(AdvancedTweakError):
-    """Windows antigo, chave ou valor ausente, ou valor fora da lista: o app não mexe."""
+    """Windows antigo, chave ausente ou valor fora da lista: o app não mexe."""
+
+
+class WindowsDefaultError(NotSupportedError):
+    """Versão e chave conferidas, valor ausente: vale o padrão do Windows/driver; o app não mexe."""
+
+    # O diário usa este texto quando o desfazer é recusado (o valor sumiu por fora).
+    undo_reason = MSG_UNDO_WINDOWS_DEFAULT
 
 
 @dataclass(frozen=True)
@@ -139,8 +163,9 @@ ADVANCED_TWEAKS = (
         what=('Liga a opção "Agendamento de GPU acelerado por hardware" do Windows. A placa de '
               'vídeo passa a organizar sozinha parte do próprio trabalho, o que em alguns PCs '
               'deixa jogos um pouco mais rápidos de responder; em outros não muda nada. É a mesma '
-              'opção de Configurações > Sistema > Tela > Elementos gráficos > "Alterar '
-              'configurações gráficas padrão".'),
+              'opção de Configurações > Sistema > Tela > Elementos gráficos > "Configurações '
+              'gráficas avançadas" (em versões anteriores, "Alterar configurações gráficas '
+              'padrão").'),
         downside=('Alguns jogos, drivers de vídeo antigos, programas de captura ou de gravação '
                   'de tela podem travar, engasgar ou ficar mais lentos com esta opção ligada. '
                   'Vale para todas as contas deste computador, não só para a sua.'),
@@ -163,6 +188,7 @@ STATE_TEXT = {
     'other_type': ('o app não mexe (o valor no Windows é de outro tipo ou está num '
                    'formato diferente).'),
     'unsupported': 'por segurança, o app não mexe: ele não reconheceu esta opção neste PC.',
+    'windows_default': _WINDOWS_DEFAULT_BODY,
     'unreadable': 'Não foi possível ler o estado atual; o app não mexe.',
 }
 
@@ -347,11 +373,14 @@ class MachineDwordAdapter:
             raise NotSupportedError(MSG_NOT_SUPPORTED)
 
     def _query(self, reg, handle, target):
-        """Número atual da lista; ausente, outro tipo ou fora da lista = NotSupportedError."""
+        """Número atual da lista; outro tipo ou fora da lista = NotSupportedError.
+
+        Só é chamado depois de ``_check_build`` e com a chave já aberta: o valor
+        ausente aí = ``WindowsDefaultError`` (padrão do Windows/driver)."""
         try:
             value, value_type = reg.QueryValueEx(handle, target.names[0])
         except FileNotFoundError:
-            raise NotSupportedError(MSG_NOT_SUPPORTED) from None
+            raise WindowsDefaultError(MSG_WINDOWS_DEFAULT) from None
         if value_type != reg.REG_DWORD or not _is_dword(value) or value not in self._allowed(target):
             raise NotSupportedError(MSG_NOT_SUPPORTED)
         return value
@@ -409,8 +438,8 @@ def read_states(adapter, machine_adapter=None):
     ``adapter`` lê os ajustes da conta (``ADVANCED_KIND``) e ``machine_adapter``
     os do computador (``MACHINE_KIND``); sem ``machine_adapter``, esses ficam
     ``unreadable``. ``state``: ``applied``, ``not_applied``, ``other_type``,
-    ``unsupported`` ou ``unreadable``. Nos três últimos, ``changes`` fica vazio
-    (o app não mexe)."""
+    ``unsupported``, ``windows_default`` ou ``unreadable``. Nos quatro últimos,
+    ``changes`` fica vazio (o app não mexe)."""
     adapters = {ADVANCED_KIND: adapter, MACHINE_KIND: machine_adapter}
     states = []
     for tweak in ADVANCED_TWEAKS:
@@ -424,6 +453,9 @@ def read_states(adapter, machine_adapter=None):
                 break
             try:
                 current = reader.read(value.key)
+            except WindowsDefaultError:
+                state = 'windows_default'
+                break
             except NotSupportedError:
                 state = 'unsupported'
                 break
@@ -437,7 +469,7 @@ def read_states(adapter, machine_adapter=None):
                 changes.append({'kind': value.kind, 'key': value.key, 'after': desired})
         if state == 'applied' and changes:
             state = 'not_applied'
-        if state in ('other_type', 'unsupported', 'unreadable'):
+        if state in ('other_type', 'unsupported', 'windows_default', 'unreadable'):
             changes = []
         states.append({'id': tweak.id, 'state': state, 'changes': changes})
     return states

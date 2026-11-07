@@ -120,6 +120,8 @@ class ClosedListTests(Base):
             self.assertNotIn('HwSch', text)
         self.assertIn('Configurações > Sistema > Tela > Elementos gráficos', tweak.what)
         self.assertIn('Alterar configurações gráficas padrão', tweak.what)
+        self.assertIn('"Configurações gráficas avançadas" (em versões anteriores, "Alterar '
+                      'configurações gráficas padrão")', tweak.what)
         for part in ('jogos', 'drivers', 'captura', 'gravação', 'travar', 'todas as contas'):
             self.assertIn(part, tweak.downside)
         self.assertIn('reiniciar o computador', tweak.when)
@@ -197,8 +199,9 @@ class StateTests(Base):
         self.assertIn('o app não mexe', text)
         self.assertNotIn('não oferece', text)
 
-    def test_value_absent_out_of_list_or_other_type_is_unsupported(self):
-        cases = {'ausente': None, 'zero': (0, DWORD), 'tres': (3, DWORD), 'texto': ('1', SZ),
+    def test_value_out_of_list_or_other_type_is_unsupported(self):
+        # FIX-M3-T2: o valor ausente virou "windows_default" (test_advanced_tweaks_fix_m3_t2).
+        cases = {'zero': (0, DWORD), 'tres': (3, DWORD), 'texto': ('1', SZ),
                  'qword': (1, FakeWinreg.REG_QWORD), 'bool': (True, DWORD), 'binario': (b'\x01', 3),
                  'negativo': (-1, DWORD), 'grande': (2 ** 32, DWORD)}
         for name, case in cases.items():
@@ -231,9 +234,10 @@ class StateTests(Base):
                 self.assertFalse([c for c in self.reg.calls if c[0] == 'QueryValueEx'
                                   and c[2] == 'HwSchMode'])
 
-    def test_neutral_text_for_absent_value_and_other_type(self):
+    def test_neutral_text_for_other_type(self):
         # R-57: o estado junta causas diferentes; o texto vale para todas e não culpa a placa.
-        for name, case in {'ausente': None, 'texto': ('1', SZ),
+        # FIX-M3-T2: o valor ausente tem texto próprio (test_advanced_tweaks_fix_m3_t2).
+        for name, case in {'texto': ('1', SZ),
                            'qword': (1, FakeWinreg.REG_QWORD)}.items():
             with self.subTest(case=name):
                 self.new_registry()

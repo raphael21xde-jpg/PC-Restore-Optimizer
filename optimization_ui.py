@@ -214,9 +214,10 @@ ADVANCED_REREAD_FAILED_TEXT = ('Não foi possível ler de novo o estado dos ajus
                                'com "Ver estado atual" ou com o "Conferir de novo" da aba "'
                                + CHANGES_TAB_LABEL + '".')
 ADVANCED_ALREADY_TEXT = 'Este ajuste já está aplicado. Nada foi mudado.'
-# P3-05 fatia 2 (R-57): junta causas diferentes (Windows antigo, opção ausente, valor fora da
+# P3-05 fatia 2 (R-57): junta causas diferentes (Windows antigo, chave ausente, valor fora da
 # lista, outro tipo), então o texto é neutro e vale para todas.
 ADVANCED_UNSUPPORTED_TEXT = advanced_tweaks.MSG_NOT_SUPPORTED
+ADVANCED_WINDOWS_DEFAULT_TEXT = advanced_tweaks.MSG_WINDOWS_DEFAULT
 ADVANCED_NOT_TOUCHED_TEXT = ('O app não mexe neste ajuste: o valor no Windows é de outro tipo ou '
                              'está num formato diferente. Nada foi mudado.')
 ADVANCED_CANCEL_TEXT = 'Ajuste avançado cancelado. Nada foi mudado.'
@@ -1499,7 +1500,8 @@ class OptimizationPanel(tk.Frame):
     def _advanced_state_message(state):
         """Texto fixo (R-07) para um estado em que nada foi gravado."""
         return {'applied':ADVANCED_ALREADY_TEXT,'other_type':ADVANCED_NOT_TOUCHED_TEXT,
-                'unsupported':ADVANCED_UNSUPPORTED_TEXT}.get(state,ADVANCED_READ_FAILED_TEXT)
+                'unsupported':ADVANCED_UNSUPPORTED_TEXT,
+                'windows_default':ADVANCED_WINDOWS_DEFAULT_TEXT}.get(state,ADVANCED_READ_FAILED_TEXT)
 
     def _advanced_apply_done(self,outcome,tweak):
         self._show_advanced_states(outcome,after_change=True)

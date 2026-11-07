@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 9 (última poda: 06/11/2026, pedido `regras-20261106-poda-r45-r56`, issue #203). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-57.
+poda: 11 (última poda: 06/11/2026, pedido `regras-20261106-poda-r45-r56`, issue #203). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-57 (já chegaram: R-57 a R-67).
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -80,3 +80,5 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-63 | Manual ou texto de ajuda que descreve o que outra tela ou programa mostra (confirmações do app, campos do instalador do Windows) só cita o que o código ou o programa mostra de fato (número de perguntas, unidade de medida, campos); dados que o usuário precisa comparar entre telas vêm na mesma unidade, ou o texto diz como converter. Tem teste com a frase. | Revisão 3 da P4-01 (39bdff236185) | 2026-11-06 |
 | R-64 | Manual ou texto de ajuda que diz que uma tela "ajuda a" fazer algo só promete o que a tela faz com a entrada que o fluxo visível produz (arquivo ou cofre criado por tela alcançável) e cita no mesmo trecho os limites que a própria tela impõe (navegadores aceitos, formato de entrada). Tem teste com a frase do limite. | Revisão 4 da P4-01 (ee84abb60085) | 2026-11-06 |
 | R-65 | Diagnóstico só diz "provavelmente ligado" ou "sim" com um sinal que, no caso conhecido, nunca aparece com o recurso desligado; indício que já foi visto com o recurso desligado (ex.: janela de memória > 256 MiB com Resizable BAR desligado) vira "não confirmado", com o motivo e onde conferir, e tem teste com esse caso simulado. | FIX-M3-T1 (RTX 5070, driver 621.01), issue #207 | 2026-11-06 |
+| R-66 | Estado "o app não mexe" de um ajuste separa "valor ausente com a chave e o Windows conferidos" (padrão do Windows/driver, com onde conferir) de "não reconhecido"; ausente nunca vira "já aplicado" nem é criado pelo app, e o texto cita o nome atual da tela do Windows com o antigo entre parênteses. Tem teste com o valor ausente simulado (substitui, na R-57, o caso valor ausente com versão e chave conferidas). | FIX-M3-T2 (Windows 11 build 26300), issue #207 | 2026-11-07 |
+| R-67 | Regra nova que muda o caso de outra regra (ex.: R-66 tira "valor ausente" do texto neutro da R-57) diz na própria linha qual regra e qual caso ela substitui; a regra antiga é ajustada na próxima poda. | Revisão da PR #211 (FIX-M3-T2) | 2026-11-07 |

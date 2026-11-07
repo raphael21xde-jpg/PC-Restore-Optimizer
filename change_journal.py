@@ -76,6 +76,7 @@ MSG_UNDO_UNKNOWN_NOT_NOTED = ('O app tentou desfazer o ajuste no sistema, mas n�
                               'e o diário não pôde ser anotado; confira manualmente e '
                               'feche e abra o app de novo.')
 NOTE_UNDO = 'desfazer'
+MSG_UNDO_NOT_READ = 'Não foi possível ler o valor atual; nada foi desfeito.'
 MSG_BATCH_SAVE_FAILED = 'Não foi possível gravar o diário; os ajustes deste lote foram desfeitos.'
 MSG_BATCH_SAVE_FAILED_CHECK = ('Não foi possível gravar o diário; confira manualmente: '
                                '{n} ajuste(s) não voltaram ao valor anterior.')
@@ -403,9 +404,12 @@ class ChangeJournal:
             return False, 'Essa alteração não está aplicada; não há o que desfazer.'
         if entry['kind'] not in self._adapters:
             return False, 'O app não sabe mais desfazer esse tipo de ajuste.'
-        ok, current = self._read(entry)
-        if not ok:
-            return False, 'Não foi possível ler o valor atual; nada foi desfeito.'
+        try:
+            current = self._adapters[entry['kind']].read(entry['key'])
+        except Exception as exc:
+            # O adaptador pode dar o motivo exato (texto em ``undo_reason``); senão, o texto geral.
+            reason = getattr(exc, 'undo_reason', None)
+            return False, reason if isinstance(reason, str) and reason else MSG_UNDO_NOT_READ
         if not same_value(current, entry['after']):
             return False, MSG_CHANGED_OUTSIDE
         try:
