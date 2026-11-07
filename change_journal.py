@@ -36,7 +36,10 @@ Escolhas de design (as mais seguras, registradas em docs/BACKLOG.md):
   seguinte só o reaproveita se ``confirm_restore_point`` (injetada, só leitura)
   confirmar no Windows, antes da pergunta e de novo antes de aplicar; na dúvida,
   recusa sem aplicar nada. Reaproveitar não renova o prazo. Registro ilegível é
-  ignorado (dá recusa) e não bloqueia o diário; o schema não muda.
+  ignorado: o app tenta criar um ponto novo (e recusa se o Windows não criar) e
+  o diário não fica bloqueado; o schema não muda.
+- FIX-M3-T3-01: ``check_unchanged`` (só leitura) deixa as abas recusarem antes da
+  pergunta quando o diário foi mudado por fora.
 """
 from __future__ import annotations
 
@@ -363,6 +366,13 @@ class ChangeJournal:
         return ok and same_value(current, entry['before'])
 
     # ---------- API ----------
+    def check_unchanged(self):
+        """FIX-M3-T3-01: só leitura. Lança ``JournalError`` se o arquivo do diário não é
+        mais o que esta instância leu ou gravou (ou se ela já está recusando tudo).
+
+        Nunca grava nem chama adaptador ou ponto de restauração."""
+        self._check_disk_unchanged()
+
     def reusable_restore_point(self):
         """FIX-M3-T3: o ponto anotado ainda vale? Devolve o datetime confirmado ou None.
 
