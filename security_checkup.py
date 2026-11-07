@@ -22,8 +22,8 @@ Regras desta fatia:
   rede só ficam a porta remota e o programa dono (o endereço remoto nem é pedido);
 - programa da pasta do Windows só dá OK (ou some, nas tarefas da Microsoft)
   se estiver na lista fechada ``KNOWN_QUIET_PROGRAMS`` (R-46);
-- FIX-M3-T6: na janela, as tarefas de rotina em ``\\Microsoft\\Windows\\`` (um
-  programa do Windows como o rundll32, ou um componente do Windows) viram uma
+- FIX-M3-T6: na janela, as tarefas de rotina em ``\\Microsoft\\Windows\\`` (só o
+  rundll32 direto em System32 ou SysWOW64, ou um componente do Windows) viram uma
   linha de resumo "atenção" com a contagem; a decisão é refeita na hora de
   mostrar (nome, motivo e caminho, R-77) e a versão completa
   (``checkup_lines(..., full=True)``, salva em .txt pelo botão
@@ -349,9 +349,12 @@ CHECKUP_FULL_HEADER = ('VERSÃO COMPLETA: todas as tarefas aparecem uma por uma,
                        'Microsoft que a janela resume numa linha.')
 MS_TASKS_SUMMARY = '{count} tarefas da Microsoft na pasta \\Microsoft\\Windows\\ (resumidas nesta linha)'
 MS_TASKS_SUMMARY_ONE = '1 tarefa da Microsoft na pasta \\Microsoft\\Windows\\ (resumida nesta linha)'
-MS_TASKS_REASON = ('São tarefas do próprio Windows que usam um programa do Windows que pode rodar o que vier '
-                   'escrito depois dele (como o rundll32) ou que abrem um componente do Windows. Isso é comum '
-                   'nas tarefas da Microsoft, mas o app não confere o que elas rodam.')
+MS_TASKS_REASON = ('São tarefas da pasta \\Microsoft\\Windows\\ que rodam o rundll32 da pasta do Windows '
+                   '(System32 ou SysWOW64) ou abrem um componente do Windows. Isso é comum nas tarefas da '
+                   'Microsoft, mas o app não confere o que elas rodam.')
+# R-77/R-78: lista FECHADA do que pode ir para a linha de resumo (nome exato, direto em
+# System32 ou SysWOW64). Só o rundll32: a R-77 substitui o caso "esconder" da R-45/R-46 só para ele.
+MS_SUMMARY_PROGRAMS = ('rundll32.exe',)
 MS_TASKS_FULL_HINT = (f'Para ver cada tarefa, use o botão "{CHECKUP_SAVE_FULL_BUTTON}", no fim desta janela '
                       'do check-up. Se alguma não parecer do Windows, faça a verificação recomendada no fim '
                       'desta lista.')
@@ -1607,17 +1610,19 @@ def _item_lines(item, env, with_count=False):
 
 
 def _ms_windows_routine(item, env) -> bool:
-    """True só para uma tarefa de rotina da Microsoft que pode ir para a linha de resumo (FIX-M3-T6, R-77).
+    """True só para uma tarefa de rotina da Microsoft que pode ir para a linha de resumo (FIX-M3-T6, R-77, R-78).
 
     Tudo é conferido de novo na hora de mostrar; nada guardado no resultado decide sozinho:
     - é tarefa e o nome começa com ``\\Microsoft\\Windows\\`` (sem diferenciar maiúsculas;
       ``\\Microsoft\\WindowsX\\`` e ``\\Microsoft\\Office\\`` ficam fora);
     - ``_effective`` dá "atenção" com o motivo ``ms_windows_program`` ou ``ms_com_handler``;
-    - ``ms_windows_program``: o caminho guardado é um programa dentro da pasta do Windows
-      (classificado como OK pelo lugar), sem nome incerto, sem interpretador e, se roda
-      scripts, com o nome exato de um programa do Windows (R-49);
+    - ``ms_windows_program``: o caminho guardado é um programa da lista fechada
+      ``MS_SUMMARY_PROGRAMS`` (só ``rundll32.exe``, nome exato), direto em
+      %SystemRoot%\\System32 ou %SystemRoot%\\SysWOW64, sem subpasta;
     - ``ms_com_handler``: o caminho guardado está vazio.
-    Suspeito, OK e qualquer outro motivo nunca são resumidos.
+    Qualquer outro programa (powershell, cmd, mshta, forfiles, um nome qualquer em
+    System32, pastas como Tasks ou spool\\drivers\\color...), suspeito, OK e qualquer
+    outro motivo nunca são resumidos.
     """
     if not isinstance(item, dict) or item.get('source') != 'task':
         return False
@@ -1640,12 +1645,10 @@ def _ms_windows_routine(item, env) -> bool:
         return False
     if classify_path(None, expanded, env) != (STATE_OK, REASON_OK):
         return False
-    if not _under(_norm_exe(expanded, env), _system_root(env)):
-        return False
-    runner = _code_runner_reason(expanded, env, allow_known=False)
-    if runner == REASON_SCRIPT_HOST:
-        return any(base in SCRIPT_HOSTS for base in _exe_names(expanded, env))
-    return runner == REASON_WINDOWS_PROGRAM
+    norm = _key(_expand(_strip_nt_prefix(expanded.strip()), env))
+    root_key = _key(_system_root(env)).rstrip('\\')
+    return (ntpath.basename(norm) in MS_SUMMARY_PROGRAMS
+            and ntpath.dirname(norm) in (root_key + '\\system32', root_key + '\\syswow64'))
 
 
 def _ms_summary_lines(count):

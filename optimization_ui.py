@@ -31,7 +31,8 @@ from ui_timers import WindowTimers
 from hardware_profile import profile_lines, SCAN_CONFIRMATION
 from bios_guidance import bios_guidance_lines, bios_steps_text
 import security_checkup as checkup_engine
-from security_checkup import CHECKUP_CONFIRMATION, IDLE_CONFIRMATION
+# CHECKUP_SAVE_FULL_BUTTON: o mesmo texto que a dica da linha de resumo cita (R-74).
+from security_checkup import CHECKUP_CONFIRMATION, IDLE_CONFIRMATION, CHECKUP_SAVE_FULL_BUTTON
 import pc_measure
 from pc_measure import MEASURE_CONFIRMATION
 import safe_tweaks
@@ -51,8 +52,6 @@ CHECKUP_FAILED_TEXT = ('O check-up de segurança não pôde ser concluído. Nada
                        'encerrado ou tirado do lugar. Tente de novo mais tarde.')
 # FIX-M3-T6: o .txt com o check-up completo (cada tarefa da Microsoft numa linha) só é
 # gravado quando o usuário clica no botão e escolhe onde salvar.
-# O mesmo texto que a dica da linha de resumo cita (security_checkup.CHECKUP_SAVE_FULL_BUTTON).
-CHECKUP_SAVE_FULL_BUTTON='Salvar check-up completo (.txt)'
 CHECKUP_SAVE_TITLE='Salvar check-up completo'
 CHECKUP_SAVED_TEXT='Check-up completo salvo no arquivo escolhido. Nada foi mudado no PC.'
 CHECKUP_SAVE_CANCELLED_TEXT='Nada foi salvo.'

@@ -236,8 +236,46 @@ class NeverSummarizedTests(unittest.TestCase):
         self.assertTrue(sc._ms_windows_routine(dict(base, reason=sc.REASON_MS_WINDOWS_PROGRAM,
                                                     path=r'%windir%\system32\rundll32.exe'), ENV))
         self.assertTrue(sc._ms_windows_routine(dict(base, reason=sc.REASON_MS_WINDOWS_PROGRAM,
-                                                    path=r'C:\Windows\System32\conhost.exe'), ENV))
+                                                    path=r'C:\Windows\SysWOW64\RUNDLL32.EXE'), ENV))
+        self.assertEqual(sc.MS_SUMMARY_PROGRAMS, ('rundll32.exe',))
         self.assertTrue(sc._ms_windows_routine(dict(base, reason=sc.REASON_MS_COM_HANDLER, path=''), ENV))
+
+    def test_only_exact_rundll32_in_system32_or_syswow64(self):
+        """R-45/R-46/R-78: programa da pasta do Windows que não é o rundll32 direto em
+        System32/SysWOW64 continua numa linha própria (tarefa lida e item guardado)."""
+        paths = ['C:\\Windows\\System32\\' + exe for exe in (
+            'powershell.exe', 'pwsh.exe', 'cmd.exe', 'mshta.exe', 'wscript.exe', 'cscript.exe', 'regsvr32.exe',
+            'forfiles.exe', 'msiexec.exe', 'certutil.exe', 'schtasks.exe', 'svchost.exe', 'conhost.exe',
+            'zzupdater.exe')] + [
+            r'C:\Windows\SysWOW64\bitsadmin.exe', r'C:\Windows\SysWOW64\regsvr32.exe',
+            r'C:\Windows\rundll32.exe', r'C:\Windows\evil.exe', r'C:\Windows\Tasks\x.exe',
+            r'C:\Windows\Tasks\rundll32.exe', r'C:\Windows\Tracing\rundll32.exe',
+            r'C:\Windows\System32\spool\drivers\color\x.exe',
+            r'C:\Windows\System32\spool\drivers\color\rundll32.exe',
+            r'C:\Windows\System32\Tasks\x.exe', r'C:\Windows\System32\Tasks\rundll32.exe',
+            r'C:\Windows\System32\sub\rundll32.exe', r'C:\Windows\SysWOW64\sub\rundll32.exe',
+            r'C:\Windows\System32\rundll32x.exe', r'C:\Windows\System32\rundll32.exe.exe',
+            r'C:\Windows\System32\rundll64.exe']
+        for path in paths:
+            with self.subTest(path=path):
+                row = _task('\\Microsoft\\Windows\\A\\', 'Caso', path)
+                result = _result([row])
+                for item in result['tasks']:
+                    self.assertFalse(sc._ms_windows_routine(item, ENV))
+                text = '\n'.join(_lines(result))
+                self.assertNotIn('resumid', text)
+                self.assertIn('Caso — tarefa agendada', text)
+                forged = {'source': 'task', 'name': '\\Microsoft\\Windows\\A\\B', 'state': sc.STATE_ATTENTION,
+                          'reason': sc.REASON_MS_WINDOWS_PROGRAM, 'path': path, 'count': 1}
+                self.assertFalse(sc._ms_windows_routine(forged, ENV))
+                self.assertNotIn('resumid', '\n'.join(_lines({'tasks': [forged], 'errors': []})))
+
+    def test_reason_only_says_what_is_checked(self):
+        # R-37: o texto cita só o que o código confere (rundll32 em System32/SysWOW64 ou componente).
+        self.assertIn('rundll32', sc.MS_TASKS_REASON)
+        self.assertIn('System32 ou SysWOW64', sc.MS_TASKS_REASON)
+        self.assertIn('componente do Windows', sc.MS_TASKS_REASON)
+        self.assertNotIn('como o rundll32', sc.MS_TASKS_REASON)
 
     def test_suspect_rules_unchanged_next_to_summary(self):
         rows = _routine_rows(10) + [
@@ -290,6 +328,15 @@ def _constants(prefix):
     return {k: v for k, v in namespace.items() if k.startswith(prefix)}
 
 
+def _imported_from_engine(name):
+    """O valor que optimization_ui importa de security_checkup (R-74: um texto só para o botão e a dica)."""
+    for node in _source_tree().body:
+        if isinstance(node, ast.ImportFrom) and node.module == 'security_checkup':
+            if any(alias.name == name and alias.asname is None for alias in node.names):
+                return getattr(sc, name)
+    raise AssertionError(f'optimization_ui não importa {name} de security_checkup')
+
+
 class _FakeWidget:
     def __init__(self, *args, **kwargs):
         self.kwargs = kwargs
@@ -334,6 +381,8 @@ class SaveWithoutTkTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name)
         self.texts = _constants('CHECKUP_SAVE')
+        self.assertNotIn('CHECKUP_SAVE_FULL_BUTTON', self.texts)  # vem de security_checkup, não repetido
+        self.texts['CHECKUP_SAVE_FULL_BUTTON'] = _imported_from_engine('CHECKUP_SAVE_FULL_BUTTON')
         self.answer = str(self.tmp / 'checkup.txt')
         self.dialog = []
         self.shown = []
