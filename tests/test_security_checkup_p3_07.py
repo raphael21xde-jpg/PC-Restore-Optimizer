@@ -745,7 +745,10 @@ class ScheduledTaskTests(unittest.TestCase):
         item = self._one(_task('\\Microsoft\\Windows\\A\\', 'B', '', com=True))
         self.assertEqual((item['state'], item['reason'], item['path']),
                          (sc.STATE_ATTENTION, sc.REASON_MS_COM_HANDLER, ''))
-        text = self._text({'tasks': [item], 'processes': [], 'errors': []})
+        # FIX-M3-T6: na janela vira a linha de resumo; cada tarefa aparece na versão completa.
+        result = {'tasks': [item], 'processes': [], 'errors': []}
+        self.assertIn(sc.MS_TASKS_SUMMARY_ONE, self._text(result))
+        text = '\n'.join(sc.checkup_lines(result, ENV, full=True))
         self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', text)
         self.assertIn('comum nas tarefas da Microsoft', text)
         self.assertNotIn('Onde:', text)
@@ -906,7 +909,10 @@ class ScheduledTaskTests(unittest.TestCase):
                 item = self._one(_task('\\Microsoft\\Windows\\A\\', 'B', '%windir%\\System32\\' + exe))
                 self.assertEqual((item['state'], item['reason']),
                                  (sc.STATE_ATTENTION, sc.REASON_MS_WINDOWS_PROGRAM))
-                text = self._text({'tasks': [item], 'errors': []})
+                result = {'tasks': [item], 'errors': []}
+                # FIX-M3-T6 (R-77/R-78): só o rundll32 vai para o resumo; os outros, uma linha cada.
+                self.assertEqual(sc.MS_TASKS_SUMMARY_ONE in self._text(result), exe == 'rundll32.exe')
+                text = '\n'.join(sc.checkup_lines(result, ENV, full=True))
                 self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', text)
                 self.assertIn('RESUMO: OK 0 · atenção 1', text)
         self.assertEqual(sc.classify_tasks([_task('\\Microsoft\\Windows\\A\\', 'B',
@@ -1014,7 +1020,11 @@ class ClosedListRevision2Tests(unittest.TestCase):
                 items = sc.classify_tasks(rows, ENV)
                 self.assertEqual([(i['state'], i['reason']) for i in items],
                                  [(sc.STATE_ATTENTION, _expected_runner(path, sc.REASON_MS_WINDOWS_PROGRAM))])
-                text = self._text(sc.read_checkup(_fake_ps(tasks=rows), ENV))
+                result = sc.read_checkup(_fake_ps(tasks=rows), ENV)
+                # FIX-M3-T6 (R-46/R-78): nenhum destes programas vai para o resumo; aparecem um por um.
+                self.assertNotIn('resumid', self._text(result))
+                self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', self._text(result))
+                text = '\n'.join(sc.checkup_lines(result, ENV, full=True))
                 self.assertIn('[atenção] \\Microsoft\\Windows\\A\\B — tarefa agendada', text)
                 self.assertIn('RESUMO: OK 1 · atenção 1', text) # +1 OK: Defender ligado (P3-07 fatia 3)
                 self.assertNotIn(sc.TASKS_EMPTY, text)

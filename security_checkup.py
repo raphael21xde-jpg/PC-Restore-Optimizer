@@ -22,6 +22,12 @@ Regras desta fatia:
   rede só ficam a porta remota e o programa dono (o endereço remoto nem é pedido);
 - programa da pasta do Windows só dá OK (ou some, nas tarefas da Microsoft)
   se estiver na lista fechada ``KNOWN_QUIET_PROGRAMS`` (R-46);
+- FIX-M3-T6: na janela, as tarefas de rotina em ``\\Microsoft\\Windows\\`` (só o
+  rundll32 direto em System32 ou SysWOW64, ou um componente do Windows) viram uma
+  linha de resumo "atenção" com a contagem; a decisão é refeita na hora de
+  mostrar (nome, motivo e caminho, R-77) e a versão completa
+  (``checkup_lines(..., full=True)``, salva em .txt pelo botão
+  ``CHECKUP_SAVE_FULL_BUTTON``) mostra cada tarefa;
 - as funções são puras e recebem os dados já lidos; o PowerShell real só é
   usado por ``read_checkup`` quando nenhum ``ps`` é passado (importado na hora,
   de ``optimization_engine``).
@@ -336,6 +342,24 @@ TASK_QUERY = (
     "Com=($a.CimClass.CimClassName -eq 'MSFT_TaskComHandlerAction')} } }; "
     'ConvertTo-Json -InputObject @($out) -Compress')
 MS_TASK_FOLDER = '\\microsoft\\'
+# FIX-M3-T6: só as tarefas desta pasta (e nenhuma outra da Microsoft) podem ser resumidas.
+MS_WINDOWS_TASK_FOLDER = '\\microsoft\\windows\\'
+CHECKUP_SAVE_FULL_BUTTON = 'Salvar check-up completo (.txt)'
+CHECKUP_FULL_HEADER = ('VERSÃO COMPLETA: todas as tarefas aparecem uma por uma, inclusive as da '
+                       'Microsoft que a janela resume numa linha.')
+MS_TASKS_SUMMARY = '{count} tarefas da Microsoft na pasta \\Microsoft\\Windows\\ (resumidas nesta linha)'
+MS_TASKS_SUMMARY_ONE = '1 tarefa da Microsoft na pasta \\Microsoft\\Windows\\ (resumida nesta linha)'
+MS_TASKS_REASON = ('São tarefas da pasta \\Microsoft\\Windows\\ que rodam o rundll32 da pasta do Windows '
+                   '(System32 ou SysWOW64) ou abrem um componente do Windows. Isso é comum nas tarefas da '
+                   'Microsoft, mas o app não confere o que elas rodam.')
+# R-77/R-78: lista FECHADA do que pode ir para a linha de resumo (nome exato, direto em
+# System32 ou SysWOW64). Só o rundll32: a R-77 substitui o caso "esconder" da R-45/R-46 só para ele.
+MS_SUMMARY_PROGRAMS = ('rundll32.exe',)
+MS_TASKS_FULL_HINT = (f'Para ver cada tarefa, use o botão "{CHECKUP_SAVE_FULL_BUTTON}", no fim desta janela '
+                      'do check-up. Se alguma não parecer do Windows, faça a verificação recomendada no fim '
+                      'desta lista.')
+MS_TASKS_RESUMO = '{count} tarefas da Microsoft resumidas numa linha (cada uma aparece no check-up completo salvo).'
+MS_TASKS_RESUMO_ONE = '1 tarefa da Microsoft resumida numa linha (ela aparece no check-up completo salvo).'
 
 # P3-07 fatia 3. Só leitura: o Defender só é consultado (situação e exclusões).
 # Cada parte tem seu try: uma parte negada vira null e não derruba a outra.
@@ -1585,41 +1609,121 @@ def _item_lines(item, env, with_count=False):
     return lines, state
 
 
-def checkup_lines(result, env=None):
-    """Texto da janela. Só mostra textos gerados aqui (R-32); nome e caminho são limpos de novo."""
+def _ms_windows_routine(item, env) -> bool:
+    """True só para uma tarefa de rotina da Microsoft que pode ir para a linha de resumo (FIX-M3-T6, R-77, R-78).
+
+    Tudo é conferido de novo na hora de mostrar; nada guardado no resultado decide sozinho:
+    - é tarefa e o nome começa com ``\\Microsoft\\Windows\\`` (sem diferenciar maiúsculas;
+      ``\\Microsoft\\WindowsX\\`` e ``\\Microsoft\\Office\\`` ficam fora);
+    - ``_effective`` dá "atenção" com o motivo ``ms_windows_program`` ou ``ms_com_handler``;
+    - ``ms_windows_program``: o caminho guardado é um programa da lista fechada
+      ``MS_SUMMARY_PROGRAMS`` (só ``rundll32.exe``, nome exato), direto em
+      %SystemRoot%\\System32 ou %SystemRoot%\\SysWOW64, sem subpasta;
+    - ``ms_com_handler``: o caminho guardado está vazio.
+    Qualquer outro programa (powershell, cmd, mshta, forfiles, um nome qualquer em
+    System32, pastas como Tasks ou spool\\drivers\\color...), suspeito, OK e qualquer
+    outro motivo nunca são resumidos.
+    """
+    if not isinstance(item, dict) or item.get('source') != 'task':
+        return False
+    name = item.get('name')
+    if not isinstance(name, str) or not name.lower().startswith(MS_WINDOWS_TASK_FOLDER):
+        return False
+    if len(name) <= len(MS_WINDOWS_TASK_FOLDER):
+        return False
+    state, reason = _effective(item, env)
+    if state != STATE_ATTENTION:
+        return False
+    path = item.get('path')
+    if reason == REASON_MS_COM_HANDLER:
+        return path == ''
+    if reason != REASON_MS_WINDOWS_PROGRAM or not isinstance(path, str) or not path.strip():
+        return False
+    expanded = _expand(path, env)
+    if _uncertain_name(expanded, env) or _is_interpreter(expanded, env):
+        # R-48/R-47: "rundll32" sem ".exe", nome curto ou interpretador nunca vão para o resumo.
+        return False
+    if classify_path(None, expanded, env) != (STATE_OK, REASON_OK):
+        return False
+    norm = _key(_expand(_strip_nt_prefix(expanded.strip()), env))
+    root_key = _key(_system_root(env)).rstrip('\\')
+    return (ntpath.basename(norm) in MS_SUMMARY_PROGRAMS
+            and ntpath.dirname(norm) in (root_key + '\\system32', root_key + '\\syswow64'))
+
+
+def _ms_summary_lines(count):
+    title = MS_TASKS_SUMMARY_ONE if count == 1 else MS_TASKS_SUMMARY.format(count=count)
+    return [f'  [{STATE_ATTENTION}] {title} — {SOURCE_TEXTS["task"]}',
+            '      Motivo: ' + MS_TASKS_REASON,
+            '      O que fazer: ' + MS_TASKS_FULL_HINT]
+
+
+def checkup_lines(result, env=None, full=False):
+    """Texto da janela. Só mostra textos gerados aqui (R-32); nome e caminho são limpos de novo.
+
+    Com ``full=False`` (a janela), as tarefas de rotina em ``\\Microsoft\\Windows\\``
+    (``_ms_windows_routine``) viram uma linha de resumo "atenção" com a contagem,
+    depois dos itens suspeitos e de atenção e antes dos OK; no RESUMO ela conta
+    como 1 atenção. Com ``full=True`` (o .txt salvo pelo botão
+    ``CHECKUP_SAVE_FULL_BUTTON``) cada tarefa aparece numa linha, como antes, com o
+    cabeçalho ``CHECKUP_FULL_HEADER``.
+    """
     env = _env(env)
     result = result if isinstance(result, dict) else {}
     if 'idle' in result and not any(key in result for key in _CHECKUP_KEYS):
-        return _idle_only_lines(result, env)
+        lines = _idle_only_lines(result, env)
+        if full:
+            lines.insert(1, CHECKUP_FULL_HEADER)
+        return lines
     errors = [e for e in _as_list(result.get('errors'))]
     counts = {STATE_OK: 0, STATE_ATTENTION: 0, STATE_SUSPECT: 0}
     lines = ['CHECK-UP DE SEGURANÇA — SÓ LEITURA', NEVER_CHANGES]
+    if full:
+        lines.insert(1, CHECKUP_FULL_HEADER)
+    summarized = 0
     checked = result.get('checked_at')
     if isinstance(checked, str) and re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', checked):
         # Revisão 2 da PR #197: o check-up mostrado de novo diz de quando ele é.
         lines.append(f'Check-up feito às {checked}.')
     lines.append('')
 
-    def section(title, items, with_count, empty_text, special=None):
+    def section(title, items, with_count, empty_text, special=None, summarize=False):
+        nonlocal summarized
         lines.append(title)
         valid = [i for i in _as_list(items) if isinstance(i, dict)]
         # A seção decide como o item é mostrado, não o "source" guardado no dict.
         valid = [dict(i, source=special) if special or i.get('source') in _SPECIAL_SOURCES else i
                  for i in valid]
+        routine = 0
+        if summarize:
+            # FIX-M3-T6 (R-77): decidido de novo aqui, a cada vez que o texto é montado.
+            kept = [i for i in valid if not _ms_windows_routine(i, env)]
+            routine = len(valid) - len(kept)
+            valid = kept
         valid.sort(key=lambda i: _ORDER[(_special_effective if special else _effective)(i, env)[0]])
+        summary_done = False
         for item in valid:
             item_lines, state = _item_lines(item, env, with_count)
+            if routine and not summary_done and state == STATE_OK:
+                lines.extend(_ms_summary_lines(routine))
+                counts[STATE_ATTENTION] += 1
+                summary_done = True
             lines.extend(item_lines)
             counts[state] += 1
-        if not valid and empty_text:
+        if routine and not summary_done:
+            lines.extend(_ms_summary_lines(routine))
+            counts[STATE_ATTENTION] += 1
+        summarized += routine
+        if not valid and not routine and empty_text:
             lines.append('  ' + empty_text)
         lines.append('')
-        return len(valid)
+        return len(valid) + (1 if routine else 0)
 
     autostart_failed = 'run' in errors and 'startup' in errors
     section('PROGRAMAS QUE ABREM COM O WINDOWS', result.get('autostart'), False,
             None if autostart_failed else 'Nenhum programa encontrado nas chaves e pastas de inicialização.')
-    section('TAREFAS AGENDADAS', result.get('tasks'), False, None if 'tasks' in errors else TASKS_EMPTY)
+    section('TAREFAS AGENDADAS', result.get('tasks'), False, None if 'tasks' in errors else TASKS_EMPTY,
+            summarize=not full)
     # Sem administrador o Windows pode esconder tarefas: com essa nota, nunca a frase de "tudo limpo".
     # Por isso a frase de "tudo limpo" não existe mais: sem alerta, a frase do fim é a neutra.
     lines.insert(len(lines) - 1, '  ' + TASKS_NOTE)
@@ -1657,6 +1761,8 @@ def checkup_lines(result, env=None):
         lines.append('')
     lines.append(f'RESUMO: OK {counts[STATE_OK]} · atenção {counts[STATE_ATTENTION]} · '
                  f'suspeito {counts[STATE_SUSPECT]} · não conferidos {unchecked}')
+    if summarized:
+        lines.append(MS_TASKS_RESUMO_ONE if summarized == 1 else MS_TASKS_RESUMO.format(count=summarized))
     flagged = counts[STATE_ATTENTION] + counts[STATE_SUSPECT]
     if flagged or errors:
         lines.append('')
