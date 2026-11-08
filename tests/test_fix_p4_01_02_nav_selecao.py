@@ -1,7 +1,8 @@
 """FIX-P4-01-02: "Seleção avançada" no menu lateral (R-62).
 
-Lê app.py com ``ast`` e roda só App._page_changed com objetos falsos: sem Tk,
-sem disco real e sem abrir o app.
+Lê app.py com ``ast`` e roda só App._page_changed e App.navigate com objetos
+falsos: sem Tk, sem disco real e sem abrir o app. Também confere o trecho do
+manual sobre "Seleção avançada" (botão na aba certa e passos do navegador).
 """
 import ast
 import unittest
@@ -9,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / 'app.py'
+MANUAL = ROOT / 'docs' / 'MANUAL.md'
 
 
 def _app_class():
@@ -52,6 +54,14 @@ def _texts(name):
                 if keyword.arg == 'text' and isinstance(keyword.value, ast.Constant):
                     texts.add(keyword.value.value)
     return texts
+
+
+def _load_method(name, namespace=None):
+    """Compila só o método ``name`` de App, como função solta."""
+    module = ast.Module(body=[_method(name)], type_ignores=[])
+    namespace = dict(namespace or {})
+    exec(compile(module, str(APP), 'exec'), namespace)
+    return namespace[name]
 
 
 def _load_page_changed():
@@ -149,10 +159,74 @@ class SelecaoAvancadaNoMenuTests(unittest.TestCase):
             self.assertIn(label, texts)
         self.assertIn('Criar backup protegido do navegador', _texts('_build_browsers'))
 
+    def test_tabs_hold_the_pages_the_manual_cites(self):
+        # "Arquivos pessoais" é a página _build_inventory; "Navegadores", a _build_browsers.
+        tabs = {}
+        for node in ast.walk(_method('_build_catalog')):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == 'add' and node.args
+                    and isinstance(node.args[0], ast.Attribute)):
+                for keyword in node.keywords:
+                    if keyword.arg == 'text':
+                        tabs[keyword.value.value] = node.args[0].attr
+        self.assertEqual(tabs.get('Arquivos pessoais'), 'inventory')
+        self.assertEqual(tabs.get('Navegadores'), 'browsers')
+        inventory = _texts('_build_inventory')
+        for label in ('+ Adicionar pasta', '+ Adicionar arquivo'):
+            self.assertIn(label, inventory)
+        browsers = _texts('_build_browsers')
+        for label in ('Pesquisar perfis', 'Criar backup protegido do navegador'):
+            self.assertIn(label, browsers)
+
+    def test_manual_cites_buttons_in_the_right_tab_and_the_steps(self):
+        text = ' '.join(MANUAL.read_text(encoding='utf-8').split())
+        start = text.index('**Outros arquivos e navegadores.**')
+        block = text[start:text.index('## ', start)]
+        files_part = block[block.index('"Arquivos pessoais"'):block.index('"Navegadores"')]
+        self.assertIn('"+ Adicionar pasta"', files_part)
+        self.assertIn('"+ Adicionar arquivo"', files_part)
+        browser_part = block[block.index('"Navegadores"'):]
+        for needed in ('"Pesquisar perfis"', 'sincronização', 'feche o navegador',
+                       '"Criar backup protegido do navegador"', 'frase-senha',
+                       '"Escolher destino"', 'fora do C:', 'unidade do perfil'):
+            self.assertIn(needed, browser_part)
+        # A barra com estes botões some nas abas "Arquivos pessoais" e "Navegadores".
+        self.assertNotIn('+ Arquivo ou pasta', block)
+        self.assertNotIn('Navegadores →', block)
+        self.assertNotIn('Nela', block)
+
     def test_navigate_sends_files_and_browsers_into_catalog(self):
-        source = ast.unparse(_method('navigate'))
-        self.assertIn('self.inventory, self.browsers', source)
-        self.assertIn('self.tabs.select(self.catalog)', source)
+        # Roda App.navigate de verdade, com abas falsas (sem Tk).
+        navigate = _load_method('navigate')
+
+        class _Notebook:
+            def __init__(self):
+                self.chosen = []
+
+            def select(self, page=None):
+                if page is None:
+                    return self.chosen[-1] if self.chosen else None
+                self.chosen.append(page)
+
+        class _Fake:
+            pass
+
+        fake = _Fake()
+        for name in ('catalog', 'inventory', 'browsers', 'overview'):
+            setattr(fake, name, _Widget(name))
+        fake.tabs = _Notebook()
+        fake.catalog_tabs = _Notebook()
+        fake.changed = 0
+        fake._page_changed = lambda: setattr(fake, 'changed', fake.changed + 1)
+
+        for page in (fake.inventory, fake.browsers):
+            navigate(fake, page)
+            self.assertIs(fake.tabs.select(), fake.catalog)
+            self.assertIs(fake.catalog_tabs.select(), page)
+        navigate(fake, fake.overview)
+        self.assertIs(fake.tabs.select(), fake.overview)
+        self.assertEqual(fake.catalog_tabs.chosen, [fake.inventory, fake.browsers])
+        self.assertEqual(fake.changed, 3)
 
 
 if __name__ == '__main__':
