@@ -58,6 +58,7 @@ AFTER = ('after_format_ui.py', 'show_after_format')
 INSTALL = ('workflow_ui.py', 'build_installation')
 CATALOG = ('app.py', 'App._build_catalog')
 BROWSERS = ('app.py', 'App._build_browsers')
+INVENTORY = ('app.py', 'App._build_inventory')
 
 # Nome da tela citado no manual -> (módulo, função que monta a tela).
 UI_LABELS = {
@@ -77,8 +78,9 @@ UI_LABELS = {
     # Seleção avançada
     'Arquivos pessoais': CATALOG,
     'Navegadores': CATALOG,
-    '+ Arquivo ou pasta': CATALOG,
-    'Navegadores  →': CATALOG,
+    '+ Adicionar pasta': INVENTORY,
+    '+ Adicionar arquivo': INVENTORY,
+    'Pesquisar perfis': BROWSERS,
     'Criar backup protegido do navegador': BROWSERS,
     # Diagnóstico
     'Analisar computador e discos': DIAGNOSTIC,
@@ -512,7 +514,7 @@ class ManualTests(unittest.TestCase):
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
         self.assertIn("self.style.layout('Hidden.TNotebook.Tab', [])", app_source)
         self.assertIn('Seleção avançada', self.project.labels(*SIDEBAR))
-        for screen in (CATALOG, ('app.py', 'App._build_inventory'), BROWSERS):
+        for screen in (CATALOG, INVENTORY, BROWSERS):
             with self.subTest(screen=screen):
                 self.assertNotIn(screen, HIDDEN_BUILDERS)
                 self.assertIn(screen, self.reach)

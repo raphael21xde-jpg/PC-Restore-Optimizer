@@ -90,12 +90,12 @@ neles. Os arquivos originais nunca são mexidos: o backup só lê e copia.
    "Retomar backup interrompido" e escolha o arquivo `manifest.json` do backup que
    parou. O app continua esse backup e confere com SHA-256 o que já tinha sido copiado.
 
-**Outros arquivos e navegadores.** No menu, "Seleção avançada" tem a aba "Arquivos pessoais"
-(botão "+ Arquivo ou pasta") e a aba "Navegadores" (botão "Navegadores  →"). Nela, confira se a
-sincronização da conta do navegador está ligada e clique em "Criar backup protegido do navegador"
-para criar o cofre do app. Se você exportar as senhas pelo próprio navegador para um arquivo CSV,
-lembre: ele é texto legível. Nunca o envie por chat ou e-mail e não o deixe desprotegido. Depois
-de importar as senhas no navegador novo, apague esse CSV pelo Explorador de Arquivos (e esvazie a Lixeira).
+**Outros arquivos e navegadores.** No menu, abra "Seleção avançada". Na aba "Arquivos pessoais", use
+"+ Adicionar pasta" ou "+ Adicionar arquivo". Na aba "Navegadores", clique em "Pesquisar perfis", escolha o
+perfil, confira a sincronização da conta, feche o navegador e clique em "Criar backup protegido do navegador";
+crie uma frase-senha (12 caracteres ou mais; guarde fora do PC). O cofre vai para a pasta de "Escolher destino"
+(passo 3), fora do C: e da unidade do perfil. Um CSV de senhas exportado pelo navegador é texto legível: não o
+envie por chat ou e-mail e, após importar as senhas no navegador novo, apague-o (e esvazie a Lixeira).
 
 ## Testar e restaurar
 
