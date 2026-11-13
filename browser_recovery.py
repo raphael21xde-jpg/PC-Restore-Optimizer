@@ -3,7 +3,7 @@ import html
 import json
 from pathlib import Path
 from urllib.parse import urlsplit
-from browser_vault import _special, BROWSERS
+from browser_vault import _special
 
 
 def safe_file(root, relative):
@@ -91,7 +91,18 @@ def prepare_bookmarks(root, destination):
 # Navegadores para os quais o assistente mostra o passo a passo da importação.
 GUIDED_BROWSERS = ('Opera', 'Opera GX', 'Google Chrome', 'Microsoft Edge', 'Mozilla Firefox')
 
-_HELP_NOTE = 'Se o menu estiver diferente, use o botão "Ajuda oficial do navegador".'
+_HELP_NOTE = ('Se o menu estiver diferente, use, nesta janela, o botão '
+              '"Ajuda oficial do navegador".')
+
+# Páginas de ajuda do fabricante sobre IMPORTAR dados (R-83); não são as da sincronização.
+# Sem rede no desenvolvimento: a conferência dos endereços é feita no Windows (Validar M4).
+IMPORT_HELP = {
+    'Opera': 'https://help.opera.com/en/latest/basics/',
+    'Opera GX': 'https://help.opera.com/en/latest/basics/',
+    'Google Chrome': 'https://support.google.com/chrome/answer/96816',
+    'Microsoft Edge': 'https://support.microsoft.com/pt-br/microsoft-edge',
+    'Mozilla Firefox': 'https://support.mozilla.org/pt-BR/kb/importar-dados-de-outro-navegador',
+}
 
 
 def destination_supported(browser):
@@ -100,8 +111,8 @@ def destination_supported(browser):
 
 
 def help_url(browser):
-    """Endereço (https) da ajuda oficial do navegador; vazio se não houver."""
-    url = BROWSERS.get(browser, {}).get('help', '')
+    """Endereço (https) da ajuda oficial sobre importar dados; vazio se não houver."""
+    url = IMPORT_HELP.get(browser, '')
     return url if url.lower().startswith('https://') else ''
 
 
@@ -143,10 +154,10 @@ def password_import_steps(browser):
         how = ('No Google Chrome: Configurações → Preenchimento automático e senhas → '
                'Gerenciador de senhas → Configurações → Importar senhas → Selecionar arquivo.')
     elif browser == 'Microsoft Edge':
-        how = ('No Microsoft Edge: Configurações → Perfis → Senhas → "..." → '
+        how = ('No Microsoft Edge: Configurações → Perfis → Senhas → botão de três pontos (...) → '
                '"Importar senhas" (ou "Importar dados do navegador" e escolha o arquivo CSV de senhas).')
     else:
-        how = ('No Mozilla Firefox: digite about:logins na barra de endereço, clique em "..." → '
+        how = ('No Mozilla Firefox: digite about:logins na barra de endereço, clique no botão de três pontos (...) → '
                '"Importar de um arquivo" e escolha o CSV.')
     tail = ('\n\nSelecione o CSV. Confira o resultado no navegador. Depois de validar, '
             'apague o CSV: ele guarda as senhas em texto legível. Preserve o cofre criptografado.\n'
