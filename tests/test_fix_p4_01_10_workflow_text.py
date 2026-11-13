@@ -10,10 +10,12 @@ Lê o workflow_ui.py com `ast`, sem abrir janela (não precisa do Tk). Nada é a
 import ast
 import unittest
 from pathlib import Path
+import workflow_ui
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / 'workflow_ui.py').read_text(encoding='utf-8')
-FUNCS = ('build_overview', 'build_preservation', 'build_installation')
+FUNCS = ('build_overview', 'build_preservation', 'build_installation',
+         'overview_intro_text', 'preservation_intro_text', 'installation_steps')
 NEW_TEXTS = (
     'Escolha o que manter em cada unidade. Prepare o C: antes de reinstalar o Windows: '
     'o que não for copiado dele não entra no backup e se perde quando o instalador formatar o C:. '
@@ -47,6 +49,15 @@ def _strings_of(func_name):
     raise AssertionError(f'{func_name} não encontrado em workflow_ui.py')
 
 
+def _rendered_texts(drive='C:'):
+    steps = [body for _num, _title, body in workflow_ui.installation_steps(drive)]
+    return [
+        workflow_ui.overview_intro_text(drive),
+        workflow_ui.preservation_intro_text(drive),
+        *steps,
+    ]
+
+
 class WorkflowTextTests(unittest.TestCase):
     def test_no_fixed_letters(self):
         for func in FUNCS:
@@ -56,18 +67,19 @@ class WorkflowTextTests(unittest.TestCase):
                         self.assertNotIn(letter, text, func)
 
     def test_new_texts_present(self):
-        every = [t for f in FUNCS for t in _strings_of(f)]
+        every = _rendered_texts('C:') + [t for f in FUNCS for t in _strings_of(f)]
         for text in NEW_TEXTS:
             self.assertIn(text, every)
 
     def test_loss_warning_next_to_not_deleted(self):
-        for func in ('build_overview', 'build_preservation'):
-            texts = [x for x in _strings_of(func) if 'não apaga nenhum arquivo' in x]
-            self.assertEqual(len(texts), 1, func)
-            self.assertIn(LOSS, texts[0], func)
+        for text in (workflow_ui.overview_intro_text('C:'),
+                     workflow_ui.preservation_intro_text('C:')):
+            self.assertIn('não apaga nenhum arquivo', text)
+            self.assertIn(LOSS, text)
 
     def test_installation_step_says_c_only_saved_by_copy(self):
-        texts = [x for x in _strings_of('build_installation') if 'só se salva com a cópia' in x]
+        texts = [body for _num, _title, body in workflow_ui.installation_steps('C:')
+                 if 'só se salva com a cópia' in body]
         self.assertEqual(len(texts), 1)
         self.assertIn('o app não apaga nenhum arquivo desses discos', texts[0])
 
