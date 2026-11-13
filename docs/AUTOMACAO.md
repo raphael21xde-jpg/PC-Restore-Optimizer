@@ -49,7 +49,14 @@ Enquanto um pedido espera, o ciclo continua com os `FIX-...` e o backlog.
    - **pronta** (testador sem regressão + revisor aprovou, no commit atual) → o integrador faz o merge;
    - **atrás da `main` ou com conflito** → o integrador faz `git merge origin/main` no branch (nunca rebase nem `--force`), roda a suíte de novo e faz o merge;
    - **reprovada** → o desenvolvedor corrige os pontos que o revisor apontou, depois testador e revisor de novo.
-   - **PRs do Gemini (branches `gemini/`, ver `GEMINI.md`).** O Gemini trabalha no PC do Raphael, com fila própria, e abre PRs em rascunho. Em cada ciclo, para **no máximo 2** PRs `gemini/` abertas que ainda não tenham veredito no commit atual: o testador roda a suíte completa e um revisor novo revisa o diff. Os dois vereditos vão como comentário na PR, com a lista do que corrigir escrita de forma que o Gemini consiga seguir sem contexto extra. Os agentes **não corrigem** o código dessas PRs e **não fazem o merge** delas: o integrador só mescla branches `auto/` e `fix/`, e o merge das PRs do Gemini é do Raphael (regra de 13/11/2026). No painel, o Gemini aparece como um agente a mais, com o estado tirado dessas PRs.
+   - **PRs do Gemini (branches `gemini/`, ver `GEMINI.md`).** O Gemini trabalha no PC do Raphael, com fila própria, e abre PRs em rascunho. O Claude e o Gemini se falam **só pelo GitHub** (comentários nas PRs), e o Raphael decide **só pelo Monitor** (regra de 13/11/2026). Em cada ciclo, para **no máximo 2** PRs `gemini/` abertas:
+     - **sem veredito no commit atual** → o testador roda a suíte completa e um revisor novo revisa o diff; os dois vereditos vão como comentário na PR;
+     - **reprovada** → o comentário traz a lista do que corrigir, escrita para o Gemini seguir sem contexto extra. Os agentes **não corrigem** o código dessas PRs;
+     - **aprovada** (testador sem regressão + revisor `APROVAR` ou `APROVAR COM RESSALVAS`, no commit atual) e ainda sem pedido → criar no Monitor um pedido do tipo `merge` (veja "Pedidos no PCRO Monitor"), com o número da PR, o que o usuário ganha e as ressalvas;
+     - **pedido `merge` aprovado pelo Raphael** e a PR ainda no mesmo commit do pedido → o integrador confere as travas e faz o merge. Se o commit mudou depois do pedido, a PR volta para revisão e um pedido novo é criado;
+     - **`ajustar`** → o texto do Raphael vai como comentário na PR, para o Gemini corrigir; **`descartado`** → comentar a decisão e pôr a etiqueta `nao-mergear` (não fechar a PR nem apagar o branch).
+
+     Sem pedido `merge` aprovado, nenhuma PR `gemini/` é mesclada. Depois do merge, o coordenador marca o item como `concluído` no `docs/BACKLOG.md`. No painel, o Gemini aparece como um agente a mais, com o estado tirado dessas PRs.
 3. **Avançar (planejador → desenvolvedor → testador → revisor → integrador).**
    - Ordem: os itens `FIX-...` primeiro, depois o primeiro `pronto` do marco atual.
    - **Uma fatia por vez, até o merge.**
@@ -71,7 +78,7 @@ botões **Aprovar**, **Ajustar** (pede um texto) e **Descartar**. Os agentes usa
 | Campo | Conteúdo |
 |---|---|
 | `id` | o mesmo do documento |
-| `tipo` | `intent`, `fatiamento`, `marco`, `regras` ou `ajuda` |
+| `tipo` | `intent`, `fatiamento`, `marco`, `regras`, `ajuda` ou `merge` (PR do Gemini aprovada na revisão; `detalhes.itens` traz o número da PR, o commit revisado `sha12`, o que o usuário ganha e as ressalvas) |
 | `titulo` | uma linha, em português simples |
 | `resumo` | até 3 linhas: o que se pede e por quê |
 | `detalhes` | `{texto, itens: [..], perguntas: [{pergunta, proposta}]}`. No `intent`: Problema, "Antes o usuário ___ / Depois ___", fora de escopo e as perguntas do Grill; no `fatiamento`: uma fatia por item (o que entrega, critério de aceite); no `marco`: o passo a passo |

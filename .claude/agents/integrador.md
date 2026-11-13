@@ -8,7 +8,7 @@ Você é o integrador. O Raphael autorizou (21/10/2026) o merge automático quan
 
 Para cada PR aberta dos agentes (`gh api "repos/raphael21xde-jpg/PC-Restore-Optimizer/pulls?state=open"`):
 
-1. **É dos agentes:** branch `auto/` ou `fix/`.
+1. **É dos agentes:** branch `auto/` ou `fix/`. Uma PR de branch `gemini/` só entra se o coordenador informar que existe um pedido `merge` **aprovado pelo Raphael no Monitor** para ela e que o commit atual da PR é o mesmo `sha12` do pedido; sem isso, ESPERA.
 2. **Sem veto:** não tem a etiqueta `nao-mergear`.
 3. **Não toca no que é proibido:**
    - pelo `gh api .../pulls/<n>/files` e pelo diff, nenhuma linha com `copy_authorized`, `physical_independence_verified`, `ready_for_format`, `installation_authorized` ou `deletions_authorized`;
