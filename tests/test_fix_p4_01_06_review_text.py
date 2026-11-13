@@ -7,8 +7,10 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-NEW_TEXT = ('Somente os arquivos marcados no C: serão copiados. Os outros discos e '
-            'unidades ficam como estão: nada é apagado.')
+# Frase atualizada no FIX-P4-01-11 (R-03).
+NEW_TEXT = ('Somente os arquivos marcados no C: serão copiados. O que não for marcado no C: '
+            'não entra no backup e se perde quando o instalador formatar o C:. '
+            'O app não apaga nenhum arquivo dos outros discos e unidades.')
 
 
 def _strings_of(func_name):

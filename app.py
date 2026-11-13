@@ -592,7 +592,7 @@ class App(tk.Tk):
 
     def _build_review(self):
         self.label(self.review,'Backup seletivo dos dados do C:',size=15,fg=ACCENT).pack(fill='x',padx=18,pady=(19,8))
-        self.label(self.review,'Somente os arquivos marcados no C: serão copiados. Os outros discos e unidades ficam como estão: nada é apagado.').pack(fill='x',padx=18,pady=(0,8))
+        self.label(self.review,'Somente os arquivos marcados no C: serão copiados. O que não for marcado no C: não entra no backup e se perde quando o instalador formatar o C:. O app não apaga nenhum arquivo dos outros discos e unidades.').pack(fill='x',padx=18,pady=(0,8))
         self.label(self.review,'Nome do backup (opcional — vazio gera um nome pelos itens selecionados):').pack(fill='x',padx=18)
         self.backup_name = tk.StringVar()
         ttk.Entry(self.review, textvariable=self.backup_name).pack(fill='x', padx=18, pady=(0, 8))
