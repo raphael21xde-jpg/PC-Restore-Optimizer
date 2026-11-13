@@ -53,14 +53,17 @@ class TextTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn(path, text)
                 self.assertIn(name, text)
-                self.assertIn('Ajuda oficial do navegador', text)
+                self.assertIn('Se o menu estiver diferente', text)
                 if not name.startswith('Opera'):
                     self.assertNotIn('Opera', text)
+                    self.assertIn('"Ajuda oficial do navegador"', text)
 
     def test_bookmark_text_specific_menus(self):
         p = 'x.html'
         self.assertIn('Arquivo HTML de favoritos', br.bookmark_import_steps('Google Chrome', p))
-        self.assertIn('Importar dados do navegador', br.bookmark_import_steps('Microsoft Edge', p))
+        edge = br.bookmark_import_steps('Microsoft Edge', p)
+        self.assertIn('Importar dados do navegador', edge)
+        self.assertIn('em "Importar de" escolha "Arquivo HTML de favoritos ou marcadores"', edge)
         fx = br.bookmark_import_steps('Mozilla Firefox', p)
         self.assertIn('Ctrl+Shift+O', fx)
         self.assertIn('Importar favoritos de HTML', fx)
@@ -75,7 +78,7 @@ class TextTests(unittest.TestCase):
                 with self.subTest(name=name):
                     self.assertIn('apague o CSV', text)
                     self.assertNotIn(FAKE_PASSWORD, text)
-                    self.assertIn('Ajuda oficial do navegador', text)
+                    self.assertIn('Se o menu estiver diferente', text)
                     if not name.startswith('Opera'):
                         self.assertNotIn('Opera', text)
         self.assertIn('about:logins', br.password_import_steps('Mozilla Firefox'))
@@ -98,35 +101,66 @@ class TextTests(unittest.TestCase):
 
 
 class HelpTests(unittest.TestCase):
-    def test_help_url_https_for_five(self):
-        for name in FIVE:
-            self.assertTrue(br.help_url(name).startswith('https://'), name)
+    EXPECTED = {  # navegador -> etapa -> (domínio, pedaço obrigatório do caminho)
+        'Google Chrome': {'favoritos': ('support.google.com', '/chrome/answer/96816'),
+                          'senhas': ('support.google.com', '/chrome/answer/13068232')},
+        'Microsoft Edge': {'favoritos': ('support.microsoft.com', 'import'),
+                           'senhas': ('support.microsoft.com', 'import')},
+        'Mozilla Firefox': {'favoritos': ('support.mozilla.org', 'import'),
+                            'senhas': ('support.mozilla.org', 'import')},
+    }
 
-    def test_import_help_is_own_list_not_the_sync_page(self):
-        # R-83: a ajuda do botão trata de importar, não da página de sincronização do cofre.
+    def test_each_link_is_the_import_page_not_a_home_page(self):
+        # R-83/R-84: https, domínio do fabricante e caminho do artigo; nunca a página inicial.
+        from urllib.parse import urlsplit
+        for name, steps in self.EXPECTED.items():
+            for step, (domain, piece) in steps.items():
+                with self.subTest(name=name, step=step):
+                    url = br.help_url(name, step)
+                    parts = urlsplit(url)
+                    self.assertEqual(parts.scheme, 'https')
+                    self.assertEqual(parts.netloc, domain)
+                    self.assertIn(piece, parts.path)
+                    self.assertGreater(len(parts.path.strip('/')), 8)
+
+    def test_not_the_sync_page(self):
         import browser_vault
-        self.assertEqual(set(br.IMPORT_HELP), set(FIVE))
-        for name in FIVE:
-            with self.subTest(name=name):
-                self.assertTrue(br.IMPORT_HELP[name].startswith('https://'))
-                self.assertNotEqual(br.IMPORT_HELP[name], browser_vault.BROWSERS[name]['help'])
-                self.assertEqual(br.help_url(name), br.IMPORT_HELP[name])
-        self.assertEqual(len({br.IMPORT_HELP[n] for n in ('Google Chrome', 'Microsoft Edge', 'Mozilla Firefox')}), 3)
+        for name in self.EXPECTED:
+            # Chrome: a ajuda do cofre (13068232) já é a página de senhas; só os favoritos são conferidos.
+            self.assertNotEqual(br.help_url(name, 'favoritos'), browser_vault.BROWSERS[name]['help'])
 
-    def test_help_note_says_where_the_button_is(self):
-        for name in FIVE:
-            self.assertIn('nesta janela, o botão "Ajuda oficial do navegador"',
-                          br.bookmark_import_steps(name, 'x.html'))
-            self.assertIn('nesta janela, o botão "Ajuda oficial do navegador"',
-                          br.password_import_steps(name))
+    def test_firefox_and_chrome_have_different_pages_per_step(self):
+        for name in ('Google Chrome', 'Mozilla Firefox'):
+            self.assertNotEqual(br.help_url(name, 'favoritos'), br.help_url(name, 'senhas'))
+
+    def test_opera_has_no_link(self):
+        for name in ('Opera', 'Opera GX', 'Brave', 'Vivaldi', 'Chromium', ''):
+            for step in ('favoritos', 'senhas'):
+                self.assertEqual(br.help_url(name, step), '')
+        self.assertEqual(set(br.IMPORT_HELP), {'Google Chrome', 'Microsoft Edge', 'Mozilla Firefox'})
+
+    def test_missing_help_texts(self):
+        for name in ('Opera', 'Opera GX'):
+            self.assertEqual(br.help_missing_text(name),
+                             'Para o Opera e o Opera GX use os passos acima: não há página de ajuda '
+                             'só sobre importar.')
+        self.assertIn('sincronização', br.help_missing_text('Brave'))
+        self.assertNotIn('Opera', br.help_missing_text('Brave'))
+
+    def test_help_note_promises_button_only_where_it_opens_a_page(self):
+        button = 'nesta janela, o botão "Ajuda oficial do navegador"'
+        for name in ('Google Chrome', 'Microsoft Edge', 'Mozilla Firefox'):
+            self.assertIn(button, br.bookmark_import_steps(name, 'x.html'))
+            self.assertIn(button, br.password_import_steps(name))
+        for name in ('Opera', 'Opera GX'):
+            self.assertNotIn(button, br.bookmark_import_steps(name, 'x.html'))
+            self.assertNotIn(button, br.password_import_steps(name))
+            self.assertIn('procure por "importar" na ajuda', br.password_import_steps(name))
 
     def test_three_dots_spelled_out(self):
         for text in (br.password_import_steps('Microsoft Edge'), br.password_import_steps('Mozilla Firefox')):
             self.assertIn('botão de três pontos (...)', text)
             self.assertNotIn('"..."', text)
-
-    def test_help_url_empty_for_unknown(self):
-        self.assertEqual(br.help_url('Navegador Inexistente'), '')
 
 
 class UiSourceTests(unittest.TestCase):
@@ -161,6 +195,9 @@ class UiSourceTests(unittest.TestCase):
         for old in ('Destino ainda não suportado', 'Ajuda oficial do Opera',
                     'No Opera escolhido', 'Opera GX, pressione Ctrl+Shift+B'):
             self.assertNotIn(old, self.src)
+        # 'No Opera escolhido' valia para qualquer destino; também some do módulo de textos.
+        lib = (ROOT / 'browser_recovery.py').read_text(encoding='utf-8')
+        self.assertNotIn('Ajuda oficial do Opera', lib)
 
 
 
@@ -313,7 +350,13 @@ class ScreenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             buttons, shown, opened = self.run_screen(tmp, 'Mozilla Firefox')
             buttons['Ajuda oficial do navegador']()
-            self.assertEqual(opened, [br.IMPORT_HELP['Mozilla Firefox']])
+            self.assertEqual(opened, [br.IMPORT_HELP['Mozilla Firefox']['favoritos']])
+            buttons['Orientar importação de senhas']()
+            buttons['Ajuda oficial do navegador']()
+            self.assertEqual(opened[-1], br.IMPORT_HELP['Mozilla Firefox']['senhas'])
+            buttons['Preparar favoritos']()
+            buttons['Ajuda oficial do navegador']()
+            self.assertEqual(opened[-1], br.IMPORT_HELP['Mozilla Firefox']['favoritos'])
 
     def test_help_button_without_profile_warns(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -322,6 +365,17 @@ class ScreenTests(unittest.TestCase):
             self.assertEqual(opened, [])
             self.assertEqual(shown[-1][1], 'Ajuda oficial')
             self.assertIn('Escolha um perfil', shown[-1][2])
+
+    def test_help_button_opera_and_brave_explain_no_link(self):
+        for browser, expected in (('Opera', br.NO_OPERA_HELP_TEXT),
+                                  ('Opera GX', br.NO_OPERA_HELP_TEXT),
+                                  ('Brave', br.NO_BROWSER_HELP_TEXT)):
+            with self.subTest(browser=browser), tempfile.TemporaryDirectory() as tmp:
+                buttons, shown, opened = self.run_screen(tmp, browser)
+                buttons['Ajuda oficial do navegador']()
+                self.assertEqual(opened, [])
+                self.assertEqual(shown[-1], ('info', 'Ajuda oficial', expected))
+                self.assertNotIn('Escolha um perfil', shown[-1][2])
 
 
 if __name__ == '__main__':

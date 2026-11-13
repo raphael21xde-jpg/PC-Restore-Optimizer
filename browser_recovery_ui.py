@@ -5,7 +5,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import webbrowser
 from browser_recovery import (inspect_recovery, prepare_bookmarks, destination_supported,
-                              bookmark_import_steps, password_import_steps, help_url)
+                              bookmark_import_steps, password_import_steps, help_url,
+                              help_missing_text)
 from browser_vault import discover_profiles, restore_to_staging
 from browser_guard import extract_to_staging
 
@@ -16,7 +17,7 @@ def show_recovery(parent):
     win.geometry('880x680')
     frame = ttk.Frame(win, padding=16)
     frame.pack(fill='both', expand=True)
-    state = {'root': None, 'info': None, 'busy': False}
+    state = {'root': None, 'info': None, 'busy': False, 'step': 'favoritos'}
     status = tk.StringVar(value='Escolha o cofre ou a pasta já recuperada no teste anterior.')
     ttk.Label(frame, text='Restaurar navegador', font=('Segoe UI', 16, 'bold')).pack(anchor='w')
     ttk.Label(frame, text='Favoritos e senhas por importação no próprio navegador. Nenhum perfil instalado é sobrescrito.', wraplength=820).pack(anchor='w', pady=8)
@@ -91,6 +92,7 @@ def show_recovery(parent):
         win.clipboard_clear(); win.clipboard_append(str(path))
     def bookmarks():
         if not ready(): return
+        state['step'] = 'favoritos'
         dest = filedialog.askdirectory(parent=win, title='Pasta privada para o HTML de favoritos')
         if not dest: return
         d = Path(dest).resolve()
@@ -104,6 +106,7 @@ def show_recovery(parent):
         except Exception as exc: messagebox.showerror('Falha na preparação', str(exc), parent=win)
     def passwords():
         if not ready(): return
+        state['step'] = 'senhas'
         path = state['info']['password_csv']
         if not path:
             messagebox.showinfo('Sem CSV de senhas', 'Este cofre não contém exportação manual de senhas. Use a sincronização. Se ainda tiver o Windows original, exporte as senhas pelo navegador e crie um novo cofre incluindo esse CSV.', parent=win); return
@@ -113,9 +116,12 @@ def show_recovery(parent):
     ttk.Button(actions, text='Preparar favoritos', command=bookmarks).pack(side='left', padx=(0, 8))
     ttk.Button(actions, text='Orientar importação de senhas', command=passwords).pack(side='left', padx=(0, 8))
     def official_help():
-        url = help_url(profiles[choice.current()].browser) if choice.current() >= 0 else ''
+        if choice.current() < 0:
+            messagebox.showinfo('Ajuda oficial', 'Escolha um perfil de destino para abrir a ajuda do navegador.', parent=win); return
+        browser = profiles[choice.current()].browser
+        url = help_url(browser, state['step'])
         if url: webbrowser.open(url)
-        else: messagebox.showinfo('Ajuda oficial', 'Escolha um perfil de destino para abrir a ajuda do navegador.', parent=win)
+        else: messagebox.showinfo('Ajuda oficial', help_missing_text(browser), parent=win)
     ttk.Button(actions, text='Ajuda oficial do navegador', command=official_help).pack(side='left')
     checked = tk.BooleanVar()
     ttk.Checkbutton(frame, text='Conferi no navegador os dados importados (confirmação manual).', variable=checked).pack(anchor='w', pady=10)

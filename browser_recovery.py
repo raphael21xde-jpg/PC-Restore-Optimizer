@@ -91,18 +91,31 @@ def prepare_bookmarks(root, destination):
 # Navegadores para os quais o assistente mostra o passo a passo da importação.
 GUIDED_BROWSERS = ('Opera', 'Opera GX', 'Google Chrome', 'Microsoft Edge', 'Mozilla Firefox')
 
-_HELP_NOTE = ('Se o menu estiver diferente, use, nesta janela, o botão '
-              '"Ajuda oficial do navegador".')
+OPERA_NAMES = ('Opera', 'Opera GX')
 
-# Páginas de ajuda do fabricante sobre IMPORTAR dados (R-83); não são as da sincronização.
-# Sem rede no desenvolvimento: a conferência dos endereços é feita no Windows (Validar M4).
+# Páginas de ajuda do fabricante sobre IMPORTAR, por etapa (R-83, R-84).
+# O Opera e o Opera GX não têm página só sobre importar: ficam sem link, de propósito.
 IMPORT_HELP = {
-    'Opera': 'https://help.opera.com/en/latest/basics/',
-    'Opera GX': 'https://help.opera.com/en/latest/basics/',
-    'Google Chrome': 'https://support.google.com/chrome/answer/96816',
-    'Microsoft Edge': 'https://support.microsoft.com/pt-br/microsoft-edge',
-    'Mozilla Firefox': 'https://support.mozilla.org/pt-BR/kb/importar-dados-de-outro-navegador',
+    'Google Chrome': {'favoritos': 'https://support.google.com/chrome/answer/96816',
+                      'senhas': 'https://support.google.com/chrome/answer/13068232'},
+    'Microsoft Edge': {'favoritos': 'https://support.microsoft.com/en-us/edge/import-your-favorites-and-passwords-in-microsoft-edge',
+                       'senhas': 'https://support.microsoft.com/en-us/edge/import-your-favorites-and-passwords-in-microsoft-edge'},
+    'Mozilla Firefox': {'favoritos': 'https://support.mozilla.org/en-US/kb/import-bookmarks-html-file',
+                        'senhas': 'https://support.mozilla.org/en-US/kb/import-login-data-file'},
 }
+
+NO_OPERA_HELP_TEXT = ('Para o Opera e o Opera GX use os passos acima: não há página de ajuda '
+                      'só sobre importar.')
+NO_BROWSER_HELP_TEXT = ('Este navegador não tem passo a passo nem ajuda no assistente. Entre na conta '
+                        'e ligue a sincronização, ou importe o CSV de senhas pelo próprio navegador '
+                        'e depois apague o CSV.')
+
+
+def _help_note(browser):
+    if browser in OPERA_NAMES:
+        return 'Se o menu estiver diferente, procure por "importar" na ajuda do próprio Opera.'
+    return ('Se o menu estiver diferente, use, nesta janela, o botão '
+            '"Ajuda oficial do navegador".')
 
 
 def destination_supported(browser):
@@ -110,10 +123,15 @@ def destination_supported(browser):
     return browser in GUIDED_BROWSERS
 
 
-def help_url(browser):
-    """Endereço (https) da ajuda oficial sobre importar dados; vazio se não houver."""
-    url = IMPORT_HELP.get(browser, '')
+def help_url(browser, step='favoritos'):
+    """Endereço (https) da ajuda oficial sobre importar; vazio se não houver."""
+    url = IMPORT_HELP.get(browser, {}).get(step, '')
     return url if url.lower().startswith('https://') else ''
+
+
+def help_missing_text(browser):
+    """Aviso para quando o botão de ajuda não tem página para este navegador."""
+    return NO_OPERA_HELP_TEXT if browser in OPERA_NAMES else NO_BROWSER_HELP_TEXT
 
 
 def bookmark_import_steps(browser, html_path):
@@ -130,14 +148,14 @@ def bookmark_import_steps(browser, html_path):
                'selecione "Arquivo HTML de favoritos". Escolha este arquivo.')
     elif browser == 'Microsoft Edge':
         how = ('Abra o Microsoft Edge no perfil escolhido, vá em Configurações → Perfis → '
-               '"Importar dados do navegador", escolha "Favoritos ou marcadores" e '
-               'selecione "Arquivo HTML de favoritos". Escolha este arquivo.')
+               '"Importar dados do navegador", em "Importar de" escolha '
+               '"Arquivo HTML de favoritos ou marcadores" e selecione este arquivo.')
     else:
         how = ('Abra o Mozilla Firefox no perfil escolhido, pressione Ctrl+Shift+O (Biblioteca), '
                'clique em "Importar e fazer backup" e use "Importar favoritos de HTML". '
                'Escolha este arquivo.')
     tail = ('\n\nConfira as pastas antes de repetir a importação para evitar duplicatas. '
-            'Os favoritos atuais não são substituídos pelo aplicativo.\n' + _HELP_NOTE)
+            'Os favoritos atuais não são substituídos pelo aplicativo.\n' + _help_note(browser))
     return head + how + tail
 
 
@@ -161,5 +179,5 @@ def password_import_steps(browser):
                '"Importar de um arquivo" e escolha o CSV.')
     tail = ('\n\nSelecione o CSV. Confira o resultado no navegador. Depois de validar, '
             'apague o CSV: ele guarda as senhas em texto legível. Preserve o cofre criptografado.\n'
-            + _HELP_NOTE)
+            + _help_note(browser))
     return head + how + tail
