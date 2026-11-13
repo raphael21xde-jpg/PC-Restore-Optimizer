@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 11 (última poda: 07/11/2026, pedido `regras-20261107-poda-r68-r78`, issue #221). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-79 (R-79 a R-89 já contadas).
+poda: 12 (última poda: 07/11/2026, pedido `regras-20261107-poda-r68-r78`, issue #221). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-79 (R-79 a R-90 já contadas).
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -104,3 +104,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-87 | Teste que troca um módulo do Python por um falso em `sys.modules` (ex.: um `tkinter` de mentira para rodar a tela sem janela) guarda os módulos reais que já estavam carregados e devolve cada um a `sys.modules` no fim; nunca usa `sys.modules.pop` nos nomes reais, porque o próximo `import` carregaria outra cópia do módulo (`_default_root` vazio, classes de widget diferentes) e quebraria os testes de tela seguintes. | Validação Windows da main 4d9e92f63dd0 (FIX-20261113-windows-tk) | 2026-11-13 |
 | R-88 | Texto de tela ou de ajuda que diz "nada é apagado" (ou parecido) numa frase que fala do C: ou da reinstalação diz que é o app que não apaga e, no mesmo trecho, que o que não for copiado do C: não entra no backup e se perde quando o instalador formatar o C:; nunca deixa a frase solta, que um leigo pode ler como "o C: está seguro". Tem teste com as duas frases. | Revisão da PR #240 (FIX-P4-01-10, 7b47c15) | 2026-11-13 |
 | R-89 | Texto de tela ou de ajuda que diz que o app "não mexe" em discos, unidades ou pastas vale para todos os caminhos do app que gravam ali (destino do backup, "Colocar no lugar original", restauração); se algum grava, o texto diz "não apaga nada" e onde o app grava, nunca "não mexe" solto. Tem teste com a frase. | Revisão da PR #240 (FIX-P4-01-10, be926c82fe5e) | 2026-11-13 |
+| R-90 | Texto de tela ou de ajuda que diz que o app "só" grava, lê ou faz algo num disco, unidade ou pasta é conferido contra todos os caminhos do app que gravam ali, incluindo restauração e "Colocar no lugar original" (restore_place.py); se algum caminho grava em outro lugar, a frase cita esse caminho ou não usa "só". O teste guarda a frase antiga com "só" em OLD_TEXTS. | Revisão da PR #240 (FIX-P4-01-10, f57f30b9eb9d) | 2026-11-13 |
