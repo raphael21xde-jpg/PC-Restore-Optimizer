@@ -485,7 +485,7 @@ class ManualTests(unittest.TestCase):
 
     def test_manual_exists_and_is_short(self):
         self.assertTrue(MANUAL.is_file())
-        self.assertLessEqual(len(_manual_text().splitlines()), 260)
+        self.assertLessEqual(len(_manual_text().splitlines()), 264)
 
     def test_every_quoted_ui_name_exists_in_code(self):
         quoted = _quoted_names(_manual_text())

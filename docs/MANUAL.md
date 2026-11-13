@@ -215,7 +215,11 @@ Cada ajuste que o app aplica fica anotado na aba "7  Alterações feitas".
   os mais antigos.
 - "Conferir de novo" lê de novo o estado real do Windows, para confirmar o que está aplicado.
 - "Desfazer tudo" e "Conferir de novo" conferem a conta antes: com outra conta do Windows, ou
-  sem confirmar a conta, não mudam nada. Feche o app e abra de novo pelo atalho normal, com a SUA própria conta.
+  sem confirmar a conta, não mudam nada.
+  - Para "Conferir de novo": feche o app e abra de novo pelo atalho normal, com a SUA própria conta.
+  - Para "Desfazer tudo": feche o app e abra de novo pelo atalho normal, com a SUA própria conta.
+    Os ajustes do computador todo (aba "9  Ajustes avançados") só se desfazem com o app aberto em
+    "Executar como administrador", usando a SUA própria conta.
 - Uma troca de plano de energia feita por uma versão antiga do app se desfaz pelo
   botão "Desfazer alteração antiga", na aba "4  Energia reversível".
 

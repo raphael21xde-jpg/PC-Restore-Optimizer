@@ -25,7 +25,6 @@ UNDO = (UI.CHANGES_OTHER_ACCOUNT_TEXT, UI.CHANGES_ACCOUNT_UNKNOWN_TEXT)
 class AccountRefusalTextTests(unittest.TestCase):
     def test_no_text_asks_for_administrator(self):
         for text in CHECK + UNDO:
-            self.assertNotIn('Executar como administrador', text)
             self.assertNotIn('botão direito', text)
             self.assertIn('SUA própria conta', text)
             self.assertIn('atalho normal', text)
@@ -37,10 +36,21 @@ class AccountRefusalTextTests(unittest.TestCase):
         for text in UNDO:
             self.assertIn('Nada foi desfeito', text)
 
-    def test_undo_texts_say_admin_items_warn(self):
+    def test_undo_texts_say_machine_wide_tweaks_need_admin(self):
+        # O Desfazer tudo não promete aviso em item (o código não avisa): diz na mesma frase
+        # qual tipo de ajuste precisa de administrador, igual ao TWEAKS_UNDO_TEXT (R-60, R-86).
         for text in UNDO:
-            self.assertIn('Se algum ajuste precisar de administrador, o app avisa nesse item',
+            self.assertNotIn('avisa', text)
+            self.assertIn('Os ajustes do computador todo (aba "' + UI.ADVANCED_TAB_LABEL + '")',
                           text)
+            self.assertIn('só se desfazem com o app aberto em "Executar como administrador", '
+                          'usando a SUA própria conta', text)
+            self.assertIn('abra o app pelo atalho normal, na sua própria conta do Windows', text)
+        self.assertIn('só se desfazem', UI.TWEAKS_UNDO_TEXT)
+        for text in CHECK:  # o Conferir não exige administrador
+            self.assertNotIn('administrador', text)
+            self.assertNotIn('Executar como administrador', text)
+            self.assertIn('abra o app pelo atalho normal, na sua própria conta do Windows', text)
 
     def test_tweaks_texts_unchanged(self):
         for text in (UI.TWEAKS_OTHER_ACCOUNT_TEXT, UI.TWEAKS_ACCOUNT_UNKNOWN_TEXT):
@@ -58,10 +68,13 @@ class AccountRefusalTextTests(unittest.TestCase):
     def test_manual_says_the_same(self):
         manual = ' '.join((ROOT / 'docs' / 'MANUAL.md').read_text(encoding='utf-8').split())
         self.assertIn('conferem a conta antes', manual)
-        self.assertIn('Feche o app e abra de novo pelo atalho normal, com a SUA própria conta',
-                      manual)
+        self.assertIn('Para "Conferir de novo": feche o app e abra de novo pelo atalho normal, '
+                      'com a SUA própria conta.', manual)
+        self.assertIn('Para "Desfazer tudo": feche o app e abra de novo pelo atalho normal, com '
+                      'a SUA própria conta. Os ajustes do computador todo (aba "9 Ajustes '
+                      'avançados") só se desfazem com o app aberto em "Executar como '
+                      'administrador", usando a SUA própria conta.', manual)
         self.assertNotIn('Abra o app como administrador com a SUA própria conta', manual)
-
 
 if __name__ == '__main__':
     unittest.main()

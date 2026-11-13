@@ -237,27 +237,31 @@ TWEAKS_ACCOUNT_UNKNOWN_TEXT = (
     'botão direito no atalho dele, escolha "Executar como administrador" e entre com a SUA '
     'própria conta.')
 # FIX-P4-01-04 (R-55): o "Desfazer tudo" também confere a conta antes de desfazer.
-# FIX-P4-01-09 (R-85): estas ações não exigem administrador; o caminho certo é abrir normalmente.
+# FIX-P4-01-09 (R-85): a recusa orienta o caminho que resolve. Abrir o app com a própria conta
+# vale para as duas ações; no "Desfazer tudo", os ajustes do computador todo (HKLM) ainda
+# precisam de "Executar como administrador" com a própria conta (R-60), e o texto diz isso.
 CHANGES_OTHER_ACCOUNT_TEXT = (
     'O app está aberto com outra conta do Windows, diferente da conta que está usando o computador '
     'agora. O desfazer iria para aquela outra conta, e não para a sua. Nada foi desfeito. Para '
-    'desfazer: feche o app e abra-o de novo pelo atalho normal, entrando no Windows com a SUA '
-    'própria conta. Se algum ajuste precisar de administrador, o app avisa nesse item.')
+    'desfazer: feche o app e abra o app pelo atalho normal, na sua própria conta do Windows (a '
+    'SUA própria conta). Os ajustes do computador todo (aba "' + ADVANCED_TAB_LABEL + '") só se '
+    'desfazem com o app aberto em "Executar como administrador", usando a SUA própria conta.')
 CHANGES_ACCOUNT_UNKNOWN_TEXT = (
     'Não deu para confirmar se o app está aberto com a sua própria conta do Windows. Nada foi '
-    'desfeito, por segurança. Para desfazer: feche o app e abra-o de novo pelo atalho normal, '
-    'entrando no Windows com a SUA própria conta. Se algum ajuste precisar de administrador, o '
-    'app avisa nesse item.')
+    'desfeito, por segurança. Para desfazer: feche o app e abra o app pelo atalho normal, na sua '
+    'própria conta do Windows (a SUA própria conta). Os ajustes do computador todo (aba "'
+    + ADVANCED_TAB_LABEL + '") só se desfazem com o app aberto em "Executar como administrador", '
+    'usando a SUA própria conta.')
 # FIX-P4-01-08 (R-55): o "Conferir de novo" também confere a conta antes de ler.
 CHANGES_RECHECK_OTHER_ACCOUNT_TEXT = (
     'O app está aberto com outra conta do Windows, diferente da conta que está usando o computador '
     'agora. A conferência leria os ajustes daquela outra conta, e não os seus. Nada foi conferido '
-    'nem mudado. Para conferir: feche o app e abra-o de novo pelo atalho normal, entrando no '
-    'Windows com a SUA própria conta.')
+    'nem mudado. Para conferir: feche o app e abra o app pelo atalho normal, na sua própria '
+    'conta do Windows (a SUA própria conta).')
 CHANGES_RECHECK_ACCOUNT_UNKNOWN_TEXT = (
     'Não deu para confirmar se o app está aberto com a sua própria conta do Windows. Nada foi '
-    'conferido nem mudado, por segurança. Para conferir: feche o app e abra-o de novo pelo '
-    'atalho normal, entrando no Windows com a SUA própria conta.')
+    'conferido nem mudado, por segurança. Para conferir: feche o app e abra o app pelo atalho '
+    'normal, na sua própria conta do Windows (a SUA própria conta).')
 # ---------- P3-05: aba "Ajustes avançados" (textos fixos, R-07) ----------
 ADVANCED_TITLE = 'Ajustes avançados'
 ADVANCED_INTRO_TEXT = (
