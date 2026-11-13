@@ -260,6 +260,11 @@ def _load_screen():
         setattr(tk, n, dialogs[n])
     tk.ttk = ttk
     stubs = {'tkinter': tk, 'tkinter.ttk': ttk, **{'tkinter.' + k: v for k, v in dialogs.items()}}
+    # FIX-20261113-windows-tk: o tkinter de verdade (se já estava carregado) tem de voltar
+    # para sys.modules no fim. Sem isso o próximo "import tkinter" carrega outra cópia do
+    # módulo, que não conhece a janela principal aberta nem as classes dos widgets dela,
+    # e os testes de tela seguintes falham ("no default root window", botão não achado).
+    saved = {name: sys.modules[name] for name in stubs if name in sys.modules}
     before = set(sys.modules)
     sys.modules.update(stubs)
     try:
@@ -267,11 +272,16 @@ def _load_screen():
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
     finally:
+        fakes = set(map(id, stubs.values()))
         for name in set(sys.modules) - before:
-            if name in stubs:
-                del sys.modules[name]
+            loaded = sys.modules.get(name)
+            if name in stubs or any(id(value) in fakes for value in vars(loaded).values()):
+                del sys.modules[name]  # o falso, e quem guardou o falso agora
         for name in stubs:
-            sys.modules.pop(name, None)
+            if name in saved:
+                sys.modules[name] = saved[name]
+            else:
+                sys.modules.pop(name, None)
     return module, dialogs
 
 
