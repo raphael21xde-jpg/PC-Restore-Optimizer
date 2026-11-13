@@ -237,25 +237,27 @@ TWEAKS_ACCOUNT_UNKNOWN_TEXT = (
     'botão direito no atalho dele, escolha "Executar como administrador" e entre com a SUA '
     'própria conta.')
 # FIX-P4-01-04 (R-55): o "Desfazer tudo" também confere a conta antes de desfazer.
+# FIX-P4-01-09 (R-85): estas ações não exigem administrador; o caminho certo é abrir normalmente.
 CHANGES_OTHER_ACCOUNT_TEXT = (
     'O app está aberto com outra conta do Windows, diferente da conta que está usando o computador '
     'agora. O desfazer iria para aquela outra conta, e não para a sua. Nada foi desfeito. Para '
-    'desfazer: feche o app, clique com o botão direito no atalho dele, escolha "Executar como '
-    'administrador" e entre com a SUA própria conta.')
+    'desfazer: feche o app e abra-o de novo pelo atalho normal, entrando no Windows com a SUA '
+    'própria conta. Se algum ajuste precisar de administrador, o app avisa nesse item.')
 CHANGES_ACCOUNT_UNKNOWN_TEXT = (
     'Não deu para confirmar se o app está aberto com a sua própria conta do Windows. Nada foi '
-    'desfeito, por segurança. Para desfazer: feche o app, clique com o botão direito no '
-    'atalho dele, escolha "Executar como administrador" e entre com a SUA própria conta.')
+    'desfeito, por segurança. Para desfazer: feche o app e abra-o de novo pelo atalho normal, '
+    'entrando no Windows com a SUA própria conta. Se algum ajuste precisar de administrador, o '
+    'app avisa nesse item.')
 # FIX-P4-01-08 (R-55): o "Conferir de novo" também confere a conta antes de ler.
 CHANGES_RECHECK_OTHER_ACCOUNT_TEXT = (
     'O app está aberto com outra conta do Windows, diferente da conta que está usando o computador '
     'agora. A conferência leria os ajustes daquela outra conta, e não os seus. Nada foi conferido '
-    'nem mudado. Para conferir: feche o app, clique com o botão direito no atalho dele, escolha '
-    '"Executar como administrador" e entre com a SUA própria conta.')
+    'nem mudado. Para conferir: feche o app e abra-o de novo pelo atalho normal, entrando no '
+    'Windows com a SUA própria conta.')
 CHANGES_RECHECK_ACCOUNT_UNKNOWN_TEXT = (
     'Não deu para confirmar se o app está aberto com a sua própria conta do Windows. Nada foi '
-    'conferido nem mudado, por segurança. Para conferir: feche o app, clique com o botão direito '
-    'no atalho dele, escolha "Executar como administrador" e entre com a SUA própria conta.')
+    'conferido nem mudado, por segurança. Para conferir: feche o app e abra-o de novo pelo '
+    'atalho normal, entrando no Windows com a SUA própria conta.')
 # ---------- P3-05: aba "Ajustes avançados" (textos fixos, R-07) ----------
 ADVANCED_TITLE = 'Ajustes avançados'
 ADVANCED_INTRO_TEXT = (
@@ -2445,7 +2447,8 @@ class OptimizationPanel(tk.Frame):
     def recheck_changes(self):
         """Lê o valor atual de cada alteração numa thread (R-10) e acerta o diário.
 
-        Só lê: sem confirmação, sem administrador e sem ponto de restauração.
+        Lê o estado real e só regrava o diário do app; nunca muda o Windows nem desfaz nada.
+        Sem confirmação, sem administrador e sem ponto de restauração.
 
         O Job confere a conta (R-55) antes de qualquer leitura, nunca na thread da tela
         (R-56): com outra conta ou "não deu para saber", nada é conferido nem relido."""

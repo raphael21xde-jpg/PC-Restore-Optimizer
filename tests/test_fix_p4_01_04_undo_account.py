@@ -95,7 +95,7 @@ class UndoAccountFlowTests(UndoAccountHelpers):
         self.assertIn(('warning', 'Desfazer tudo', text), self.shown)
         self.assertIn('Nada foi desfeito', text)
         self.assertIn('SUA própria conta', text)
-        self.assertIn('Executar como administrador', text)
+        self.assertNotIn('Executar como administrador', text)  # FIX-P4-01-09 (R-85)
         self.assertEqual(self.owner_threads, [True])  # o Job falso roda na hora
 
     def test_other_account_undoes_nothing(self):
