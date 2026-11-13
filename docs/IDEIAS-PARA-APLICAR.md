@@ -87,3 +87,45 @@ O artigo fala de sites (CSS e Tailwind). No nosso app o equivalente é:
 2. Raphael aprova a escala e as regras candidatas.
 3. Criar o módulo de constantes e aplicar primeiro numa tela só, comparando
    antes e depois.
+
+---
+
+## 2. Mascotes para os agentes (open-bot-avatar)
+
+- **Fonte:** tweet de Robson Collaneri (@yrobhc) —
+  https://x.com/yrobhc/status/2120577593262985611 (11/11/2026). A skill é a
+  `generate-avatar`, do projeto de código aberto
+  https://github.com/DominikScholz/open-bot-avatar (licença MIT).
+- **Anotada em:** 13/11/2026
+- **Situação:** anotada
+- **Onde encaixa:** PCRO Monitor (painel web dos agentes). No app Tkinter, só
+  como imagem parada, e apenas na Fase 4.
+
+### Resumo da ideia
+
+- Cada mascote é um arquivo JSON pequeno: um contorno (um caminho SVG numa área
+  de 100×100) e a posição dos olhos. Exemplo: foguete, escudo, lupa, caneca.
+- A skill recebe uma descrição ("um ajudante para backup") e devolve esse JSON,
+  conferido por um validador do próprio projeto.
+- Um renderizador em JavaScript, sem dependências, desenha o mascote com volume,
+  cor, olhos que seguem o mouse e três humores: `idle`, `thinking` e `happy`.
+  Também gera um SVG parado.
+
+### Como aplicar no PCRO
+
+- **PCRO Monitor:** um mascote por agente (Coordenador, Planejador,
+  Desenvolvedor, Testador, Revisor, Integrador, Validador Windows). O humor pode
+  refletir o estado que o painel já guarda: `thinking` enquanto trabalha,
+  `happy` quando deu certo, `idle` em espera.
+- **App Tkinter:** o renderizador é JavaScript e não roda no Tkinter. Só daria
+  para usar o SVG parado convertido em imagem, como ícone.
+
+### Cuidados
+
+- É enfeite: não muda o que o app faz. Não deve passar na frente da Fase 1.
+- Projeto novo (primeiras versões em novembro de 2026): fixar a versão usada e
+  preferir o SVG parado embutido na página, em vez de carregar o script de fora.
+- Não instalar a skill nos agentes do ciclo: gerar os mascotes uma vez, numa
+  conversa com o Raphael, e guardar os JSON.
+- A cor e o humor não podem ser o único sinal de erro no painel; o texto do
+  estado continua obrigatório.
