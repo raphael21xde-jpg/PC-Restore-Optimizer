@@ -176,6 +176,31 @@ Duas já estão no nosso processo: **Grill Me** (as "perguntas do Grill" do gate
   Servem os princípios: escala de espaçamento, hierarquia, tipografia, contraste
   e o teste com dados ruins.
 
+### Leitura das skills candidatas (13/11/2026)
+
+Li o texto real das skills (cópia só para leitura; nada foi instalado).
+Correção ao que está em "Como aplicar": o que fica sempre no contexto é só a
+descrição curta de cada skill. O texto completo é carregado quando a skill é
+usada. O custo, portanto, aparece no uso, e cresce com o tamanho da skill.
+
+| Skill | O que faz de verdade | Tamanho | Roda scripts? | Avaliação |
+|---|---|---|---|---|
+| Frontend Design (Anthropic) | Faz o agente planejar cor, tipografia e layout a partir do assunto do produto antes de escrever código, e lista os "vícios" de página gerada por IA para evitar | ~1.500 palavras | Não | **Recomendo** |
+| Better Interface + família `better-*` (Jakub Krehel) | Revisa uma tela pronta em 6 áreas (acessibilidade, layout, texto, tipografia, cor, acabamento) e devolve um relatório único, ordenado por impacto, com arquivo e linha de cada problema | ~1.400 palavras + 6 skills de ~1.500 | Não | **Recomendo** |
+| Break UI (Emil Kowalski) | Monta dados "do pior caso real" (nome longo, campo vazio, lista com 0, 1 e 1.000 itens) e mostra o que quebra; relata antes de corrigir | ~2.400 palavras | Não | **Recomendo** |
+| Unslop (heydamir) | Conserta uma tela com cara de IA em 9 passadas, na ordem (espaçamento primeiro), depois de definir a direção e esperar o "sim" do usuário | ~5.700 palavras | Sim (captura de página, vídeo); licença CC BY exige crédito | Opcional, para reformar o Monitor |
+| Impeccable (Paul Bakaus) | Conjunto grande de comandos de design (planejar, criticar, auditar, polir) | ~70.000 palavras em 58 arquivos | Sim, um script próprio a cada sessão | Não agora: pesado e repete o Frontend Design |
+| Design Taste Frontend (leonxlnx) | Direção de arte com imagens de referência | ~81.000 palavras, mais de 1.600 arquivos | — | Não agora: pesado |
+| Archify | Gera diagramas interativos | ~38.000 palavras, 206 arquivos | — | Só se precisarmos de diagramas |
+| Prototype / Variant | Geram várias versões de uma peça para escolher | ~1.200 palavras cada | Não | Opcional, mais tarde |
+
+**Recomendação para a central:** Frontend Design (para desenhar), Better
+Interface com a família `better-*` (para revisar) e Break UI (para testar com
+dados ruins). O Unslop entra só se formos reformar o PCRO Monitor.
+
+No app Tkinter nenhuma delas se instala; do Break UI se aproveita a lista de
+dados do pior caso para os testes de tela.
+
 ### Cuidados
 
 - Uma skill é um texto de instruções escrito por terceiros que o agente passa a
@@ -184,3 +209,70 @@ Duas já estão no nosso processo: **Grill Me** (as "perguntas do Grill" do gate
 - Componentes mantêm a licença da biblioteca de origem: conferir antes de copiar.
 - Instalar por comando (`npx skills add ...`) baixa código de fora: fixar a
   versão e revisar o que entrou.
+
+---
+
+## 4. agentes.chat: espaço de trabalho onde pessoas e agentes dividem os canais
+
+- **Fonte:** https://x.com/agentes_chat/status/2120655002335064125 (11/11/2026),
+  site https://agentes.chat, código em
+  https://github.com/agentes-chat/agentes-chat (licença AGPL-3.0)
+- **Anotada em:** 13/11/2026
+- **Situação:** anotada
+- **Onde encaixa:** é a referência mais próxima da central de projetos
+  (`docs/CENTRAL-DE-PROJETOS-RASCUNHO.md`).
+
+### O que é
+
+Um produto pronto, em beta aberto, parecido com o Slack: canais e conversas onde
+pessoas e agentes de IA trabalham juntos. Pelo README e pelo anúncio:
+
+- Cada agente tem papel, rosto, modelo, orçamento mensal e uma pessoa responsável.
+- Mencionar o agente (`@nome`) faz ele trabalhar; um "roteador" barato decide
+  quem responde quando ninguém foi mencionado.
+- **Aprovações:** merge, deploy e ações sensíveis esperam o clique de uma pessoa,
+  num cartão dentro da conversa.
+- Quadro de tarefas, rotinas agendadas, memória, wiki e um "Drive" com tudo o que
+  os agentes produzem.
+- Funciona no navegador e em aplicativo de desktop. Pode ser usado na nuvem deles
+  (pago) ou instalado num servidor Linux próprio (gratuito).
+
+### O que serve para a central
+
+Muito do que o Raphael descreveu como "escritório" já existe ali. Ideias a
+aproveitar no nosso desenho:
+
+- Agente com papel, rosto e responsável (combina com os mascotes, ideia 2).
+- Cartão de aprovação dentro da conversa (o PCRO Monitor já faz algo parecido em
+  "Precisa de você").
+- **Orçamento por agente**, conferido antes de cada chamada: é exatamente o
+  controle de gasto que estamos montando à mão.
+- Roteador barato na entrada: é a ideia do "porteiro" da Fase 1.
+- Um lugar único para os resultados (relatórios, PRs, páginas).
+
+### Dois caminhos
+
+1. **Usar o produto** como a central. Vantagem: já está pronto. Custos: é beta e
+   tem falhas (os autores avisam); instalar por conta própria exige um servidor
+   Linux ligado o tempo todo; os agentes passariam a rodar no sistema deles, e
+   não nas tarefas agendadas do Claude Code, então o ciclo do PCRO teria de ser
+   refeito lá.
+2. **Construir a nossa central e usar o agentes.chat como referência** de
+   organização e de telas. Mantém o ciclo atual do PCRO como está.
+
+Recomendação: caminho 2 por enquanto. O PCRO está perto do fim e não vale trocar
+a base do ciclo agora. Vale o Raphael abrir o beta com um projeto de brinquedo
+para sentir como é.
+
+### Cuidados
+
+- **Licença AGPL-3.0:** usar é livre. Copiar código deles para dentro do nosso
+  projeto obriga o nosso código a ter a mesma licença. Inspirar-se nas ideias e
+  nas telas não tem essa obrigação.
+- **"Use o plano do Claude que você já paga":** o anúncio diz isso; o README diz
+  que cada organização cadastra a própria chave de modelo. Confirmar como
+  funciona de verdade, e se é permitido, antes de contar com isso.
+- **Acesso:** ligar o produto ao GitHub dá a um sistema de terceiros acesso ao
+  repositório privado. Só com decisão do Raphael, e de preferência na versão
+  instalada em servidor próprio.
+- As travas de segurança do PCRO continuam valendo em qualquer central.
