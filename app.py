@@ -139,7 +139,7 @@ class App(tk.Tk):
         self.known_profiles = discover_profiles()
         if self.known_profiles:
             self.profile.set(str(self.known_profiles[0].path))
-        self.local_state = Path(__file__).resolve().parent / 'preferencias-v05.json'
+        self.local_state = choices_store.app_data_dir(source_file=__file__) / 'preferencias-v05.json'
         self.catalog_choices = {}
         self.auto_save_paths = set()
         self.loaded_recovery_plan = None
@@ -2270,5 +2270,18 @@ class App(tk.Tk):
         self.destroy()
 
 
+def _smoke_test():
+    """Autoteste mínimo do pacote (.exe): abre e fecha uma janela Tk sem tocar em discos."""
+    root = tk.Tk()
+    root.title(f'PC Restore & Optimizer | v{APP_VERSION} — Autoteste')
+    root.geometry('320x120')
+    root.after(50, root.destroy)
+    root.mainloop()
+    return 0
+
+
 if __name__=='__main__':
+    import sys
+    if '--smoke-test' in sys.argv[1:]:
+        raise SystemExit(_smoke_test())
     App().mainloop()
