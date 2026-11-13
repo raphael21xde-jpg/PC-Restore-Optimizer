@@ -11,6 +11,15 @@ se aplica aqui e a situação.
 - Os agentes do ciclo **não** implementam nada daqui por conta própria.
 - Situações possíveis: `anotada` → `aprovada` → `aplicada` (ou `descartada`).
 
+**Decisão do Raphael (13/11/2026):** quando o ciclo chegar ao item
+**P4-04 · Interface moderna** do `docs/BACKLOG.md`, as ideias de interface deste
+caderno devem ser aplicadas no app. Para o app Tkinter isso significa os
+princípios (escala de espaçamento, alturas padronizadas, hierarquia por
+proximidade, tipografia, contraste, teste das telas com dados ruins); os
+componentes e skills feitos para web ficam para a central de projetos.
+Enquanto este arquivo não estiver na `main` e o P4-04 não apontar para ele, os
+agentes do ciclo não enxergam esta decisão.
+
 ---
 
 ## 1. Regra dos 8 pontos: espaçamento consistente na interface
