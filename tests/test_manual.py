@@ -56,6 +56,9 @@ OPT_TABS = ('optimization_ui.py', 'OptimizationPanel._build')
 OPT_DIAG = ('optimization_ui.py', 'OptimizationPanel._build_diagnostics')
 AFTER = ('after_format_ui.py', 'show_after_format')
 INSTALL = ('workflow_ui.py', 'build_installation')
+CATALOG = ('app.py', 'App._build_catalog')
+BROWSERS = ('app.py', 'App._build_browsers')
+INVENTORY = ('app.py', 'App._build_inventory')
 
 # Nome da tela citado no manual -> (módulo, função que monta a tela).
 UI_LABELS = {
@@ -71,6 +74,14 @@ UI_LABELS = {
     'Otimização': SIDEBAR,
     'Diagnóstico': SIDEBAR,
     'Histórico e relatórios': SIDEBAR,
+    'Seleção avançada': SIDEBAR,
+    # Seleção avançada
+    'Arquivos pessoais': CATALOG,
+    'Navegadores': CATALOG,
+    '+ Adicionar pasta': INVENTORY,
+    '+ Adicionar arquivo': INVENTORY,
+    'Pesquisar perfis': BROWSERS,
+    'Criar backup protegido do navegador': BROWSERS,
     # Diagnóstico
     'Analisar computador e discos': DIAGNOSTIC,
     'Simular destino de backup (somente leitura)': DIAGNOSTIC,
@@ -139,13 +150,11 @@ WINDOWS_NAMES = {
     'Gerenciamento de Disco': 'after_format.py',
 }
 
-# Páginas do notebook escondido (Hidden.TNotebook) sem item no menu: hoje só se chega
-# a elas por _build_legacy_home, que nunca é chamada (FIX-P4-01-02).
+# Páginas do notebook escondido (Hidden.TNotebook) sem item no menu. Desde o
+# FIX-P4-01-02, "Seleção avançada" (_build_catalog, com "Arquivos pessoais" e
+# "Navegadores" dentro) está no menu lateral; _build_legacy_home continua nunca chamada.
 HIDDEN_BUILDERS = {
     ('app.py', 'App._build'),            # rótulos das abas escondidas
-    ('app.py', 'App._build_catalog'),    # "Seleção avançada"
-    ('app.py', 'App._build_inventory'),  # "Arquivos pessoais"
-    ('app.py', 'App._build_browsers'),   # "Navegadores"
     ('app.py', 'App._build_legacy_home'),
 }
 # App._build só põe os rótulos das abas escondidas; as páginas que ele monta seguem
@@ -499,15 +508,16 @@ class ManualTests(unittest.TestCase):
                 self.assertTrue(any(_norm(name) in s for s in self.project.screen_strings(filename)),
                                 f'"{name}" não aparece nos textos de tela de {filename}')
 
-    def test_hidden_pages_are_really_unreachable_or_hidden(self):
-        # Se o FIX-P4-01-02 ligar essas páginas ao menu, este teste avisa para rever o manual.
+    def test_advanced_selection_is_in_menu_and_legacy_home_is_not(self):
+        # FIX-P4-01-02: "Seleção avançada" está no menu; _build_legacy_home segue morta.
         self.assertNotIn(('app.py', 'App._build_legacy_home'), self.reach)
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
         self.assertIn("self.style.layout('Hidden.TNotebook.Tab', [])", app_source)
-        sidebar = self.project.labels(*SIDEBAR)
-        for page in ('Seleção avançada', 'Arquivos pessoais', 'Navegadores'):
-            self.assertNotIn(page, sidebar)
-            self.assertNotIn(page, _quoted_names(_manual_text()))
+        self.assertIn('Seleção avançada', self.project.labels(*SIDEBAR))
+        for screen in (CATALOG, INVENTORY, BROWSERS):
+            with self.subTest(screen=screen):
+                self.assertNotIn(screen, HIDDEN_BUILDERS)
+                self.assertIn(screen, self.reach)
 
     def test_undo_without_admin_mentions_machine_wide_exception(self):
         # R-60: "Desfazer tudo ... sem administrador" precisa trazer a exceção no mesmo trecho.

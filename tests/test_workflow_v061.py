@@ -101,13 +101,25 @@ class NavigationTests(unittest.TestCase):
         except tk.TclError:
             self.skipTest('display unavailable')
         track_tk_root(self, root)
-        self.assertEqual(len(root.nav_buttons), 8)
+        # FIX-P4-01-02: "Seleção avançada" (catalog) entrou no menu lateral.
+        self.assertEqual(len(root.nav_buttons), 9)
+        self.assertIn('catalog', root.nav_buttons)
         self.assertEqual(root.tabs.select(), str(root.overview))
         root.navigate(root.installation)
         self.assertEqual(root.tabs.select(), str(root.installation))
         self.assertFalse(hasattr(root, 'format_disk'))
         root.navigate(root.preservation)
         self.assertEqual(root.tabs.select(), str(root.preservation))
+        # FIX-P4-01-02: o item do menu abre "Seleção avançada", e as páginas
+        # "Arquivos pessoais" e "Navegadores" abrem como abas dentro dela.
+        root.navigate(root.catalog)
+        self.assertEqual(root.tabs.select(), str(root.catalog))
+        root.navigate(root.inventory)
+        self.assertEqual(root.tabs.select(), str(root.catalog))
+        self.assertEqual(root.catalog_tabs.select(), str(root.inventory))
+        root.navigate(root.browsers)
+        self.assertEqual(root.tabs.select(), str(root.catalog))
+        self.assertEqual(root.catalog_tabs.select(), str(root.browsers))
 
 
 if __name__ == '__main__':
