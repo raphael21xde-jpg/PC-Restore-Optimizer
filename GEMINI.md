@@ -13,13 +13,52 @@ Antes de cada item, leia `CLAUDE.md`, `docs/REGRAS.md` e o texto do item em
 
 | Ordem | Item | Branch | Observação |
 |---|---|---|---|
-| 1 | P4-03 · Instalador (.exe) | `gemini/P4-03-instalador` | Detalhes na seção "P4-03" abaixo |
-| 2 | FIX-P4-01-16 | `gemini/FIX-P4-01-16-textos-workflow` | Só textos; seguir a regra R-88 do `docs/REGRAS.md` |
-| 3 | FIX-P4-01-15 | `gemini/FIX-P4-01-15-aviso-retirar-do-backup` | Só textos; seguir a regra R-88 |
+| 1 | FIX-P4-01-13 | `gemini/FIX-P4-01-13-destino-navegadores` | Tela: o rótulo "Destino atual" acompanha "Escolher destino" |
+| 2 | FIX-P4-01-14 | `gemini/FIX-P4-01-14-previa-unidades` | Tela: a prévia da Preservação monta a lista de unidades a partir do plano, só leitura |
+| 3 | P4-02 · Primeiro uso guiado | `gemini/P4-02-proposta` e depois `gemini/P4-02-...` | **Em duas etapas**: veja a seção "P4-02" abaixo |
+
+Já entregues (não refazer): P4-03 (PR #247), FIX-P4-01-16 (PR #248) e FIX-P4-01-15 (PR #249).
 
 Os outros itens do backlog são dos agentes do Claude. **Não pegue nenhum item
-fora desta fila**, mesmo que esteja marcado como `pronto`. Quando a fila acabar,
-pare e avise o Raphael.
+fora desta fila**, mesmo que esteja marcado como `pronto`. Em especial, não
+pegue FIX-P4-01-12 nem FIX-P4-03-01: eles tocam a escolha do disco de destino e
+o diagnóstico de discos. Quando a fila acabar, pare.
+
+## P4-02 · Primeiro uso guiado: em duas etapas
+
+O item não tem critérios de aceite no backlog, então começa por uma proposta.
+
+1. **Etapa 1, só a proposta.** No branch `gemini/P4-02-proposta`, criar
+   `docs/P4-02-PROPOSTA.md` (sem mexer em código): o problema, "antes o usuário
+   ___ / depois ___", as telas e os textos previstos, o que fica fora, e as
+   fatias (uma PR por fatia), cada uma com o critério de aceite. Abrir a PR em
+   rascunho e **parar**.
+2. **Etapa 2, só depois de a proposta ser mesclada.** Implementar uma fatia por
+   PR, na ordem da proposta.
+
+O primeiro uso guiado só orienta e leva às telas que já existem. Não executa
+cópia, restauração nem diagnóstico de discos por conta própria, e não muda
+nenhuma trava.
+
+## Autoconferência antes de abrir qualquer PR (obrigatória)
+
+Você só enxerga o Windows do Raphael. A revisão do Claude roda num servidor
+Linux **sem tkinter**. Antes de abrir a PR, confira e registre na descrição:
+
+1. **Testes sem tkinter.** Rode os arquivos de teste novos ou alterados num
+   processo separado com o tkinter bloqueado (`sys.modules['tkinter'] = None`
+   antes dos imports). Cada um tem de passar ou ser ignorado com motivo; nenhum
+   pode falhar ao importar. Texto e lógica pura ficam em módulos sem tkinter
+   (como `workflow_texts.py`), e os testes importam esses módulos.
+2. **Nenhum teste que já rodava sem tkinter passou a depender dele.**
+3. **Textos.** Sem "não mexe", "intactos" ou "só grava"; dizer o que o app faz
+   ("não apaga") e, quando for o caso, que o que fica fora do backup se perde na
+   formatação (regra R-88). Sem letra de unidade fixa: usar `system_drive()`.
+4. **Módulos falsos.** Teste que troca um módulo em `sys.modules` devolve o
+   verdadeiro no fim.
+5. **Escopo.** O diff só toca o que o item pede; nenhum arquivo protegido,
+   nenhuma trava, nenhum dado pessoal.
+6. **Textos alterados.** `grep` nos testes que dependiam do texto antigo.
 
 ## Roteiro de cada item
 
