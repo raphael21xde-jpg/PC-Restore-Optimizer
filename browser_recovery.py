@@ -3,7 +3,7 @@ import html
 import json
 from pathlib import Path
 from urllib.parse import urlsplit
-from browser_vault import _special
+from browser_vault import _special, BROWSERS
 
 
 def safe_file(root, relative):
@@ -86,3 +86,69 @@ def prepare_bookmarks(root, destination):
     with out.open('xb') as stream:
         stream.write(payload)
     return out, count
+
+
+# Navegadores para os quais o assistente mostra o passo a passo da importação.
+GUIDED_BROWSERS = ('Opera', 'Opera GX', 'Google Chrome', 'Microsoft Edge', 'Mozilla Firefox')
+
+_HELP_NOTE = 'Se o menu estiver diferente, use o botão "Ajuda oficial do navegador".'
+
+
+def destination_supported(browser):
+    """True só para os navegadores com passo a passo escrito aqui."""
+    return browser in GUIDED_BROWSERS
+
+
+def help_url(browser):
+    """Endereço (https) da ajuda oficial do navegador; vazio se não houver."""
+    url = BROWSERS.get(browser, {}).get('help', '')
+    return url if url.lower().startswith('https://') else ''
+
+
+def bookmark_import_steps(browser, html_path):
+    """Texto da tela 'Importar favoritos'. Só texto; não escreve em perfil."""
+    if not destination_supported(browser):
+        raise ValueError('Este navegador não tem passo a passo no assistente.')
+    head = f'Arquivo preparado:\n{html_path}\n\nO caminho foi copiado. '
+    if browser in ('Opera', 'Opera GX'):
+        how = (f'Abra o {browser} no perfil escolhido, pressione Ctrl+Shift+B e use '
+               'Importar favoritos → arquivo HTML. Selecione este arquivo.')
+    elif browser == 'Google Chrome':
+        how = ('Abra o Google Chrome no perfil escolhido, vá em Configurações → '
+               '"Importar favoritos e configurações" e, em "Escolher o que importar", '
+               'selecione "Arquivo HTML de favoritos". Escolha este arquivo.')
+    elif browser == 'Microsoft Edge':
+        how = ('Abra o Microsoft Edge no perfil escolhido, vá em Configurações → Perfis → '
+               '"Importar dados do navegador", escolha "Favoritos ou marcadores" e '
+               'selecione "Arquivo HTML de favoritos". Escolha este arquivo.')
+    else:
+        how = ('Abra o Mozilla Firefox no perfil escolhido, pressione Ctrl+Shift+O (Biblioteca), '
+               'clique em "Importar e fazer backup" e use "Importar favoritos de HTML". '
+               'Escolha este arquivo.')
+    tail = ('\n\nConfira as pastas antes de repetir a importação para evitar duplicatas. '
+            'Os favoritos atuais não são substituídos pelo aplicativo.\n' + _HELP_NOTE)
+    return head + how + tail
+
+
+def password_import_steps(browser):
+    """Texto da tela 'Importar senhas'. Nunca recebe nem mostra senha."""
+    if not destination_supported(browser):
+        raise ValueError('Este navegador não tem passo a passo no assistente.')
+    head = 'O caminho do CSV foi copiado; nenhuma senha foi exibida.\n\n'
+    if browser in ('Opera', 'Opera GX'):
+        how = ('No Opera escolhido: Configurações → Privacidade e segurança → '
+               'Preenchimento automático e senhas → Gerenciador de senhas → '
+               'Configurações → Importar senhas / Selecionar arquivo.')
+    elif browser == 'Google Chrome':
+        how = ('No Google Chrome: Configurações → Preenchimento automático e senhas → '
+               'Gerenciador de senhas → Configurações → Importar senhas → Selecionar arquivo.')
+    elif browser == 'Microsoft Edge':
+        how = ('No Microsoft Edge: Configurações → Perfis → Senhas → "..." → '
+               '"Importar senhas" (ou "Importar dados do navegador" e escolha o arquivo CSV de senhas).')
+    else:
+        how = ('No Mozilla Firefox: digite about:logins na barra de endereço, clique em "..." → '
+               '"Importar de um arquivo" e escolha o CSV.')
+    tail = ('\n\nSelecione o CSV. Confira o resultado no navegador. Depois de validar, '
+            'apague o CSV: ele guarda as senhas em texto legível. Preserve o cofre criptografado.\n'
+            + _HELP_NOTE)
+    return head + how + tail

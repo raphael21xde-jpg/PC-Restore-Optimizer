@@ -115,8 +115,8 @@ um problema.
    "Navegador e senhas", o botão "Abrir" abre o assistente "Restaurar navegador".
    Hoje ele tem dois limites: só aceita um cofre do app (arquivo `.pcbrowser` ou
    `.opgx`) ou uma pasta `CONFERIR-NAVEGADOR`, criados em "Seleção avançada" >
-   "Navegadores"; e só orienta a importação no Opera e no Opera GX.
-   Para os outros navegadores, ou se você não tem esse cofre, entre na conta do
+   "Navegadores"; e só orienta a importação no Opera, no Opera GX, no Chrome, no Edge e no Firefox.
+   Para os outros navegadores (Brave, Vivaldi...), ou se você não tem esse cofre, entre na conta do
    navegador novo e ligue a sincronização, ou importe o CSV de senhas pelo próprio
    navegador e depois apague o CSV. Cookies, sessões abertas (logins) e passkeys
    **não voltam**: você vai precisar entrar nas contas de novo.

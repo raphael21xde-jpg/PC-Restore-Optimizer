@@ -4,7 +4,8 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import webbrowser
-from browser_recovery import inspect_recovery, prepare_bookmarks
+from browser_recovery import (inspect_recovery, prepare_bookmarks, destination_supported,
+                              bookmark_import_steps, password_import_steps, help_url)
 from browser_vault import discover_profiles, restore_to_staging
 from browser_guard import extract_to_staging
 
@@ -83,8 +84,8 @@ def show_recovery(parent):
             messagebox.showwarning('Seleção necessária', 'Selecione uma origem e um perfil instalado.', parent=win); return False
         if not protect.get():
             messagebox.showwarning('Proteja o destino', 'Use Criar cofre na tela Navegadores para proteger o perfil atual antes de importar, ou confirme que ele é novo e vazio.', parent=win); return False
-        if profiles[choice.current()].browser not in ('Opera GX', 'Opera'):
-            messagebox.showinfo('Destino ainda não suportado', 'Este assistente orienta a importação no Opera e Opera GX. Outros navegadores continuam disponíveis para backup e recuperação em pasta.', parent=win); return False
+        if not destination_supported(profiles[choice.current()].browser):
+            messagebox.showinfo('Navegador sem passo a passo', 'Este assistente orienta a importação no Opera, Opera GX, Google Chrome, Microsoft Edge e Mozilla Firefox. Para os outros navegadores, entre na conta e ligue a sincronização, ou importe o CSV de senhas pelo próprio navegador e depois apague o CSV.', parent=win); return False
         return True
     def copy_path(path):
         win.clipboard_clear(); win.clipboard_append(str(path))
@@ -98,7 +99,7 @@ def show_recovery(parent):
         try:
             out, count = prepare_bookmarks(state['root'], dest)
             copy_path(out)
-            messagebox.showinfo('Importar favoritos', f'Arquivo preparado:\n{out}\n\nO caminho foi copiado. Abra o Opera GX no perfil escolhido, pressione Ctrl+Shift+B e use Importar favoritos → arquivo HTML. Selecione este arquivo.\n\nConfira as pastas antes de repetir a importação para evitar duplicatas. Os favoritos atuais não são substituídos pelo aplicativo.', parent=win)
+            messagebox.showinfo('Importar favoritos', bookmark_import_steps(profiles[choice.current()].browser, out), parent=win)
             status.set('HTML preparado. Confirme a importação e confira os favoritos no navegador.')
         except Exception as exc: messagebox.showerror('Falha na preparação', str(exc), parent=win)
     def passwords():
@@ -107,11 +108,15 @@ def show_recovery(parent):
         if not path:
             messagebox.showinfo('Sem CSV de senhas', 'Este cofre não contém exportação manual de senhas. Use a sincronização. Se ainda tiver o Windows original, exporte as senhas pelo navegador e crie um novo cofre incluindo esse CSV.', parent=win); return
         copy_path(path)
-        messagebox.showinfo('Importar senhas', 'O caminho do CSV foi copiado; nenhuma senha foi exibida.\n\nNo Opera escolhido: Configurações → Privacidade e segurança → Preenchimento automático e senhas → Gerenciador de senhas → Configurações → Importar senhas / Selecionar arquivo.\n\nSelecione o CSV. Confira o resultado no navegador. Depois de validar, remova manualmente a cópia em texto claro se não precisar dela. Preserve o cofre criptografado.', parent=win)
+        messagebox.showinfo('Importar senhas', password_import_steps(profiles[choice.current()].browser), parent=win)
         status.set('Caminho do CSV preparado. A importação precisa ser confirmada no navegador.')
     ttk.Button(actions, text='Preparar favoritos', command=bookmarks).pack(side='left', padx=(0, 8))
     ttk.Button(actions, text='Orientar importação de senhas', command=passwords).pack(side='left', padx=(0, 8))
-    ttk.Button(actions, text='Ajuda oficial do Opera', command=lambda: webbrowser.open('https://help.opera.com/en/latest/web-preferences/')).pack(side='left')
+    def official_help():
+        url = help_url(profiles[choice.current()].browser) if choice.current() >= 0 else ''
+        if url: webbrowser.open(url)
+        else: messagebox.showinfo('Ajuda oficial', 'Escolha um perfil de destino para abrir a ajuda do navegador.', parent=win)
+    ttk.Button(actions, text='Ajuda oficial do navegador', command=official_help).pack(side='left')
     checked = tk.BooleanVar()
     ttk.Checkbutton(frame, text='Conferi no navegador os dados importados (confirmação manual).', variable=checked).pack(anchor='w', pady=10)
     ttk.Label(frame, textvariable=status, wraplength=820).pack(anchor='w')

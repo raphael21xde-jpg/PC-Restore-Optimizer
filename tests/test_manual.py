@@ -589,13 +589,13 @@ class ManualTests(unittest.TestCase):
             self.assertIn('1. Recalcular plano e espaço', _norm(item))
 
     def test_browser_restore_states_its_limits(self):
-        # R-64: o assistente só aceita o cofre do app e só orienta Opera / Opera GX.
+        # R-64: o assistente só aceita o cofre do app e só orienta Opera, Opera GX, Chrome, Edge e Firefox.
         blocks = [_norm(b) for b in re.split(r'\n\s*\n|\n(?=\d\. )', _manual_text())]
         hits = [b for b in blocks if 'Restaurar navegador' in b]
         self.assertTrue(hits)
         for block in hits:
             with self.subTest(block=block[:60]):
-                for needed in ('Opera', 'Opera GX', '.pcbrowser', 'CONFERIR-NAVEGADOR',
+                for needed in ('Opera', 'Opera GX', 'Chrome', 'Edge', 'Firefox', '.pcbrowser', 'CONFERIR-NAVEGADOR',
                                'sincronização', 'apague o CSV'):
                     self.assertIn(needed, block)
         self.assertNotIn('ajuda a trazer favoritos e senhas', _norm(_manual_text()))
