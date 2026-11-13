@@ -285,3 +285,25 @@ para sentir como é.
   repositório privado. Só com decisão do Raphael, e de preferência na versão
   instalada em servidor próprio.
 - As travas de segurança do PCRO continuam valendo em qualquer central.
+
+---
+
+## 5. Mais três sites de referência visual
+
+- **Fonte:** indicados pelo Raphael em 13/11/2026
+- **Situação:** anotada
+- **Onde encaixa:** central de projetos (web). No app Tkinter, só como inspiração.
+
+| Site | O que é | Para que serve aqui |
+|---|---|---|
+| https://ui.wensity.com (Wensity UI) | Biblioteca de componentes animados para React, Next.js e Tailwind, com partes gratuitas e partes pagas. Tem categorias "Agentic AI Interfaces" e "AI Chat UI", blocos de página, modelos prontos, geradores de fundo (gradiente, malha, ruído) e um servidor MCP e skills próprios | Peças de tela para a central, principalmente as de conversa com agentes |
+| https://www.inspora.design (Inspora) | Galeria curada de inspiração: sites, painéis, logotipos, ícones e animações, com o autor de cada trabalho | Escolher referências visuais (por exemplo, painéis administrativos) antes de desenhar |
+| https://designeer.xyz | **Não lido:** o site bloqueou a leitura automática | O Raphael pode descrever ou mandar capturas de tela do que gostou |
+
+### Cuidados
+
+- O Wensity mistura itens gratuitos e pagos: conferir a licença de cada peça.
+- Muita animação pesa e distrai. A central é uma tela de trabalho: usar
+  movimento só onde ajuda a entender o estado de um agente.
+- Galeria de inspiração serve para escolher uma direção, não para copiar um
+  trabalho alheio.
