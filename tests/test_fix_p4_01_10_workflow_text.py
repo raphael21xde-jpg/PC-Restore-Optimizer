@@ -17,16 +17,21 @@ FUNCS = ('build_overview', 'build_preservation', 'build_installation')
 NEW_TEXTS = (
     'Escolha o que manter em cada unidade. Prepare o C: antes de reinstalar o Windows: '
     'o que não for copiado dele não entra no backup e se perde quando o instalador formatar o C:. '
-    'O app não apaga nada e não mexe nos outros discos e unidades.',
+    'O app não apaga nada nos outros discos e unidades; neles, só grava a cópia na pasta que você escolher.',
     'C: exige cópia verificada antes de reinstalar. O app não apaga nada, nem os itens pendentes. '
     'O que ficar pendente ou desmarcado no C: não entra no backup e se perde quando o instalador '
-    'formatar o C:. O app não mexe nos outros discos e unidades.',
+    'formatar o C:. O app não apaga nada nos outros discos e unidades; neles, só grava a cópia na pasta que você escolher.',
     'Revisar dados do C: associados a jogos instalados em outros discos ou unidades; '
-    'o app não mexe nesses discos.',
+    'o app não apaga nada nesses discos.',
+    'Copiar e verificar arquivos pessoais, saves e configurações antes de o instalador apagar '
+    'a partição do sistema.',
 )
 LOSS = 'se perde quando o instalador formatar o C:'
 OLD_TEXTS = ('permanecem intactos', 'podem ficar intactos', 'permanecerão em D:',
-             'nada é apagado.', 'que continuam onde estão')
+             'nada é apagado.', 'que continuam onde estão',
+             # frases da 1ª versão da PR #240, nunca estiveram na main (R-89):
+             'não mexe nos outros discos', 'não mexe nesses discos',
+             'antes de apagar a partição do sistema')
 
 
 def _strings_of(func_name):

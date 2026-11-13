@@ -43,7 +43,7 @@ def build_overview(app):
               font=('Segoe UI', 18, 'bold')).pack(anchor='w', pady=(8, 8))
     ttk.Label(frame, text='Escolha o que manter em cada unidade. Prepare o C: antes de reinstalar o Windows: '
               'o que não for copiado dele não entra no backup e se perde quando o instalador formatar o C:. '
-              'O app não apaga nada e não mexe nos outros discos e unidades.',
+              'O app não apaga nada nos outros discos e unidades; neles, só grava a cópia na pasta que você escolher.',
               wraplength=910).pack(anchor='w', pady=(0, 23))
     _card(frame, '01  ·  EXPLORAR', 'Meu computador',
           'Varra somente as unidades selecionadas. Agrupe jogos, arquivos e configurações sem carregar tudo na tela.',
@@ -95,7 +95,7 @@ def build_preservation(app):
               font=('Segoe UI', 16, 'bold')).pack(anchor='w', pady=(4, 7))
     ttk.Label(frame, text='C: exige cópia verificada antes de reinstalar. O app não apaga nada, nem os itens pendentes. '
               'O que ficar pendente ou desmarcado no C: não entra no backup e se perde quando o instalador '
-              'formatar o C:. O app não mexe nos outros discos e unidades.', wraplength=940).pack(anchor='w')
+              'formatar o C:. O app não apaga nada nos outros discos e unidades; neles, só grava a cópia na pasta que você escolher.', wraplength=940).pack(anchor='w')
 
     metrics = tk.Frame(frame, bg=BG)
     metrics.pack(fill='x', pady=(14, 12))
@@ -417,8 +417,8 @@ def build_installation(app):
     ttk.Label(frame, text='Esta versão prepara e audita o processo. Não executa formatação, exclusão ou mudança de EFI.',
               wraplength=950, foreground=AMBER).pack(anchor='w', pady=(0, 16))
     instructions = [
-        ('01', 'Preservar o C:', 'Copiar e verificar arquivos pessoais, saves e configurações antes de apagar a partição do sistema.'),
-        ('02', 'Vincular saves', 'Revisar dados do C: associados a jogos instalados em outros discos ou unidades; o app não mexe nesses discos.'),
+        ('01', 'Preservar o C:', 'Copiar e verificar arquivos pessoais, saves e configurações antes de o instalador apagar a partição do sistema.'),
+        ('02', 'Vincular saves', 'Revisar dados do C: associados a jogos instalados em outros discos ou unidades; o app não apaga nada nesses discos.'),
         ('03', 'Conferir os discos', 'Não alterar Storage Spaces nem volumes dinâmicos; revisar toda dependência de inicialização.'),
         ('04', 'EFI independente', 'Planejar EFI no SSD de instalação, mantendo a EFI antiga até testar o novo boot com segurança.'),
         ('05', 'Preparar Windows 11', 'Confirmar mídia oficial, edição/ativação, drivers, disco físico e plano de recuperação.'),
