@@ -6,6 +6,7 @@ Mantém a montagem de frases e a leitura da unidade do sistema separadas de
 from __future__ import annotations
 
 import os
+from volume_paths import volume_of
 from windows_drive import _get, _letter, windows_drive
 
 
@@ -50,3 +51,43 @@ def installation_steps(drive: str | None = None) -> list[tuple[str, str, str]]:
         ('05', 'Preparar Windows 11', 'Confirmar mídia oficial, edição/ativação, drivers, disco físico e plano de recuperação.'),
         ('06', 'Recuperar e testar', 'Reinstalar aplicativos e devolver saves aos caminhos originais. Validar Steam, osu! e navegadores.'),
     ]
+
+
+def withdraw_choice_hint(drive: str | None = None) -> str:
+    """Dica ao lado do botão 'Retirar do backup (não apaga)' na tela Preservação (FIX-P4-01-15)."""
+    d = system_drive() if drive is None else drive
+    return (
+        'Selecione um caminho acima para retirar somente sua marcação '
+        f'(no {d}, o item fica fora do backup e se perde quando o instalador formatar o {d}).'
+    )
+
+
+def withdraw_loss_warning(drive: str | None = None) -> str:
+    """Aviso de perda na formatação para itens da unidade do Windows (FIX-P4-01-15)."""
+    d = system_drive() if drive is None else drive
+    return f'No {d}, este item fica fora do backup e se perde quando o instalador formatar o {d}. '
+
+
+def withdraw_confirmation_text(
+    path: str,
+    *,
+    linked: bool = False,
+    drive: str | None = None,
+) -> str:
+    """Texto da pergunta ao retirar um caminho marcado na tela Preservação (FIX-P4-01-15)."""
+    d = system_drive() if drive is None else drive
+    notice = (
+        '\n\nPor ser um dado associado a jogo, a escolha será '
+        'marcada como NÃO PRESERVAR para que não volte automaticamente. '
+        'A associação continuará disponível para revisão.'
+        if linked else ''
+    )
+    loss = withdraw_loss_warning(d) if volume_of(path) == d else ''
+    return (
+        'Retirar este caminho do conjunto de arquivos a copiar?\n\n'
+        + str(path)
+        + notice
+        + '\n\nO arquivo original NÃO será apagado. '
+        + loss
+        + 'Nenhuma cópia, limpeza ou formatação será realizada.'
+    )

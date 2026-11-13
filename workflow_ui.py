@@ -18,6 +18,9 @@ from workflow_texts import (
     overview_intro_text,
     preservation_intro_text,
     system_drive,
+    withdraw_choice_hint,
+    withdraw_confirmation_text,
+    withdraw_loss_warning,
 )
 
 BG = '#0C1220'
@@ -151,7 +154,7 @@ def build_preservation(app):
     # the top of a long scrollable page where they are invisible.
     choice_actions = ttk.Frame(frame)
     choice_actions.pack(fill='x', pady=(6, 11))
-    ttk.Label(choice_actions, text='Selecione um caminho acima para retirar somente sua marcação.').pack(side='left', padx=(0, 9))
+    ttk.Label(choice_actions, text=withdraw_choice_hint(sys_drive)).pack(side='left', padx=(0, 9))
     ttk.Button(choice_actions, text='Retirar do backup (não apaga)',
                command=lambda: remove_selected_path_choice()).pack(side='left')
 
@@ -292,17 +295,9 @@ def build_preservation(app):
                 parent=app)
             return
         linked = path in getattr(app, 'auto_save_paths', set())
-        notice = ('\n\nPor ser um dado associado a jogo, a escolha será '
-                  'marcada como NÃO PRESERVAR para que não volte automaticamente. '
-                  'A associação continuará disponível para revisão.'
-                  if linked else '')
         if not messagebox.askyesno(
                 'Retirar somente do backup?',
-                'Retirar este caminho do conjunto de arquivos a copiar?\n\n'
-                + path
-                + notice
-                + '\n\nO arquivo original NÃO será apagado. '
-                  'Nenhuma cópia, limpeza ou formatação será realizada.',
+                withdraw_confirmation_text(path, linked=linked, drive=sys_drive),
                 parent=app):
             return
         if linked:
