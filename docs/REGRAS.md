@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 1 (última poda: 07/11/2026, pedido `regras-20261107-poda-r68-r78`, issue #221). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-79.
+poda: 8 (última poda: 07/11/2026, pedido `regras-20261107-poda-r68-r78`, issue #221). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-79 (R-79 a R-86 já contadas).
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -99,3 +99,5 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-82 | Teste de janela (Tk) alterado numa PR roda com tela (xvfb-run) antes da revisão, e o testador cita no veredito que ele rodou e passou; teste de janela que passou só por estar "ignorado" (display unavailable) não conta como aprovado. | Revisão da PR #233 (FIX-P4-01-02, a225196867c7) | 2026-11-07 |
 | R-83 | Botão ou texto que manda abrir uma "ajuda oficial" para um passo (importar, restaurar) abre a página que trata desse passo, não uma página genérica ou de outro assunto (ex.: sincronização); o teste confere o link de cada navegador ou programa aceito. | Revisão da PR #235 (FIX-P4-01-05, 4dee3046d17f) | 2026-11-13 |
 | R-84 | Teste de link de ajuda (R-83) confere, para cada navegador ou programa, que o endereço não é a página inicial do site ou do produto (o caminho tem o artigo ou a palavra do passo, ex.: "import"); só conferir https ou "diferente do link X" não basta. | Revisão da PR #235 (FIX-P4-01-05, 31543506409b) | 2026-11-13 |
+| R-85 | Texto de recusa por conta (R-55) orienta o caminho que resolve aquela ação: se nenhum tipo coberto pela ação exige administrador, manda abrir o app normalmente com a própria conta, sem 'Executar como administrador'; se algum tipo exige (ex.: HKLM no 'Desfazer tudo'), diz no mesmo texto qual tipo e que ele precisa de 'Executar como administrador' com a própria conta (R-60); tela, manual e docstring dizem o mesmo, com teste. | Revisão da PR #230 (FIX-P4-01-08, 8f0d24651151) e revisão da PR #238 (FIX-P4-01-09, ddbb273ad324) | 2026-11-13 |
+| R-86 | Texto que promete que o app 'avisa', 'mostra' ou 'explica' algo em outro momento (num item, no fim do lote) só é usado se o código produz esse aviso nesse caminho; o teste dispara o caminho (ex.: revert com PermissionError) e confere a frase do aviso, nunca só a frase da promessa. | Revisão da PR #238 (FIX-P4-01-09, ddbb273ad324) | 2026-11-13 |

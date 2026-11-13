@@ -61,7 +61,7 @@ class RecheckAccountFlowTests(RecheckAccountHelpers):
         self.assertIn(('warning', UI.CHANGES_RECHECK_TITLE, text), self.shown)
         self.assertIn('Nada foi conferido nem mudado', text)
         self.assertIn('SUA própria conta', text)
-        self.assertIn('Executar como administrador', text)
+        self.assertNotIn('Executar como administrador', text)  # FIX-P4-01-09 (R-85)
         self.assertNotIn('desfeito', text)
 
     def test_other_account_checks_nothing(self):
