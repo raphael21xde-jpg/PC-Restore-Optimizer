@@ -1,13 +1,59 @@
-# Instruções para o Gemini — piloto no PC Restore & Optimizer
+# Instruções para o Gemini — fila própria no PC Restore & Optimizer
 
-Você vai ajudar num projeto que já tem uma equipe de agentes (do Claude) e regras
-rígidas. Neste piloto você faz **um item só**: o **P4-03 · Instalador (.exe)**.
-Responda em **português simples**: o dono do projeto, o Raphael, está aprendendo
-programação.
+Você trabalha neste projeto ao lado de uma equipe de agentes do Claude. Você tem
+uma **fila própria** de itens (abaixo). Faça **um item por vez, na ordem**, e só
+esses. Responda em **português simples**: o dono do projeto, o Raphael, está
+aprendendo programação.
 
-Antes de começar, leia `CLAUDE.md`, `docs/REGRAS.md` e o item P4-03 em
+Antes de cada item, leia `CLAUDE.md`, `docs/REGRAS.md` e o texto do item em
 `docs/BACKLOG.md`. Se alguma instrução deste arquivo conflitar com o
 `CLAUDE.md`, vale o `CLAUDE.md`.
+
+## Sua fila (nesta ordem)
+
+| Ordem | Item | Branch | Observação |
+|---|---|---|---|
+| 1 | P4-03 · Instalador (.exe) | `gemini/P4-03-instalador` | Detalhes na seção "P4-03" abaixo |
+| 2 | FIX-P4-01-16 | `gemini/FIX-P4-01-16-textos-workflow` | Só textos; seguir a regra R-88 do `docs/REGRAS.md` |
+| 3 | FIX-P4-01-15 | `gemini/FIX-P4-01-15-aviso-retirar-do-backup` | Só textos; seguir a regra R-88 |
+
+Os outros itens do backlog são dos agentes do Claude. **Não pegue nenhum item
+fora desta fila**, mesmo que esteja marcado como `pronto`. Quando a fila acabar,
+pare e avise o Raphael.
+
+## Roteiro de cada item
+
+1. `git checkout main` e `git pull`. Se já existir uma PR aberta sua para o
+   item, continue nela em vez de recomeçar.
+2. Criar o branch do item a partir da `main` atualizada.
+3. Dizer o plano em poucas linhas. Se o Raphael estiver presente, esperar a
+   aprovação. Se ele avisou que vai se ausentar, seguir o plano mais seguro e
+   registrá-lo na descrição da PR.
+4. Implementar **com testes** (arquivos sintéticos em `TemporaryDirectory`).
+   Se mudar um texto, procurar (`grep`) os testes que dependem do texto antigo e
+   atualizá-los no mesmo commit.
+5. Rodar a suíte completa. Tem de terminar com 0 falhas e 0 erros no Windows.
+6. Enviar o branch e abrir uma **PR em rascunho** para a `main`, com o título
+   `<ID>: <resumo> — Gemini`. Na descrição: o que mudou, as escolhas de design,
+   o resumo da suíte e as pendências.
+7. **Não fazer merge.** Passar para o próximo item da fila, sempre partindo da
+   `main` (nunca de um branch seu que ainda não foi mesclado).
+
+Um item só está pronto quando a PR está aberta. Não marque nenhum item como
+`concluído` no `docs/BACKLOG.md`: isso é feito depois da revisão.
+
+## Limites enquanto trabalha sem o Raphael por perto
+
+- Só estes comandos sem perguntar: `git` (sem `--force`, sem apagar branches),
+  `py -3 -m unittest`, `py -3 -m PyInstaller` e leitura de arquivos do projeto.
+- Não instalar programas, não mudar configurações do Windows, não desligar nem
+  criar exceção no antivírus.
+- Não rodar o app de verdade (`py -3 app.py`) nem qualquer comando que consulte
+  ou altere discos, partições, registro ou serviços. O único uso permitido do
+  executável é com `--smoke-test`.
+- Se um item exigir algo fora desses limites, **pare nesse item**, registre o
+  motivo na PR (ou num arquivo em `relatorios-claude/`) e não avance.
+- No máximo duas tentativas para o mesmo erro. Depois disso, pare.
 
 ## Regras de segurança (inegociáveis)
 
@@ -24,7 +70,7 @@ Antes de começar, leia `CLAUDE.md`, `docs/REGRAS.md` e o item P4-03 em
 - Não alterar `CLAUDE.md`, `GEMINI.md`, `.claude/agents/`, `docs/AUTOMACAO.md`
   nem `scripts/validar_windows*`.
 
-## O que fazer (P4-03 · Instalador .exe)
+## P4-03 · Instalador (.exe): o que fazer
 
 1. Criar um script de build com PyInstaller que gere o executável do app a
    partir de `app.py`, numa pasta de saída que fique **fora do git**.
@@ -40,12 +86,11 @@ da PR e siga.
 
 ## Como trabalhar no git
 
-- Partir da `main` atualizada e criar o branch `gemini/P4-03-instalador`.
+- Partir da `main` atualizada e criar o branch indicado na fila.
 - Commits em inglês, no formato `tipo(área): descrição`, terminando a primeira
   linha com `[skip ci]`. Exemplo: `feat(build): add PyInstaller build script [skip ci]`.
 - Sem `push --force`, sem apagar branches, sem mexer em outros branches.
-- **Não fazer merge.** Abrir uma PR em rascunho para a `main` com o título
-  `P4-03: instalador (.exe) — piloto Gemini`.
+- **Não fazer merge.** Abrir uma PR em rascunho para a `main`, uma por item.
 
 ## Testes
 
@@ -65,5 +110,7 @@ da PR e siga.
 
 ## Depois da PR
 
-A revisão é feita pelo Claude, numa conversa com o Raphael. Corrija o que a
-revisão apontar no mesmo branch. Quem faz o merge é o Raphael.
+A revisão é feita pelo Claude (numa conversa com o Raphael, ou pelo revisor do
+ciclo, se o Raphael assim decidir). Corrija o que a revisão apontar no mesmo
+branch. Quem decide o merge é o Raphael. O painel PCRO Monitor é atualizado pelo
+Claude a partir do que estiver no GitHub; você não precisa atualizar nenhum painel.
