@@ -13,6 +13,12 @@ from preservation_preflight import prepare_c_preflight
 from scan_gaps import report_by_drive
 from backup_core import atomic_json
 from volume_paths import volume_of
+from workflow_texts import (
+    installation_steps,
+    overview_intro_text,
+    preservation_intro_text,
+    system_drive,
+)
 
 BG = '#0C1220'
 PANEL = '#192438'
@@ -37,13 +43,12 @@ def _card(parent, tag, title, description, target, *, accent=False):
 
 
 def build_overview(app):
+    sys_drive = system_drive()
     frame = ttk.Frame(app.overview, padding=16)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='Uma reinstalação organizada, sem surpresas',
               font=('Segoe UI', 18, 'bold')).pack(anchor='w', pady=(8, 8))
-    ttk.Label(frame, text='Escolha o que manter em cada unidade. Prepare o C: antes de reinstalar o Windows: '
-              'o que não for copiado dele não entra no backup e se perde quando o instalador formatar o C:. '
-              'O app não apaga nenhum arquivo dos outros discos e unidades.',
+    ttk.Label(frame, text=overview_intro_text(sys_drive),
               wraplength=910).pack(anchor='w', pady=(0, 23))
     _card(frame, '01  ·  EXPLORAR', 'Meu computador',
           'Varra somente as unidades selecionadas. Agrupe jogos, arquivos e configurações sem carregar tudo na tela.',
@@ -52,7 +57,7 @@ def build_overview(app):
           'Marque o que manter, confira os saves vinculados e visualize um plano sem exclusões automáticas.',
           lambda: app.navigate(app.preservation))
     _card(frame, '03  ·  PREPARAR', 'Instalar Windows',
-          'Checklist de backup do C:, EFI independente, mídia oficial e recuperação pós-instalação.',
+          f'Checklist de backup do {sys_drive}, EFI independente, mídia oficial e recuperação pós-instalação.',
           lambda: app.navigate(app.installation))
     ttk.Label(frame, text='MODO DE PREPARAÇÃO • Nenhuma exclusão nem formatação disponível nesta versão.',
               foreground=AMBER).pack(anchor='w', pady=(12, 0))
@@ -82,6 +87,7 @@ def _write(box, content):
 def build_preservation(app):
     # The preservation summary has several bounded tables. Keep the lower ones
     # accessible on smaller monitors instead of clipping their content.
+    sys_drive = system_drive()
     canvas = tk.Canvas(app.preservation, bg=BG, borderwidth=0, highlightthickness=0)
     page_scroll = ttk.Scrollbar(app.preservation, orient='vertical', command=canvas.yview)
     canvas.configure(yscrollcommand=page_scroll.set)
@@ -93,9 +99,7 @@ def build_preservation(app):
     canvas.bind('<Configure>', lambda event: canvas.itemconfigure(window_id, width=event.width))
     ttk.Label(frame, text='O que deve permanecer no computador?',
               font=('Segoe UI', 16, 'bold')).pack(anchor='w', pady=(4, 7))
-    ttk.Label(frame, text='C: exige cópia verificada antes de reinstalar. O app não apaga nenhum arquivo, nem os itens pendentes. '
-              'O que ficar pendente ou desmarcado no C: não entra no backup e se perde quando o instalador '
-              'formatar o C:. O app não apaga nenhum arquivo dos outros discos e unidades.', wraplength=940).pack(anchor='w')
+    ttk.Label(frame, text=preservation_intro_text(sys_drive), wraplength=940).pack(anchor='w')
 
     metrics = tk.Frame(frame, bg=BG)
     metrics.pack(fill='x', pady=(14, 12))
@@ -105,7 +109,7 @@ def build_preservation(app):
     remove = tk.StringVar(value='0')
     for label, var, desc in (('JOGOS / APPS', kept, 'Itens marcados Manter'),
                               ('PASTAS / ARQUIVOS', paths_kept, 'Caminhos explicitamente marcados'),
-                              ('BACKUP DO C:', cbackup, 'Caminhos ainda não copiados'),
+                              (f'BACKUP DO {sys_drive}', cbackup, 'Caminhos ainda não copiados'),
                               ('REMOÇÃO • PRÉVIA', remove, 'Nenhum arquivo apagado')):
         card = tk.Frame(metrics, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
         card.pack(side='left', fill='both', expand=True, padx=(0, 10))
@@ -229,7 +233,7 @@ def build_preservation(app):
             for path in item['known_paths']:
                 vol = volume_of(path)
                 chosen.insert(parent_id, 'end', text=path, values=('Dado associado',vol,
-                     'CÓPIA OBRIGATÓRIA ANTES DE FORMATAR' if vol == 'C:' else 'MANTER NO LOCAL / CONFERIR'))
+                     'CÓPIA OBRIGATÓRIA ANTES DE FORMATAR' if vol == sys_drive else 'MANTER NO LOCAL / CONFERIR'))
             for path in item['possible_paths'][:30]:
                 chosen.insert(parent_id, 'end', text=path, values=('Possível dado', volume_of(path),
                      'NÃO VALIDADO — NÃO PRESUMIR PRESERVADO'))
@@ -320,7 +324,7 @@ def build_preservation(app):
                                               getattr(app, 'scan_reports_by_drive', {}))).pack(side='left', padx=5)
     checkbar = ttk.Frame(frame)
     checkbar.pack(fill='x', pady=(0, 9))
-    ttk.Button(checkbar, text='Conferir fontes do C: (sem copiar)',
+    ttk.Button(checkbar, text=f'Conferir fontes do {sys_drive} (sem copiar)',
                command=lambda: show_c_preflight(app, make_preview()[0])).pack(side='left', padx=(0, 10))
     ttk.Label(checkbar, text='Pré-checagem rápida de caminhos; NÃO valida o conteúdo nem substitui backup.',
               foreground=AMBER, wraplength=660).pack(side='left')
@@ -333,13 +337,13 @@ def build_preservation(app):
     ttk.Button(backupbar, text='Próximo: revisar backup dos arquivos escolhidos →',
                style='Primary.TButton',
                command=lambda: app.navigate(app.review)).pack(side='left', padx=(0, 10))
-    ttk.Label(backupbar, text='Fluxo atual: revisão → cópia verificada SHA-256 → recuperação pelo histórico. '
-              'A revisão de reinstalação do Windows protege o C:; outras unidades permanecem no local. '
-              'Nenhuma formatação é autorizada.', wraplength=620,
+    ttk.Label(backupbar, text=f'Fluxo atual: revisão → cópia verificada SHA-256 → recuperação pelo histórico. '
+              f'A revisão de reinstalação do Windows protege o {sys_drive}; o app não apaga nenhum arquivo '
+              'dos outros discos e unidades. Nenhuma formatação é autorizada.', wraplength=620,
               foreground=AMBER).pack(side='left')
     backup_extra = ttk.Frame(frame)
     backup_extra.pack(fill='x', pady=(0, 9))
-    ttk.Button(backup_extra, text='Backup seletivo avançado do C: • v0.6.6',
+    ttk.Button(backup_extra, text=f'Backup seletivo avançado do {sys_drive} • v0.6.6',
                command=open_selective_backup).pack(side='left', padx=(0, 10))
 
     auditbar = ttk.Frame(frame)
@@ -347,7 +351,7 @@ def build_preservation(app):
     def audit_completeness():
         from completeness_audit_ui_v068 import show_completeness_audit
         show_completeness_audit(app, make_preview()[0])
-    ttk.Button(auditbar, text='Auditar dados do C: • revisão e EFI v0.6.9',
+    ttk.Button(auditbar, text=f'Auditar dados do {sys_drive} • revisão e EFI v0.6.9',
                style='Primary.TButton', command=audit_completeness).pack(side='left', padx=(0, 10))
     ttk.Label(auditbar, text='Somente leitura. Revela locais que ainda exigem revisão; nunca libera formatação.',
               wraplength=600, foreground=AMBER).pack(side='left')
@@ -358,11 +362,12 @@ def build_preservation(app):
 
 def show_c_preflight(app, plan=None):
     """Read-only metadata check for explicitly chosen C: source paths."""
+    sys_drive = system_drive()
     if plan is None:
         plan = getattr(app, 'last_preservation_audit', None) or {}
     check = prepare_c_preflight(plan.get('requires_verified_backup', []))
     window = tk.Toplevel(app)
-    window.title('Conferência dos caminhos do C: — NÃO é backup')
+    window.title(f'Conferência dos caminhos do {sys_drive} — NÃO é backup')
     window.geometry('1050x600')
     frame = ttk.Frame(window, padding=16)
     frame.pack(fill='both', expand=True)
@@ -375,7 +380,7 @@ def show_c_preflight(app, plan=None):
     tablebox = ttk.Frame(frame)
     tablebox.pack(fill='both', expand=True)
     tree = ttk.Treeview(tablebox, columns=('status', 'type', 'note'), show='tree headings')
-    tree.heading('#0', text='Caminho selecionado no C:')
+    tree.heading('#0', text=f'Caminho selecionado no {sys_drive}')
     tree.column('#0', width=390, stretch=True)
     for field, label, width in [('status','Situação',135),('type','Tipo',90),('note','Observação',420)]:
         tree.heading(field, text=label)
@@ -410,20 +415,14 @@ def show_c_preflight(app, plan=None):
 
 
 def build_installation(app):
+    sys_drive = system_drive()
     frame = ttk.Frame(app.installation, padding=16)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='Preparação da instalação limpa do Windows',
               font=('Segoe UI', 16, 'bold')).pack(anchor='w', pady=(3, 10))
     ttk.Label(frame, text='Esta versão prepara e audita o processo. Não executa formatação, exclusão ou mudança de EFI.',
               wraplength=950, foreground=AMBER).pack(anchor='w', pady=(0, 16))
-    instructions = [
-        ('01', 'Preservar o C:', 'Copiar e verificar arquivos pessoais, saves e configurações antes de o instalador apagar a partição do sistema.'),
-        ('02', 'Vincular saves', 'Revisar dados do C: associados a jogos instalados em outros discos ou unidades; o app não apaga nenhum arquivo desses discos; o que é do C: só se salva com a cópia.'),
-        ('03', 'Conferir os discos', 'Não alterar Storage Spaces nem volumes dinâmicos; revisar toda dependência de inicialização.'),
-        ('04', 'EFI independente', 'Planejar EFI no SSD de instalação, mantendo a EFI antiga até testar o novo boot com segurança.'),
-        ('05', 'Preparar Windows 11', 'Confirmar mídia oficial, edição/ativação, drivers, disco físico e plano de recuperação.'),
-        ('06', 'Recuperar e testar', 'Reinstalar aplicativos e devolver saves aos caminhos originais. Validar Steam, osu! e navegadores.'),
-    ]
+    instructions = installation_steps(sys_drive)
     tiles = tk.Frame(frame, bg=BG)
     tiles.pack(fill='both', expand=True)
     for index, (number, title, body) in enumerate(instructions):
@@ -455,7 +454,7 @@ def build_installation(app):
                            scanned_roots=roots.get('roots', []),
                            removal_candidates=getattr(app, 'cleanup_candidates', ()))
         show_completeness_audit(app, plan)
-    ttk.Button(bottom, text='Auditoria C: / EFI • v0.6.9',
+    ttk.Button(bottom, text=f'Auditoria {sys_drive} / EFI • v0.6.9',
                command=open_install_audit).pack(side='left', padx=5)
 
 

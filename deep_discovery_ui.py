@@ -702,8 +702,12 @@ def show_deep_discovery(parent, container=None):
         cards, leaves = selections()
         if not cards and not leaves:
             return
-        if not messagebox.askyesno('Não preservar — NÃO exclui',
-               'Retirar os itens do plano de preservação? Arquivos originais permanecem intactos.',parent=win):
+        if not messagebox.askyesno(
+                'Não preservar — NÃO exclui',
+                'Retirar os itens do plano de preservação? O app não apaga nenhum arquivo, '
+                'mas o que não for copiado do disco do Windows não entra no backup e se perde '
+                'quando o instalador formatar esse disco.',
+                parent=win):
             return
         for card in cards:
             parent.set_unified_entity_choice(card['key'],'skip',name=card['name'],
