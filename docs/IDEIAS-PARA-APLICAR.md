@@ -129,3 +129,58 @@ O artigo fala de sites (CSS e Tailwind). No nosso app o equivalente é:
   conversa com o Raphael, e guardar os JSON.
 - A cor e o humor não podem ser o único sinal de erro no painel; o texto do
   estado continua obrigatório.
+
+---
+
+## 3. Dev Design Library: catálogo de componentes, referências e skills de design
+
+- **Fonte:** https://devlibraries.com (indicado pelo Raphael em 13/11/2026)
+- **Situação:** anotada
+- **Onde encaixa:** principalmente na **central de projetos** e no PCRO Monitor,
+  que são páginas web. No app Tkinter valem só os princípios (ver abaixo).
+
+### O que o site tem
+
+- Cerca de 13 mil componentes de interface de 110 bibliotecas de código aberto
+  (quase todas para web: React, Tailwind, HTML/CSS), com código e licença.
+- Listas curadas: ferramentas, sites de referência visual e materiais de estudo.
+- 64 skills para agentes de programação, em 9 grupos: direção de design (11),
+  revisão e acabamento (11), animação (12), experimentar e construir (8),
+  gráficos e vídeo (7), engenharia (5), Figma (4), mobile (4), produtividade (2).
+- Um servidor MCP próprio, que pede login numa conta do site (não é necessário).
+
+### Skills que mais combinam com o que o Raphael pediu
+
+Seleção inicial, a confirmar lendo cada uma antes de instalar:
+
+| Para quê | Skills candidatas |
+|---|---|
+| Dar direção visual e fugir da "cara de IA" | Frontend Design (Anthropic), Impeccable, Design Taste Frontend, Unslop |
+| Revisar uma tela pronta | Better Interface, Better Layout, Better Typography, Better Colors |
+| Testar a tela com dados ruins (nomes longos, lista vazia) | Break UI |
+| Acessibilidade | Accessibility / Better Accessibility |
+| Comparar versões antes de escolher | Prototype, Variant |
+| Diagramas do sistema | Archify |
+| Mascotes dos agentes | Generate Avatar (ideia 2) |
+| Gastar menos tokens | Caveman |
+
+Duas já estão no nosso processo: **Grill Me** (as "perguntas do Grill" do gate
+`intent`) e a ideia do **Caveman** (respostas curtas).
+
+### Como aplicar
+
+- **Central de projetos (web):** escolher de 3 a 5 skills, não todas. Cada skill
+  instalada ocupa contexto e gasta tokens em toda conversa, o que vai contra a
+  meta de economia.
+- **App Tkinter:** componentes React e skills de CSS/animação não se aplicam.
+  Servem os princípios: escala de espaçamento, hierarquia, tipografia, contraste
+  e o teste com dados ruins.
+
+### Cuidados
+
+- Uma skill é um texto de instruções escrito por terceiros que o agente passa a
+  obedecer. **Ler cada uma antes de instalar** e não instalar nos agentes do
+  ciclo sem aprovação do Raphael.
+- Componentes mantêm a licença da biblioteca de origem: conferir antes de copiar.
+- Instalar por comando (`npx skills add ...`) baixa código de fora: fixar a
+  versão e revisar o que entrou.
