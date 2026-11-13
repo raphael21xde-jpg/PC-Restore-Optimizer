@@ -79,3 +79,17 @@ Perguntas em aberto para ele:
    vídeos)?
 4. Quais outros projetos entram além do PCRO?
 5. Os mascotes entram como a "cara" de cada agente?
+
+## Rascunho visual 1 (13/11/2026)
+
+Publicado como artefato privado do Raphael: https://claude.ai/artifact/NbFuz2vSfQwQjdzCrEr8nT
+
+- Tela 1, "Escritório": visão geral com as salas (projetos), o que precisa do
+  Raphael, a linha do tempo do dia e o gasto por ciclo.
+- Tela 2, "Sala do PCRO": equipe com rosto e modelo de cada agente, caminho de
+  uma fatia, gasto por modelo e fila do marco.
+- Suposições usadas (a confirmar): página web que funciona no celular; a central
+  mostra e também manda (botões "Rodar um ciclo agora" e "Pausar ciclos", ainda
+  sem função); escala de espaçamento de 8 pontos; mascotes simples desenhados à
+  mão, sem a skill.
+- É só desenho: nada está ligado aos agentes de verdade.
