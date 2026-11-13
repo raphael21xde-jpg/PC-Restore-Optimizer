@@ -23,6 +23,33 @@ BORDER = '#2B3952'
 GREEN = '#5DDEB1'
 AMBER = '#F3BE67'
 
+WITHDRAW_CHOICE_HINT = (
+    'Selecione um caminho acima para retirar somente sua marcação '
+    '(no C:, o item fica fora do backup e se perde quando o instalador formatar o C:).'
+)
+WITHDRAW_C_LOSS_WARNING = (
+    'No C:, este item fica fora do backup e se perde quando o instalador formatar o C:. '
+)
+
+
+def withdraw_confirmation_text(path: str, *, linked: bool = False) -> str:
+    """Texto da pergunta ao retirar um caminho marcado na tela Preservação (FIX-P4-01-15)."""
+    notice = (
+        '\n\nPor ser um dado associado a jogo, a escolha será '
+        'marcada como NÃO PRESERVAR para que não volte automaticamente. '
+        'A associação continuará disponível para revisão.'
+        if linked else ''
+    )
+    c_loss = WITHDRAW_C_LOSS_WARNING if volume_of(path) == 'C:' else ''
+    return (
+        'Retirar este caminho do conjunto de arquivos a copiar?\n\n'
+        + str(path)
+        + notice
+        + '\n\nO arquivo original NÃO será apagado. '
+        + c_loss
+        + 'Nenhuma cópia, limpeza ou formatação será realizada.'
+    )
+
 
 def _card(parent, tag, title, description, target, *, accent=False):
     panel = tk.Frame(parent, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
@@ -147,7 +174,7 @@ def build_preservation(app):
     # the top of a long scrollable page where they are invisible.
     choice_actions = ttk.Frame(frame)
     choice_actions.pack(fill='x', pady=(6, 11))
-    ttk.Label(choice_actions, text='Selecione um caminho acima para retirar somente sua marcação.').pack(side='left', padx=(0, 9))
+    ttk.Label(choice_actions, text=WITHDRAW_CHOICE_HINT).pack(side='left', padx=(0, 9))
     ttk.Button(choice_actions, text='Retirar do backup (não apaga)',
                command=lambda: remove_selected_path_choice()).pack(side='left')
 
@@ -288,17 +315,9 @@ def build_preservation(app):
                 parent=app)
             return
         linked = path in getattr(app, 'auto_save_paths', set())
-        notice = ('\n\nPor ser um dado associado a jogo, a escolha será '
-                  'marcada como NÃO PRESERVAR para que não volte automaticamente. '
-                  'A associação continuará disponível para revisão.'
-                  if linked else '')
         if not messagebox.askyesno(
                 'Retirar somente do backup?',
-                'Retirar este caminho do conjunto de arquivos a copiar?\n\n'
-                + path
-                + notice
-                + '\n\nO arquivo original NÃO será apagado. '
-                  'Nenhuma cópia, limpeza ou formatação será realizada.',
+                withdraw_confirmation_text(path, linked=linked),
                 parent=app):
             return
         if linked:
