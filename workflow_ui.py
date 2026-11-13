@@ -4,7 +4,6 @@ This module deliberately has no deletion, formatting or boot modification API.
 """
 from __future__ import annotations
 import json
-import os
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -14,6 +13,12 @@ from preservation_preflight import prepare_c_preflight
 from scan_gaps import report_by_drive
 from backup_core import atomic_json
 from volume_paths import volume_of
+from workflow_texts import (
+    installation_steps,
+    overview_intro_text,
+    preservation_intro_text,
+    system_drive,
+)
 
 BG = '#0C1220'
 PANEL = '#192438'
@@ -23,45 +28,6 @@ ACCENT = '#9C85FF'
 BORDER = '#2B3952'
 GREEN = '#5DDEB1'
 AMBER = '#F3BE67'
-
-
-def system_drive(environ=None) -> str:
-    """Unidade do Windows (padrão 'C:'), como em `app.py`."""
-    env = os.environ if environ is None else environ
-    raw = str(env.get('SystemDrive', 'C:') if os.name == 'nt' else env.get('SystemDrive', 'C:')).strip()
-    if len(raw) >= 2 and raw[0].isalpha() and raw[1] == ':':
-        return raw[:2].upper()
-    return 'C:'
-
-
-def overview_intro_text(drive: str | None = None) -> str:
-    d = system_drive() if drive is None else drive
-    return (
-        f'Escolha o que manter em cada unidade. Prepare o {d} antes de reinstalar o Windows: '
-        f'o que não for copiado dele não entra no backup e se perde quando o instalador formatar o {d}. '
-        'O app não apaga nenhum arquivo dos outros discos e unidades.'
-    )
-
-
-def preservation_intro_text(drive: str | None = None) -> str:
-    d = system_drive() if drive is None else drive
-    return (
-        f'{d} exige cópia verificada antes de reinstalar. O app não apaga nenhum arquivo, nem os itens pendentes. '
-        f'O que ficar pendente ou desmarcado no {d} não entra no backup e se perde quando o instalador '
-        f'formatar o {d}. O app não apaga nenhum arquivo dos outros discos e unidades.'
-    )
-
-
-def installation_steps(drive: str | None = None) -> list[tuple[str, str, str]]:
-    d = system_drive() if drive is None else drive
-    return [
-        ('01', f'Preservar o {d}', 'Copiar e verificar arquivos pessoais, saves e configurações antes de o instalador apagar a partição do sistema.'),
-        ('02', 'Vincular saves', f'Revisar dados do {d} associados a jogos instalados em outros discos ou unidades; o app não apaga nenhum arquivo desses discos; o que é do {d} só se salva com a cópia.'),
-        ('03', 'Conferir os discos', 'Não alterar Storage Spaces nem volumes dinâmicos; revisar toda dependência de inicialização.'),
-        ('04', 'EFI independente', 'Planejar EFI no SSD de instalação, mantendo a EFI antiga até testar o novo boot com segurança.'),
-        ('05', 'Preparar Windows 11', 'Confirmar mídia oficial, edição/ativação, drivers, disco físico e plano de recuperação.'),
-        ('06', 'Recuperar e testar', 'Reinstalar aplicativos e devolver saves aos caminhos originais. Validar Steam, osu! e navegadores.'),
-    ]
 
 
 def _card(parent, tag, title, description, target, *, accent=False):
