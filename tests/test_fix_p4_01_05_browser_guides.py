@@ -111,7 +111,7 @@ class HelpTests(unittest.TestCase):
     }
 
     def test_each_link_is_the_import_page_not_a_home_page(self):
-        # R-83/R-84: https, domínio do fabricante e caminho do artigo; nunca a página inicial.
+        # R-83 (inclui a antiga R-84): https, domínio do fabricante e caminho do artigo; nunca a página inicial.
         from urllib.parse import urlsplit
         for name, steps in self.EXPECTED.items():
             for step, (domain, piece) in steps.items():

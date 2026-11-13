@@ -93,7 +93,7 @@ GUIDED_BROWSERS = ('Opera', 'Opera GX', 'Google Chrome', 'Microsoft Edge', 'Mozi
 
 OPERA_NAMES = ('Opera', 'Opera GX')
 
-# Páginas de ajuda do fabricante sobre IMPORTAR, por etapa (R-83, R-84).
+# Páginas de ajuda do fabricante sobre IMPORTAR, por etapa (R-83, que inclui a antiga R-84).
 # O Opera e o Opera GX não têm página só sobre importar: ficam sem link, de propósito.
 IMPORT_HELP = {
     'Google Chrome': {'favoritos': 'https://support.google.com/chrome/answer/96816',

@@ -29,11 +29,11 @@ NEW_TEXTS = (
 LOSS = 'se perde quando o instalador formatar o C:'
 OLD_TEXTS = ('permanecem intactos', 'podem ficar intactos', 'permanecerão em D:',
              'nada é apagado.', 'que continuam onde estão',
-             # frases da 1ª versão da PR #240, nunca estiveram na main (R-89):
+             # frases da 1ª versão da PR #240, nunca estiveram na main (R-88, antiga R-89):
              'não mexe nos outros discos', 'não mexe nesses discos',
              'antes de apagar a partição do sistema',
              # 2ª versão da PR #240, nunca na main: "só" falso, o "Colocar no lugar
-             # original" (restore_place.py) grava em qualquer disco (R-90):
+             # original" (restore_place.py) grava em qualquer disco (R-88, antiga R-90):
              'só grava a cópia na pasta que você escolher',
              'não apaga nada nos outros discos', 'não apaga nada nesses discos')
 
