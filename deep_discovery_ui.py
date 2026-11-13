@@ -29,6 +29,7 @@ from game_saves import find_game_saves, _roots as known_save_roots
 from scoped_saves import scoped_user_roots, incorporate_saves
 from unified_selection import index_cards, card_detail, decision_label
 from ui_timers import WindowTimers
+import choices_store
 
 PAGE_SIZE = 120
 
@@ -451,7 +452,7 @@ def show_deep_discovery(parent, container=None):
             ring.itemconfigure(ring_text, text=('Lacunas' if report['errors'] or report['skipped'] else '100%') if complete else 'Parcial')
             ring.itemconfigure(arc, start=90, extent=359 if complete else 0)
             try:
-                atomic_json(Path(__file__).parent / 'deteccao-detalhada-v065.json', merged)
+                atomic_json(choices_store.app_data_dir(source_file=__file__) / 'deteccao-detalhada-v065.json', merged)
             except OSError as exc:
                 messagebox.showwarning('Relatório', 'Varredura concluída, mas não foi possível salvar o relatório: ' + str(exc), parent=win)
             status.set(f"{report['status']} · unidades reexaminadas: {', '.join(sorted(selected_drives))} · "
@@ -769,9 +770,10 @@ def show_deep_discovery(parent, container=None):
         win.protocol('WM_DELETE_WINDOW', close)
     previous = getattr(parent, 'deep_scan_report', None)
     if not previous:
+        data_dir = choices_store.app_data_dir(source_file=__file__)
         for name in ('deteccao-detalhada-v065.json', 'deteccao-detalhada-v064.json', 'deteccao-detalhada-v063.json', 'deteccao-detalhada-v062.json', 'deteccao-detalhada-v060.json', 'deteccao-detalhada-v0514.json'):
             try:
-                candidate = json.loads((Path(__file__).parent / name).read_text(encoding='utf-8'))
+                candidate = json.loads((data_dir / name).read_text(encoding='utf-8'))
                 if candidate.get('schema') == 'pcro-discovery-v1':
                     previous = candidate
                     break

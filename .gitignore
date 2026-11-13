@@ -34,3 +34,8 @@ relatorios-claude/
 
 # Preferencias locais do usuario: nunca publicar
 preferencias-v05.json
+
+# Artefatos de build do PyInstaller (P4-03): fora do git
+build/
+dist/
+*.spec

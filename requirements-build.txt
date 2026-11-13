@@ -1,0 +1,3 @@
+# Dependências de build do executável (P4-03).
+# Separadas do app para manter a execução por código-fonte só na biblioteca padrão.
+pyinstaller==6.16.0

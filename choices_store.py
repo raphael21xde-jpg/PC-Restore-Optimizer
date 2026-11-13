@@ -14,9 +14,33 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import sys
 from pathlib import Path
 
 from atomic_write import atomic_write_text, exclusive_lock
+
+APP_STATE_SUBDIR = 'PC-Restore-Optimizer'
+
+
+def app_data_dir(*, frozen: bool | None = None, environ=None, source_file=None) -> Path:
+    """Pasta onde ficam `preferencias-v05.json` e `deteccao-detalhada-v065.json`.
+
+    - Sem `sys.frozen` (rodando pelo Python): continua sendo a pasta do código
+      (`Path(source_file).resolve().parent`), exatamente como antes.
+    - Com `sys.frozen` (executável gerado pelo PyInstaller): usa
+      `%LOCALAPPDATA%\\PC-Restore-Optimizer\\`, a mesma pasta que o restante do
+      app já usa. Não migra nem apaga arquivos existentes.
+    """
+    is_frozen = bool(getattr(sys, 'frozen', False)) if frozen is None else bool(frozen)
+    source_dir = Path(source_file or __file__).resolve().parent
+    if not is_frozen:
+        return source_dir
+    env = os.environ if environ is None else environ
+    local = env.get('LOCALAPPDATA')
+    if local:
+        return Path(local) / APP_STATE_SUBDIR
+    return Path.home() / 'AppData' / 'Local' / APP_STATE_SUBDIR
 
 # Mapas de decisão: em conflito vence a opção mais segura (nada deixa de ser
 # preservado sem revisão). Ausente (removido) nunca vence um valor.
@@ -162,6 +186,7 @@ def save_merged(path, mine, base, *, lock_timeout: float = 0):
     Erros de gravação (OSError) sobem para quem chamou.
     """
     path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     mine = json.loads(json.dumps(mine))
     base = json.loads(json.dumps(base)) if isinstance(base, dict) else {}
     try:
