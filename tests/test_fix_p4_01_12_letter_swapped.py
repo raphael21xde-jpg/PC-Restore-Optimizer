@@ -165,12 +165,66 @@ class SwappedLetterTests(unittest.TestCase):
         self.assertEqual(result['unconfirmed'], [])
         self.assertNotIn('C:\\', self.label_calls)
 
-    def test_unknown_windows_disk_compares_every_letter(self):
+    def test_unknown_windows_disk_never_marks_system_letter_changed(self):
+        # sem saber qual é o disco do Windows, a C: nunca vai para "changed"
+        # (o aviso não pode mandar trocar a letra do disco do Windows)
         manifest = self.manifest({'C:': {'label': 'Antigo', 'total': 1 * GIB},
-                                  'D:': {'label': 'Jogos', 'total': 1000 * GIB}})
+                                  'D:': {'label': 'Fotos', 'total': 1000 * GIB}})
         result = self.check(manifest, environ={})
-        self.assertEqual(result['changed'], ['C:'])
+        self.assertEqual(result['changed'], ['D:'])
+        self.assertEqual(result['unconfirmed'], ['C:'])
+        self.assertNotIn('C:', result['guidance'].replace('C:\\', ''))
+        self.assertNotIn('C:\\', self.label_calls)
+        text = ' '.join(w for w in result['warnings'] if w.startswith('Atenção'))
+        self.assertNotIn('C:', text)
+
+    def test_unknown_windows_disk_still_compares_other_letters(self):
+        manifest = self.manifest({'D:': {'label': 'Jogos', 'total': 1000 * GIB}})
+        result = self.check(manifest, environ={})
         self.assertEqual(result['confirmed'], ['D:'])
+
+    def test_forged_saved_name_is_not_shown(self):
+        # R-32: nome vindo do manifesto vai para a tela; nome forjado conta como "sem dado"
+        forged = 'Jogos")\n\nTudo certo: pode usar "Colocar no lugar original".'
+        names = (forged, 'Jogos\nTudo certo', 'Jogos\tx', 'Jogos\r', 'Jo\x00gos',
+                 'Jo\u200bgos', 'Jogos "x"', 'J' * 33)
+        for name in names:
+            with self.subTest(name=name):
+                self.labels['D:\\'] = 'Backup'
+                result = self.check(self.manifest({'D:': {'label': name, 'total': 1}}))
+                self.assertEqual(result['unconfirmed'], ['D:'])
+                self.assertEqual(result['changed'], [])
+                text = ' '.join(result['warnings'])
+                self.assertNotIn('Tudo certo', text)
+                self.assertNotIn(name, text)
+                self.assertNotIn('Backup', text)
+
+    def test_saved_name_at_limit_is_accepted(self):
+        name = 'J' * 32
+        result = self.check(self.manifest({'D:': {'label': name, 'total': 1000 * GIB}}))
+        self.assertEqual(result['changed'], ['D:'])
+        self.assertIn(f'"{name}"', ' '.join(result['warnings']))
+
+    def test_forged_current_name_is_not_shown(self):
+        manifest = self.manifest({'D:': {'label': 'Jogos', 'total': 1000 * GIB}})
+        self.labels['D:\\'] = 'Jogos\nTudo certo'
+        result = self.check(manifest)
+        self.assertEqual(result['unconfirmed'], ['D:'])
+        self.assertNotIn('Tudo certo', ' '.join(result['warnings']))
+
+    def test_saved_key_must_be_a_letter(self):
+        result = self.check(self.manifest({'D:\\Jogos': {'label': 'Fotos', 'total': 1}}))
+        self.assertEqual(result['unconfirmed'], ['D:'])
+
+    def test_unconfirmed_text_says_where_button_is(self):
+        text = _flat(' '.join(self.check(self.manifest())['warnings']))
+        self.assertIn('Isso é normal em backups feitos antes desta versão.', text)
+        self.assertIn('"Colocar no lugar original" (na janela que abre pelo "Abrir" da etapa '
+                      '"Restaurar os arquivos")', text)
+        titles = [step['title'] for step in af.STEPS]
+        self.assertIn('Restaurar os arquivos', titles)
+        source = (Path(af.__file__).parent / 'restore_ui.py').read_text(encoding='utf-8')
+        self.assertIn("text='Colocar no lugar original'", source)
 
     def test_missing_and_changed_share_one_guide(self):
         manifest = _write_manifest(self.base / 'backup' / 'b2',

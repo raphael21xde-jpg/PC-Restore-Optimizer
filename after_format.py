@@ -28,6 +28,7 @@ import shutil
 import stat
 import threading
 import time
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -136,6 +137,24 @@ def _default_roots(warnings):
         return []
 
 
+SYSTEM_LETTER = 'C:'  # letra de costume do Windows, usada só quando ele não é conhecido
+LABEL_MAX = 32  # o Windows aceita até 32 caracteres no nome de uma unidade NTFS
+
+
+def _clean_label(value):
+    """O nome, se puder ir para a tela; senão None (conta como "sem dado").
+
+    R-32: o nome vem do manifesto (ou do sistema) e vai para a tela. Só passa
+    texto com até 32 caracteres, sem aspas e sem caractere de controle ou
+    invisível (quebra de linha, tabulação etc.).
+    """
+    if not isinstance(value, str) or len(value) > LABEL_MAX or '"' in value:
+        return None
+    if any(unicodedata.category(char).startswith('C') for char in value):
+        return None
+    return value
+
+
 def _saved_drives(doc):
     """{'D:': {'label', 'total'}} guardado no manifesto (campo opcional
     'source_drives'). Entradas com formato estranho ficam de fora."""
@@ -144,12 +163,12 @@ def _saved_drives(doc):
         return {}
     clean = {}
     for key, value in saved.items():
-        letter = _letter(key) if isinstance(key, str) else None
+        valid_key = isinstance(key, str) and len(key) in (2, 3) and key[2:] in ('', '\\')
+        letter = _letter(key) if valid_key else None
         if not letter or not isinstance(value, dict):
             continue
-        label, total = value.get('label'), value.get('total')
-        if (not isinstance(label, str) or len(label) > 300 or isinstance(total, bool)
-                or not isinstance(total, int) or total <= 0):
+        label, total = _clean_label(value.get('label')), value.get('total')
+        if label is None or isinstance(total, bool) or not isinstance(total, int) or total <= 0:
             continue
         clean[letter] = {'label': label, 'total': total}
     return clean
@@ -178,7 +197,9 @@ def check_drives(manifest, roots=None, usage=shutil.disk_usage, environ=None,
     com os de agora. Diferente: 'changed' (outro disco ficou com a letra).
     Sem dado guardado ou sem dar para ler agora: 'unconfirmed' (avisa que não
     deu para confirmar). O disco do Windows não é comparado (o instalador o
-    formatou). O nome só é lido quando há dado guardado para a letra.
+    formatou); se ele não é conhecido, a C: vai sempre para 'unconfirmed'. O
+    nome só é lido quando há dado guardado para a letra, e só vai para a tela
+    se passar por _clean_label (R-32).
     """
     warnings = []
     windows, windows_warning = windows_drive(environ)
@@ -234,14 +255,17 @@ def check_drives(manifest, roots=None, usage=shutil.disk_usage, environ=None,
         if drive is None or drive['windows']:
             continue
         old = saved.get(letter)
-        if old is None or drive['total'] is None:
+        # disco do Windows desconhecido: a letra do sistema (C:) nunca vai para
+        # "changed", para o aviso nunca mandar trocar a letra dele
+        system_unknown = not windows and letter == SYSTEM_LETTER
+        if old is None or drive['total'] is None or system_unknown:
             unconfirmed.append(letter)
             continue
         try:
             label = volume_label(drive['root'])
         except Exception:
             label = None
-        drive['label'] = label if isinstance(label, str) else None
+        drive['label'] = _clean_label(label)
         if drive['total'] != old['total']:
             changed.append(letter)
         elif drive['label'] is None:
@@ -274,8 +298,10 @@ def check_drives(manifest, roots=None, usage=shutil.disk_usage, environ=None,
         warnings.append(
             f'Não deu para confirmar se a unidade com a letra {letters} é a mesma de quando o '
             'backup foi feito (o backup não guardou o nome e o tamanho dela, ou não deu para '
-            'ler agora). Antes de usar "Colocar no lugar original", abra o Explorador de '
-            'Arquivos e confira pelo nome e pelo tamanho se é o disco certo.')
+            'ler agora). Isso é normal em backups feitos antes desta versão. Antes de usar '
+            '"Colocar no lugar original" (na janela que abre pelo "Abrir" da etapa "Restaurar '
+            'os arquivos"), abra o Explorador de Arquivos e confira pelo nome e pelo tamanho '
+            'se é o disco certo.')
     to_fix = sorted(missing + changed)
     guidance = CHANGE_LETTER_GUIDE.format(letters=' ou '.join(to_fix)) if to_fix else ''
     return {'drives': drives, 'backup_letters': backup_letters, 'missing': missing,
