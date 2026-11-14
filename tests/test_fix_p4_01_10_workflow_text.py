@@ -1,7 +1,7 @@
 """FIX-P4-01-10: os textos do workflow não citam letras fixas (D:, F:, G:).
 
-Nenhum texto de tela (strings com mais de 3 caracteres) cita D:/F:/G:; a tupla
-('C:','D:','F:','G:') de build_preservation fica como exceção até o FIX-P4-01-14.
+Nenhum texto de tela (strings com mais de 3 caracteres) cita D:/F:/G:; a antiga
+tupla fixa de build_preservation também foi substituída pelo plano no FIX-P4-01-14.
 As frases de Visão geral e Preservação dizem que o app não apaga nenhum arquivo e que o que não
 for copiado do C: se perde quando o instalador formatar o C: (R-88).
 
