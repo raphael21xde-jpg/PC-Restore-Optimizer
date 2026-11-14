@@ -91,3 +91,9 @@ def withdraw_confirmation_text(
         + loss
         + 'Nenhuma cópia, limpeza ou formatação será realizada.'
     )
+
+
+def browser_dest_label_text(dest: str) -> str:
+    """Rótulo do destino atual na aba 'Navegadores' (FIX-P4-01-13)."""
+    return f'Destino atual: {dest}   •   Sem sobrescrever perfis originais'
+
