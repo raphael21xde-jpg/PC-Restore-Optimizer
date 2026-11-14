@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 0 (última poda: 13/11/2026, pedido `regras-20261113-poda-r79-r90`, issue #241). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-91.
+poda: 2 (última poda: 13/11/2026, pedido `regras-20261113-poda-r79-r90`, issue #241). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-91.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -105,3 +105,5 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-88 | Frase de tela ou de ajuda que diz "nada é apagado" (ou parecido), que o app "não mexe" ou que ele "só" grava, lê ou faz algo num disco, unidade ou pasta é conferida contra **todos** os caminhos do app que gravam (destino do backup, "Colocar no lugar original" (`restore_place.py`), restauração); se algum grava em outro lugar, o texto diz que o app não apaga nada e onde grava, nunca "não mexe" ou "só" solto. Perto do C: ou da reinstalação, o mesmo trecho diz também que o que não for copiado do C: não entra no backup e se perde quando o instalador formatar o C:; nunca deixa a frase solta, que um leigo pode ler como "o C: está seguro". Testes: um com as duas frases do C:, um com a frase "não mexe", e a frase antiga com "só" guardada em OLD_TEXTS. | Revisão da PR #240 (FIX-P4-01-10, 7b47c15, be926c82fe5e e f57f30b9eb9d) | 2026-11-13 |
 | R-89 | Juntada à **R-88** na poda de 13/11/2026 (confira a R-88). | Revisão da PR #240 (FIX-P4-01-10, be926c82fe5e) | 2026-11-13 |
 | R-90 | Juntada à **R-88** na poda de 13/11/2026 (confira a R-88). | Revisão da PR #240 (FIX-P4-01-10, f57f30b9eb9d) | 2026-11-13 |
+| R-91 | Nome ou rótulo lido do manifesto (ou de outro arquivo que o usuário escolhe) e mostrado na tela é limpo antes: sem caractere de controle ou invisível (quebra de linha, tabulação etc.), sem aspas e com tamanho máximo; se não passar, conta como "sem dado" (nunca é cortado e mostrado). Teste com um nome forjado (quebra de linha + frase de "tudo certo") que confere que a frase não aparece. | Revisão da PR #256 (FIX-P4-01-12, 15630ce017d2) | 2026-11-14 |
+| R-92 | Item marcado `concluído` no `docs/BACKLOG.md` que ainda tem algo pendente cria, no mesmo commit, um item próprio (com status) para o pendente e aponta para ele; nada de "Pendente" solto num item fechado. | Revisão da PR #256 (FIX-P4-01-12, 15630ce017d2) | 2026-11-14 |
