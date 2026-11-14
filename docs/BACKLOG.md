@@ -1045,7 +1045,9 @@ Issue "Validar M3": rodar o check-up de segurança, medir, aplicar os ajustes se
 - `app.py` (~linha 1424) ainda lê `deteccao-detalhada-v0514.json` da pasta do programa, em vez de `choices_store.app_data_dir()`.
 - Conferir no `.exe`: `OptimizationPanel(app_dir=...)` (`app.py`, ~linha 248) e as exclusões da varredura detalhada (`deep_discovery_ui.py`, ~linhas 424 e 578), que usam a pasta do programa.
 - Critério de aceite: testes sintéticos para os dois modos, sem tocar em discos reais; o diagnóstico continua somente leitura; nenhuma trava muda.
-### P4-04 · Interface moderna — `pronto` (depois do M3)
+### P4-04 · Interface moderna — `bloqueado` (reservado à fila do Gemini; ver `GEMINI.md`)
+- Reservado pelo Raphael em 14/11/2026: o Gemini faz a etapa 1 (inventário e proposta em `docs/P4-04-PROPOSTA.md`, só documentação). As telas só mudam depois de a proposta ser mesclada, uma tela por PR. Os agentes do ciclo revisam as PRs.
+- Seguir as ideias de interface de `docs/IDEIAS-PARA-APLICAR.md` (decisão do Raphael de 13/11/2026): escala de espaçamento, alturas padronizadas, hierarquia por proximidade, tipografia, contraste e telas testadas com dados ruins.
 - Proposta visual primeiro, em PR com capturas de tela.
 
 ### ✅ Validação do Raphael — M4
