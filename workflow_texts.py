@@ -91,3 +91,64 @@ def withdraw_confirmation_text(
         + loss
         + 'Nenhuma cópia, limpeza ou formatação será realizada.'
     )
+
+
+def preview_drives(plan: dict, *, drive: str | None = None) -> list[str]:
+    """Lista ordenada de unidades para a prévia da Preservação (FIX-P4-01-14).
+
+    Montada somente a partir do plano (somente leitura, sem consultar nem
+    alterar discos): unidade do Windows (`system_volume` do plano ou `drive`),
+    unidades com entradas (`entries`), candidatos de remoção
+    (`removal_candidates`), raízes de varredura (`scan_roots`) e volumes de
+    jogos/apps (`selection_metrics.games_apps_by_display_volume`).
+    """
+    d = str(plan.get('system_volume') or (system_drive() if drive is None else drive)).upper()
+    found: set[str] = set()
+    if volume_of(d + '\\') != 'SEM UNIDADE':
+        found.add(volume_of(d + '\\'))
+    for entry in plan.get('entries', ()) or ():
+        vol = str(entry.get('drive') or '') if isinstance(entry, dict) else ''
+        if volume_of(vol + '\\') != 'SEM UNIDADE':
+            found.add(volume_of(vol + '\\'))
+    for path in plan.get('removal_candidates', ()) or ():
+        vol = volume_of(path)
+        if vol != 'SEM UNIDADE':
+            found.add(vol)
+    for root in plan.get('scan_roots', ()) or ():
+        vol = volume_of(root)
+        if vol != 'SEM UNIDADE':
+            found.add(vol)
+    metrics = plan.get('selection_metrics') or {}
+    for vol in (metrics.get('games_apps_by_display_volume') or {}):
+        if volume_of(str(vol) + '\\') != 'SEM UNIDADE':
+            found.add(volume_of(str(vol) + '\\'))
+    return sorted(found, key=lambda v: (0 if v == d else 1, v))
+
+
+def preview_drive_rows(plan: dict, *, drive: str | None = None) -> list[dict]:
+    """Monta os blocos por unidade da prévia da Preservação a partir do plano (FIX-P4-01-14).
+
+    Somente leitura: nunca apaga nada.
+    """
+    entries_all = list(plan.get('entries', ()) or ())
+    removal_all = [str(p) for p in (plan.get('removal_candidates', ()) or ()) if p]
+    scan_roots = [str(r) for r in (plan.get('scan_roots', ()) or ()) if r]
+    stats = plan.get('selection_metrics') or {}
+    by_vol = stats.get('games_apps_by_display_volume') or {}
+    rows: list[dict] = []
+    for vol in preview_drives(plan, drive=drive):
+        entries = [e for e in entries_all if isinstance(e, dict) and e.get('drive') == vol]
+        removed = [p for p in removal_all if volume_of(p) == vol]
+        entity_count = int(by_vol.get(vol, 0))
+        scanned = any(volume_of(r) == vol for r in scan_roots)
+        excess = max(0, len(entries) - 150) + max(0, len(removed) - 75)
+        rows.append({
+            'drive': vol,
+            'header': f'{vol}  •  {len(entries)} caminho(s), {entity_count} jogo(s)/app(s)',
+            'scan_status': 'Varredura atual: ' + ('sim' if scanned else 'não confirmada'),
+            'entries': entries[:150],
+            'removed': removed[:75],
+            'excess': excess,
+        })
+    return rows
+

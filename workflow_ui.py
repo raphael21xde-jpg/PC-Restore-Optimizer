@@ -17,6 +17,7 @@ from workflow_texts import (
     installation_steps,
     overview_intro_text,
     preservation_intro_text,
+    preview_drive_rows,
     system_drive,
     withdraw_choice_hint,
     withdraw_confirmation_text,
@@ -193,23 +194,18 @@ def build_preservation(app):
         cbackup.set(str(stats['backup_required_paths_c']))
         remove.set(str(stats['removal_candidates']))
         tree.delete(*tree.get_children())
-        for drive in ('C:', 'D:', 'F:', 'G:'):
-            entries = [e for e in plan['entries'] if e['drive'] == drive]
-            removed = [p for p in plan['removal_candidates'] if p[:2].upper() == drive]
-            entity_count = stats['games_apps_by_display_volume'].get(drive, 0)
-            parent = tree.insert('', 'end', text=f'{drive}  •  {len(entries)} caminho(s), '
-                                 f'{entity_count} jogo(s)/app(s)',
-                                 values=('','', 'Varredura atual: ' + ('sim' if any(r.upper().startswith(drive) for r in roots.get('roots', [])) else 'não confirmada')),
+        for group in preview_drive_rows(plan, drive=sys_drive):
+            parent = tree.insert('', 'end', text=group['header'],
+                                 values=('', '', group['scan_status']),
                                  open=True)
-            for e in entries[:150]:
+            for e in group['entries']:
                 tree.insert(parent, 'end', text='', values=(
                     {'keep':'Manter', 'skip':'Não preservar', 'pending':'Pendente'}[e['choice']],
                     e['action'], e['path']))
-            for path in removed[:75]:
+            for path in group['removed']:
                 tree.insert(parent, 'end', text='', values=('Candidato', 'SOMENTE MARCADO • NÃO APAGAR', path))
-            excess = max(0, len(entries)-150) + max(0, len(removed)-75)
-            if excess:
-                tree.insert(parent, 'end', text=f'... {excess} itens adicionais no relatório exportado')
+            if group['excess']:
+                tree.insert(parent, 'end', text=f"... {group['excess']} itens adicionais no relatório exportado")
         linked.delete(*linked.get_children())
         for item in links[:200]:
             condition = ('Associação confirmada; cópia pendente' if
