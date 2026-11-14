@@ -13,12 +13,13 @@ Antes de cada item, leia `CLAUDE.md`, `docs/REGRAS.md` e o texto do item em
 
 | Ordem | Item | Branch | Observação |
 |---|---|---|---|
-| 1 | FIX-P4-01-13 | `gemini/FIX-P4-01-13-destino-navegadores` | Tela: o rótulo "Destino atual" acompanha "Escolher destino" |
-| 2 | FIX-P4-01-14 | `gemini/FIX-P4-01-14-previa-unidades` | Tela: a prévia da Preservação monta a lista de unidades a partir do plano, só leitura |
-| 3 | P4-02 · Primeiro uso guiado | `gemini/P4-02-proposta` e depois `gemini/P4-02-...` | **Em duas etapas**: veja a seção "P4-02" abaixo |
-| 4 | P4-04 · Interface moderna, **só a etapa 1** | `gemini/P4-04-proposta` | Inventário e proposta, sem mexer em código: veja a seção "P4-04" abaixo. Pode ser feito enquanto a proposta do P4-02 espera a revisão |
+| 1 | FIX-P4-01-14 | `gemini/FIX-P4-01-14-previa-unidades` | Já aberto (PR #254): só corrigir o que a revisão apontar |
+| 2 | P4-02 · Primeiro uso guiado, etapa 2 | `gemini/P4-02-fatia-<n>` | Uma fatia por PR, na ordem de `docs/P4-02-PROPOSTA.md` |
+| 3 | P4-04 · Interface moderna, etapa 2 | `gemini/P4-04-fatia-<n>` | Uma fatia por PR, na ordem de `docs/P4-04-PROPOSTA.md` (fatia 0 = `ui_scale.py`; primeira tela = `launcher_guide_ui.py`) |
 
-Já entregues (não refazer): P4-03 (PR #247), FIX-P4-01-16 (PR #248) e FIX-P4-01-15 (PR #249).
+Alterne entre o P4-02 e o P4-04 quando um deles estiver esperando revisão.
+
+Já entregues (não refazer): P4-03 (#247), FIX-P4-01-16 (#248), FIX-P4-01-15 (#249), FIX-P4-01-13 (#253) e as propostas do P4-02 (#255) e do P4-04 (#259).
 
 Os outros itens do backlog são dos agentes do Claude. **Não pegue nenhum item
 fora desta fila**, mesmo que esteja marcado como `pronto`. Em especial, não
@@ -70,6 +71,47 @@ No branch `gemini/P4-04-proposta`, criar `docs/P4-04-PROPOSTA.md` com:
 
 Abrir a PR em rascunho e **parar**. A etapa 2 (mexer nas telas) só começa depois
 de a proposta ser mesclada e de o Raphael escolher a primeira tela.
+
+## Seus três papéis em cada item (método de 14/11/2026)
+
+Você faz três papéis, em conversas separadas, antes de o Claude olhar a PR.
+
+**1. Desenvolvedor.** Implementa o item, com testes, como no roteiro abaixo.
+
+**2. Testador (no Windows).** Roda a suíte completa no Windows e os testes novos
+com o tkinter bloqueado (veja "Autoconferência"). Escreve um comentário na PR:
+
+```
+Testes do Gemini no Windows @<sha12>: Ran <N> tests, <F> falhas, <E> erros, <S> ignorados.
+Sem tkinter: <arquivos de teste novos ou alterados> -> OK / ignorados com motivo.
+```
+
+**3. Pré-revisor.** Numa **conversa nova**, que não escreveu o código, leia só o
+diff da PR (`git diff origin/main...<branch>`) e confira cada ponto da
+"Autoconferência" e as regras de `docs/REGRAS.md` que se aplicam. Classifique o
+risco e escreva um comentário na PR:
+
+```
+Pré-revisão do Gemini @<sha12>: APROVAR | REPROVAR
+Risco: BAIXO | ALTO
+- <ponto conferido>: ok / problema (arquivo:linha)
+```
+
+Se for REPROVAR, volte ao papel de desenvolvedor e corrija antes de pedir a
+revisão do Claude.
+
+**Risco BAIXO** quando o diff só muda aparência ou texto de tela: espaçamento
+(`padx`, `pady`, `padding`), fonte, cor, tamanho de widget, textos e o módulo
+`ui_scale.py`, mais os testes e documentos disso. **Risco ALTO** em qualquer outra
+coisa: lógica, fluxo, gravação ou leitura de arquivos, backup, restauração,
+discos, travas, ou na dúvida. A classificação final é do Claude, que confere o
+diff; a sua serve de pista.
+
+## Teto de PRs abertas
+
+Se você já tiver **4 PRs abertas sem o veredito do revisor do Claude no commit
+atual**, não comece item novo: só corrija o que a revisão apontou. Isso evita
+empilhar trabalho que o ciclo do Claude (um por dia) não consegue revisar.
 
 ## Autoconferência antes de abrir qualquer PR (obrigatória)
 
