@@ -76,8 +76,9 @@ def safe_relative(text):
     return Path(*parts)
 
 
-def verified_entries(manifest_path):
-    doc = read_manifest(manifest_path)
+def verified_entries(manifest_path, doc=None):
+    """doc: o manifesto já lido por read_manifest (evita ler o arquivo duas vezes)."""
+    doc = read_manifest(manifest_path) if doc is None else doc
     entries = {}
     for item in doc['files']:
         if not isinstance(item, dict) or item.get('verified') is not True:

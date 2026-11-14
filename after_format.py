@@ -32,7 +32,7 @@ import uuid
 from pathlib import Path
 
 from backup_core import human_size
-from backup_features import verified_entries
+from backup_features import read_manifest, verified_entries
 from plaintext_passwords import scan_paths
 from windows_drive import windows_drive
 
@@ -99,6 +99,23 @@ def default_drive_type(root):
     return _DRIVE_TYPES.get(code, 'Desconhecido')
 
 
+def default_volume_label(root):
+    """Nome da unidade (só leitura, GetVolumeInformationW); None se não der.
+
+    Fora do Windows não lê nada e devolve None. '' é uma unidade sem nome.
+    """
+    if not _on_windows():
+        return None
+    try:
+        import ctypes
+        buffer = ctypes.create_unicode_buffer(261)
+        ok = ctypes.windll.kernel32.GetVolumeInformationW(
+            ctypes.c_wchar_p(str(root)), buffer, len(buffer), None, None, None, None, 0)
+    except Exception:
+        return None
+    return buffer.value if ok else None
+
+
 def _letter(path):
     drive = ntpath.splitdrive(str(path))[0]
     if len(drive) == 2 and drive[1] == ':' and drive[0].isalpha():
@@ -119,13 +136,49 @@ def _default_roots(warnings):
         return []
 
 
+def _saved_drives(doc):
+    """{'D:': {'label', 'total'}} guardado no manifesto (campo opcional
+    'source_drives'). Entradas com formato estranho ficam de fora."""
+    saved = doc.get('source_drives') if isinstance(doc, dict) else None
+    if not isinstance(saved, dict):
+        return {}
+    clean = {}
+    for key, value in saved.items():
+        letter = _letter(key) if isinstance(key, str) else None
+        if not letter or not isinstance(value, dict):
+            continue
+        label, total = value.get('label'), value.get('total')
+        if (not isinstance(label, str) or len(label) > 300 or isinstance(total, bool)
+                or not isinstance(total, int) or total <= 0):
+            continue
+        clean[letter] = {'label': label, 'total': total}
+    return clean
+
+
+def _same_label(old, new):
+    return old.strip().casefold() == new.strip().casefold()
+
+
+def _drive_text(label, total):
+    name = f'"{label.strip()}"' if label.strip() else 'sem nome'
+    return f'{name}, {human_size(total)}'
+
+
 def check_drives(manifest, roots=None, usage=shutil.disk_usage, environ=None,
-                 drive_type=default_drive_type):
+                 drive_type=default_drive_type, volume_label=default_volume_label):
     """Confere as unidades atuais contra as letras dos arquivos do backup.
 
-    Só leitura. Devolve {'drives', 'backup_letters', 'missing', 'windows',
-    'warnings', 'guidance'}. Cada unidade: root, letter, type, total, free,
-    total_text, free_text, windows (True se for o disco do Windows).
+    Só leitura. Devolve {'drives', 'backup_letters', 'missing', 'changed',
+    'unconfirmed', 'confirmed', 'windows', 'warnings', 'guidance'}. Cada
+    unidade: root, letter, type, total, free, total_text, free_text, windows
+    (True se for o disco do Windows).
+
+    FIX-P4-01-12: para cada letra do backup que existe agora, compara o nome e
+    o tamanho da unidade guardados no manifesto ('source_drives', quando há)
+    com os de agora. Diferente: 'changed' (outro disco ficou com a letra).
+    Sem dado guardado ou sem dar para ler agora: 'unconfirmed' (avisa que não
+    deu para confirmar). O disco do Windows não é comparado (o instalador o
+    formatou). O nome só é lido quando há dado guardado para a letra.
     """
     warnings = []
     windows, windows_warning = windows_drive(environ)
@@ -157,28 +210,76 @@ def check_drives(manifest, roots=None, usage=shutil.disk_usage, environ=None,
             'windows': bool(windows) and letter == windows})
 
     backup_letters = {}
+    saved = {}
     try:
-        for item in verified_entries(manifest).values():
+        doc = read_manifest(manifest)
+        for item in verified_entries(manifest, doc=doc).values():
             letter = _letter(item.get('source', ''))
             if letter:
                 backup_letters[letter] = backup_letters.get(letter, 0) + 1
+        saved = _saved_drives(doc)
     except Exception:
         warnings.append('Não deu para ler as letras de origem do backup escolhido. '
                         'Confira se escolheu o arquivo manifest.json certo.')
 
-    current = {drive['letter'] for drive in drives}
+    by_letter = {}
+    for drive in drives:
+        by_letter.setdefault(drive['letter'], drive)
     # sem a lista de unidades não dá para dizer que alguma letra sumiu
     missing = sorted(letter for letter in backup_letters
-                     if letter not in current) if drives else []
-    guidance = ''
-    if missing:
-        for letter in missing:
-            warnings.append(
-                f'Antes, {backup_letters[letter]} arquivo(s) do backup vieram da unidade '
-                f'{letter}, e agora não há nenhuma unidade com essa letra. Talvez ela tenha '
-                'ganhado outra letra.')
-        guidance = CHANGE_LETTER_GUIDE.format(letters=' ou '.join(missing))
+                     if letter not in by_letter) if drives else []
+    changed, unconfirmed, confirmed = [], [], []
+    for letter in sorted(backup_letters):
+        drive = by_letter.get(letter)
+        if drive is None or drive['windows']:
+            continue
+        old = saved.get(letter)
+        if old is None or drive['total'] is None:
+            unconfirmed.append(letter)
+            continue
+        try:
+            label = volume_label(drive['root'])
+        except Exception:
+            label = None
+        drive['label'] = label if isinstance(label, str) else None
+        if drive['total'] != old['total']:
+            changed.append(letter)
+        elif drive['label'] is None:
+            unconfirmed.append(letter)
+        elif _same_label(old['label'], drive['label']):
+            confirmed.append(letter)
+        else:
+            changed.append(letter)
+
+    for letter in missing:
+        warnings.append(
+            f'Antes, {backup_letters[letter]} arquivo(s) do backup vieram da unidade '
+            f'{letter}, e agora não há nenhuma unidade com essa letra. Talvez ela tenha '
+            'ganhado outra letra.')
+    for letter in changed:
+        old, drive = saved[letter], by_letter[letter]
+        now = (_drive_text(drive['label'], drive['total']) if drive['label'] is not None
+               else f'nome que não deu para ler, {human_size(drive["total"])}')
+        warnings.append(
+            f'Atenção: antes, {backup_letters[letter]} arquivo(s) do backup vieram da unidade '
+            f'{letter} ({_drive_text(old["label"], old["total"])}). A unidade que está com a '
+            f'letra {letter} agora tem outro nome ou outro tamanho ({now}). Talvez outro disco '
+            f'tenha ficado com essa letra. Não use "Colocar no lugar original" para os arquivos '
+            f'que vieram da {letter} até a unidade certa voltar a ter essa letra; "Restaurar '
+            'arquivos marcados para pasta nova" continua funcionando. Para trocar, primeiro '
+            f'dê outra letra livre à unidade que está com a {letter} agora; depois dê a letra '
+            f'{letter} à unidade certa.')
+    if unconfirmed:
+        letters = ' e '.join(unconfirmed)
+        warnings.append(
+            f'Não deu para confirmar se a unidade com a letra {letters} é a mesma de quando o '
+            'backup foi feito (o backup não guardou o nome e o tamanho dela, ou não deu para '
+            'ler agora). Antes de usar "Colocar no lugar original", abra o Explorador de '
+            'Arquivos e confira pelo nome e pelo tamanho se é o disco certo.')
+    to_fix = sorted(missing + changed)
+    guidance = CHANGE_LETTER_GUIDE.format(letters=' ou '.join(to_fix)) if to_fix else ''
     return {'drives': drives, 'backup_letters': backup_letters, 'missing': missing,
+            'changed': changed, 'unconfirmed': unconfirmed, 'confirmed': confirmed,
             'windows': windows, 'warnings': warnings, 'guidance': guidance}
 
 
