@@ -93,19 +93,32 @@ def withdraw_confirmation_text(
     )
 
 
+def browser_dest_label_text(dest: str) -> str:
+    """Rótulo do destino atual na aba 'Navegadores' (FIX-P4-01-13)."""
+    return f'Destino atual: {dest}   •   Sem sobrescrever perfis originais'
+
+
 def preview_drives(plan: dict, *, drive: str | None = None) -> list[str]:
     """Lista ordenada de unidades para a prévia da Preservação (FIX-P4-01-14).
 
-    Montada somente a partir do plano (somente leitura, sem consultar nem
-    alterar discos): unidade do Windows (`system_volume` do plano ou `drive`),
-    unidades com entradas (`entries`), candidatos de remoção
+    Montada somente a partir do plano e da unidade do Windows (`drive`, ou
+    `system_drive()` quando `drive` é `None`), somente leitura, sem consultar
+    nem alterar discos: unidade do Windows primeiro, `system_volume` do plano
+    (se for outro), unidades com entradas (`entries`), candidatos de remoção
     (`removal_candidates`), raízes de varredura (`scan_roots`) e volumes de
-    jogos/apps (`selection_metrics.games_apps_by_display_volume`).
+    jogos/apps (`selection_metrics.games_apps_by_display_volume`). Unidades fora
+    do plano (e diferentes da unidade do Windows) não aparecem.
     """
-    d = str(plan.get('system_volume') or (system_drive() if drive is None else drive)).upper()
+    raw_drive = str(system_drive() if drive is None else drive)
+    d = volume_of(raw_drive + '\\')
+    if d == 'SEM UNIDADE':
+        d = raw_drive.upper()
     found: set[str] = set()
     if volume_of(d + '\\') != 'SEM UNIDADE':
         found.add(volume_of(d + '\\'))
+    sys_vol = str(plan.get('system_volume') or '')
+    if volume_of(sys_vol + '\\') != 'SEM UNIDADE':
+        found.add(volume_of(sys_vol + '\\'))
     for entry in plan.get('entries', ()) or ():
         vol = str(entry.get('drive') or '') if isinstance(entry, dict) else ''
         if volume_of(vol + '\\') != 'SEM UNIDADE':

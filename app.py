@@ -44,6 +44,7 @@ from backup_core import atomic_json
 import choices_store  # FIX-P3-06-09: grava com atomic_write_text dentro da trava
 from transfer_engine import TransferMeter, time_text
 from workflow_ui import build_overview, build_preservation, build_installation
+from workflow_texts import browser_dest_label_text
 from choice_migration import merge_preferences
 from plaintext_passwords import TITLE as PASSWORDS_TITLE, alert_lines as password_alert_lines
 from plaintext_passwords import find_password_exports, scan_paths as scan_password_paths
@@ -623,7 +624,11 @@ class App(tk.Tk):
 
     def choose_dest(self):
         d=filedialog.askdirectory(title='Destino para os backups')
-        if d:self.dest.set(d);self._on_change()
+        if d:self.dest.set(d);self._update_browser_dest_label();self._on_change()
+
+    def _update_browser_dest_label(self, *_):
+        if hasattr(self, 'browser_dest_text'):
+            self.browser_dest_text.set(browser_dest_label_text(str(self.dest.get())))
 
     def _on_change(self):
         self.plan=None;self.plan_stamp=None
@@ -937,8 +942,11 @@ class App(tk.Tk):
         ttk.Button(row,text='Criar backup protegido do navegador',style='Primary.TButton',command=self.browser_backup).pack(side='left',padx=(0,10))
         ttk.Button(row,text='Verificar integridade',command=self.browser_verify).pack(side='left',padx=(0,10))
         ttk.Button(row,text='Extrair backup do navegador para teste',command=self.browser_restore).pack(side='left')
-        tk.Label(page,text='Destino atual: '+str(self.dest.get())+'   •   Sem sobrescrever perfis originais',
-                 bg=BG,fg=MUTED,font=('Segoe UI',9),anchor='w').pack(fill='x',pady=(4,12))
+        self.browser_dest_text=tk.StringVar(value=browser_dest_label_text(str(self.dest.get())))
+        self.dest.trace_add('write', self._update_browser_dest_label)
+        self.browser_dest_label=tk.Label(page,textvariable=self.browser_dest_text,
+                 bg=BG,fg=MUTED,font=('Segoe UI',9),anchor='w')
+        self.browser_dest_label.pack(fill='x',pady=(4,12))
 
         section('4. Depois de reinstalar o Windows','Instale o navegador, entre na conta e aguarde a sincronização. Se necessário, use os arquivos do cofre para importar manualmente.')
         tk.Label(page,text='Atenção: a restauração NÃO garante cookies, sessões autenticadas, passkeys, licenças ou todas as extensões. '

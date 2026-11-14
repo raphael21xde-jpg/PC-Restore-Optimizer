@@ -16,6 +16,7 @@ Antes de cada item, leia `CLAUDE.md`, `docs/REGRAS.md` e o texto do item em
 | 1 | FIX-P4-01-13 | `gemini/FIX-P4-01-13-destino-navegadores` | Tela: o rótulo "Destino atual" acompanha "Escolher destino" |
 | 2 | FIX-P4-01-14 | `gemini/FIX-P4-01-14-previa-unidades` | Tela: a prévia da Preservação monta a lista de unidades a partir do plano, só leitura |
 | 3 | P4-02 · Primeiro uso guiado | `gemini/P4-02-proposta` e depois `gemini/P4-02-...` | **Em duas etapas**: veja a seção "P4-02" abaixo |
+| 4 | P4-04 · Interface moderna, **só a etapa 1** | `gemini/P4-04-proposta` | Inventário e proposta, sem mexer em código: veja a seção "P4-04" abaixo. Pode ser feito enquanto a proposta do P4-02 espera a revisão |
 
 Já entregues (não refazer): P4-03 (PR #247), FIX-P4-01-16 (PR #248) e FIX-P4-01-15 (PR #249).
 
@@ -39,6 +40,36 @@ O item não tem critérios de aceite no backlog, então começa por uma proposta
 O primeiro uso guiado só orienta e leva às telas que já existem. Não executa
 cópia, restauração nem diagnóstico de discos por conta própria, e não muda
 nenhuma trava.
+
+## P4-04 · Interface moderna: etapa 1 (inventário e proposta)
+
+Só documentação. **Não altere nenhum arquivo `.py`** nesta etapa e não rode o app.
+
+Leia antes `docs/IDEIAS-PARA-APLICAR.md` (ideias 1, 3 e 5, e a decisão do
+Raphael no topo). O app é Tkinter: valem os princípios (escala de espaçamento,
+alturas padronizadas, agrupar pelo espaço, tipografia, contraste, telas testadas
+com dados ruins), não componentes de web.
+
+No branch `gemini/P4-04-proposta`, criar `docs/P4-04-PROPOSTA.md` com:
+
+1. **Inventário (somente leitura do código).** Para cada arquivo de tela
+   (`app.py`, `*_ui.py`): os valores de `padx`, `pady`, `ipadx`, `ipady` e
+   `padding` usados e quantas vezes cada um aparece; as fontes e tamanhos; as
+   cores escritas à mão; larguras e alturas fixas de botões e campos. Uma tabela
+   por tipo, com os totais do projeto.
+2. **Diagnóstico.** Onde há inconsistência (valores parecidos para a mesma
+   função, controles equivalentes com tamanhos diferentes) e quais 3 telas mais
+   ganhariam com o ajuste.
+3. **Proposta de escala.** Um módulo de constantes sem tkinter (nomes e
+   valores), como cada valor antigo seria mapeado para a escala, e o cuidado com
+   a escala do Windows (125% e 150%).
+4. **Fatias.** Uma tela por PR, começando pela de menor risco; para cada fatia,
+   o critério de aceite e como conferir (o que o Raphael deve olhar na tela).
+5. **Fora do escopo.** Nenhuma mudança de lógica, de texto, de fluxo ou de
+   trava; nenhuma biblioteca nova sem a aprovação do Raphael.
+
+Abrir a PR em rascunho e **parar**. A etapa 2 (mexer nas telas) só começa depois
+de a proposta ser mesclada e de o Raphael escolher a primeira tela.
 
 ## Autoconferência antes de abrir qualquer PR (obrigatória)
 

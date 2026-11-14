@@ -111,6 +111,27 @@ class PreservationPreviewDrivesTests(unittest.TestCase):
             self.assertEqual(candidate_file.read_text(encoding='utf-8'), 'protegido')
             self.assertFalse(plan['deletions_authorized'])
 
+    def test_custom_windows_drive_appears_first_with_zero_paths_when_absent_from_plan(self):
+        plan = build_audit(
+            choices={r'E:\Projetos\App': 'keep'},
+            catalog_choices={},
+            catalog_items={},
+            scanned_roots=[r'E:\\'],
+            removal_candidates=[],
+        )
+        drives = workflow_texts.preview_drives(plan, drive='W:')
+        self.assertEqual(drives[0], 'W:')
+        self.assertIn('C:', drives)
+        self.assertIn('E:', drives)
+        for absent in ('D:', 'F:', 'G:'):
+            self.assertNotIn(absent, drives)
+
+        rows = workflow_texts.preview_drive_rows(plan, drive='W:')
+        self.assertEqual(rows[0]['drive'], 'W:')
+        self.assertEqual(rows[0]['header'], 'W:  •  0 caminho(s), 0 jogo(s)/app(s)')
+        self.assertEqual(rows[0]['entries'], [])
+        self.assertEqual(rows[0]['removed'], [])
+
     def test_workflow_ui_no_longer_has_hardcoded_c_d_f_g_tuple(self):
         self.assertNotIn("('C:', 'D:', 'F:', 'G:')", WORKFLOW_SOURCE)
         self.assertNotIn("('C:','D:','F:','G:')", WORKFLOW_SOURCE)
@@ -142,6 +163,7 @@ class PreservationPreviewDrivesTests(unittest.TestCase):
             "suite = unittest.TestSuite(["
             "m.PreservationPreviewDrivesTests('test_drives_outside_c_d_f_g_appear_in_preview_from_plan'), "
             "m.PreservationPreviewDrivesTests('test_removal_preview_remains_read_only_and_never_deletes_files'), "
+            "m.PreservationPreviewDrivesTests('test_custom_windows_drive_appears_first_with_zero_paths_when_absent_from_plan'), "
             "m.PreservationPreviewDrivesTests('test_workflow_ui_no_longer_has_hardcoded_c_d_f_g_tuple')"
             "]); "
             "res = unittest.TextTestRunner(verbosity=0).run(suite); "

@@ -96,8 +96,8 @@ class WorkflowSystemDriveTextTests(unittest.TestCase):
         self.assertNotIn('C:', step2_body)
 
     def test_workflow_ui_no_longer_hardcodes_c_in_screen_sentences(self):
-        # A única ocorrência literal de 'C:' que resta em build_preservation é a
-        # tupla ('C:', 'D:', 'F:', 'G:'), reservada ao FIX-P4-01-14.
+        # Nenhum texto de tela em workflow_ui.py usa 'C:' fixo; a lista de
+        # unidades da prévia da Preservação também vem do plano (FIX-P4-01-14).
         for src, funcs in (
             (WORKFLOW_SOURCE, ('build_overview', 'build_preservation', 'build_installation',
                                'show_c_preflight')),
