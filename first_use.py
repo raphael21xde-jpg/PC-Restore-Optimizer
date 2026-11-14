@@ -1,0 +1,460 @@
+"""P4-02 (Fatia 1): módulo puro do assistente "Primeiro uso guiado" (sem tkinter).
+
+Guarda os textos de introdução, a dica de modo de execução (sem administrador
+para backup/restauração) e as 6 etapas de orientação do primeiro uso, além de
+ler e gravar as marcações (`pendente`, `feito`, `pulado`) fora da thread da
+interface.
+
+Regras de segurança:
+- somente orientação: este módulo nunca executa varredura, cópia, restauração,
+  diagnóstico de discos nem comandos do sistema;
+- nunca apaga arquivos;
+- gravação atômica em `.parcial` de nome único (`O_CREAT | O_EXCL`), `fsync` e
+  `os.replace` com espera crescente; arquivos estragados, grandes demais ou que
+  sejam links/atalhos ficam intocados e a gravação passa para `-2`, `-3`...;
+- mensagens de erro fixas sem expor caminho completo nem nome de usuário (R-07);
+- textos seguem a R-88 e usam `workflow_texts.system_drive()` (sem letra fixa).
+"""
+from __future__ import annotations
+
+import json
+import ntpath
+import os
+import stat
+import threading
+import time
+import uuid
+from pathlib import Path
+
+from choices_store import app_data_dir
+from workflow_texts import system_drive
+
+PENDING, DONE, SKIPPED = 'pendente', 'feito', 'pulado'
+STATUSES = (PENDING, DONE, SKIPPED)
+STATUS_TEXT = {PENDING: 'Pendente', DONE: 'Feito', SKIPPED: 'Pulado'}
+
+STEP_IDS = (
+    'diagnostico',
+    'explorar',
+    'preservacao',
+    'backup',
+    'testar',
+    'proximos',
+)
+
+SCHEMA = 'pcro-primeiro-uso-v1'
+PROGRESS_FILENAME = 'primeiro-uso-progresso.json'
+PROGRESS_LIMIT = 64 * 1024
+MAX_PROGRESS_FILES = 50
+PARTIAL_SUFFIX = '.parcial'
+
+REPLACE_FIRST_WAIT = 0.005
+REPLACE_MAX_WAIT = 0.2
+REPLACE_TOTAL_WAIT = 2.0
+
+FIRST_USE_MODE_NOTE = (
+    'Dica: use o aplicativo aberto do jeito normal (sem "Executar como administrador") '
+    'para fazer backup e restaurar. Só abra como administrador, com a sua própria conta, '
+    'se for aplicar ajustes nas abas "4  Energia reversível", "8  Ajustes seguros" ou '
+    '"9  Ajustes avançados" de "Otimização".'
+)
+
+
+def FIRST_USE_INTRO_TEXT(drive: str | None = None) -> str:
+    """Texto de boas-vindas e regras de segurança do Primeiro uso guiado (R-88)."""
+    d = system_drive() if drive is None else drive
+    return (
+        'Bem-vindo ao PC Restore & Optimizer. Este guia mostra a ordem recomendada '
+        'para usar o aplicativo com segurança, passo a passo.\n\n'
+        'O guia só orienta e abre cada tela para você: nenhuma cópia, restauração ou '
+        'leitura de discos começa sozinha ao clicar em "Abrir". O app não apaga '
+        f'nenhum arquivo; lembre-se de que o que não for copiado do {d} não entra no '
+        f'backup e se perde quando o instalador formatar o {d}.'
+    )
+
+
+def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
+    """Devolve as 6 etapas do Primeiro uso guiado para a unidade do Windows informada."""
+    d = system_drive() if drive is None else drive
+    return (
+        {
+            'id': 'diagnostico',
+            'title': 'Conhecer os discos (só leitura)',
+            'text': (
+                'Veja na tela "Diagnóstico" quais discos existem no seu PC e qual é o '
+                'disco do Windows. O backup precisará ir para outro disco físico, que '
+                'não será formatado.'
+            ),
+            'page': 'diagnostic',
+        },
+        {
+            'id': 'explorar',
+            'title': 'Varrer e escolher o que manter',
+            'text': (
+                'Na tela "Meu computador", examine as unidades desejadas e marque jogos, '
+                'aplicativos e pastas como "Manter selecionados" ou "Não preservar" '
+                '(o app não apaga nenhum arquivo, mas o que não for copiado do '
+                f'{d} não entra no backup e se perde quando o instalador formatar o {d}). '
+                'Para adicionar pastas avulsas ou criar o cofre do navegador, use '
+                '"Seleção avançada".'
+            ),
+            'page': 'home',
+        },
+        {
+            'id': 'preservacao',
+            'title': 'Revisar o plano de preservação',
+            'text': (
+                f'Na tela "Preservação", confira tudo o que foi marcado e os saves de '
+                f'jogos que estão no {d}. O que ficar desmarcado ou pendente no {d} não '
+                f'entra no backup e se perde quando o instalador formatar o {d}.'
+            ),
+            'page': 'preservation',
+        },
+        {
+            'id': 'backup',
+            'title': 'Escolher destino e fazer o backup',
+            'text': (
+                'Na tela de revisão do backup (aberta por "Próximo: revisar backup dos '
+                'arquivos escolhidos →" em "Preservação"), use "Escolher destino" para '
+                'apontar para outro disco, clique em "1. Recalcular plano e espaço" e '
+                'depois em "2. Iniciar backup (confirmação dupla)".'
+            ),
+            'page': 'review',
+        },
+        {
+            'id': 'testar',
+            'title': 'Testar o backup antes de formatar',
+            'text': (
+                'Nunca formate sem testar o backup. Na tela "Histórico e relatórios", '
+                'escolha o backup criado e use "Testar restauração de arquivo pequeno" '
+                'para comprovar que os arquivos podem ser lidos.'
+            ),
+            'page': 'history',
+        },
+        {
+            'id': 'proximos',
+            'title': 'Instalar o Windows, restaurar ou otimizar',
+            'text': (
+                'Com o backup testado, veja o checklist em "Instalar Windows" (quem '
+                'formata e instala é o instalador oficial da Microsoft, operado por '
+                'você). No Windows novo, use "Depois de formatar" para trazer tudo de '
+                'volta e "Otimização" para medir e ajustar o PC com segurança.'
+            ),
+            'page': 'installation',
+        },
+    )
+
+
+def default_first_use_base(environ=None) -> Path:
+    """Pasta padrão do progresso em `%LOCALAPPDATA%\\PC-Restore-Optimizer`."""
+    return app_data_dir(frozen=True, environ=environ)
+
+
+def first_use_progress_path(base=None, environ=None) -> Path:
+    """Caminho do primeiro arquivo candidato de progresso do Primeiro uso guiado."""
+    folder = default_first_use_base(environ=environ) if base is None else Path(base)
+    return folder / PROGRESS_FILENAME
+
+
+def _candidate(first: Path, number: int) -> Path:
+    if number == 1:
+        return first
+    return first.with_name(f'{first.stem}-{number}{first.suffix}')
+
+
+def empty_first_use_steps() -> dict[str, str]:
+    """Dicionário com todas as 6 etapas marcadas como `pendente`."""
+    return {step_id: PENDING for step_id in STEP_IDS}
+
+
+def validate_first_use_steps(steps) -> dict[str, str]:
+    """Confere as marcações; levanta `ValueError` se houver etapa ou valor inválido."""
+    if not isinstance(steps, dict):
+        raise ValueError('Progresso inválido.')
+    clean = empty_first_use_steps()
+    for key, value in steps.items():
+        if key not in clean:
+            raise ValueError(f'Etapa desconhecida: {key!r}.')
+        if value not in STATUSES:
+            raise ValueError(
+                f'Marcação inválida: {value!r} (use pendente, feito ou pulado).'
+            )
+        clean[key] = value
+    return clean
+
+
+def _is_link(info) -> bool:
+    reparse = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
+    return stat.S_ISLNK(info.st_mode) or bool(
+        (getattr(info, 'st_file_attributes', 0) or 0) & reparse
+    )
+
+
+def _read_candidate(path: Path):
+    """Devolve `('ausente', None)`, `('ok', steps)` ou `('ruim', motivo)`."""
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return 'ausente', None
+    except OSError:
+        return 'ruim', 'não deu para ler'
+    if _is_link(info):
+        return 'ruim', 'é um atalho (link)'
+    if not stat.S_ISREG(info.st_mode):
+        return 'ruim', 'não é um arquivo comum'
+    if info.st_size > PROGRESS_LIMIT:
+        return 'ruim', 'grande demais'
+    try:
+        with open(path, 'rb') as handle:
+            data = handle.read(PROGRESS_LIMIT + 1)
+        if len(data) > PROGRESS_LIMIT:
+            return 'ruim', 'grande demais'
+        doc = json.loads(data.decode('utf-8'))
+        if not isinstance(doc, dict) or doc.get('schema') != SCHEMA:
+            return 'ruim', 'formato desconhecido'
+        steps = validate_first_use_steps(doc.get('steps'))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return 'ruim', 'estragado'
+    return 'ok', steps
+
+
+def _bad_warning(path: Path, reason: str) -> str:
+    return (
+        f'O progresso salvo "{path.name}" não pôde ser usado ({reason}). '
+        'Ele foi deixado como está e o guia começou do zero.'
+    )
+
+
+def load_first_use_progress(base=None, *, environ=None) -> dict:
+    """Lê o progresso salvo do Primeiro uso guiado sem tocar em arquivos ruins.
+
+    Devolve `{'steps', 'path', 'warnings'}`. Se o arquivo principal estiver
+    estragado, grande demais ou for um link, fica intocado e a função avança
+    para `-2`, `-3`... até `MAX_PROGRESS_FILES`.
+    """
+    first = first_use_progress_path(base, environ=environ)
+    warnings: list[str] = []
+    for number in range(1, MAX_PROGRESS_FILES + 1):
+        path = _candidate(first, number)
+        kind, value = _read_candidate(path)
+        if kind == 'ok':
+            return {'steps': value, 'path': path, 'warnings': warnings}
+        if kind == 'ausente':
+            return {
+                'steps': empty_first_use_steps(),
+                'path': path,
+                'warnings': warnings,
+            }
+        warnings.append(_bad_warning(path, value))
+    warnings.append(
+        'Não há onde salvar o progresso; as marcações valem só até fechar a janela.'
+    )
+    return {'steps': empty_first_use_steps(), 'path': None, 'warnings': warnings}
+
+
+def first_use_error_text(exc: BaseException) -> str:
+    """Aviso fixo de falha ao salvar o progresso (sem caminho completo, R-07)."""
+    detail = type(exc).__name__
+    filename = getattr(exc, 'filename', None)
+    if filename:
+        name = ntpath.basename(str(filename).replace('/', '\\'))
+        if name:
+            detail = f'{name}, {detail}'
+    return (
+        f'Não deu para salvar o progresso ({detail}). As marcações valem só até '
+        'fechar a janela.'
+    )
+
+
+def first_use_warning_text(base_warning: str, error: str | None) -> str:
+    """Linha de aviso do progresso: prioriza o erro da última gravação."""
+    return error if error else base_warning
+
+
+def _replace_with_retry(partial: Path, path: Path, sleep=None) -> None:
+    sleep = time.sleep if sleep is None else sleep
+    wait = REPLACE_FIRST_WAIT
+    waited = 0.0
+    while True:
+        try:
+            os.replace(partial, path)
+            return
+        except PermissionError:
+            if waited >= REPLACE_TOTAL_WAIT:
+                raise
+            step = min(wait, REPLACE_MAX_WAIT, REPLACE_TOTAL_WAIT - waited)
+            sleep(step)
+            waited += step
+            wait *= 2
+
+
+def save_first_use_progress(
+    path,
+    steps,
+    *,
+    base_steps: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Grava as marcações de forma atômica sem nunca apagar arquivos (R-09).
+
+    Antes de cada gravação, relê e confere o arquivo no disco: recusa gravar
+    por cima de link, arquivo não-comum ou arquivo estragado, e faz junção
+    para que gravar o dicionário da memória nunca apague marcação gravada por
+    outra janela ou instância.
+    """
+    if not isinstance(steps, dict):
+        raise ValueError('Progresso inválido.')
+    explicit_keys = set(steps.keys())
+    clean = validate_first_use_steps(steps)
+    base_clean = (
+        validate_first_use_steps(base_steps) if base_steps is not None else None
+    )
+    path = Path(path)
+    kind, disk_value = _read_candidate(path)
+    if kind == 'ruim':
+        raise OSError(
+            f'O arquivo de progresso "{path.name}" não é um arquivo comum ou '
+            f'não pôde ser lido ({disk_value}); nada foi gravado.'
+        )
+    if kind == 'ok':
+        merged = dict(disk_value)
+        for key in STEP_IDS:
+            if base_clean is not None:
+                if clean[key] != base_clean[key]:
+                    merged[key] = clean[key]
+            elif len(explicit_keys) < len(STEP_IDS):
+                if key in explicit_keys:
+                    merged[key] = clean[key]
+            else:
+                if clean[key] != PENDING:
+                    merged[key] = clean[key]
+        clean = merged
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc = {'schema': SCHEMA, 'steps': clean}
+    data = json.dumps(doc, ensure_ascii=False, indent=2).encode('utf-8')
+    partial = path.with_name(f'{path.name}{PARTIAL_SUFFIX}-{uuid.uuid4().hex[:8]}')
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_BINARY', 0)
+    handle = os.open(partial, flags, 0o600)
+    try:
+        view = memoryview(data)
+        while view:
+            view = view[os.write(handle, view):]
+        os.fsync(handle)
+    finally:
+        os.close(handle)
+    _replace_with_retry(partial, path)
+    return clean
+
+
+class FirstUseProgressSaver:
+    """Grava o progresso do Primeiro uso guiado fora da thread do Tk (R-10).
+
+    Mantém uma única thread não-daemon por gravador e junta pedidos
+    intermediários para que a última marcação sempre vença, preservando no
+    disco entradas gravadas por outra instância (R-09).
+    """
+
+    def __init__(self, path, *, initial_steps=None, save=None):
+        self.path = Path(path)
+        self._save = save
+        self._base = (
+            validate_first_use_steps(initial_steps)
+            if initial_steps is not None
+            else None
+        )
+        self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        self._wanted: dict[str, str] | None = None
+        self._writing: dict[str, str] | None = None
+        self._error: str | None = None
+        self._thread: threading.Thread | None = None
+        self.closed = False
+
+    def request(self, steps) -> None:
+        """Pede para gravar uma cópia das marcações e retorna imediatamente."""
+        copy = dict(steps)
+        with self._lock:
+            self._wanted = copy
+            self.closed = False
+            if self._thread is None:
+                self._thread = threading.Thread(
+                    target=self._run,
+                    name='pcro-primeiro-uso-progresso',
+                    daemon=False,
+                )
+                self._thread.start()
+
+    def _run(self) -> None:
+        while True:
+            with self._lock:
+                steps = self._wanted
+                base = dict(self._base) if self._base is not None else None
+                if steps is None:
+                    self._writing = None
+                    self._thread = None
+                    self._idle.notify_all()
+                    return
+                self._wanted = None
+                self._writing = steps
+            try:
+                if self._save is not None:
+                    self._save(self.path, steps)
+                else:
+                    save_first_use_progress(self.path, steps, base_steps=base)
+                error = None
+            except Exception as exc:  # noqa: BLE001 - qualquer falha vira aviso fixo
+                error = first_use_error_text(exc)
+            with self._lock:
+                if error is None and isinstance(steps, dict):
+                    try:
+                        self._base = validate_first_use_steps(steps)
+                    except ValueError:
+                        pass
+                self._writing = None
+                self._error = error
+
+    def poll_error(self) -> str | None:
+        """Erro da última gravação terminada (sem caminho completo) ou `None`."""
+        with self._lock:
+            return self._error
+
+    def pending_steps(self) -> dict[str, str] | None:
+        """Cópia das marcações pedidas e ainda não gravadas, ou `None`."""
+        with self._lock:
+            steps = self._wanted if self._wanted is not None else self._writing
+            return None if steps is None else dict(steps)
+
+    def busy(self) -> bool:
+        """`True` enquanto há pedido esperando ou gravação em andamento."""
+        with self._lock:
+            return self._thread is not None
+
+    def close(self) -> None:
+        """Sinaliza que a janela fechou, sem cancelar gravação em andamento."""
+        with self._lock:
+            self.closed = True
+
+    def join(self, timeout: float | None = None) -> bool:
+        """Espera a gravação pendente terminar; `True` se concluiu no prazo."""
+        deadline = None if timeout is None else time.monotonic() + timeout
+        with self._lock:
+            while self._thread is not None:
+                left = None if deadline is None else deadline - time.monotonic()
+                if left is not None and left <= 0:
+                    return False
+                self._idle.wait(left)
+            return True
+
+
+def load_first_use_with_pending(
+    base=None,
+    saver: FirstUseProgressSaver | None = None,
+    *,
+    load=None,
+) -> dict:
+    """Lê o progresso preferindo marcações pendentes no `saver` antes do disco."""
+    load_fn = load_first_use_progress if load is None else load
+    pending = saver.pending_steps() if saver is not None else None
+    progress = load_fn(base)
+    if pending is not None:
+        progress = dict(progress, steps=pending)
+    return progress
