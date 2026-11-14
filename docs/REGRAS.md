@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 0 (última poda: 13/11/2026, pedido `regras-20261113-poda-r79-r90`, issue #241). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-91.
+poda: 2 (última poda: 13/11/2026, pedido `regras-20261113-poda-r79-r90`, issue #241). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-91.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
