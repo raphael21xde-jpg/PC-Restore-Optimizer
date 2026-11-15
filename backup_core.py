@@ -259,13 +259,19 @@ def _plan_fingerprint(plan):
 
 def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=(),
                 display_name=None, item_descriptors=None, *, resume_manifest=None,
-                strategy_inventory=None, test_space_probe=None, test_fault_hook=None):
+                strategy_inventory=None, test_space_probe=None, test_fault_hook=None,
+                source_drives_reader=None):
     """Verified isolated backup with progress throttling and opt-in safe resume.
 
     Existing v0.4 manifests remain readable. Resume is allowed ONLY for v0.5.19
     interrupted jobs whose exact plan fingerprint matches. Neither routine
     deletes or modifies originals; resume may replace only files inside its own
     incomplete backup directory after independently verifying their hashes.
+
+    FIX-P4-01-12-01: a new backup records the optional 'source_drives' field
+    (label and size of each source drive, read-only) when at least one drive
+    could be read; a failed read never stops the backup. Resume keeps the
+    manifest's field as it was (it never reads the drives again).
     """
     if not plan.files:
         raise ValueError('Nenhum arquivo selecionado para o backup.')
@@ -323,6 +329,14 @@ def copy_backup(plan, backup_base, cancelled=None, progress=None, planned_disks=
                         bytes_expected=plan.total, file_count_expected=plan.count,
                         files=[], errors=[], resume_count=0)
         existing = {}
+        try:
+            if source_drives_reader is None:
+                from source_drives import read_source_drives as source_drives_reader
+            drives = source_drives_reader([t.source for t in plan.files])
+        except Exception:
+            drives = None
+        if isinstance(drives, dict) and drives:
+            manifest['source_drives'] = drives
     strategy = choose_strategy(plan.files[0].source, backup_base, inventory=strategy_inventory)
     manifest['transfer_strategy'] = strategy.description
     atomic_json(manifest_path, manifest)  # checkpoint before writing the first file
