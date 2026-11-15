@@ -153,7 +153,9 @@ class CopyBackupTests(unittest.TestCase):
         self.assertEqual(saved['schema'], 'pc-restore-backup-v0.4')
         self.assertEqual(len(saved['files']), self.plan.count)
 
-    def test_backup_in_tests_reads_no_real_disk(self):
+    def test_backup_calls_neither_disk_usage_nor_disk_inventory(self):
+        """Com os falsos deste arquivo, o copy_backup não chama
+        shutil.disk_usage nem diagnostics.disk_inventory."""
         import diagnostics
 
         def forbidden(*_args, **_kwargs):
