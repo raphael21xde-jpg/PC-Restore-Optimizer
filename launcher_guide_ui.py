@@ -13,7 +13,15 @@ from tkinter import ttk
 from game_launchers import (SYSTEM_DRIVE_WARNING, UNKNOWN_SYSTEM_DRIVE_WARNING,
                             detect_launchers, guide_for)
 from restore_jobs import Job
+from ui_scale import (COR_BORDA, COR_PAINEL, COR_TEXTO, ESPACO_M,
+                      ESPACO_MINIMO, ESPACO_P, FONTE_UI, PADDING_DIALOGO,
+                      TAMANHO_CORPO, TAMANHO_SUBTITULO, safe_window_geometry)
 from ui_timers import WindowTimers
+
+DESIRED_WIDTH = 960
+DESIRED_HEIGHT = 620
+MIN_WIDTH = 640
+MIN_HEIGHT = 440
 
 INTRO_TEXT = (
     'O aplicativo procura, só olhando nomes de pastas, as bibliotecas de jogos da Steam, '
@@ -38,24 +46,30 @@ def show_launchers(parent, *, roots=None, scanner=None):
         chosen_roots, cancelled=cancelled))
     dlg = tk.Toplevel(parent)
     dlg.title('Launchers de jogos')
-    dlg.geometry('960x620')
-    dlg.minsize(640, 440)
+    dlg.geometry(safe_window_geometry(
+        DESIRED_WIDTH, DESIRED_HEIGHT,
+        dlg.winfo_screenwidth(), dlg.winfo_screenheight(),
+        min_w=MIN_WIDTH, min_h=MIN_HEIGHT))
+    dlg.minsize(MIN_WIDTH, MIN_HEIGHT)
     timers = WindowTimers(dlg)
     state = {'libraries': [], 'busy': False, 'result': None, 'job': None}
     dlg.launcher_state = state
 
-    frame = ttk.Frame(dlg, padding=14)
+    frame = ttk.Frame(dlg, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='Bibliotecas de jogos encontradas',
-              font=('Segoe UI', 12, 'bold')).pack(anchor='w')
-    ttk.Label(frame, wraplength=900, text=INTRO_TEXT).pack(anchor='w', pady=(4, 6))
+              font=(FONTE_UI, TAMANHO_SUBTITULO, 'bold')).pack(anchor='w')
+    ttk.Label(frame, wraplength=900, text=INTRO_TEXT).pack(
+        anchor='w', pady=(ESPACO_MINIMO, ESPACO_P))
     status = tk.StringVar(master=dlg, value='')
     dlg.launcher_status = status
-    ttk.Label(frame, textvariable=status, wraplength=900).pack(fill='x', pady=(0, 2))
+    ttk.Label(frame, textvariable=status, wraplength=900).pack(
+        fill='x', pady=(0, ESPACO_MINIMO))
     warning = tk.StringVar(master=dlg, value='')
     dlg.launcher_warning = warning  # aviso fica visível mesmo depois de copiar um caminho
     ttk.Label(frame, textvariable=warning, wraplength=900,
-              font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(0, 6))
+              font=(FONTE_UI, TAMANHO_CORPO, 'bold')).pack(
+                  fill='x', pady=(0, ESPACO_P))
 
     grid = ttk.Frame(frame)
     grid.pack(fill='both', expand=True)
@@ -79,8 +93,21 @@ def show_launchers(parent, *, roots=None, scanner=None):
     grid.rowconfigure(0, weight=1)
     grid.columnconfigure(0, weight=1)
 
-    guide = tk.Text(frame, height=11, wrap='word')
-    guide.pack(fill='both', expand=True, pady=(8, 6))
+    guide = tk.Text(
+        frame,
+        height=11,
+        wrap='word',
+        bg=COR_PAINEL,
+        fg=COR_TEXTO,
+        insertbackground=COR_TEXTO,
+        relief='flat',
+        highlightthickness=1,
+        highlightbackground=COR_BORDA,
+        font=(FONTE_UI, TAMANHO_CORPO),
+        padx=ESPACO_M,
+        pady=ESPACO_P,
+    )
+    guide.pack(fill='both', expand=True, pady=(ESPACO_P, ESPACO_P))
 
     def show_guide(text):
         guide.configure(state='normal')
@@ -177,10 +204,11 @@ def show_launchers(parent, *, roots=None, scanner=None):
         wait_job(job, finished)
 
     tools = ttk.Frame(frame)
-    tools.pack(fill='x')
+    tools.pack(side='bottom', fill='x')
     again_button = ttk.Button(tools, text='Pesquisar de novo', command=search)
     again_button.pack(side='left')
-    ttk.Button(tools, text='Copiar caminho', command=copy_path).pack(side='left', padx=(7, 0))
+    ttk.Button(tools, text='Copiar caminho', command=copy_path).pack(
+        side='left', padx=(ESPACO_P, 0))
     ttk.Button(tools, text='Fechar', command=dlg.destroy).pack(side='right')
 
     def on_destroy(event):
