@@ -1,8 +1,13 @@
 """FIX-P4-01-12-01: o backup grava o nome e o tamanho das unidades de origem.
 
-Só dados sintéticos em TemporaryDirectory. O nome e o tamanho das unidades
-são simulados (funções falsas); nenhum teste lê o nome ou o tamanho de uma
-unidade real, e nada é gravado fora da pasta temporária. Sem Tk.
+Só dados sintéticos em TemporaryDirectory. O nome e o tamanho das unidades de
+origem são simulados (funções falsas). Toda chamada a copy_backup passa
+strategy_inventory={} (não roda PowerShell para listar discos), um
+test_space_probe falso (não lê o espaço livre) e troca backup_core.free_space
+por uma função falsa (a retomada não lê o espaço livre). A restauração recebe
+strategy_inventory={} e elevation_probe falso. Só os dois testes do leitor
+padrão usam a leitura real, e eles são pulados no Windows (fora dele o nome
+da unidade não é lido). Nada é gravado fora da pasta temporária. Sem Tk.
 """
 import hashlib
 import json
@@ -11,12 +16,28 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import after_format as af
 import source_drives as sd
-from backup_core import build_plan, copy_backup
+import backup_core
+from backup_core import build_plan
+
+FAKE_FREE = 1024 ** 4
+
+
+def _fake_space(plan, _destination):
+    return FAKE_FREE, 0, True
+
+
+def copy_backup(plan, base, **kwargs):
+    """copy_backup sem ler discos reais: sem PowerShell e sem espaço livre real."""
+    kwargs.setdefault('strategy_inventory', {})
+    kwargs.setdefault('test_space_probe', _fake_space)
+    with mock.patch.object(backup_core, 'free_space', lambda _folder: FAKE_FREE):
+        return backup_core.copy_backup(plan, base, **kwargs)
 from backup_features import restore_selected, verified_entries
 
 GIB = 1024 ** 3
@@ -132,6 +153,18 @@ class CopyBackupTests(unittest.TestCase):
         self.assertEqual(saved['schema'], 'pc-restore-backup-v0.4')
         self.assertEqual(len(saved['files']), self.plan.count)
 
+    def test_backup_in_tests_reads_no_real_disk(self):
+        import diagnostics
+
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError('leitura de disco real num teste')
+        with mock.patch('shutil.disk_usage', forbidden), \
+                mock.patch.object(diagnostics, 'disk_inventory', forbidden):
+            backup, manifest = copy_backup(self.plan, self.root / 'out',
+                                           source_drives_reader=self.reader)
+        self.assertEqual(manifest['status'], 'concluido')
+        self.assertIn('source_drives', manifest)
+
     def test_failed_reads_do_not_stop_backup(self):
         self.disks = FakeDisks({'D:\\': OSError('sem acesso')}, {})
         backup, manifest = copy_backup(self.plan, self.root / 'out',
@@ -218,7 +251,8 @@ class OldManifestTests(unittest.TestCase):
         manifest = self._old_backup()
         keys = list(verified_entries(manifest))
         (self.root / 'restaurado').mkdir()
-        result = restore_selected(manifest, keys, self.root / 'restaurado')
+        result = restore_selected(manifest, keys, self.root / 'restaurado',
+                                  strategy_inventory={}, elevation_probe=lambda: False)
         self.assertTrue(result)
         restored = list((self.root / 'restaurado').rglob('save.dat'))
         self.assertEqual(len(restored), 1)
