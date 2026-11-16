@@ -2290,6 +2290,12 @@ def _smoke_test():
 
 if __name__=='__main__':
     import sys
+    from child_process import dispatch_child
+    # No .exe, o diagnóstico de discos reabre o próprio programa como processo
+    # filho (somente leitura); nesse caso não se cria nenhuma janela.
+    _child_code = dispatch_child(sys.argv[1:])
+    if _child_code is not None:
+        raise SystemExit(_child_code)
     if '--smoke-test' in sys.argv[1:]:
         raise SystemExit(_smoke_test())
     App().mainloop()

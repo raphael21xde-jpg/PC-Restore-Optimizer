@@ -4,10 +4,9 @@ from collections import Counter
 import json
 import ntpath
 import os
-from pathlib import Path
 import subprocess
-import sys
 
+from child_process import extents_command
 from audit_v068 import collect_disk_evidence_068, classify_boot_068, enhance_report_068
 from completeness_audit_v067 import _within
 
@@ -104,7 +103,7 @@ def collect_disk_evidence_069():
     if not evidence.get('available'):
         return evidence
     try:
-        result = subprocess.run([sys.executable, str(Path(__file__).with_name('volume_extents.py'))],
+        result = subprocess.run(extents_command(),
                                 input=json.dumps(evidence['data'].get('legacy_volumes', [])),
                                 capture_output=True, text=True, encoding='utf-8', timeout=25,
                                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -114,7 +113,14 @@ def collect_disk_evidence_069():
         if not isinstance(mappings, list):
             raise ValueError('Resposta de volumes inválida.')
         evidence['data'] = apply_volume_mappings(evidence['data'], mappings)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired:
+        # Texto fixo: str(TimeoutExpired) traz o comando, com o caminho do programa.
+        evidence['data'].setdefault('warnings', []).append('Associação direta indisponível: tempo esgotado (25 s)')
+    except OSError as exc:
+        # OSError do Popen traz o caminho do programa; só o tipo do erro.
+        evidence['data'].setdefault('warnings', []).append(
+            'Associação direta indisponível: não foi possível iniciar a consulta (' + type(exc).__name__ + ')')
+    except ValueError as exc:
         evidence['data'].setdefault('warnings', []).append('Associação direta indisponível: ' + str(exc)[:250])
     return evidence
 

@@ -88,6 +88,29 @@ def collect_extents(volumes, query=query_volume):
     return results
 
 
+def run_child(stdin, stdout, *, query=None):
+    """Processo filho: lê a lista de volumes (JSON) da entrada e escreve o resultado.
+
+    Sem entrada ou saída (ex.: .exe sem console que não recebeu os pipes) devolve 2
+    sem consultar nada. Entrada inválida devolve 1; o coletor trata como erro.
+    """
+    if stdin is None or stdout is None:
+        return 2
+    try:
+        volumes = json.load(stdin)
+    except ValueError as exc:
+        if sys.stderr is not None:
+            sys.stderr.write('Entrada inválida: ' + str(exc)[:200])
+        return 1
+    if not isinstance(volumes, list):
+        if sys.stderr is not None:
+            sys.stderr.write('Entrada inválida: lista de volumes esperada.')
+        return 1
+    rows = collect_extents(volumes) if query is None else collect_extents(volumes, query=query)
+    stdout.write(json.dumps(rows, ensure_ascii=True) + '\n')
+    stdout.flush()
+    return 0
+
+
 if __name__ == '__main__':
-    volumes = json.load(sys.stdin)
-    print(json.dumps(collect_extents(volumes), ensure_ascii=True))
+    raise SystemExit(run_child(sys.stdin, sys.stdout))
