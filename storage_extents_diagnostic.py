@@ -130,5 +130,12 @@ def collect_extent_mapping(disks, *, snapshot=None, runner=subprocess.run, timeo
         if not isinstance(raw, list):
             raise ValueError('Formato inesperado de resposta das extensões.')
         return describe_extents(snapshot, raw, disks)
-    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired:
+        # Texto fixo: str(TimeoutExpired) traz o comando, com o caminho do programa.
+        return describe_extents(snapshot, [], disks, error=f'tempo esgotado ({timeout} s)')
+    except OSError as exc:
+        # OSError do Popen traz o caminho do programa; só o tipo do erro.
+        return describe_extents(snapshot, [], disks,
+                                error='não foi possível iniciar a consulta (' + type(exc).__name__ + ')')
+    except (ValueError, RuntimeError) as exc:
         return describe_extents(snapshot, [], disks, error=str(exc))

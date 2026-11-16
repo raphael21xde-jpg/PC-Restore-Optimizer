@@ -113,7 +113,14 @@ def collect_disk_evidence_069():
         if not isinstance(mappings, list):
             raise ValueError('Resposta de volumes inválida.')
         evidence['data'] = apply_volume_mappings(evidence['data'], mappings)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired:
+        # Texto fixo: str(TimeoutExpired) traz o comando, com o caminho do programa.
+        evidence['data'].setdefault('warnings', []).append('Associação direta indisponível: tempo esgotado (25 s)')
+    except OSError as exc:
+        # OSError do Popen traz o caminho do programa; só o tipo do erro.
+        evidence['data'].setdefault('warnings', []).append(
+            'Associação direta indisponível: não foi possível iniciar a consulta (' + type(exc).__name__ + ')')
+    except ValueError as exc:
         evidence['data'].setdefault('warnings', []).append('Associação direta indisponível: ' + str(exc)[:250])
     return evidence
 

@@ -149,6 +149,53 @@ class FrozenCollectorsTests(unittest.TestCase):
         self.assertIsNone(evidence['data'].get('windows_disk_number'))
 
 
+class NoUserPathLeakTests(unittest.TestCase):
+    """R-07: o aviso nunca traz o caminho do programa (pode ter o nome do usuário)."""
+    USER_EXE = r'C:\Users\fulano\x.exe'
+
+    def setUp(self):
+        _simulate_frozen(self, executable=self.USER_EXE)
+        self.snapshot = summarize_volumes([{'volume_id': V1, 'mount_points': ['F:\\'], 'drive_type': 3}])
+
+    def _errors(self, timeout):
+        return [subprocess.TimeoutExpired([self.USER_EXE, '--pcro-volume-extents'], timeout),
+                FileNotFoundError(2, 'O sistema não pode encontrar o arquivo', self.USER_EXE),
+                PermissionError(13, 'Acesso negado', self.USER_EXE)]
+
+    def test_storage_diagnostic_never_shows_user_path(self):
+        for exc in self._errors(3):
+            def runner(command, exc=exc, **kwargs):
+                raise exc
+            with patch.object(sd, 'os', SimpleNamespace(name='nt')):
+                result = sd.collect_extent_mapping([], snapshot=self.snapshot, runner=runner, timeout=3)
+            dumped = json.dumps(result, ensure_ascii=False)
+            self.assertNotIn('fulano', dumped, type(exc).__name__)
+            self.assertEqual(result['status'], 'requires_review')
+            self.assertFalse(result['approved_for_format'])
+            self.assertEqual(result['volumes'][0]['status'], 'unknown')
+            if isinstance(exc, subprocess.TimeoutExpired):
+                self.assertIn('Consulta de extensões indisponível: tempo esgotado (3 s)', result['issues'])
+            else:
+                self.assertIn('Consulta de extensões indisponível: não foi possível iniciar a consulta ('
+                              + type(exc).__name__ + ')', result['issues'])
+
+    def test_audit_v069_never_shows_user_path(self):
+        evidence_in = {'available': True, 'data': {'legacy_volumes': [
+            {'device_id': V1, 'system_volume': False, 'boot_volume': True}]}}
+        for exc in self._errors(25):
+            with patch.object(audit_v069, 'collect_disk_evidence_068', return_value=json.loads(json.dumps(evidence_in))), \
+                    patch.object(audit_v069.subprocess, 'run', side_effect=exc):
+                evidence = audit_v069.collect_disk_evidence_069()
+            dumped = json.dumps(evidence, ensure_ascii=False)
+            self.assertNotIn('fulano', dumped, type(exc).__name__)
+            warnings = evidence['data']['warnings']
+            if isinstance(exc, subprocess.TimeoutExpired):
+                self.assertEqual(warnings, ['Associação direta indisponível: tempo esgotado (25 s)'])
+            else:
+                self.assertEqual(warnings, ['Associação direta indisponível: não foi possível iniciar a consulta ('
+                                            + type(exc).__name__ + ')'])
+
+
 class DispatchChildTests(unittest.TestCase):
     def test_exact_flag_runs_child_and_returns_zero(self):
         calls = []
