@@ -4,10 +4,9 @@ from collections import Counter
 import json
 import ntpath
 import os
-from pathlib import Path
 import subprocess
-import sys
 
+from child_process import extents_command
 from audit_v068 import collect_disk_evidence_068, classify_boot_068, enhance_report_068
 from completeness_audit_v067 import _within
 
@@ -104,7 +103,7 @@ def collect_disk_evidence_069():
     if not evidence.get('available'):
         return evidence
     try:
-        result = subprocess.run([sys.executable, str(Path(__file__).with_name('volume_extents.py'))],
+        result = subprocess.run(extents_command(),
                                 input=json.dumps(evidence['data'].get('legacy_volumes', [])),
                                 capture_output=True, text=True, encoding='utf-8', timeout=25,
                                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))

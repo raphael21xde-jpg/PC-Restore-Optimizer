@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
-import sys
 
+from child_process import extents_command
 from volume_inventory import collect_volume_inventory, normalize_volume_id
 
 LETTER_ROOT = re.compile(r'^[A-Za-z]:\\$')
@@ -117,9 +116,8 @@ def collect_extent_mapping(disks, *, snapshot=None, runner=subprocess.run, timeo
         return describe_extents(snapshot, [], disks, error='Quantidade de volumes fora do limite seguro.')
     try:
         checked = [normalize_volume_id(guid) for guid in volume_ids]
-        helper = Path(__file__).resolve().with_name('volume_extents.py')
         run = runner(
-            [sys.executable, str(helper)],
+            extents_command(),
             input=json.dumps([{'device_id': x} for x in checked]),
             text=True, capture_output=True, encoding='utf-8', errors='replace',
             timeout=timeout,
