@@ -27,5 +27,14 @@ def dispatch_child(argv) -> int | None:
     """Atende só o argumento exato `--pcro-volume-extents`; qualquer outro devolve None."""
     if list(argv) != [EXTENTS_FLAG]:
         return None
-    import volume_extents
-    return volume_extents.run_child(sys.stdin, sys.stdout)
+    try:
+        import volume_extents
+        return volume_extents.run_child(sys.stdin, sys.stdout)
+    except Exception as exc:  # nunca deixar o .exe sem console abrir janela de erro
+        # Só o tipo do erro: sem mensagem, para não vazar caminhos nem dados.
+        if sys.stderr is not None:
+            try:
+                sys.stderr.write('Erro no processo filho: ' + type(exc).__name__)
+            except Exception:
+                pass
+        return 1

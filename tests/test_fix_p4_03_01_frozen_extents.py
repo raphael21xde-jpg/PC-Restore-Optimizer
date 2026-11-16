@@ -93,6 +93,34 @@ class FrozenCollectorsTests(unittest.TestCase):
         return {'available': True, 'data': {'legacy_volumes': [
             {'device_id': V1, 'system_volume': False, 'boot_volume': True}]}}
 
+    def test_storage_diagnostic_child_error_codes_stay_unknown(self):
+        _simulate_frozen(self)
+        for code in (2, 1):
+            def runner(command, code=code, **kwargs):
+                return SimpleNamespace(returncode=code, stdout='', stderr='')
+            with patch.object(sd, 'os', SimpleNamespace(name='nt')):
+                result = sd.collect_extent_mapping([], snapshot=self.snapshot, runner=runner, timeout=3)
+            self.assertEqual(result['status'], 'requires_review', code)
+            self.assertFalse(result['approved_for_format'])
+            self.assertEqual(result['volumes'][0]['status'], 'unknown')
+            self.assertTrue(any(i.startswith('Consulta de extensões indisponível: Consulta retornou erro')
+                                for i in result['issues']), result['issues'])
+            self.assertIn('F: extensão unknown; sem resposta', result['issues'])
+
+    def test_audit_v069_child_error_codes_are_never_safe(self):
+        _simulate_frozen(self)
+        for code in (2, 1):
+            def fake_run(command, code=code, **kwargs):
+                return SimpleNamespace(returncode=code, stdout='', stderr='')
+            with patch.object(audit_v069, 'collect_disk_evidence_068', return_value=self._evidence()), \
+                    patch.object(audit_v069.subprocess, 'run', side_effect=fake_run):
+                evidence = audit_v069.collect_disk_evidence_069()
+            warnings = evidence['data'].get('warnings', [])
+            self.assertTrue(warnings and all(w.startswith('Associação direta indisponível') for w in warnings),
+                            (code, warnings))
+            self.assertNotIn('disk_numbers', evidence['data']['legacy_volumes'][0])
+            self.assertIsNone(evidence['data'].get('windows_disk_number'))
+
     def test_audit_v069_uses_exe_command_and_keeps_timeout(self):
         _simulate_frozen(self)
         captured = {}
@@ -154,10 +182,21 @@ class DispatchChildTests(unittest.TestCase):
     def test_invalid_input_returns_one_without_querying(self):
         with patch.object(volume_extents, 'collect_extents') as collect:
             for raw in ('nao e json', '{"device_id": "x"}'):
-                out = io.StringIO()
-                self.assertEqual(volume_extents.run_child(io.StringIO(raw), out), 1)
+                out, err = io.StringIO(), io.StringIO()
+                with patch.object(sys, 'stderr', err):
+                    self.assertEqual(volume_extents.run_child(io.StringIO(raw), out), 1)
                 self.assertEqual(out.getvalue(), '')
+                self.assertTrue(err.getvalue().startswith('Entrada inválida'), err.getvalue())
             collect.assert_not_called()
+
+    def test_dispatch_unexpected_error_writes_only_type_and_returns_one(self):
+        secret = r'C:\Users\alguem\segredo'
+        err = io.StringIO()
+        with patch.object(volume_extents, 'run_child', side_effect=RuntimeError(secret)), \
+                patch.object(sys, 'stderr', err):
+            self.assertEqual(child_process.dispatch_child(['--pcro-volume-extents']), 1)
+        self.assertEqual(err.getvalue(), 'Erro no processo filho: RuntimeError')
+        self.assertNotIn('segredo', err.getvalue())
 
     def test_dispatch_with_no_console_pipes_returns_two(self):
         with patch.object(volume_extents, 'collect_extents') as collect, \
