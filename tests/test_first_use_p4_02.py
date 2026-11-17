@@ -48,6 +48,7 @@ FORBIDDEN_R88 = (
 # Mapa dos rótulos entre aspas citados em first_use.py -> (módulo, função que monta a tela)
 EXPECTED_STEP_LABELS = {
     'Diagnóstico': ('app.py', 'App._build_sidebar'),
+    'Exportar relatório JSON': ('app.py', 'App._build_diagnostic'),
     'Meu computador': ('app.py', 'App._build_sidebar'),
     'Manter selecionados': ('deep_discovery_ui.py', 'show_deep_discovery'),
     'Não preservar': ('deep_discovery_ui.py', 'show_deep_discovery'),
@@ -129,8 +130,17 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
             self.assertIn(f'se perde quando o instalador formatar o {drive}', intro)
 
             by_id = {s['id']: s for s in steps}
-            self.assertEqual(by_id['diagnostico']['title'], 'Conhecer os discos (a análise só lê)')
+            self.assertEqual(by_id['diagnostico']['title'], 'Conhecer os discos')
+            self.assertNotIn('só lê', by_id['diagnostico']['title'].lower())
             self.assertNotIn('só leitura', by_id['diagnostico']['title'].lower())
+            self.assertIn('não apaga nenhum arquivo', by_id['diagnostico']['text'])
+            self.assertIn('"Exportar relatório JSON"', by_id['diagnostico']['text'])
+            self.assertIn('pasta que você escolher', by_id['diagnostico']['text'])
+            self.assertIn(
+                f'o que não for copiado do {drive} não entra no backup e se perde '
+                f'quando o instalador formatar o {drive}',
+                by_id['diagnostico']['text'],
+            )
             self.assertIn('não apaga nenhum arquivo', by_id['explorar']['text'])
             self.assertIn(
                 f'se perde quando o instalador formatar o {drive}',
@@ -296,7 +306,9 @@ class FirstUseProgressTests(unittest.TestCase):
         with mock.patch.object(fu.os, 'lstat', return_value=FakeStat()):
             loaded = fu.load_first_use_progress(self.base)
             self.assertIsNone(loaded['path'])
-            self.assertTrue(any('atalho (link)' in w for w in loaded['warnings']))
+            self.assertTrue(
+                any('é um link ou um arquivo especial do Windows' in w for w in loaded['warnings'])
+            )
             with self.assertRaises(OSError):
                 fu.save_first_use_progress(first, fu.empty_first_use_steps())
 
@@ -421,10 +433,26 @@ class FirstUseProgressTests(unittest.TestCase):
 
         loaded = fu.load_first_use_progress(self.base)
         self.assertEqual(loaded['path'], self.base / 'primeiro-uso-progresso-2.json')
-        self.assertTrue(any('atalho (link)' in w for w in loaded['warnings']))
+        self.assertTrue(
+            any('é um link ou um arquivo especial do Windows' in w for w in loaded['warnings'])
+        )
         with self.assertRaises(OSError):
             fu.save_first_use_progress(first, fu.empty_first_use_steps())
         self.assertEqual(target.read_bytes(), target_bytes)
+
+    def test_directory_in_place_of_file_is_untouched_and_refused(self):
+        first = self.base / fu.PROGRESS_FILENAME
+        first.mkdir(parents=True)
+        marker = first / 'conteudo.txt'
+        marker.write_text('nao apagar', encoding='utf-8')
+
+        loaded = fu.load_first_use_progress(self.base)
+        self.assertEqual(loaded['path'], self.base / 'primeiro-uso-progresso-2.json')
+        self.assertTrue(any('não é um arquivo comum' in w for w in loaded['warnings']))
+        with self.assertRaises(OSError):
+            fu.save_first_use_progress(first, fu.empty_first_use_steps())
+        self.assertTrue(first.is_dir())
+        self.assertEqual(marker.read_text(encoding='utf-8'), 'nao apagar')
 
     def test_exclusive_lock_timeout_becomes_sanitized_error_text(self):
         path = self.base / fu.PROGRESS_FILENAME
@@ -439,6 +467,48 @@ class FirstUseProgressTests(unittest.TestCase):
         self.assertIn('TimeoutError', msg)
         self.assertNotIn(str(self.base), msg)
 
+    def test_partial_request_with_base_steps_preserves_other_window_entry(self):
+        path = self.base / fu.PROGRESS_FILENAME
+        initial = fu.empty_first_use_steps()
+        fu.save_first_use_progress(path, initial)
+
+        # Outra janela grava explorar=feito
+        fu.save_first_use_progress(path, {'explorar': fu.DONE}, base_steps=initial)
+
+        # Pedido parcial com base_steps onde explorar estava feito na base local:
+        # etapas que não vieram no pedido não podem virar pendente e apagar o disco.
+        local_base = dict(initial, explorar=fu.DONE)
+        merged = fu.save_first_use_progress(
+            path,
+            {'diagnostico': fu.DONE},
+            base_steps=local_base,
+        )
+        self.assertEqual(merged['diagnostico'], fu.DONE)
+        self.assertEqual(merged['explorar'], fu.DONE)
+        self.assertEqual(
+            fu.load_first_use_progress(self.base)['steps']['explorar'],
+            fu.DONE,
+        )
+
+    def test_reset_flag_overwrites_other_window_entry_and_still_refuses_bad_file(self):
+        path = self.base / fu.PROGRESS_FILENAME
+        base = fu.empty_first_use_steps()
+        fu.save_first_use_progress(path, dict(base, diagnostico=fu.DONE, explorar=fu.DONE))
+
+        reset_result = fu.save_first_use_progress(
+            path,
+            fu.empty_first_use_steps(),
+            base_steps=dict(base, diagnostico=fu.DONE),
+            reset=True,
+        )
+        self.assertEqual(reset_result, base)
+        self.assertEqual(fu.load_first_use_progress(self.base)['steps'], base)
+
+        corrupt = self.base / 'primeiro-uso-progresso-2.json'
+        corrupt.write_text('{ quebrado', encoding='utf-8')
+        with self.assertRaises(OSError):
+            fu.save_first_use_progress(corrupt, fu.empty_first_use_steps(), reset=True)
+
     def test_concurrent_threads_race_with_exclusive_lock_preserves_both(self):
         path = self.base / fu.PROGRESS_FILENAME
         base = fu.empty_first_use_steps()
@@ -446,9 +516,32 @@ class FirstUseProgressTests(unittest.TestCase):
 
         a_paused = threading.Event()
         release_a = threading.Event()
+        b_entering_lock = threading.Event()
+        b_acquired_lock = threading.Event()
         real_replace = fu._replace_with_retry
+        real_lock = fu.exclusive_lock
         thread_a_id = None
+        thread_b_id = None
+        events: list[str] = []
         errors = []
+
+        from contextlib import contextmanager
+
+        @contextmanager
+        def spy_exclusive_lock(lock_target):
+            tid = threading.get_ident()
+            if tid == thread_b_id:
+                events.append('b_waiting')
+                b_entering_lock.set()
+            with real_lock(lock_target):
+                if tid == thread_a_id:
+                    events.append('a_acquired')
+                elif tid == thread_b_id:
+                    events.append('b_acquired')
+                    b_acquired_lock.set()
+                yield
+            if tid == thread_a_id:
+                events.append('a_released')
 
         def paused_replace(partial, dst, sleep=None):
             if threading.get_ident() == thread_a_id:
@@ -458,6 +551,8 @@ class FirstUseProgressTests(unittest.TestCase):
             return real_replace(partial, dst, sleep=sleep)
 
         def writer_a():
+            nonlocal thread_a_id
+            thread_a_id = threading.get_ident()
             try:
                 fu.save_first_use_progress(
                     path,
@@ -468,6 +563,8 @@ class FirstUseProgressTests(unittest.TestCase):
                 errors.append(exc)
 
         def writer_b():
+            nonlocal thread_b_id
+            thread_b_id = threading.get_ident()
             try:
                 fu.save_first_use_progress(
                     path,
@@ -477,23 +574,29 @@ class FirstUseProgressTests(unittest.TestCase):
             except Exception as exc:  # pragma: no cover - falha do teste
                 errors.append(exc)
 
-        with mock.patch.object(fu, '_replace_with_retry', side_effect=paused_replace):
+        with (
+            mock.patch.object(fu, '_replace_with_retry', side_effect=paused_replace),
+            mock.patch.object(fu, 'exclusive_lock', side_effect=spy_exclusive_lock),
+        ):
             ta = threading.Thread(target=writer_a)
             ta.start()
-            thread_a_id = ta.ident
             self.assertTrue(a_paused.wait(5))
 
             tb = threading.Thread(target=writer_b)
             tb.start()
-            time.sleep(0.1)  # B deve aguardar a trava exclusiva sem sobrescrever A
+            self.assertTrue(b_entering_lock.wait(5))
+            # B está bloqueada na trava exclusiva enquanto A não termina
+            self.assertFalse(b_acquired_lock.wait(0.05))
             release_a.set()
 
+            self.assertTrue(b_acquired_lock.wait(5))
             ta.join(timeout=5)
             tb.join(timeout=5)
             self.assertFalse(ta.is_alive())
             self.assertFalse(tb.is_alive())
 
         self.assertEqual(errors, [])
+        self.assertEqual(events, ['a_acquired', 'b_waiting', 'a_released', 'b_acquired'])
         loaded = fu.load_first_use_progress(self.base)
         self.assertEqual(loaded['steps']['diagnostico'], fu.DONE)
         self.assertEqual(loaded['steps']['explorar'], fu.DONE)
@@ -583,11 +686,56 @@ class FirstUseProgressSaverTests(unittest.TestCase):
             merged,
         )
 
-        # Recomeçar marcações: volta todas as etapas (inclusive explorar) para pendente
+        # Recomeçar marcações com reset=True: volta todas as etapas (inclusive
+        # nova marcação gravada por outra janela) para pendente
+        fu.save_first_use_progress(
+            self.path,
+            dict(initial, backup=fu.DONE),
+            base_steps=merged,
+        )
         reset = fu.empty_first_use_steps()
-        saver.request(reset)
+        saver.request(reset, reset=True)
         self.assertTrue(saver.join(5))
         self.assertEqual(fu.load_first_use_progress(self.path.parent)['steps'], reset)
+
+    def test_saver_partial_request_preserves_other_window_entry(self):
+        initial = fu.empty_first_use_steps()
+        fu.save_first_use_progress(self.path, initial)
+        saver = self._make_saver(initial_steps=initial)
+
+        # Outra janela grava explorar=feito no disco
+        fu.save_first_use_progress(self.path, {'explorar': fu.DONE}, base_steps=initial)
+
+        # Esta janela envia apenas diagnostico=feito (pedido parcial)
+        saver.request({'diagnostico': fu.DONE})
+        self.assertTrue(saver.join(5))
+        self.assertIsNone(saver.poll_error())
+        merged = saver.poll_merged()
+        self.assertEqual(merged['diagnostico'], fu.DONE)
+        self.assertEqual(merged['explorar'], fu.DONE)
+        self.assertEqual(
+            fu.load_first_use_progress(self.path.parent)['steps'],
+            merged,
+        )
+
+    def test_saver_accepts_none_path_and_ignores_requests_after_close(self):
+        saver_none = self._make_saver(
+            initial_steps=fu.empty_first_use_steps(),
+        )
+        saver_none.close()
+        saver_none.request({'diagnostico': fu.DONE})
+        self.assertFalse(saver_none.busy())
+        self.assertIsNone(saver_none.pending_steps())
+
+        no_path_saver = fu.FirstUseProgressSaver(
+            None,
+            initial_steps=fu.empty_first_use_steps(),
+        )
+        self._savers.append(no_path_saver)
+        no_path_saver.request({'diagnostico': fu.DONE})
+        self.assertFalse(no_path_saver.busy())
+        self.assertIsNone(no_path_saver.pending_steps())
+        self.assertTrue(no_path_saver.join(1))
 
     def test_save_error_is_sanitized_and_cleared_on_next_success(self):
         outcomes = [

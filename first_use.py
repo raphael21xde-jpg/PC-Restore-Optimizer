@@ -11,7 +11,8 @@ Regras de segurança:
 - nunca apaga arquivos;
 - gravação atômica em `.parcial` de nome único (`O_CREAT | O_EXCL`), `fsync` e
   `os.replace` com espera crescente; arquivos estragados, grandes demais ou que
-  sejam links/atalhos ficam intocados e a gravação passa para `-2`, `-3`...;
+  sejam links ou arquivos especiais do Windows ficam intocados e a gravação passa
+  para `-2`, `-3`...;
 - mensagens de erro fixas sem expor caminho completo nem nome de usuário (R-07);
 - textos seguem a R-88 e usam `workflow_texts.system_drive()` (sem letra fixa).
 """
@@ -81,11 +82,14 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
     return (
         {
             'id': 'diagnostico',
-            'title': 'Conhecer os discos (a análise só lê)',
+            'title': 'Conhecer os discos',
             'text': (
                 'Veja na tela "Diagnóstico" quais discos existem no seu PC e qual é o '
                 'disco do Windows. O backup precisará ir para outro disco físico, que '
-                'não será formatado.'
+                'não será formatado. O app não apaga nenhum arquivo e, nessa tela, só '
+                'salva um relatório se você clicar em "Exportar relatório JSON" (na '
+                f'pasta que você escolher); o que não for copiado do {d} não entra no '
+                f'backup e se perde quando o instalador formatar o {d}.'
             ),
             'page': 'diagnostic',
         },
@@ -218,7 +222,7 @@ def _read_candidate(path: Path):
     except OSError:
         return 'ruim', 'não pôde ser lido'
     if _is_link(info):
-        return 'ruim', 'é um atalho (link)'
+        return 'ruim', 'é um link ou um arquivo especial do Windows'
     if not stat.S_ISREG(info.st_mode):
         return 'ruim', 'não é um arquivo comum'
     if info.st_size > PROGRESS_LIMIT:
@@ -322,18 +326,20 @@ def save_first_use_progress(
     steps,
     *,
     base_steps: dict[str, str] | None = None,
+    reset: bool = False,
 ) -> dict[str, str]:
     """Grava as marcações de forma atômica sem nunca apagar arquivos (R-09).
 
     Antes de cada gravação, relê e confere o arquivo no disco: recusa gravar
     por cima de link, arquivo não-comum ou arquivo estragado, e faz junção
     para que gravar o dicionário da memória nunca apague marcação gravada por
-    outra janela ou instância.
+    outra janela ou instância. Com `reset=True`, sobrescreve todas as etapas
+    (ex.: "Recomeçar marcações"), mantendo a recusa de arquivos ruins.
     """
     if not isinstance(steps, dict):
         raise ValueError('Progresso inválido.')
     explicit_keys = set(steps.keys())
-    clean = validate_first_use_steps(steps)
+    clean = empty_first_use_steps() if reset else validate_first_use_steps(steps)
     base_clean = (
         validate_first_use_steps(base_steps) if base_steps is not None else None
     )
@@ -346,11 +352,11 @@ def save_first_use_progress(
                 f'O arquivo de progresso "{path.name}" não é um arquivo comum ou '
                 f'não pôde ser lido ({disk_value}); nada foi gravado.'
             )
-        if kind == 'ok':
+        if kind == 'ok' and not reset:
             merged = dict(disk_value)
             for key in STEP_IDS:
                 if base_clean is not None:
-                    if clean[key] != base_clean[key]:
+                    if key in explicit_keys and clean[key] != base_clean[key]:
                         merged[key] = clean[key]
                 elif len(explicit_keys) < len(STEP_IDS):
                     if key in explicit_keys:
@@ -383,24 +389,27 @@ class FirstUseProgressSaver:
     """
 
     def __init__(self, path, *, initial_steps, save=None):
-        self.path = Path(path)
+        self.path = None if path is None else Path(path)
         self._save = save
         self._base = validate_first_use_steps(initial_steps)
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
-        self._wanted: dict[str, str] | None = None
+        self._wanted: tuple[dict[str, str], bool] | None = None
         self._writing: dict[str, str] | None = None
         self._merged: dict[str, str] | None = None
         self._error: str | None = None
         self._thread: threading.Thread | None = None
         self.closed = False
 
-    def request(self, steps) -> None:
+    def request(self, steps, *, reset: bool = False) -> None:
         """Pede para gravar uma cópia das marcações e retorna imediatamente."""
+        if not isinstance(steps, dict):
+            raise ValueError('Progresso inválido.')
         copy = dict(steps)
         with self._lock:
-            self._wanted = copy
-            self.closed = False
+            if self.closed or self.path is None:
+                return
+            self._wanted = (copy, bool(reset))
             if self._thread is None:
                 self._thread = threading.Thread(
                     target=self._run,
@@ -412,23 +421,29 @@ class FirstUseProgressSaver:
     def _run(self) -> None:
         while True:
             with self._lock:
-                steps = self._wanted
+                wanted = self._wanted
                 base = dict(self._base)
-                if steps is None:
+                if wanted is None:
                     self._writing = None
                     self._thread = None
                     self._idle.notify_all()
                     return
+                steps, reset = wanted
                 self._wanted = None
                 self._writing = steps
             merged: dict[str, str] | None = None
             try:
                 if self._save is not None:
-                    result = self._save(self.path, steps)
+                    if reset:
+                        result = self._save(self.path, steps, reset=True)
+                    else:
+                        result = self._save(self.path, steps)
                     raw_merged = result if isinstance(result, dict) else steps
                     merged = validate_first_use_steps(raw_merged)
                 else:
-                    merged = save_first_use_progress(self.path, steps, base_steps=base)
+                    merged = save_first_use_progress(
+                        self.path, steps, base_steps=base, reset=reset
+                    )
                 error = None
             except Exception as exc:  # noqa: BLE001 - qualquer falha vira aviso fixo
                 error = first_use_error_text(exc)
@@ -452,8 +467,11 @@ class FirstUseProgressSaver:
     def pending_steps(self) -> dict[str, str] | None:
         """Cópia das marcações pedidas e ainda não gravadas, ou `None`."""
         with self._lock:
-            steps = self._wanted if self._wanted is not None else self._writing
-            return None if steps is None else dict(steps)
+            if self._wanted is not None:
+                return dict(self._wanted[0])
+            if self._writing is not None:
+                return dict(self._writing)
+            return None
 
     def busy(self) -> bool:
         """`True` enquanto há pedido esperando ou gravação em andamento."""
