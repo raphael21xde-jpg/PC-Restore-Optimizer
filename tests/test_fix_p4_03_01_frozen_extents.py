@@ -103,8 +103,9 @@ class FrozenCollectorsTests(unittest.TestCase):
             self.assertEqual(result['status'], 'requires_review', code)
             self.assertFalse(result['approved_for_format'])
             self.assertEqual(result['volumes'][0]['status'], 'unknown')
-            self.assertTrue(any(i.startswith('Consulta de extensões indisponível: Consulta retornou erro')
-                                for i in result['issues']), result['issues'])
+            # Filho sem mensagem: texto claro, nunca "Consulta retornou erro: " vazio (fatia 2).
+            self.assertIn('Consulta de extensões indisponível: Não foi possível consultar em que disco '
+                          'está cada volume; trate como não confirmado.', result['issues'])
             self.assertIn('F: extensão unknown; sem resposta', result['issues'])
 
     def test_audit_v069_child_error_codes_are_never_safe(self):
@@ -271,11 +272,12 @@ class DispatchChildTests(unittest.TestCase):
         self.assertIn('volume_extents', names)  # o PyInstaller precisa ver este import
 
     def test_app_main_dispatches_before_smoke_test_and_window(self):
+        # Fatia 2: o dispatch fica no topo de app.py, antes de tudo (até do tkinter).
         source = Path(audit_v069.__file__).with_name('app.py').read_text(encoding='utf-8')
-        main = source[source.index("if __name__=='__main__':"):]
-        self.assertIn('dispatch_child(sys.argv[1:])', main)
-        self.assertLess(main.index('dispatch_child'), main.index('--smoke-test'))
-        self.assertLess(main.index('dispatch_child'), main.index('App()'))
+        self.assertIn('dispatch_child(sys.argv[1:])', source)
+        self.assertLess(source.index('dispatch_child'), source.index('import tkinter'))
+        self.assertLess(source.index('dispatch_child'), source.index('--smoke-test'))
+        self.assertLess(source.index('dispatch_child'), source.index('App()'))
 
 
 if __name__ == '__main__':

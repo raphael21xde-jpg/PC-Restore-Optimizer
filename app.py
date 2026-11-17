@@ -1,4 +1,16 @@
 """PC Restore & Optimizer v0.5 experimental — sem operações destrutivas."""
+import sys
+
+if __name__ == '__main__':
+    # No .exe, o diagnóstico de discos reabre o próprio programa como processo
+    # filho (somente leitura). Atender isso aqui no topo, antes dos imports
+    # pesados (tkinter, ~40 módulos e a lista de unidades), para o filho não
+    # gastar o tempo limite nem criar janela (FIX-P4-03-01, fatia 2).
+    from child_process import dispatch_child
+    _child_code = dispatch_child(sys.argv[1:])
+    if _child_code is not None:
+        raise SystemExit(_child_code)
+
 import json
 import ntpath
 import os
@@ -246,7 +258,7 @@ class App(tk.Tk):
         self._build_review()
         self._build_history()
         self._build_diagnostic()
-        self.optimizer_panel = OptimizationPanel(self.optimization, app_dir=Path(__file__).resolve().parent)
+        self.optimizer_panel = OptimizationPanel(self.optimization, app_dir=choices_store.app_data_dir(source_file=__file__))
         self.optimizer_panel.pack(fill='both', expand=True)
         self._build_recovery()
         self.tabs.bind('<<NotebookTabChanged>>', self._page_changed)
@@ -1428,10 +1440,8 @@ class App(tk.Tk):
         # Reattach reviewed discoveries using stable source identities, including portable apps.
         report=getattr(self,'deep_scan_report',None)
         if report is None:
-            try:
-                report=json.loads((Path(__file__).parent/'deteccao-detalhada-v0514.json').read_text(encoding='utf-8'))
-                if report.get('schema')!='pcro-discovery-v1':report=None
-            except (OSError,ValueError,AttributeError):report=None
+            # Pasta de dados do app; no .exe, o local antigo só para leitura (nada é apagado).
+            report=choices_store.read_first_json(choices_store.data_file_candidates('deteccao-detalhada-v0514.json',source_file=__file__),schema='pcro-discovery-v1')
             self.deep_scan_report=report
         if report:
             for record in report.get('records',[]):
@@ -2289,13 +2299,7 @@ def _smoke_test():
 
 
 if __name__=='__main__':
-    import sys
-    from child_process import dispatch_child
-    # No .exe, o diagnóstico de discos reabre o próprio programa como processo
-    # filho (somente leitura); nesse caso não se cria nenhuma janela.
-    _child_code = dispatch_child(sys.argv[1:])
-    if _child_code is not None:
-        raise SystemExit(_child_code)
+    # O modo filho (`--pcro-volume-extents`) já foi atendido no topo do arquivo.
     if '--smoke-test' in sys.argv[1:]:
         raise SystemExit(_smoke_test())
     App().mainloop()

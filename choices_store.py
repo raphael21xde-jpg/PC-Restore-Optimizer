@@ -42,6 +42,80 @@ def app_data_dir(*, frozen: bool | None = None, environ=None, source_file=None) 
         return Path(local) / APP_STATE_SUBDIR
     return Path.home() / 'AppData' / 'Local' / APP_STATE_SUBDIR
 
+
+def data_file_candidates(name, *, frozen: bool | None = None, environ=None, source_file=None) -> list[Path]:
+    """Onde procurar um arquivo de dados do app, na ordem de leitura (FIX-P4-03-01, fatia 2).
+
+    Primeiro a pasta de dados (`app_data_dir`); no `.exe`, depois o local antigo
+    (pasta do programa), só para LER um arquivo que já exista lá. Nada é movido
+    nem apagado. Pelo Python as duas pastas são a mesma e a lista tem um item.
+    """
+    source_dir = Path(source_file or __file__).resolve().parent
+    found = [app_data_dir(frozen=frozen, environ=environ, source_file=source_file) / name]
+    old = source_dir / name
+    if old not in found:
+        found.append(old)
+    return found
+
+
+def read_first_json(paths, *, schema=None):
+    """Devolve o primeiro JSON (objeto) legível da lista; arquivo ausente ou inválido é pulado.
+
+    Com `schema`, um objeto com outro `schema` também é pulado. Só lê: nada é gravado.
+    """
+    for path in paths:
+        try:
+            data = json.loads(Path(path).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and (schema is None or data.get('schema') == schema):
+            return data
+    return None
+
+
+# Pastas conhecidas do usuário (e as do OneDrive): o app nunca as exclui da varredura.
+_USER_FOLDER_NAMES = ('Desktop', 'Área de Trabalho', 'Documents', 'Documentos', 'Downloads')
+
+
+def _too_broad(path: Path) -> bool:
+    """Raiz de unidade, pasta do usuário, Desktop, Documentos, Downloads ou acima: nunca excluir.
+
+    Na dúvida (não deu para saber a pasta do usuário), também conta como larga demais.
+    """
+    if path == Path(path.anchor):
+        return True
+    try:
+        home = Path.home().resolve()
+    except (OSError, RuntimeError):
+        return True
+    known = [home] + [base / name for base in (home, home / 'OneDrive') for name in _USER_FOLDER_NAMES]
+    return any(path == k or path in k.parents for k in known)
+
+
+def program_dirs(*, frozen: bool | None = None, environ=None, source_file=None,
+                 executable: str | None = None) -> list[str]:
+    """Pastas do próprio app que a varredura detalhada não lê nem deixa marcar (R-93).
+
+    Pelo Python: só a pasta do código, exatamente como antes. No `.exe`: também a
+    pasta de dados do app (`app_data_dir`) e a pasta do programa, mas esta só no
+    layout conhecido do build `--onedir` (o `.exe` fica exatamente na pasta acima
+    de `_internal`, onde está o código). Nunca entra uma pasta larga demais (raiz
+    de unidade, pasta do usuário, Desktop, Documentos, Downloads ou acima delas).
+    Na dúvida, não exclui: assim nada do usuário fica de fora da varredura.
+    """
+    is_frozen = bool(getattr(sys, 'frozen', False)) if frozen is None else bool(frozen)
+    source_dir = Path(source_file or __file__).resolve().parent
+    dirs = [source_dir]
+    if is_frozen:
+        exe = sys.executable if executable is None else executable
+        exe_dir = Path(exe).resolve().parent
+        extra = []
+        if source_dir.name.lower() == '_internal' and exe_dir == source_dir.parent:
+            extra.append(exe_dir)
+        extra.append(app_data_dir(frozen=True, environ=environ, source_file=source_file).resolve())
+        dirs += [d for d in extra if not _too_broad(d)]
+    return list(dict.fromkeys(str(d) for d in dirs))
+
 # Mapas de decisão: em conflito vence a opção mais segura (nada deixa de ser
 # preservado sem revisão). Ausente (removido) nunca vence um valor.
 DECISION_MAPS = ('choices', 'catalog_choices')

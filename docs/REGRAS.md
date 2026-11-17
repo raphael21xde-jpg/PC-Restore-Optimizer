@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 2 (última poda: 13/11/2026, pedido `regras-20261113-poda-r79-r90`, issue #241). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-91.
+poda: 3 (última poda: 13/11/2026, pedido `regras-20261113-poda-r79-r90`, issue #241). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-91.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -107,3 +107,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-90 | Juntada à **R-88** na poda de 13/11/2026 (confira a R-88). | Revisão da PR #240 (FIX-P4-01-10, f57f30b9eb9d) | 2026-11-13 |
 | R-91 | Nome ou rótulo lido do manifesto (ou de outro arquivo que o usuário escolhe) e mostrado na tela é limpo antes: sem caractere de controle ou invisível (quebra de linha, tabulação etc.), sem aspas e com tamanho máximo; se não passar, conta como "sem dado" (nunca é cortado e mostrado). Teste com um nome forjado (quebra de linha + frase de "tudo certo") que confere que a frase não aparece. | Revisão da PR #256 (FIX-P4-01-12, 15630ce017d2) | 2026-11-14 |
 | R-92 | Item marcado `concluído` no `docs/BACKLOG.md` que ainda tem algo pendente cria, no mesmo commit, um item próprio (com status) para o pendente e aponta para ele; nada de "Pendente" solto num item fechado. | Revisão da PR #256 (FIX-P4-01-12, 15630ce017d2) | 2026-11-14 |
+| R-93 | Pasta que o app exclui da varredura ou bloqueia para marcar, calculada a partir do local do programa, só entra se for do próprio app (layout conhecido do pacote, ex.: a pasta acima de _internal, ou a pasta de dados do app); nunca a raiz da unidade, a pasta do usuário ou acima dela, nem Desktop, Documentos ou Downloads. Na dúvida, não exclui. Tem teste com o .exe em home/Desktop e em home/Downloads. | Revisão da PR #267 (FIX-P4-03-01 fatia 2) | 2026-11-17 |
