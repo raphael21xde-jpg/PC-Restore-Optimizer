@@ -19,7 +19,23 @@ import recovery_center as rc
 from recovery_center import scan, verify_backup
 from restore_jobs import Job
 from restore_ui import show_restore
+from ui_scale import (
+    ESPACO_FINO,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    FONTE_UI,
+    PADDING_DIALOGO,
+    TAMANHO_CORPO,
+    TAMANHO_TITULO_MODAL,
+    safe_window_geometry,
+    safe_wraplength,
+)
 from ui_timers import WindowTimers
+
+DESIRED_WIDTH = 1100
+DESIRED_HEIGHT = 620
+MIN_WIDTH = 760
+MIN_HEIGHT = 440
 
 TITLE = 'Central de recuperação'
 INTRO_TEXT = (
@@ -60,23 +76,53 @@ def show_recovery_center(app, *, folder=None, ask_folder=None, scanner=None, ver
     dlg = tk.Toplevel(app)
     app.recovery_center_dialog = dlg
     dlg.title(TITLE)
-    dlg.geometry('1100x620')
-    dlg.minsize(760, 440)
+    dlg.geometry(safe_window_geometry(
+        DESIRED_WIDTH,
+        DESIRED_HEIGHT,
+        dlg.winfo_screenwidth(),
+        dlg.winfo_screenheight(),
+        min_w=MIN_WIDTH,
+        min_h=MIN_HEIGHT,
+    ))
+    dlg.minsize(MIN_WIDTH, MIN_HEIGHT)
     timers = WindowTimers(dlg)
     state = {'rows': [], 'busy': False, 'job': None, 'folder': None}
     dlg.center_state = state
 
-    frame = ttk.Frame(dlg, padding=14)
+    frame = ttk.Frame(dlg, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
-    ttk.Label(frame, text=TITLE, font=('Segoe UI', 12, 'bold')).pack(anchor='w')
-    ttk.Label(frame, wraplength=1050, text=INTRO_TEXT).pack(anchor='w', pady=(4, 6))
+    ttk.Label(
+        frame,
+        text=TITLE,
+        font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold'),
+    ).pack(anchor='w')
+    intro_label = ttk.Label(frame, wraplength=1050, text=INTRO_TEXT)
+    intro_label.pack(anchor='w', pady=(ESPACO_MINIMO, ESPACO_P))
     status = tk.StringVar(master=dlg, value=PICK_TEXT)
     dlg.center_status = status
-    ttk.Label(frame, textvariable=status, wraplength=1050).pack(fill='x', pady=(0, 2))
+    status_label = ttk.Label(frame, textvariable=status, wraplength=1050)
+    status_label.pack(fill='x', pady=(0, ESPACO_FINO))
     warning = tk.StringVar(master=dlg, value='')
     dlg.center_warning = warning
-    ttk.Label(frame, textvariable=warning, wraplength=1050,
-              font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(0, 6))
+    warning_label = ttk.Label(
+        frame,
+        textvariable=warning,
+        wraplength=1050,
+        font=(FONTE_UI, TAMANHO_CORPO, 'bold'),
+    )
+    warning_label.pack(fill='x', pady=(0, ESPACO_P))
+
+    def _update_wrap(event):
+        if event.widget is frame and event.width > 1:
+            wrap = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            intro_label.configure(wraplength=wrap)
+            status_label.configure(wraplength=wrap)
+            warning_label.configure(wraplength=wrap)
+
+    frame.bind('<Configure>', _update_wrap)
+
+    tools = ttk.Frame(frame)
+    tools.pack(side='bottom', fill='x', pady=(ESPACO_P, 0))
 
     grid = ttk.Frame(frame)
     grid.pack(fill='both', expand=True)
@@ -102,10 +148,11 @@ def show_recovery_center(app, *, folder=None, ask_folder=None, scanner=None, ver
     detail = tk.StringVar(master=dlg, value=rc.NO_SELECTION_TEXT)
     dlg.center_detail = detail
     detail_label = ttk.Label(grid, textvariable=detail, wraplength=1050, justify='left')
-    detail_label.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(6, 0))
+    detail_label.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(ESPACO_P, 0))
 
     def fit_detail(event):
-        detail_label.configure(wraplength=max(200, event.width - 20))
+        if event.width > 1:
+            detail_label.configure(wraplength=safe_wraplength(event.width, padding=ESPACO_P))
 
     grid.bind('<Configure>', fit_detail, add='+')
 
@@ -242,16 +289,14 @@ def show_recovery_center(app, *, folder=None, ask_folder=None, scanner=None, ver
         show_restore(app, row['manifest'], only_verified=True)
 
     dlg.center_search = search
-    tools = ttk.Frame(frame)
-    tools.pack(fill='x', pady=(8, 0))
     choose_button = ttk.Button(tools, text='Escolher pasta', command=pick_folder)
     choose_button.pack(side='left')
     verify_button = ttk.Button(tools, text='Conferir integridade', command=verify)
-    verify_button.pack(side='left', padx=(7, 0))
+    verify_button.pack(side='left', padx=(ESPACO_P, 0))
     restore_button = ttk.Button(tools, text='Restaurar…', command=restore)
-    restore_button.pack(side='left', padx=(7, 0))
+    restore_button.pack(side='left', padx=(ESPACO_P, 0))
     partial_button = ttk.Button(tools, text='Restaurar só os conferidos…', command=restore_partial)
-    partial_button.pack(side='left', padx=(7, 0))
+    partial_button.pack(side='left', padx=(ESPACO_P, 0))
     ttk.Button(tools, text='Fechar', command=dlg.destroy).pack(side='right')
     dlg.center_buttons = {'Escolher pasta': choose_button, 'Conferir integridade': verify_button,
                           'Restaurar…': restore_button,
