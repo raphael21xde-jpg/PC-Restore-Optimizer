@@ -26,6 +26,7 @@ import time
 import uuid
 from pathlib import Path
 
+from atomic_write import exclusive_lock
 from choices_store import app_data_dir
 from workflow_texts import system_drive
 
@@ -56,7 +57,8 @@ FIRST_USE_MODE_NOTE = (
     'Dica: use o aplicativo aberto do jeito normal (sem "Executar como administrador") '
     'para fazer backup e restaurar. Só abra como administrador, com a sua própria conta, '
     'se for aplicar ajustes nas abas "4  Energia reversível", "8  Ajustes seguros" ou '
-    '"9  Ajustes avançados" de "Otimização".'
+    '"9  Ajustes avançados" de "Otimização" (e também para desfazer ajustes da aba '
+    '"9  Ajustes avançados", inclusive pelo "Desfazer tudo" da aba "7  Alterações feitas").'
 )
 
 
@@ -79,7 +81,7 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
     return (
         {
             'id': 'diagnostico',
-            'title': 'Conhecer os discos (só leitura)',
+            'title': 'Conhecer os discos (a análise só lê)',
             'text': (
                 'Veja na tela "Diagnóstico" quais discos existem no seu PC e qual é o '
                 'disco do Windows. O backup precisará ir para outro disco físico, que '
@@ -190,6 +192,23 @@ def _is_link(info) -> bool:
     )
 
 
+def _read_bytes_with_retry(path: Path, limit: int, sleep=None) -> bytes:
+    sleep = time.sleep if sleep is None else sleep
+    wait = REPLACE_FIRST_WAIT
+    waited = 0.0
+    while True:
+        try:
+            with open(path, 'rb') as handle:
+                return handle.read(limit)
+        except PermissionError:
+            if waited >= REPLACE_TOTAL_WAIT:
+                raise
+            step = min(wait, REPLACE_MAX_WAIT, REPLACE_TOTAL_WAIT - waited)
+            sleep(step)
+            waited += step
+            wait *= 2
+
+
 def _read_candidate(path: Path):
     """Devolve `('ausente', None)`, `('ok', steps)` ou `('ruim', motivo)`."""
     try:
@@ -197,7 +216,7 @@ def _read_candidate(path: Path):
     except FileNotFoundError:
         return 'ausente', None
     except OSError:
-        return 'ruim', 'não deu para ler'
+        return 'ruim', 'não pôde ser lido'
     if _is_link(info):
         return 'ruim', 'é um atalho (link)'
     if not stat.S_ISREG(info.st_mode):
@@ -205,20 +224,27 @@ def _read_candidate(path: Path):
     if info.st_size > PROGRESS_LIMIT:
         return 'ruim', 'grande demais'
     try:
-        with open(path, 'rb') as handle:
-            data = handle.read(PROGRESS_LIMIT + 1)
-        if len(data) > PROGRESS_LIMIT:
-            return 'ruim', 'grande demais'
+        data = _read_bytes_with_retry(path, PROGRESS_LIMIT + 1)
+    except OSError:
+        return 'ruim', 'não pôde ser lido'
+    if len(data) > PROGRESS_LIMIT:
+        return 'ruim', 'grande demais'
+    try:
         doc = json.loads(data.decode('utf-8'))
         if not isinstance(doc, dict) or doc.get('schema') != SCHEMA:
             return 'ruim', 'formato desconhecido'
         steps = validate_first_use_steps(doc.get('steps'))
-    except (OSError, ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
         return 'ruim', 'estragado'
     return 'ok', steps
 
 
-def _bad_warning(path: Path, reason: str) -> str:
+def _bad_warning(path: Path, reason: str, used_path: Path | None = None) -> str:
+    if used_path is not None:
+        return (
+            f'O progresso salvo "{path.name}" não pôde ser usado ({reason}). '
+            f'Ele foi deixado como está e o guia continuou com "{used_path.name}".'
+        )
     return (
         f'O progresso salvo "{path.name}" não pôde ser usado ({reason}). '
         'Ele foi deixado como está e o guia começou do zero.'
@@ -233,19 +259,22 @@ def load_first_use_progress(base=None, *, environ=None) -> dict:
     para `-2`, `-3`... até `MAX_PROGRESS_FILES`.
     """
     first = first_use_progress_path(base, environ=environ)
-    warnings: list[str] = []
+    bad_entries: list[tuple[Path, str]] = []
     for number in range(1, MAX_PROGRESS_FILES + 1):
         path = _candidate(first, number)
         kind, value = _read_candidate(path)
         if kind == 'ok':
+            warnings = [_bad_warning(p, r, used_path=path) for p, r in bad_entries]
             return {'steps': value, 'path': path, 'warnings': warnings}
         if kind == 'ausente':
+            warnings = [_bad_warning(p, r) for p, r in bad_entries]
             return {
                 'steps': empty_first_use_steps(),
                 'path': path,
                 'warnings': warnings,
             }
-        warnings.append(_bad_warning(path, value))
+        bad_entries.append((path, value))
+    warnings = [_bad_warning(p, r) for p, r in bad_entries]
     warnings.append(
         'Não há onde salvar o progresso; as marcações valem só até fechar a janela.'
     )
@@ -309,39 +338,39 @@ def save_first_use_progress(
         validate_first_use_steps(base_steps) if base_steps is not None else None
     )
     path = Path(path)
-    kind, disk_value = _read_candidate(path)
-    if kind == 'ruim':
-        raise OSError(
-            f'O arquivo de progresso "{path.name}" não é um arquivo comum ou '
-            f'não pôde ser lido ({disk_value}); nada foi gravado.'
-        )
-    if kind == 'ok':
-        merged = dict(disk_value)
-        for key in STEP_IDS:
-            if base_clean is not None:
-                if clean[key] != base_clean[key]:
-                    merged[key] = clean[key]
-            elif len(explicit_keys) < len(STEP_IDS):
-                if key in explicit_keys:
-                    merged[key] = clean[key]
-            else:
-                if clean[key] != PENDING:
-                    merged[key] = clean[key]
-        clean = merged
     path.parent.mkdir(parents=True, exist_ok=True)
-    doc = {'schema': SCHEMA, 'steps': clean}
-    data = json.dumps(doc, ensure_ascii=False, indent=2).encode('utf-8')
-    partial = path.with_name(f'{path.name}{PARTIAL_SUFFIX}-{uuid.uuid4().hex[:8]}')
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_BINARY', 0)
-    handle = os.open(partial, flags, 0o600)
-    try:
-        view = memoryview(data)
-        while view:
-            view = view[os.write(handle, view):]
-        os.fsync(handle)
-    finally:
-        os.close(handle)
-    _replace_with_retry(partial, path)
+    with exclusive_lock(path):
+        kind, disk_value = _read_candidate(path)
+        if kind == 'ruim':
+            raise OSError(
+                f'O arquivo de progresso "{path.name}" não é um arquivo comum ou '
+                f'não pôde ser lido ({disk_value}); nada foi gravado.'
+            )
+        if kind == 'ok':
+            merged = dict(disk_value)
+            for key in STEP_IDS:
+                if base_clean is not None:
+                    if clean[key] != base_clean[key]:
+                        merged[key] = clean[key]
+                elif len(explicit_keys) < len(STEP_IDS):
+                    if key in explicit_keys:
+                        merged[key] = clean[key]
+                else:
+                    merged[key] = clean[key]
+            clean = merged
+        doc = {'schema': SCHEMA, 'steps': clean}
+        data = json.dumps(doc, ensure_ascii=False, indent=2).encode('utf-8')
+        partial = path.with_name(f'{path.name}{PARTIAL_SUFFIX}-{uuid.uuid4().hex[:8]}')
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_BINARY', 0)
+        handle = os.open(partial, flags, 0o600)
+        try:
+            view = memoryview(data)
+            while view:
+                view = view[os.write(handle, view):]
+            os.fsync(handle)
+        finally:
+            os.close(handle)
+        _replace_with_retry(partial, path)
     return clean
 
 
@@ -353,18 +382,15 @@ class FirstUseProgressSaver:
     disco entradas gravadas por outra instância (R-09).
     """
 
-    def __init__(self, path, *, initial_steps=None, save=None):
+    def __init__(self, path, *, initial_steps, save=None):
         self.path = Path(path)
         self._save = save
-        self._base = (
-            validate_first_use_steps(initial_steps)
-            if initial_steps is not None
-            else None
-        )
+        self._base = validate_first_use_steps(initial_steps)
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
         self._wanted: dict[str, str] | None = None
         self._writing: dict[str, str] | None = None
+        self._merged: dict[str, str] | None = None
         self._error: str | None = None
         self._thread: threading.Thread | None = None
         self.closed = False
@@ -387,7 +413,7 @@ class FirstUseProgressSaver:
         while True:
             with self._lock:
                 steps = self._wanted
-                base = dict(self._base) if self._base is not None else None
+                base = dict(self._base)
                 if steps is None:
                     self._writing = None
                     self._thread = None
@@ -395,22 +421,28 @@ class FirstUseProgressSaver:
                     return
                 self._wanted = None
                 self._writing = steps
+            merged: dict[str, str] | None = None
             try:
                 if self._save is not None:
-                    self._save(self.path, steps)
+                    result = self._save(self.path, steps)
+                    raw_merged = result if isinstance(result, dict) else steps
+                    merged = validate_first_use_steps(raw_merged)
                 else:
-                    save_first_use_progress(self.path, steps, base_steps=base)
+                    merged = save_first_use_progress(self.path, steps, base_steps=base)
                 error = None
             except Exception as exc:  # noqa: BLE001 - qualquer falha vira aviso fixo
                 error = first_use_error_text(exc)
             with self._lock:
-                if error is None and isinstance(steps, dict):
-                    try:
-                        self._base = validate_first_use_steps(steps)
-                    except ValueError:
-                        pass
+                if error is None and merged is not None:
+                    self._base = dict(merged)
+                    self._merged = dict(merged)
                 self._writing = None
                 self._error = error
+
+    def poll_merged(self) -> dict[str, str] | None:
+        """Último dicionário juntado e gravado com sucesso, ou `None`."""
+        with self._lock:
+            return None if self._merged is None else dict(self._merged)
 
     def poll_error(self) -> str | None:
         """Erro da última gravação terminada (sem caminho completo) ou `None`."""

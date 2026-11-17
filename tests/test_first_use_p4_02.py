@@ -19,6 +19,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -46,7 +47,6 @@ FORBIDDEN_R88 = (
 
 # Mapa dos rótulos entre aspas citados em first_use.py -> (módulo, função que monta a tela)
 EXPECTED_STEP_LABELS = {
-    'Abrir': ('after_format_ui.py', 'show_after_format'),
     'Diagnóstico': ('app.py', 'App._build_sidebar'),
     'Meu computador': ('app.py', 'App._build_sidebar'),
     'Manter selecionados': ('deep_discovery_ui.py', 'show_deep_discovery'),
@@ -66,9 +66,14 @@ EXPECTED_STEP_LABELS = {
     'Depois de formatar': ('app.py', 'App._build_sidebar'),
     'Otimização': ('app.py', 'App._build_sidebar'),
     '4  Energia reversível': ('optimization_ui.py', 'OptimizationPanel._build'),
+    '7  Alterações feitas': ('optimization_ui.py', 'OptimizationPanel._build'),
     '8  Ajustes seguros': ('optimization_ui.py', 'OptimizationPanel._build'),
     '9  Ajustes avançados': ('optimization_ui.py', 'OptimizationPanel._build'),
+    'Desfazer tudo': ('optimization_ui.py', 'OptimizationPanel._build_changes'),
 }
+
+# Rótulos da própria janela do Primeiro uso guiado (Fatia 2: first_use_ui.py, show_first_use).
+SLICE_2_WINDOW_LABELS = {'Abrir'}
 
 WINDOWS_LABELS = {
     'Executar como administrador': 'optimization_ui.py',
@@ -88,6 +93,24 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
         for forbidden in ('unlink', 'os.remove', 'rmtree', 'rmdir', 'subprocess', 'os.system'):
             self.assertNotIn(forbidden, source)
 
+    def test_imports_and_runs_in_subprocess_without_tkinter(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                '-c',
+                (
+                    "import sys; sys.modules['tkinter'] = None; "
+                    "import first_use as fu; "
+                    "assert len(fu.FIRST_USE_STEPS('C:')) == 6"
+                ),
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
     def test_no_hardcoded_c_drive_in_first_use_source(self):
         source = (ROOT / 'first_use.py').read_text(encoding='utf-8')
         tree = ast.parse(source)
@@ -106,6 +129,8 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
             self.assertIn(f'se perde quando o instalador formatar o {drive}', intro)
 
             by_id = {s['id']: s for s in steps}
+            self.assertEqual(by_id['diagnostico']['title'], 'Conhecer os discos (a análise só lê)')
+            self.assertNotIn('só leitura', by_id['diagnostico']['title'].lower())
             self.assertIn('não apaga nenhum arquivo', by_id['explorar']['text'])
             self.assertIn(
                 f'se perde quando o instalador formatar o {drive}',
@@ -133,6 +158,9 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
             steps = fu.FIRST_USE_STEPS()
             self.assertTrue(any('Z:' in s['text'] for s in steps))
 
+        self.assertIn('desfazer ajustes da aba "9  Ajustes avançados"', fu.FIRST_USE_MODE_NOTE)
+        self.assertIn('"Desfazer tudo" da aba "7  Alterações feitas"', fu.FIRST_USE_MODE_NOTE)
+
     def test_every_quoted_label_exists_in_reachable_screen_builder(self):
         project = _Project(ROOT)
         reach = project.reachable(blocked=BLOCKED_EDGES)
@@ -143,7 +171,11 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
         for text in texts:
             quoted |= _quoted_names(text)
 
-        known = {_norm(k) for k in EXPECTED_STEP_LABELS} | {_norm(k) for k in WINDOWS_LABELS}
+        known = (
+            {_norm(k) for k in EXPECTED_STEP_LABELS}
+            | {_norm(k) for k in SLICE_2_WINDOW_LABELS}
+            | {_norm(k) for k in WINDOWS_LABELS}
+        )
         self.assertEqual(sorted(quoted - known), [])
 
         for label, screen in EXPECTED_STEP_LABELS.items():
@@ -309,6 +341,163 @@ class FirstUseProgressTests(unittest.TestCase):
         self.assertEqual(loaded['steps']['diagnostico'], fu.DONE)
         self.assertEqual(loaded['steps']['explorar'], fu.DONE)
 
+    def test_can_revert_step_to_pending_and_reset_all_with_and_without_base(self):
+        path = self.base / fu.PROGRESS_FILENAME
+        base = fu.empty_first_use_steps()
+        done_steps = dict(base, diagnostico=fu.DONE, explorar=fu.SKIPPED)
+        fu.save_first_use_progress(path, done_steps)
+
+        # Sem base_steps (dicionário completo): voltar uma etapa para pendente grava no disco
+        reverted = dict(done_steps, diagnostico=fu.PENDING)
+        fu.save_first_use_progress(path, reverted)
+        self.assertEqual(fu.load_first_use_progress(self.base)['steps'], reverted)
+
+        # Sem base_steps: recomeçar todas as marcações (empty_first_use_steps) grava tudo pendente
+        fu.save_first_use_progress(path, fu.empty_first_use_steps())
+        self.assertEqual(fu.load_first_use_progress(self.base)['steps'], base)
+
+        # Com base_steps: voltar para pendente e recomeçar tudo também gravam
+        fu.save_first_use_progress(path, done_steps, base_steps=base)
+        fu.save_first_use_progress(path, dict(done_steps, explorar=fu.PENDING), base_steps=done_steps)
+        self.assertEqual(
+            fu.load_first_use_progress(self.base)['steps'],
+            dict(base, diagnostico=fu.DONE),
+        )
+        fu.save_first_use_progress(
+            path,
+            fu.empty_first_use_steps(),
+            base_steps=dict(base, diagnostico=fu.DONE),
+        )
+        self.assertEqual(fu.load_first_use_progress(self.base)['steps'], base)
+
+    def test_permission_error_is_not_called_corrupt_and_retries(self):
+        first = self.base / fu.PROGRESS_FILENAME
+        first.parent.mkdir(parents=True, exist_ok=True)
+        first.write_text(json.dumps({'schema': fu.SCHEMA, 'steps': {}}), encoding='utf-8')
+        with mock.patch.object(fu, '_read_bytes_with_retry', side_effect=PermissionError(13, 'ocupado')):
+            loaded = fu.load_first_use_progress(self.base)
+        self.assertEqual(loaded['path'], self.base / 'primeiro-uso-progresso-2.json')
+        self.assertTrue(any('não pôde ser lido' in w for w in loaded['warnings']))
+        self.assertFalse(any('estragado' in w for w in loaded['warnings']))
+
+    def test_deep_json_recursion_error_is_untouched_and_advances_to_2(self):
+        first = self.base / fu.PROGRESS_FILENAME
+        first.parent.mkdir(parents=True, exist_ok=True)
+        payload = ('[' * 50000).encode('utf-8')
+        first.write_bytes(payload)
+
+        loaded = fu.load_first_use_progress(self.base)
+        self.assertEqual(loaded['path'], self.base / 'primeiro-uso-progresso-2.json')
+        self.assertEqual(first.read_bytes(), payload)
+        self.assertTrue(any('estragado' in w for w in loaded['warnings']))
+
+    def test_bad_first_and_valid_second_warns_that_second_was_used(self):
+        first = self.base / fu.PROGRESS_FILENAME
+        second = self.base / 'primeiro-uso-progresso-2.json'
+        first.parent.mkdir(parents=True, exist_ok=True)
+        first.write_text('{ quebrado', encoding='utf-8')
+        saved = dict(fu.empty_first_use_steps(), backup=fu.DONE)
+        fu.save_first_use_progress(second, saved)
+
+        loaded = fu.load_first_use_progress(self.base)
+        self.assertEqual(loaded['path'], second)
+        self.assertEqual(loaded['steps'], saved)
+        self.assertEqual(len(loaded['warnings']), 1)
+        self.assertNotIn('começou do zero', loaded['warnings'][0])
+        self.assertIn('primeiro-uso-progresso-2.json', loaded['warnings'][0])
+
+    def test_real_symlink_is_not_followed_and_target_remains_unchanged(self):
+        target = self.tmp / 'alvo-real.json'
+        target_bytes = json.dumps(
+            {'schema': fu.SCHEMA, 'steps': dict(fu.empty_first_use_steps(), diagnostico=fu.DONE)}
+        ).encode('utf-8')
+        target.write_bytes(target_bytes)
+        first = self.base / fu.PROGRESS_FILENAME
+        first.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.symlink(target, first)
+        except OSError as exc:
+            self.skipTest(f'sem permissão de symlink: {exc}')
+
+        loaded = fu.load_first_use_progress(self.base)
+        self.assertEqual(loaded['path'], self.base / 'primeiro-uso-progresso-2.json')
+        self.assertTrue(any('atalho (link)' in w for w in loaded['warnings']))
+        with self.assertRaises(OSError):
+            fu.save_first_use_progress(first, fu.empty_first_use_steps())
+        self.assertEqual(target.read_bytes(), target_bytes)
+
+    def test_exclusive_lock_timeout_becomes_sanitized_error_text(self):
+        path = self.base / fu.PROGRESS_FILENAME
+        with mock.patch.object(
+            fu,
+            'exclusive_lock',
+            side_effect=TimeoutError('trava ocupada: .primeiro-uso-progresso.json.lock'),
+        ):
+            with self.assertRaises(TimeoutError) as ctx:
+                fu.save_first_use_progress(path, fu.empty_first_use_steps())
+        msg = fu.first_use_error_text(ctx.exception)
+        self.assertIn('TimeoutError', msg)
+        self.assertNotIn(str(self.base), msg)
+
+    def test_concurrent_threads_race_with_exclusive_lock_preserves_both(self):
+        path = self.base / fu.PROGRESS_FILENAME
+        base = fu.empty_first_use_steps()
+        fu.save_first_use_progress(path, base)
+
+        a_paused = threading.Event()
+        release_a = threading.Event()
+        real_replace = fu._replace_with_retry
+        thread_a_id = None
+        errors = []
+
+        def paused_replace(partial, dst, sleep=None):
+            if threading.get_ident() == thread_a_id:
+                a_paused.set()
+                if not release_a.wait(5):
+                    raise TimeoutError('A não foi liberada a tempo')
+            return real_replace(partial, dst, sleep=sleep)
+
+        def writer_a():
+            try:
+                fu.save_first_use_progress(
+                    path,
+                    dict(base, diagnostico=fu.DONE),
+                    base_steps=base,
+                )
+            except Exception as exc:  # pragma: no cover - falha do teste
+                errors.append(exc)
+
+        def writer_b():
+            try:
+                fu.save_first_use_progress(
+                    path,
+                    dict(base, explorar=fu.DONE),
+                    base_steps=base,
+                )
+            except Exception as exc:  # pragma: no cover - falha do teste
+                errors.append(exc)
+
+        with mock.patch.object(fu, '_replace_with_retry', side_effect=paused_replace):
+            ta = threading.Thread(target=writer_a)
+            ta.start()
+            thread_a_id = ta.ident
+            self.assertTrue(a_paused.wait(5))
+
+            tb = threading.Thread(target=writer_b)
+            tb.start()
+            time.sleep(0.1)  # B deve aguardar a trava exclusiva sem sobrescrever A
+            release_a.set()
+
+            ta.join(timeout=5)
+            tb.join(timeout=5)
+            self.assertFalse(ta.is_alive())
+            self.assertFalse(tb.is_alive())
+
+        self.assertEqual(errors, [])
+        loaded = fu.load_first_use_progress(self.base)
+        self.assertEqual(loaded['steps']['diagnostico'], fu.DONE)
+        self.assertEqual(loaded['steps']['explorar'], fu.DONE)
+
 
 class FirstUseProgressSaverTests(unittest.TestCase):
     def setUp(self):
@@ -329,18 +518,23 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         self._savers.append(saver)
         return saver
 
+    def test_initial_steps_is_required(self):
+        with self.assertRaises(TypeError):
+            fu.FirstUseProgressSaver(self.path)
+
     def test_latest_request_wins_and_coalesces_intermediate(self):
         release = threading.Event()
         started = threading.Event()
         calls = []
+        wait_results = []
 
         def fake_save(path, steps):
             started.set()
-            self.assertTrue(release.wait(5))
+            wait_results.append(release.wait(5))
             calls.append((path, dict(steps)))
             return steps
 
-        saver = self._make_saver(save=fake_save)
+        saver = self._make_saver(initial_steps=fu.empty_first_use_steps(), save=fake_save)
         first = dict(fu.empty_first_use_steps(), diagnostico=fu.DONE)
         second = dict(first, explorar=fu.SKIPPED)
         third = dict(second, preservacao=fu.DONE)
@@ -353,11 +547,47 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         release.set()
         self.assertTrue(saver.join(5))
 
-        self.assertLessEqual(len(calls), 2)
-        self.assertEqual(calls[-1], (self.path, third))
-        self.assertNotIn(second, [c[1] for c in calls])
+        self.assertEqual(wait_results, [True, True])
+        self.assertEqual([c[1] for c in calls], [first, third])
         self.assertIsNone(saver.pending_steps())
         self.assertIsNone(saver.poll_error())
+
+    def test_real_saver_preserves_other_instance_and_can_revert_to_pending(self):
+        initial = fu.empty_first_use_steps()
+        fu.save_first_use_progress(self.path, initial)
+        saver = self._make_saver(initial_steps=initial)
+
+        # Marca diagnostico=feito pelo gravador real
+        step1 = dict(initial, diagnostico=fu.DONE)
+        saver.request(step1)
+        self.assertTrue(saver.join(5))
+        self.assertIsNone(saver.poll_error())
+
+        # Outra instância grava explorar=feito entre dois pedidos
+        fu.save_first_use_progress(
+            self.path,
+            dict(initial, explorar=fu.DONE),
+            base_steps=initial,
+        )
+
+        # Esta janela volta diagnostico para pendente (feito -> clicar de novo -> pendente)
+        step2 = dict(initial, diagnostico=fu.PENDING)
+        saver.request(step2)
+        self.assertTrue(saver.join(5))
+        self.assertIsNone(saver.poll_error())
+        merged = saver.poll_merged()
+        self.assertEqual(merged['diagnostico'], fu.PENDING)
+        self.assertEqual(merged['explorar'], fu.DONE)
+        self.assertEqual(
+            fu.load_first_use_progress(self.path.parent)['steps'],
+            merged,
+        )
+
+        # Recomeçar marcações: volta todas as etapas (inclusive explorar) para pendente
+        reset = fu.empty_first_use_steps()
+        saver.request(reset)
+        self.assertTrue(saver.join(5))
+        self.assertEqual(fu.load_first_use_progress(self.path.parent)['steps'], reset)
 
     def test_save_error_is_sanitized_and_cleared_on_next_success(self):
         outcomes = [
@@ -371,7 +601,7 @@ class FirstUseProgressSaverTests(unittest.TestCase):
                 raise item
             return fu.save_first_use_progress(path, steps)
 
-        saver = self._make_saver(save=fake_save)
+        saver = self._make_saver(initial_steps=fu.empty_first_use_steps(), save=fake_save)
         saver.request({'diagnostico': fu.DONE})
         self.assertTrue(saver.join(5))
         err = saver.poll_error()
@@ -390,7 +620,8 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         fu.save_first_use_progress(self.path, {'diagnostico': fu.PENDING})
         release = threading.Event()
         saver = self._make_saver(
-            save=lambda p, st: (release.wait(5), fu.save_first_use_progress(p, st))[1]
+            initial_steps=fu.empty_first_use_steps(),
+            save=lambda p, st: (release.wait(5), fu.save_first_use_progress(p, st))[1],
         )
         newer = dict(fu.empty_first_use_steps(), diagnostico=fu.DONE)
         saver.request(newer)
