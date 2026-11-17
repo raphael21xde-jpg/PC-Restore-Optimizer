@@ -73,32 +73,46 @@ def read_first_json(paths, *, schema=None):
     return None
 
 
+# Pastas conhecidas do usuário (e as do OneDrive): o app nunca as exclui da varredura.
+_USER_FOLDER_NAMES = ('Desktop', 'Área de Trabalho', 'Documents', 'Documentos', 'Downloads')
+
+
 def _too_broad(path: Path) -> bool:
-    """Raiz de unidade, a pasta do usuário ou uma pasta acima dela: excluir esconderia dados."""
+    """Raiz de unidade, pasta do usuário, Desktop, Documentos, Downloads ou acima: nunca excluir.
+
+    Na dúvida (não deu para saber a pasta do usuário), também conta como larga demais.
+    """
     if path == Path(path.anchor):
         return True
     try:
         home = Path.home().resolve()
     except (OSError, RuntimeError):
         return True
-    return home == path or path in home.parents
+    known = [home] + [base / name for base in (home, home / 'OneDrive') for name in _USER_FOLDER_NAMES]
+    return any(path == k or path in k.parents for k in known)
 
 
 def program_dirs(*, frozen: bool | None = None, environ=None, source_file=None,
                  executable: str | None = None) -> list[str]:
-    """Pastas do próprio app que a varredura detalhada não lê nem deixa marcar.
+    """Pastas do próprio app que a varredura detalhada não lê nem deixa marcar (R-93).
 
     Pelo Python: só a pasta do código, exatamente como antes. No `.exe`: também a
-    pasta do programa (`sys.executable`) e a pasta de dados (`app_data_dir`).
-    Por segurança, uma pasta larga demais (raiz de unidade, pasta do usuário ou
-    acima dela) nunca é acrescentada, para nada do usuário ficar de fora.
+    pasta de dados do app (`app_data_dir`) e a pasta do programa, mas esta só no
+    layout conhecido do build `--onedir` (o `.exe` fica exatamente na pasta acima
+    de `_internal`, onde está o código). Nunca entra uma pasta larga demais (raiz
+    de unidade, pasta do usuário, Desktop, Documentos, Downloads ou acima delas).
+    Na dúvida, não exclui: assim nada do usuário fica de fora da varredura.
     """
     is_frozen = bool(getattr(sys, 'frozen', False)) if frozen is None else bool(frozen)
-    dirs = [Path(source_file or __file__).resolve().parent]
+    source_dir = Path(source_file or __file__).resolve().parent
+    dirs = [source_dir]
     if is_frozen:
         exe = sys.executable if executable is None else executable
-        extra = [Path(exe).resolve().parent,
-                 app_data_dir(frozen=True, environ=environ, source_file=source_file).resolve()]
+        exe_dir = Path(exe).resolve().parent
+        extra = []
+        if source_dir.name.lower() == '_internal' and exe_dir == source_dir.parent:
+            extra.append(exe_dir)
+        extra.append(app_data_dir(frozen=True, environ=environ, source_file=source_file).resolve())
         dirs += [d for d in extra if not _too_broad(d)]
     return list(dict.fromkeys(str(d) for d in dirs))
 

@@ -27,9 +27,8 @@ GIB = 1024 ** 3
 CRASH_EXIT = 86
 # FIX-P4-03-01 (fatia 2): no .exe, `sys.executable` é o próprio programa; reabri-lo
 # com `--child` abriria outra janela do app em vez do teste. Por isso, recusa.
-FROZEN_REFUSAL = ('Este autoteste só funciona quando o app é aberto pelo Python. '
-                  'No programa instalado (.exe) ele não está disponível; nada foi testado '
-                  'e nada foi aprovado.')
+FROZEN_REFUSAL = ('Este autoteste é só para quem desenvolve o app e não está disponível '
+                  'no programa instalado (.exe); nada foi testado e nada foi aprovado.')
 
 
 def refuse_when_frozen():

@@ -7,9 +7,11 @@ arquivos ficam só em TemporaryDirectory.
 import ast
 import builtins
 import json
+import os
 import runpy
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -96,6 +98,64 @@ class ScaleAutotestFrozenTests(unittest.TestCase):
                          [str(Path(autotestes_escala.__file__).resolve()), '--child'])
 
 
+class ScaleAutotestScreenTests(unittest.TestCase):
+    """(a) Pela tela: "Preservação" > "Backup seletivo avançado do C: • v0.6.6" > aba "#31–37"."""
+
+    def test_frozen_buttons_show_refusal_in_operation_not_approved_box(self):
+        try:
+            import tkinter as tk
+            from tkinter import ttk
+        except ImportError as exc:
+            self.skipTest(f'Sem tkinter: {exc}')
+        from tk_helpers import track_tk_root
+        from selective_backup_ui import show_selective_backup
+        try:
+            app = tk.Tk()
+        except tk.TclError as exc:
+            if os.environ.get('PCRO_REQUIRE_TK') == '1':
+                self.fail(f'Tk obrigatório: {exc}')
+            self.skipTest(f'Sem display Tk: {exc}')
+        app.withdraw()
+        track_tk_root(self, app)
+        _simulate_frozen(self)
+
+        def widgets(parent):
+            for child in parent.winfo_children():
+                yield child
+                yield from widgets(child)
+        window = None
+        labels = ('15. Autoteste #35: 2 GiB e pico de memória',
+                  '16. Autoteste #36: encerramento abrupto de subprocesso')
+        try:
+            with patch.object(autotestes_escala.subprocess, 'Popen',
+                              side_effect=AssertionError('nenhum processo no .exe')), \
+                    patch.object(autotestes_escala, 'private_root',
+                                 side_effect=AssertionError('nenhuma pasta no .exe')), \
+                    patch('selective_backup_ui.messagebox.showerror') as errors, \
+                    patch('selective_backup_ui.messagebox.showinfo'):
+                window = show_selective_backup(app, {'requires_verified_backup': []})
+                app.update()
+                tabs = next(w for w in widgets(window) if isinstance(w, ttk.Notebook))
+                names = [tabs.tab(x, 'text') for x in tabs.tabs()]
+                tabs.select(names.index('#31–37'))
+                app.update()
+                buttons = [w for w in widgets(window) if isinstance(w, ttk.Button)]
+                for number, label in enumerate(labels, start=1):
+                    button = next(w for w in buttons if w.cget('text') == label)
+                    button.invoke()
+                    deadline = time.monotonic() + 15
+                    while errors.call_count < number and time.monotonic() < deadline:
+                        app.update()
+                        time.sleep(.01)
+                    self.assertEqual(errors.call_count, number, label)
+                    args = errors.call_args[0]
+                    self.assertEqual(args, ('Operação não aprovada', autotestes_escala.FROZEN_REFUSAL))
+        finally:
+            if window is not None and window.winfo_exists():
+                window.destroy()
+            app.destroy()
+
+
 class DataFileCandidatesTests(unittest.TestCase):
     """(b) O app lê `deteccao-detalhada-v0514.json` da pasta de dados, com o local antigo só para leitura."""
 
@@ -159,28 +219,58 @@ class ProgramDirsTests(unittest.TestCase):
                                               source_file=str(source), executable='python.exe')
             self.assertEqual(dirs, [str(Path(tmp).resolve())])
 
+    def _dirs(self, home, exe_dir, internal=None, local=None):
+        internal = exe_dir / '_internal' if internal is None else internal
+        local = home / 'AppData' / 'Local' if local is None else local
+        with patch.object(choices_store.Path, 'home', return_value=home):
+            return choices_store.program_dirs(frozen=True, environ={'LOCALAPPDATA': str(local)},
+                                              source_file=str(internal / 'deep_discovery_ui.py'),
+                                              executable=str(exe_dir / 'PCRestoreOptimizer.exe'))
+
     def test_frozen_mode_adds_exe_folder_and_data_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp) / 'PCRestoreOptimizer'
-            internal = base / '_internal'
-            local = Path(tmp) / 'local'
-            dirs = choices_store.program_dirs(frozen=True, environ={'LOCALAPPDATA': str(local)},
-                                              source_file=str(internal / 'deep_discovery_ui.py'),
-                                              executable=str(base / 'PCRestoreOptimizer.exe'))
-            self.assertEqual(dirs, [str(internal.resolve()), str(base.resolve()),
-                                    str((local / 'PC-Restore-Optimizer').resolve())])
+            home = Path(tmp).resolve() / 'home'
+            base = home / 'Downloads' / 'PCRestoreOptimizer'
+            dirs = self._dirs(home, base)
+            self.assertEqual(dirs, [str(base / '_internal'), str(base),
+                                    str(home / 'AppData' / 'Local' / 'PC-Restore-Optimizer')])
+
+    def test_frozen_exe_on_desktop_or_downloads_is_never_excluded(self):
+        # R-93: .exe solto direto em home/Desktop ou home/Downloads (com _internal ao lado).
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp).resolve() / 'home'
+            for name in ('Desktop', 'Downloads', 'Documents', 'Documentos', 'Área de Trabalho'):
+                for exe_dir in (home / name, home / 'OneDrive' / name):
+                    dirs = self._dirs(home, exe_dir)
+                    self.assertNotIn(str(exe_dir), dirs, exe_dir)
+                    self.assertIn(str(exe_dir / '_internal'), dirs)
 
     def test_frozen_mode_never_excludes_a_drive_root_or_the_home_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
-            internal = Path(tmp) / 'x' / '_internal'
-            home = Path(tmp) / 'home'
-            for exe_dir in (Path(Path(tmp).anchor), home, home.parent):
-                with patch.object(choices_store.Path, 'home', return_value=home):
-                    dirs = choices_store.program_dirs(frozen=True, environ={'LOCALAPPDATA': str(Path(tmp) / 'l')},
-                                                      source_file=str(internal / 'm.py'),
-                                                      executable=str(exe_dir / 'PCRO.exe'))
-                self.assertNotIn(str(exe_dir.resolve()), dirs, exe_dir)
-                self.assertIn(str(internal.resolve()), dirs)
+            home = Path(tmp).resolve() / 'home'
+            for exe_dir in (Path(Path(tmp).anchor), home, home.parent, home / 'OneDrive'):
+                dirs = self._dirs(home, exe_dir)
+                self.assertNotIn(str(exe_dir), dirs, exe_dir)
+                self.assertIn(str(exe_dir / '_internal'), dirs)
+
+    def test_frozen_exe_outside_known_layout_is_not_excluded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp).resolve() / 'home'
+            exe_dir = home / 'Jogos' / 'PCRO'
+            for internal in (exe_dir / 'outra', home / 'Jogos' / '_internal', exe_dir / 'a' / '_internal'):
+                dirs = self._dirs(home, exe_dir, internal=internal)
+                self.assertNotIn(str(exe_dir), dirs, internal)
+                self.assertEqual(dirs[0], str(internal))
+
+    def test_frozen_data_folder_too_broad_is_not_excluded(self):
+        # Sem LOCALAPPDATA confiável: a pasta de dados nunca vira a pasta do usuário.
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp).resolve() / 'home'
+            base = home / 'Apps' / 'PCRO'
+            with patch.object(choices_store, 'APP_STATE_SUBDIR', 'Downloads'):
+                dirs = self._dirs(home, base, local=home)
+            self.assertNotIn(str(home / 'Downloads'), dirs)
+            self.assertIn(str(base), dirs)
 
     def test_deep_discovery_ui_uses_program_dirs(self):
         source = Path(audit_v069.__file__).with_name('deep_discovery_ui.py').read_text(encoding='utf-8')
