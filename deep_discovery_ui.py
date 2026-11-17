@@ -421,7 +421,8 @@ def show_deep_discovery(parent, container=None):
         status.set('Preparando a varredura somente nas unidades escolhidas…')
         ring.itemconfigure(ring_text, text='Lendo…')
         animate()
-        exclusions = [str(Path(__file__).resolve().parent), parent.dest.get()]
+        # No .exe também a pasta do programa e a de dados do app (FIX-P4-03-01, fatia 2).
+        exclusions = [*choices_store.program_dirs(source_file=__file__), parent.dest.get()]
         parent_catalog = {k: dict(v) for k, v in parent.catalog_items.items()}
 
         def finish(report=None, error=None):
@@ -575,11 +576,11 @@ def show_deep_discovery(parent, container=None):
         for src in paths:
             p = Path(src)
             destination = parent.dest.get()
-            program = str(Path(__file__).resolve().parent)
+            programs = choices_store.program_dirs(source_file=__file__)
             if (not p.exists() or not safe_to_mark(src) or
                     any(is_reparse(a) for a in (p, *p.parents)) or
                     (destination and (beneath(src, destination) or beneath(destination, src))) or
-                    beneath(src, program)):
+                    any(beneath(src, program) for program in programs)):
                 blocked.append(src)
         return blocked
 
