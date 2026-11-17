@@ -25,6 +25,15 @@ from selective_recovery import verify_complete_manifest
 MIB = 1024 ** 2
 GIB = 1024 ** 3
 CRASH_EXIT = 86
+# FIX-P4-03-01 (fatia 2): no .exe, `sys.executable` é o próprio programa; reabri-lo
+# com `--child` abriria outra janela do app em vez do teste. Por isso, recusa.
+FROZEN_REFUSAL = ('Este autoteste é só para quem desenvolve o app e não está disponível '
+                  'no programa instalado (.exe); nada foi testado e nada foi aprovado.')
+
+
+def refuse_when_frozen():
+    if getattr(sys, 'frozen', False):
+        raise RuntimeError(FROZEN_REFUSAL)
 
 
 def check(cancelled):
@@ -189,6 +198,7 @@ def child(root, mode):
 
 
 def launch(root, token, mode, cancelled=None, progress=None, timeout=1800):
+    refuse_when_frozen()
     check(cancelled)
     interpreter = Path(sys.executable)
     if interpreter.name.lower() == 'pythonw.exe':
@@ -230,6 +240,7 @@ def authorize(root):
 
 
 def run_gigabyte_autotest(*, cancelled=None, progress=None):
+    refuse_when_frozen()
     check(cancelled)
     with private_root(35) as name:
         root = Path(name).resolve()
@@ -245,6 +256,7 @@ def run_gigabyte_autotest(*, cancelled=None, progress=None):
 
 
 def run_abrupt_exit_autotest(*, cancelled=None, progress=None):
+    refuse_when_frozen()
     check(cancelled)
     with private_root(36) as name:
         root = Path(name).resolve()
