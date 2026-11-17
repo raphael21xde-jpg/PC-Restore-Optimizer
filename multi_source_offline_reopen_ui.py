@@ -17,7 +17,23 @@ from multi_source_fixture_restore import _inside, _overlaps
 from multi_source_offline_import import reopen_fixture_backup_session
 from multi_source_recovery_center_ui import show_fixture_recovery_center
 from selective_recovery import _any_reparse_ancestor
+from ui_scale import (
+    ESPACO_DENTRO_GRUPO,
+    ESPACO_ENTRE_BOTOES,
+    ESPACO_M,
+    ESPACO_P,
+    FONTE_UI,
+    PADDING_DIALOGO,
+    TAMANHO_TITULO_MODAL,
+    safe_window_geometry,
+    safe_wraplength,
+)
 from ui_timers import WindowTimers
+
+DESIRED_WIDTH = 880
+DESIRED_HEIGHT = 540
+MIN_WIDTH = 660
+MIN_HEIGHT = 420
 
 
 def show_fixture_offline_reopen(parent, *, test_root, restore_parent,
@@ -51,36 +67,54 @@ def show_fixture_offline_reopen(parent, *, test_root, restore_parent,
 
     dlg = tk.Toplevel(parent)
     dlg.title('PC Restore & Optimizer — Reabrir backups (SOMENTE TESTES)')
-    dlg.geometry('880x540')
-    dlg.minsize(660, 420)
+    dlg.geometry(safe_window_geometry(
+        DESIRED_WIDTH,
+        DESIRED_HEIGHT,
+        dlg.winfo_screenwidth(),
+        dlg.winfo_screenheight(),
+        min_w=MIN_WIDTH,
+        min_h=MIN_HEIGHT,
+    ))
+    dlg.minsize(MIN_WIDTH, MIN_HEIGHT)
     timers = WindowTimers(dlg)
     pending = Queue()
     cancelled = threading.Event()
     state = {'busy': False, 'closing': False, 'paths': validated,
              'child': None}
 
-    frame = ttk.Frame(dlg, padding=15)
+    frame = ttk.Frame(dlg, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='Reabrir cópias após reinstalação — demonstração',
-              font=('Segoe UI', 13, 'bold')).pack(anchor='w')
-    ttk.Label(
+              font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold')).pack(anchor='w')
+    intro_label = ttk.Label(
         frame,
         text=('Escolha as pastas que CONTÊM um backup-... cada. '
               'Somente diretórios fictícios da raiz de testes são aceitos. '
               'Não é necessário ter o inventário ou arquivos originais.'),
         wraplength=820,
-    ).pack(anchor='w', pady=(7, 8))
+    )
+    intro_label.pack(anchor='w', pady=ESPACO_P)
     status = tk.StringVar(master=dlg, value='Nenhuma cópia aberta ou verificada.')
-    ttk.Label(frame, textvariable=status, wraplength=820).pack(
-        fill='x', pady=(0, 9))
+    status_label = ttk.Label(frame, textvariable=status, wraplength=820)
+    status_label.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
+
+    def _update_wrap(event):
+        if event.widget is frame and event.width > 1:
+            wrap = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            intro_label.configure(wraplength=wrap)
+            status_label.configure(wraplength=wrap)
+
+    frame.bind('<Configure>', _update_wrap)
 
     entry_row = ttk.Frame(frame)
     entry_row.pack(fill='x')
     ttk.Label(entry_row, text='Pasta de backup de teste:').pack(
-        side='left', padx=(0, 6))
+        side='left', padx=ESPACO_ENTRE_BOTOES)
     path_text = tk.StringVar(master=dlg)
     location = ttk.Entry(entry_row, textvariable=path_text)
     location.pack(side='left', fill='x', expand=True)
+    buttons = ttk.Frame(frame)
+    buttons.pack(side='bottom', fill='x')
     listview = ttk.Treeview(
         frame, columns=('index',), show='tree headings',
         height=9, selectmode='browse')
@@ -88,7 +122,7 @@ def show_fixture_offline_reopen(parent, *, test_root, restore_parent,
     listview.heading('index', text='Ordem')
     listview.column('#0', width=720)
     listview.column('index', width=70, anchor='center', stretch=False)
-    listview.pack(fill='both', expand=True, pady=(12, 10))
+    listview.pack(fill='both', expand=True, pady=(ESPACO_M, ESPACO_P))
 
     def refresh():
         for item in listview.get_children(''):
@@ -177,16 +211,14 @@ def show_fixture_offline_reopen(parent, *, test_root, restore_parent,
 
     add_btn = ttk.Button(entry_row, text='Adicionar',
                          command=lambda: add_path(path_text.get()))
-    add_btn.pack(side='left', padx=(7, 3))
+    add_btn.pack(side='left', padx=ESPACO_P)
     browse_btn = ttk.Button(entry_row, text='Escolher pasta…', command=browse)
     browse_btn.pack(side='left')
-    buttons = ttk.Frame(frame)
-    buttons.pack(fill='x')
     remove_btn = ttk.Button(buttons, text='Remover pasta', command=remove)
     remove_btn.pack(side='left')
     open_btn = ttk.Button(buttons, text='Reabrir backups de teste',
                           command=reopen, state='disabled')
-    open_btn.pack(side='left', padx=10)
+    open_btn.pack(side='left', padx=(ESPACO_P, 0))
     ttk.Button(buttons, text='Cancelar / Fechar', command=close).pack(
         side='right')
 
