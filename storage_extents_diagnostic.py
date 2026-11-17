@@ -11,7 +11,7 @@ import os
 import re
 import subprocess
 
-from child_process import extents_command
+from child_process import EMPTY_CHILD_ERROR, extents_command
 from volume_inventory import collect_volume_inventory, normalize_volume_id
 
 LETTER_ROOT = re.compile(r'^[A-Za-z]:\\$')
@@ -125,7 +125,8 @@ def collect_extent_mapping(disks, *, snapshot=None, runner=subprocess.run, timeo
             check=False,
         )
         if run.returncode:
-            raise RuntimeError('Consulta retornou erro: ' + str(run.stderr)[-180:])
+            detail = str(run.stderr or '').strip()
+            raise RuntimeError(('Consulta retornou erro: ' + detail[-180:]) if detail else EMPTY_CHILD_ERROR)
         raw = json.loads(run.stdout)
         if not isinstance(raw, list):
             raise ValueError('Formato inesperado de resposta das extensões.')

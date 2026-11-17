@@ -42,6 +42,66 @@ def app_data_dir(*, frozen: bool | None = None, environ=None, source_file=None) 
         return Path(local) / APP_STATE_SUBDIR
     return Path.home() / 'AppData' / 'Local' / APP_STATE_SUBDIR
 
+
+def data_file_candidates(name, *, frozen: bool | None = None, environ=None, source_file=None) -> list[Path]:
+    """Onde procurar um arquivo de dados do app, na ordem de leitura (FIX-P4-03-01, fatia 2).
+
+    Primeiro a pasta de dados (`app_data_dir`); no `.exe`, depois o local antigo
+    (pasta do programa), só para LER um arquivo que já exista lá. Nada é movido
+    nem apagado. Pelo Python as duas pastas são a mesma e a lista tem um item.
+    """
+    source_dir = Path(source_file or __file__).resolve().parent
+    found = [app_data_dir(frozen=frozen, environ=environ, source_file=source_file) / name]
+    old = source_dir / name
+    if old not in found:
+        found.append(old)
+    return found
+
+
+def read_first_json(paths, *, schema=None):
+    """Devolve o primeiro JSON (objeto) legível da lista; arquivo ausente ou inválido é pulado.
+
+    Com `schema`, um objeto com outro `schema` também é pulado. Só lê: nada é gravado.
+    """
+    for path in paths:
+        try:
+            data = json.loads(Path(path).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and (schema is None or data.get('schema') == schema):
+            return data
+    return None
+
+
+def _too_broad(path: Path) -> bool:
+    """Raiz de unidade, a pasta do usuário ou uma pasta acima dela: excluir esconderia dados."""
+    if path == Path(path.anchor):
+        return True
+    try:
+        home = Path.home().resolve()
+    except (OSError, RuntimeError):
+        return True
+    return home == path or path in home.parents
+
+
+def program_dirs(*, frozen: bool | None = None, environ=None, source_file=None,
+                 executable: str | None = None) -> list[str]:
+    """Pastas do próprio app que a varredura detalhada não lê nem deixa marcar.
+
+    Pelo Python: só a pasta do código, exatamente como antes. No `.exe`: também a
+    pasta do programa (`sys.executable`) e a pasta de dados (`app_data_dir`).
+    Por segurança, uma pasta larga demais (raiz de unidade, pasta do usuário ou
+    acima dela) nunca é acrescentada, para nada do usuário ficar de fora.
+    """
+    is_frozen = bool(getattr(sys, 'frozen', False)) if frozen is None else bool(frozen)
+    dirs = [Path(source_file or __file__).resolve().parent]
+    if is_frozen:
+        exe = sys.executable if executable is None else executable
+        extra = [Path(exe).resolve().parent,
+                 app_data_dir(frozen=True, environ=environ, source_file=source_file).resolve()]
+        dirs += [d for d in extra if not _too_broad(d)]
+    return list(dict.fromkeys(str(d) for d in dirs))
+
 # Mapas de decisão: em conflito vence a opção mais segura (nada deixa de ser
 # preservado sem revisão). Ausente (removido) nunca vence um valor.
 DECISION_MAPS = ('choices', 'catalog_choices')

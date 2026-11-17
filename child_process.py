@@ -10,6 +10,9 @@ import sys
 from pathlib import Path
 
 EXTENTS_FLAG = '--pcro-volume-extents'
+# Texto quando o filho falha sem mensagem (FIX-P4-03-01, fatia 2): nunca "seguro".
+EMPTY_CHILD_ERROR = ('Não foi possível consultar em que disco está cada volume; '
+                     'trate como não confirmado.')
 
 
 def extents_command(*, frozen: bool | None = None, executable: str | None = None,

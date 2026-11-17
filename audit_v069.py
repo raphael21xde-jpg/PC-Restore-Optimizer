@@ -6,7 +6,7 @@ import ntpath
 import os
 import subprocess
 
-from child_process import extents_command
+from child_process import EMPTY_CHILD_ERROR, extents_command
 from audit_v068 import collect_disk_evidence_068, classify_boot_068, enhance_report_068
 from completeness_audit_v067 import _within
 
@@ -105,10 +105,12 @@ def collect_disk_evidence_069():
     try:
         result = subprocess.run(extents_command(),
                                 input=json.dumps(evidence['data'].get('legacy_volumes', [])),
-                                capture_output=True, text=True, encoding='utf-8', timeout=25,
+                                capture_output=True, text=True, encoding='utf-8', errors='replace',
+                                timeout=25,
                                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode:
-            raise ValueError('Consulta de volumes não concluída: ' + result.stderr[:200])
+            detail = str(result.stderr or '').strip()
+            raise ValueError(('Consulta de volumes não concluída: ' + detail[:200]) if detail else EMPTY_CHILD_ERROR)
         mappings = json.loads(result.stdout)
         if not isinstance(mappings, list):
             raise ValueError('Resposta de volumes inválida.')
