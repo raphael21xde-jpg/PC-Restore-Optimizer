@@ -18,8 +18,25 @@ from multi_source_fixture_restore import (
 )
 from multi_source_recovery_center import inspect_fixture_recovery
 from selective_recovery import _any_reparse_ancestor
+from ui_scale import (
+    ESPACO_ENTRE_BOTOES,
+    ESPACO_M,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    FONTE_UI,
+    PADDING_DIALOGO,
+    TAMANHO_CORPO,
+    TAMANHO_SUBTITULO,
+    TAMANHO_TITULO_MODAL,
+    safe_window_geometry,
+    safe_wraplength,
+)
 from ui_timers import WindowTimers
 
+DESIRED_WIDTH = 1050
+DESIRED_HEIGHT = 710
+MIN_WIDTH = 750
+MIN_HEIGHT = 510
 PAGE_SIZE = 200
 
 LABELS = {
@@ -46,8 +63,15 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
 
     dlg = tk.Toplevel(parent)
     dlg.title('PC Restore & Optimizer — Central multidisco (SOMENTE TESTES)')
-    dlg.geometry('1050x710')
-    dlg.minsize(750, 510)
+    dlg.geometry(safe_window_geometry(
+        DESIRED_WIDTH,
+        DESIRED_HEIGHT,
+        dlg.winfo_screenwidth() or 0,
+        dlg.winfo_screenheight() or 0,
+        min_w=MIN_WIDTH,
+        min_h=MIN_HEIGHT,
+    ))
+    dlg.minsize(MIN_WIDTH, MIN_HEIGHT)
     timers = WindowTimers(dlg)
     pending = Queue()
     cancelled = threading.Event()
@@ -57,26 +81,35 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
         'files': [], 'shown': [],
     }
 
-    body = ttk.Frame(dlg, padding=14)
+    body = ttk.Frame(dlg, padding=PADDING_DIALOGO)
     body.pack(fill='both', expand=True)
     ttk.Label(
         body, text='Central de recuperação multidisco · ambiente de testes',
-        font=('Segoe UI', 14, 'bold'),
+        font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold'),
     ).pack(anchor='w')
-    ttk.Label(
+    intro_label = ttk.Label(
         body, text=('Somente pastas fictícias da raiz isolada. Nenhuma formatação, '
                     'limpeza, recuperação no local original ou acesso à nuvem.'),
         wraplength=980,
-    ).pack(anchor='w', pady=(5, 8))
+    )
+    intro_label.pack(anchor='w', pady=(ESPACO_MINIMO, ESPACO_P))
     status = tk.StringVar(
         master=dlg,
         value='Nenhuma verificação executada. Selecione Verificar cópias.',
     )
-    ttk.Label(body, textvariable=status, wraplength=980).pack(
-        fill='x', pady=(0, 8))
+    status_label = ttk.Label(body, textvariable=status, wraplength=980)
+    status_label.pack(fill='x', pady=(0, ESPACO_M))
 
-    ttk.Label(body, text='Cópias disponíveis', font=('Segoe UI', 11, 'bold')
-              ).pack(anchor='w')
+    def _update_wrap(event):
+        if event.widget is body and event.width > 1:
+            wrap = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            intro_label.configure(wraplength=wrap)
+            status_label.configure(wraplength=wrap)
+
+    body.bind('<Configure>', _update_wrap)
+
+    ttk.Label(body, text='Cópias disponíveis', font=(FONTE_UI, TAMANHO_SUBTITULO, 'bold')
+              ).pack(anchor='w', pady=(0, ESPACO_MINIMO))
     copies = ttk.Treeview(
         body, columns=('state', 'files'), show='tree headings', height=5)
     copies.heading('#0', text='Pasta de teste')
@@ -85,7 +118,7 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
     copies.column('#0', width=560)
     copies.column('state', width=250)
     copies.column('files', width=150, anchor='e')
-    copies.pack(fill='x', pady=(3, 10))
+    copies.pack(fill='x', pady=(0, ESPACO_M))
     rows = copies_report.get('destinations', []) if isinstance(copies_report, dict) else []
     for i, row in enumerate(rows, 1):
         name = str(row.get('path', '(sem caminho)')) if isinstance(row, dict) else '(registro inválido)'
@@ -93,10 +126,10 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
                       values=('Aguardando verificação', '—'))
 
     header = ttk.Frame(body)
-    header.pack(fill='x')
-    ttk.Label(header, text='Arquivos selecionáveis', font=('Segoe UI', 11, 'bold')
+    header.pack(fill='x', pady=(0, ESPACO_MINIMO))
+    ttk.Label(header, text='Arquivos selecionáveis', font=(FONTE_UI, TAMANHO_SUBTITULO, 'bold')
               ).pack(side='left')
-    ttk.Label(header, text='Pesquisar:').pack(side='left', padx=(14, 5))
+    ttk.Label(header, text='Pesquisar:').pack(side='left', padx=(ESPACO_M, ESPACO_MINIMO))
     query = tk.StringVar(master=dlg)
     search = ttk.Entry(header, textvariable=query)
     search.pack(side='left', fill='x', expand=True)
@@ -110,12 +143,14 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
     files_view.column('#0', width=690)
     files_view.column('chosen', width=105, anchor='center', stretch=False)
     files_view.column('bytes', width=140, anchor='e', stretch=False)
-    files_view.pack(fill='both', expand=True, pady=5)
 
     chosen_status = tk.StringVar(master=dlg, value='Nenhum arquivo selecionado.')
-    ttk.Label(body, textvariable=chosen_status).pack(anchor='w')
-    ttk.Label(body, text='Resultado da última recuperação verificada',
-              font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(6, 0))
+    chosen_status_label = ttk.Label(body, textvariable=chosen_status)
+    restored_label = ttk.Label(
+        body,
+        text='Resultado da última recuperação verificada',
+        font=(FONTE_UI, TAMANHO_CORPO, 'bold'),
+    )
     restored_view = ttk.Treeview(
         body, columns=('verification', 'copy'), show='tree headings', height=4)
     restored_view.heading('#0', text='Arquivo restaurado')
@@ -124,9 +159,13 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
     restored_view.column('#0', width=650)
     restored_view.column('verification', width=190)
     restored_view.column('copy', width=140, anchor='center')
-    restored_view.pack(fill='x', pady=(3, 5))
     actions = ttk.Frame(body)
-    actions.pack(fill='x', pady=(8, 0))
+
+    actions.pack(side='bottom', fill='x', pady=(ESPACO_P, 0))
+    restored_view.pack(side='bottom', fill='x', pady=(ESPACO_MINIMO, ESPACO_P))
+    restored_label.pack(side='bottom', anchor='w', pady=(ESPACO_P, 0))
+    chosen_status_label.pack(side='bottom', anchor='w')
+    files_view.pack(fill='both', expand=True, pady=(0, ESPACO_P))
 
     def update_restore_button():
         permitted = (not state['busy'] and state['inspection'] is not None
@@ -233,10 +272,10 @@ def show_fixture_recovery_center(parent, plan, copies_report, *,
 
     verify_btn = ttk.Button(actions, text='Verificar cópias (SHA-256)',
                             command=verify)
-    verify_btn.pack(side='left', padx=(0, 8))
+    verify_btn.pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     toggle_btn = ttk.Button(actions, text='Marcar/desmarcar arquivo',
                             command=toggle_selected)
-    toggle_btn.pack(side='left', padx=(0, 8))
+    toggle_btn.pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     restore_btn = ttk.Button(actions, text='Restaurar selecionados (TESTE)',
                              command=restore, state='disabled')
     restore_btn.pack(side='left')
