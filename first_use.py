@@ -69,9 +69,13 @@ def FIRST_USE_INTRO_TEXT(drive: str | None = None) -> str:
     return (
         'Bem-vindo ao PC Restore & Optimizer. Este guia mostra a ordem recomendada '
         'para usar o aplicativo com segurança, passo a passo.\n\n'
-        'O guia só orienta e abre cada tela para você: nenhuma cópia, restauração ou '
-        'leitura de discos começa sozinha ao clicar em "Abrir". O app não apaga '
-        f'nenhum arquivo; lembre-se de que o que não for copiado do {d} não entra no '
+        'O guia orienta e abre cada tela para você (nenhuma cópia, restauração ou '
+        'leitura de discos começa sozinha ao clicar em "Abrir"); ele guarda apenas '
+        f'as suas marcações (Feito/Pulado) no arquivo {PROGRESS_FILENAME} na pasta de '
+        'dados do app. O app não apaga nenhum arquivo: grava a cópia no destino de '
+        'backup que você escolher e, na restauração, nas pastas que você indicar '
+        '(um arquivo que já existia é renomeado para .antes-pcro-AAAAMMDD, nunca '
+        f'apagado); lembre-se de que o que não for copiado do {d} não entra no '
         f'backup e se perde quando o instalador formatar o {d}.'
     )
 
@@ -86,10 +90,10 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
             'text': (
                 'Veja na tela "Diagnóstico" quais discos existem no seu PC e qual é o '
                 'disco do Windows. O backup precisará ir para outro disco físico, que '
-                'não será formatado. O app não apaga nenhum arquivo e, nessa tela, só '
-                'salva um relatório se você clicar em "Exportar relatório JSON" (na '
-                f'pasta que você escolher); o que não for copiado do {d} não entra no '
-                f'backup e se perde quando o instalador formatar o {d}.'
+                'não será formatado. O app não apaga nenhum arquivo e, nessa tela, '
+                'grava um relatório apenas se você clicar em "Exportar relatório JSON" '
+                f'(na pasta que você escolher); o que não for copiado do {d} não entra '
+                f'no backup e se perde quando o instalador formatar o {d}.'
             ),
             'page': 'diagnostic',
         },
@@ -99,10 +103,12 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
             'text': (
                 'Na tela "Meu computador", examine as unidades desejadas e marque jogos, '
                 'aplicativos e pastas como "Manter selecionados" ou "Não preservar" '
-                '(o app não apaga nenhum arquivo, mas o que não for copiado do '
-                f'{d} não entra no backup e se perde quando o instalador formatar o {d}). '
-                'Para adicionar pastas avulsas ou criar o cofre do navegador, use '
-                '"Seleção avançada".'
+                '(o app não apaga nenhum arquivo: grava a cópia no destino de backup '
+                'que você escolher e, na restauração, nas pastas que você indicar, '
+                'onde um arquivo que já existia é renomeado para .antes-pcro-AAAAMMDD, '
+                f'nunca apagado; o que não for copiado do {d} não entra no backup e se '
+                f'perde quando o instalador formatar o {d}). Para adicionar pastas '
+                'avulsas ou criar o cofre do navegador, use "Seleção avançada".'
             ),
             'page': 'home',
         },
@@ -285,14 +291,28 @@ def load_first_use_progress(base=None, *, environ=None) -> dict:
     return {'steps': empty_first_use_steps(), 'path': None, 'warnings': warnings}
 
 
+class FirstUseBadProgressFileError(OSError):
+    """Erro ao gravar sobre arquivo de progresso ruim ou especial (R-07)."""
+
+    def __init__(self, filename: str, message: str) -> None:
+        super().__init__(message)
+        self.filename = filename
+
+
 def first_use_error_text(exc: BaseException) -> str:
     """Aviso fixo de falha ao salvar o progresso (sem caminho completo, R-07)."""
-    detail = type(exc).__name__
+    name = ''
     filename = getattr(exc, 'filename', None)
     if filename:
         name = ntpath.basename(str(filename).replace('/', '\\'))
-        if name:
-            detail = f'{name}, {detail}'
+    if isinstance(exc, FirstUseBadProgressFileError):
+        target = f' "{name}"' if name else ''
+        return (
+            f'Não deu para salvar o progresso: o arquivo de progresso{target} não é '
+            'um arquivo comum ou não pôde ser lido; ele foi deixado como está. As '
+            'marcações valem só até fechar a janela.'
+        )
+    detail = f'{name}, {type(exc).__name__}' if name else type(exc).__name__
     return (
         f'Não deu para salvar o progresso ({detail}). As marcações valem só até '
         'fechar a janela.'
@@ -338,8 +358,10 @@ def save_first_use_progress(
     """
     if not isinstance(steps, dict):
         raise ValueError('Progresso inválido.')
+    if not reset and base_steps is None:
+        raise ValueError('base_steps é obrigatório quando reset=False.')
     explicit_keys = set(steps.keys())
-    clean = empty_first_use_steps() if reset else validate_first_use_steps(steps)
+    clean = validate_first_use_steps(steps)
     base_clean = (
         validate_first_use_steps(base_steps) if base_steps is not None else None
     )
@@ -348,20 +370,16 @@ def save_first_use_progress(
     with exclusive_lock(path):
         kind, disk_value = _read_candidate(path)
         if kind == 'ruim':
-            raise OSError(
+            raise FirstUseBadProgressFileError(
+                path.name,
                 f'O arquivo de progresso "{path.name}" não é um arquivo comum ou '
-                f'não pôde ser lido ({disk_value}); nada foi gravado.'
+                f'não pôde ser lido ({disk_value}); nada foi gravado.',
             )
         if kind == 'ok' and not reset:
+            assert base_clean is not None
             merged = dict(disk_value)
             for key in STEP_IDS:
-                if base_clean is not None:
-                    if key in explicit_keys and clean[key] != base_clean[key]:
-                        merged[key] = clean[key]
-                elif len(explicit_keys) < len(STEP_IDS):
-                    if key in explicit_keys:
-                        merged[key] = clean[key]
-                else:
+                if key in explicit_keys and clean[key] != base_clean[key]:
                     merged[key] = clean[key]
             clean = merged
         doc = {'schema': SCHEMA, 'steps': clean}
@@ -395,7 +413,7 @@ class FirstUseProgressSaver:
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
         self._wanted: tuple[dict[str, str], bool] | None = None
-        self._writing: dict[str, str] | None = None
+        self._writing: tuple[dict[str, str], bool] | None = None
         self._merged: dict[str, str] | None = None
         self._error: str | None = None
         self._thread: threading.Thread | None = None
@@ -409,7 +427,10 @@ class FirstUseProgressSaver:
         with self._lock:
             if self.closed or self.path is None:
                 return
-            self._wanted = (copy, bool(reset))
+            self._wanted = (
+                copy,
+                bool(reset) or (self._wanted is not None and self._wanted[1]),
+            )
             if self._thread is None:
                 self._thread = threading.Thread(
                     target=self._run,
@@ -430,14 +451,11 @@ class FirstUseProgressSaver:
                     return
                 steps, reset = wanted
                 self._wanted = None
-                self._writing = steps
+                self._writing = (steps, reset)
             merged: dict[str, str] | None = None
             try:
                 if self._save is not None:
-                    if reset:
-                        result = self._save(self.path, steps, reset=True)
-                    else:
-                        result = self._save(self.path, steps)
+                    result = self._save(self.path, steps, base_steps=base, reset=reset)
                     raw_merged = result if isinstance(result, dict) else steps
                     merged = validate_first_use_steps(raw_merged)
                 else:
@@ -470,8 +488,17 @@ class FirstUseProgressSaver:
             if self._wanted is not None:
                 return dict(self._wanted[0])
             if self._writing is not None:
-                return dict(self._writing)
+                return dict(self._writing[0])
             return None
+
+    def pending_is_reset(self) -> bool:
+        """Indica se a marcação pendente atual pede para recomeçar (`reset=True`)."""
+        with self._lock:
+            if self._wanted is not None:
+                return bool(self._wanted[1])
+            if self._writing is not None:
+                return bool(self._writing[1])
+            return False
 
     def busy(self) -> bool:
         """`True` enquanto há pedido esperando ou gravação em andamento."""
@@ -504,7 +531,19 @@ def load_first_use_with_pending(
     """Lê o progresso preferindo marcações pendentes no `saver` antes do disco."""
     load_fn = load_first_use_progress if load is None else load
     pending = saver.pending_steps() if saver is not None else None
+    pending_reset = (
+        saver.pending_is_reset()
+        if saver is not None and hasattr(saver, 'pending_is_reset')
+        else False
+    )
     progress = load_fn(base)
     if pending is not None:
-        progress = dict(progress, steps=pending)
+        validated = validate_first_use_steps(pending)
+        if pending_reset:
+            steps = validated
+        else:
+            steps = dict(progress['steps'])
+            for key in pending:
+                steps[key] = validated[key]
+        progress = dict(progress, steps=steps)
     return progress
