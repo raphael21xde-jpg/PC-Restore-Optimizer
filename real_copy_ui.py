@@ -34,8 +34,31 @@ import real_copy_flow as rcf
 from multi_source_plan import prepare_multi_source_preview
 from multi_source_targets import preview_multi_source_targets
 from restore_jobs import Job
+from ui_scale import (
+    COR_BORDA,
+    COR_PAINEL,
+    COR_SELECAO,
+    COR_TEXTO,
+    ESPACO_ENTRE_BOTOES,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    ESPACO_ROTULO_CAMPO,
+    FONTE_MONO,
+    FONTE_UI,
+    PADDING_CAIXA_TEXTO,
+    PADDING_DIALOGO,
+    TAMANHO_CORPO,
+    TAMANHO_TITULO_MODAL,
+    safe_window_geometry,
+    safe_wraplength,
+)
 from ui_timers import WindowTimers
 from volume_paths import volume_of
+
+DESIRED_WIDTH = 900
+DESIRED_HEIGHT = 640
+MIN_WIDTH = 680
+MIN_HEIGHT = 460
 
 TITLE = 'Cópia protegida para outro disco'
 INTRO_TEXT = (
@@ -111,8 +134,15 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
     dlg = tk.Toplevel(app)
     app.real_copy_dialog = dlg
     dlg.title(TITLE)
-    dlg.geometry('900x640')
-    dlg.minsize(680, 460)
+    dlg.geometry(safe_window_geometry(
+        DESIRED_WIDTH,
+        DESIRED_HEIGHT,
+        dlg.winfo_screenwidth(),
+        dlg.winfo_screenheight(),
+        min_w=MIN_WIDTH,
+        min_h=MIN_HEIGHT,
+    ))
+    dlg.minsize(MIN_WIDTH, MIN_HEIGHT)
     timers = WindowTimers(dlg)
     dlg.real_copy_timers = timers
     # stopping: a pessoa clicou em "Cancelar" depois que a etapa começou.
@@ -120,27 +150,82 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
              'stopping': False, 'elevated': elevated}
     dlg.real_copy_state = state
 
-    frame = ttk.Frame(dlg, padding=14)
+    frame = ttk.Frame(dlg, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
-    ttk.Label(frame, text=TITLE, font=('Segoe UI', 12, 'bold')).pack(anchor='w')
-    ttk.Label(frame, wraplength=850, text=INTRO_TEXT).pack(anchor='w', pady=(4, 8))
+    ttk.Label(
+        frame,
+        text=TITLE,
+        font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold'),
+    ).pack(anchor='w')
+    intro_label = ttk.Label(frame, wraplength=850, text=INTRO_TEXT)
+    intro_label.pack(anchor='w', pady=(ESPACO_MINIMO, ESPACO_P))
+    admin_label = None
     if elevated:
-        ttk.Label(frame, wraplength=850, text=ADMIN_TEXT, justify='left',
-                  font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 6))
+        admin_label = ttk.Label(
+            frame,
+            wraplength=850,
+            text=ADMIN_TEXT,
+            justify='left',
+            font=(FONTE_UI, TAMANHO_CORPO, 'bold'),
+        )
+        admin_label.pack(anchor='w', pady=(0, ESPACO_P))
 
     choices = tk.StringVar(master=dlg, value='')
     dlg.real_copy_choices = choices
-    ttk.Label(frame, textvariable=choices, wraplength=850,
-              justify='left').pack(fill='x', pady=(0, 4))
+    choices_label = ttk.Label(
+        frame,
+        textvariable=choices,
+        wraplength=850,
+        justify='left',
+    )
+    choices_label.pack(fill='x', pady=ESPACO_ROTULO_CAMPO)
     idle_text = MSG_ADMIN_DESLIGADO if elevated else MSG_ESCOLHA
     status = tk.StringVar(master=dlg, value=idle_text)
     dlg.real_copy_status = status
-    ttk.Label(frame, textvariable=status, wraplength=850, justify='left',
-              font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(0, 6))
+    status_label = ttk.Label(
+        frame,
+        textvariable=status,
+        wraplength=850,
+        justify='left',
+        font=(FONTE_UI, TAMANHO_CORPO, 'bold'),
+    )
+    status_label.pack(fill='x', pady=(0, ESPACO_P))
+
+    def _update_wrap(event):
+        if event.widget is frame and event.width > 1:
+            wrap = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            intro_label.configure(wraplength=wrap)
+            if admin_label is not None:
+                admin_label.configure(wraplength=wrap)
+            choices_label.configure(wraplength=wrap)
+            status_label.configure(wraplength=wrap)
+
+    frame.bind('<Configure>', _update_wrap)
+
+    actions = ttk.Frame(frame)
+    actions.pack(side='bottom', fill='x', pady=(ESPACO_P, 0))
+    tools = ttk.Frame(frame)
+    tools.pack(side='bottom', fill='x', pady=(ESPACO_P, 0))
 
     box = ttk.Frame(frame)
     box.pack(fill='both', expand=True)
-    text = tk.Text(box, wrap='word', height=16, state='disabled')
+    text = tk.Text(
+        box,
+        wrap='word',
+        height=16,
+        state='disabled',
+        bg=COR_PAINEL,
+        fg=COR_TEXTO,
+        insertbackground=COR_TEXTO,
+        selectbackground=COR_SELECAO,
+        selectforeground=COR_TEXTO,
+        relief='flat',
+        highlightthickness=1,
+        highlightbackground=COR_BORDA,
+        padx=PADDING_CAIXA_TEXTO[0],
+        pady=PADDING_CAIXA_TEXTO[1],
+        font=(FONTE_MONO, TAMANHO_CORPO),
+    )
     bar = ttk.Scrollbar(box, orient='vertical', command=text.yview)
     text.configure(yscrollcommand=bar.set)
     text.pack(side='left', fill='both', expand=True)
@@ -387,10 +472,6 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
         status.set(rcf.cancel_text(flow))
         update_buttons()
 
-    tools = ttk.Frame(frame)
-    tools.pack(fill='x', pady=(8, 0))
-    actions = ttk.Frame(frame)
-    actions.pack(fill='x', pady=(6, 0))
     commands = {
         'Adicionar origem': lambda: add('sources', 'Pasta de origem (só será lida)'),
         'Adicionar destino': lambda: add('targets', 'Pasta de destino (em outro disco)'),
@@ -407,7 +488,7 @@ def show_real_copy(app, *, collector=None, ask_folder=None, volume_lookup=None,
         parent = tools if name in ('Adicionar origem', 'Adicionar destino',
                                    'Limpar escolhas') else actions
         button = ttk.Button(parent, text=name, command=commands[name])
-        button.pack(side='left', padx=(0, 7))
+        button.pack(side='left', padx=ESPACO_ENTRE_BOTOES)
         buttons[name] = button
     ttk.Button(tools, text='Fechar', command=dlg.destroy).pack(side='right')
     dlg.real_copy_buttons = buttons

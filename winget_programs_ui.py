@@ -13,6 +13,23 @@ from tkinter import messagebox, ttk
 
 from elevation_guard import is_process_elevated
 from restore_jobs import Job
+from ui_scale import (
+    COR_BORDA,
+    COR_PAINEL,
+    COR_SELECAO,
+    COR_TEXTO,
+    ESPACO_ENTRE_BOTOES,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    FONTE_MONO,
+    FONTE_UI,
+    PADDING_CAIXA_TEXTO,
+    PADDING_DIALOGO,
+    TAMANHO_CORPO,
+    TAMANHO_SUBTITULO,
+    safe_window_geometry,
+    safe_wraplength,
+)
 from ui_timers import WindowTimers
 from winget_install import BUSY_TEXT, installation_running, run_install
 from winget_programs import (CATEGORIES, default_selection, group_by_category, load_export,
@@ -46,23 +63,27 @@ def build_confirm(parent, ids):
     ids = list(ids)
     win = tk.Toplevel(parent)
     win.title('Confirmar instalação')
+    win.geometry(safe_window_geometry(
+        600,
+        480,
+        win.winfo_screenwidth() or 0,
+        win.winfo_screenheight() or 0,
+        min_w=460,
+        min_h=360,
+    ))
+    win.minsize(460, 360)
     win.transient(parent)
     state = {'ok': False}
-    frame = ttk.Frame(win, padding=14)
+    frame = ttk.Frame(win, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
-    ttk.Label(frame, wraplength=520, font=('Segoe UI', 11, 'bold'),
-              text=f'Estes {len(ids)} programa(s) serão baixados da internet e instalados '
-                   'pelo winget:').pack(anchor='w')
-    box = tk.Text(frame, height=min(max(len(ids), 3), 14), width=60, wrap='none')
-    box.insert('1.0', '\n'.join(ids))
-    box.configure(state='disabled')  # só leitura
-    box.pack(fill='both', expand=True, pady=(6, 6))
-    ttk.Label(frame, wraplength=520, text=(
-        'O Windows pode mostrar avisos de alguns instaladores. Programas que precisam de '
-        'administrador podem falhar: o resultado explica o que fazer. Os programas já '
-        'instalados não são atualizados nem removidos. A instalação pode demorar; não '
-        'desligue o computador.')).pack(anchor='w', pady=(0, 4))
-    ttk.Label(frame, wraplength=520, text=UAC_TEXT).pack(anchor='w', pady=(0, 8))
+    title_label = ttk.Label(
+        frame,
+        wraplength=520,
+        font=(FONTE_UI, TAMANHO_SUBTITULO, 'bold'),
+        text=f'Estes {len(ids)} programa(s) serão baixados da internet e instalados pelo winget:',
+    )
+    title_label.pack(anchor='w')
+
     agreed = tk.BooleanVar(master=win, value=False)
     buttons = ttk.Frame(frame)
 
@@ -83,16 +104,67 @@ def build_confirm(parent, ids):
     def toggled():
         install.state(['!disabled'] if agreed.get() else ['disabled'])
 
-    ttk.Checkbutton(frame, text=CONFIRM_CHECK_TEXT, variable=agreed,
-                    command=toggled).pack(anchor='w', pady=(0, 10))
-    buttons.pack(fill='x')
+    buttons.pack(side='bottom', fill='x')
     cancel_button.pack(side='right')
-    install.pack(side='right', padx=(0, 7))
+    install.pack(side='right', padx=ESPACO_ENTRE_BOTOES)
+
+    ttk.Checkbutton(
+        frame,
+        text=CONFIRM_CHECK_TEXT,
+        variable=agreed,
+        command=toggled,
+    ).pack(side='bottom', anchor='w', pady=(0, ESPACO_P))
+    uac_label = ttk.Label(frame, wraplength=520, text=UAC_TEXT)
+    uac_label.pack(side='bottom', anchor='w', pady=(0, ESPACO_P))
+    warn_label = ttk.Label(
+        frame,
+        wraplength=520,
+        text=(
+            'O Windows pode mostrar avisos de alguns instaladores. Programas que precisam de '
+            'administrador podem falhar: o resultado explica o que fazer. Os programas já '
+            'instalados não são atualizados nem removidos. A instalação pode demorar; não '
+            'desligue o computador.'
+        ),
+    )
+    warn_label.pack(side='bottom', anchor='w', pady=(0, ESPACO_MINIMO))
+
+    box = tk.Text(
+        frame,
+        height=min(max(len(ids), 3), 14),
+        width=60,
+        wrap='none',
+        bg=COR_PAINEL,
+        fg=COR_TEXTO,
+        insertbackground=COR_TEXTO,
+        selectbackground=COR_SELECAO,
+        highlightthickness=1,
+        highlightbackground=COR_BORDA,
+        highlightcolor=COR_BORDA,
+        bd=0,
+        relief='flat',
+        font=(FONTE_MONO, TAMANHO_CORPO),
+        padx=PADDING_CAIXA_TEXTO[0],
+        pady=PADDING_CAIXA_TEXTO[1],
+    )
+    box.insert('1.0', '\n'.join(ids))
+    box.configure(state='disabled')  # só leitura
+    box.pack(fill='both', expand=True, pady=ESPACO_P)
+
+    def _update_wrap(event):
+        if event.widget is frame and event.width > 1:
+            wrap = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            title_label.configure(wraplength=wrap)
+            warn_label.configure(wraplength=wrap)
+            uac_label.configure(wraplength=wrap)
+
+    frame.bind('<Configure>', _update_wrap)
+
     win.bind('<Return>', lambda _e: cancel())
     win.bind('<Escape>', lambda _e: cancel())
     win.protocol('WM_DELETE_WINDOW', cancel)
     cancel_button.focus_set()
     win.confirm_state = state
+    win.confirm_box = box
     return win, state
 
 
@@ -110,10 +182,28 @@ def confirm_install(parent, ids):
 def show_results(parent, result):
     win = tk.Toplevel(parent)
     win.title('Resultado da instalação')
-    win.geometry('820x420')
-    frame = ttk.Frame(win, padding=14)
+    win.geometry(safe_window_geometry(
+        820,
+        420,
+        win.winfo_screenwidth() or 0,
+        win.winfo_screenheight() or 0,
+        min_w=560,
+        min_h=340,
+    ))
+    win.minsize(560, 340)
+    frame = ttk.Frame(win, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
-    ttk.Label(frame, wraplength=780, text=result.get('message', '')).pack(anchor='w', pady=(0, 8))
+    msg_label = ttk.Label(frame, wraplength=780, text=result.get('message', ''))
+    msg_label.pack(anchor='w', pady=(0, ESPACO_P))
+    frame.bind(
+        '<Configure>',
+        lambda event: (
+            msg_label.configure(wraplength=safe_wraplength(event.width, padding=PADDING_DIALOGO))
+            if event.widget is frame and event.width > 1 else None
+        ),
+    )
+    ttk.Button(frame, text='Fechar', command=win.destroy).pack(
+        side='bottom', anchor='e', pady=(ESPACO_P, 0))
     table = ttk.Treeview(frame, columns=('status', 'explanation'), show='tree headings')
     table.heading('#0', text='Programa')
     table.heading('status', text='Resultado')
@@ -124,7 +214,6 @@ def show_results(parent, result):
     for row in result.get('results', []):
         table.insert('', 'end', text=row['id'], values=(row['status'], row['explanation']))
     table.pack(fill='both', expand=True)
-    ttk.Button(frame, text='Fechar', command=win.destroy).pack(anchor='e', pady=(8, 0))
     return win
 
 
@@ -132,7 +221,14 @@ def show_programs(parent, backup_folder, *, runner=None, state_dir=None, elevate
                   confirm=None, ask_save=None):
     dlg = tk.Toplevel(parent)
     dlg.title('Programas do backup')
-    dlg.geometry('900x640')
+    dlg.geometry(safe_window_geometry(
+        900,
+        640,
+        dlg.winfo_screenwidth() or 0,
+        dlg.winfo_screenheight() or 0,
+        min_w=640,
+        min_h=440,
+    ))
     dlg.minsize(640, 440)
     timers = WindowTimers(dlg)
     elevated = is_process_elevated(elevated_probe)
@@ -140,19 +236,36 @@ def show_programs(parent, backup_folder, *, runner=None, state_dir=None, elevate
              'busy': False, 'loading': False, 'elevated': elevated, 'result': None}
     dlg.program_state = state
 
-    frame = ttk.Frame(dlg, padding=14)
+    frame = ttk.Frame(dlg, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='Programas que estavam instalados quando o backup foi feito',
-              font=('Segoe UI', 12, 'bold')).pack(anchor='w')
-    ttk.Label(frame, wraplength=850, text=INTRO_TEXT).pack(anchor='w', pady=(4, 6))
+              font=(FONTE_UI, TAMANHO_SUBTITULO, 'bold')).pack(anchor='w')
+    intro_label = ttk.Label(frame, wraplength=850, text=INTRO_TEXT)
+    intro_label.pack(anchor='w', pady=(ESPACO_MINIMO, ESPACO_P))
+    admin_label = None
     if elevated:
-        ttk.Label(frame, wraplength=850, text=ADMIN_TEXT,
-                  font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 6))
+        admin_label = ttk.Label(
+            frame,
+            wraplength=850,
+            text=ADMIN_TEXT,
+            font=(FONTE_UI, TAMANHO_CORPO, 'bold'),
+        )
+        admin_label.pack(anchor='w', pady=(0, ESPACO_P))
     status = tk.StringVar(value='Lendo a lista de programas em segundo plano…')
-    ttk.Label(frame, textvariable=status, wraplength=850).pack(fill='x', pady=(0, 6))
+    status_label = ttk.Label(frame, textvariable=status, wraplength=850)
+    status_label.pack(fill='x', pady=(0, ESPACO_P))
+
+    def _update_wrap(event):
+        if event.widget is frame and event.width > 1:
+            wrap = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            intro_label.configure(wraplength=wrap)
+            status_label.configure(wraplength=wrap)
+            if admin_label is not None:
+                admin_label.configure(wraplength=wrap)
+
+    frame.bind('<Configure>', _update_wrap)
 
     grid = ttk.Frame(frame)
-    grid.pack(fill='both', expand=True)
     tree = ttk.Treeview(grid, columns=('mark', 'version', 'note'), show='tree headings',
                         selectmode='browse')
     tree.heading('#0', text='Categoria / programa')
@@ -171,7 +284,7 @@ def show_programs(parent, backup_folder, *, runner=None, state_dir=None, elevate
     grid.columnconfigure(0, weight=1)
 
     counter = tk.StringVar(value='')
-    ttk.Label(frame, textvariable=counter, font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(6, 4))
+    counter_label = ttk.Label(frame, textvariable=counter, font=(FONTE_UI, TAMANHO_CORPO, 'bold'))
 
     def package_iid(index):
         return f'pkg:{index}'
@@ -330,14 +443,16 @@ def show_programs(parent, backup_folder, *, runner=None, state_dir=None, elevate
         dlg.destroy()
 
     tools = ttk.Frame(frame)
-    tools.pack(fill='x')
+    tools.pack(side='bottom', fill='x')
+    counter_label.pack(side='bottom', fill='x', pady=(ESPACO_P, ESPACO_MINIMO))
+    grid.pack(fill='both', expand=True)
     mark_buttons = [ttk.Button(tools, text='Marcar categoria', command=mark_category),
                     ttk.Button(tools, text='Marcar tudo', command=mark_all),
                     ttk.Button(tools, text='Desmarcar tudo', command=unmark_all)]
     for button in mark_buttons:
-        button.pack(side='left', padx=(0, 7))
+        button.pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     install_button = ttk.Button(tools, text=INSTALL_TEXT, command=install_selected)
-    install_button.pack(side='left', padx=(7, 7))
+    install_button.pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     save_button = ttk.Button(tools, text=SAVE_NOW_TEXT, command=save_now)
     close_button = ttk.Button(tools, text='Fechar', command=on_close)
     close_button.pack(side='right')
@@ -379,7 +494,7 @@ def show_programs(parent, backup_folder, *, runner=None, state_dir=None, elevate
                 state['error'] = value
                 status.set(value + ' Se este é o Windows antigo, ANTES de formatar, você pode '
                                    f'usar "{SAVE_NOW_TEXT}".')
-                save_button.pack(side='left', padx=(7, 0))
+                save_button.pack(side='left', padx=ESPACO_ENTRE_BOTOES)
                 update_buttons()
 
         wait_job(job, finished)

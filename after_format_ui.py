@@ -27,8 +27,29 @@ from browser_recovery_ui import show_recovery
 from launcher_guide_ui import show_launchers
 from restore_jobs import Job
 from restore_ui import show_restore
+from ui_scale import (
+    COR_BORDA,
+    COR_PAINEL,
+    COR_SELECAO,
+    COR_TEXTO,
+    ESPACO_FINO,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    FONTE_UI,
+    PADDING_CAIXA_TEXTO,
+    PADDING_DIALOGO,
+    TAMANHO_CORPO,
+    TAMANHO_TITULO_MODAL,
+    safe_window_geometry,
+    safe_wraplength,
+)
 from ui_timers import WindowTimers
 from winget_programs_ui import show_programs
+
+DESIRED_WIDTH = 1000
+DESIRED_HEIGHT = 760
+MIN_WIDTH = 720
+MIN_HEIGHT = 520
 
 TITLE = 'Depois de formatar'
 INTRO_TEXT = (
@@ -91,8 +112,15 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
 
     dlg = tk.Toplevel(app)
     dlg.title(TITLE)
-    dlg.geometry('1000x760')
-    dlg.minsize(720, 520)
+    dlg.geometry(safe_window_geometry(
+        DESIRED_WIDTH,
+        DESIRED_HEIGHT,
+        dlg.winfo_screenwidth() or 0,
+        dlg.winfo_screenheight() or 0,
+        min_w=MIN_WIDTH,
+        min_h=MIN_HEIGHT,
+    ))
+    dlg.minsize(MIN_WIDTH, MIN_HEIGHT)
     dialogs[key] = dlg
     timers = WindowTimers(dlg)
     state = {'steps': steps, 'path': progress['path'], 'job': None,
@@ -101,23 +129,41 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
              'busy': False, 'drives': None, 'passwords': '', 'manifest': manifest}
     dlg.after_format_state = state
 
-    frame = ttk.Frame(dlg, padding=14)
+    frame = ttk.Frame(dlg, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
-    ttk.Label(frame, text='Depois de formatar: passo a passo',
-              font=('Segoe UI', 12, 'bold')).pack(anchor='w')
-    ttk.Label(frame, wraplength=950, text=INTRO_TEXT).pack(anchor='w', pady=(4, 2))
-    ttk.Label(frame, wraplength=950,
-              text=f'Backup escolhido: {manifest.parent.name}').pack(anchor='w', pady=(0, 4))
+    ttk.Label(
+        frame,
+        text='Depois de formatar: passo a passo',
+        font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold'),
+    ).pack(anchor='w')
+    intro_label = ttk.Label(frame, wraplength=950, text=INTRO_TEXT)
+    intro_label.pack(anchor='w', pady=(ESPACO_MINIMO, ESPACO_FINO))
+    backup_label = ttk.Label(
+        frame,
+        wraplength=950,
+        text=f'Backup escolhido: {manifest.parent.name}',
+    )
+    backup_label.pack(anchor='w', pady=(0, ESPACO_MINIMO))
     # FIX-P2-11-01: aviso do progresso numa linha própria, que "Abrir" não apaga
     progress_warning = tk.StringVar(master=dlg, value=progress_warning_text(
         state['base_warning'], saver.poll_error() if saver is not None else None))
     dlg.after_format_progress_warning = progress_warning
-    ttk.Label(frame, textvariable=progress_warning, wraplength=950,
-              font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(0, 2))
+    progress_warning_label = ttk.Label(
+        frame,
+        textvariable=progress_warning,
+        wraplength=950,
+        font=(FONTE_UI, TAMANHO_CORPO, 'bold'),
+    )
+    progress_warning_label.pack(fill='x', pady=(0, ESPACO_FINO))
     notice = tk.StringVar(master=dlg, value='')
     dlg.after_format_notice = notice
-    ttk.Label(frame, textvariable=notice, wraplength=950,
-              font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(0, 6))
+    notice_label = ttk.Label(
+        frame,
+        textvariable=notice,
+        wraplength=950,
+        font=(FONTE_UI, TAMANHO_CORPO, 'bold'),
+    )
+    notice_label.pack(fill='x', pady=(0, ESPACO_P))
 
     buttons = {}
     status_vars = {}
@@ -155,34 +201,76 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
         else:
             state['polling'] = False
 
+    step_labels = []
     for number, step in enumerate(STEPS, 1):
-        row = ttk.Frame(steps_box, padding=(0, 4))
+        row = ttk.Frame(steps_box, padding=(0, ESPACO_MINIMO))
         row.pack(fill='x')
         text_box = ttk.Frame(row)
         text_box.pack(side='left', fill='x', expand=True)
         ttk.Label(text_box, text=f'{number}. {step["title"]}',
-                  font=('Segoe UI', 10, 'bold')).pack(anchor='w')
-        ttk.Label(text_box, text=step['text'], wraplength=640).pack(anchor='w')
+                  font=(FONTE_UI, TAMANHO_CORPO, 'bold')).pack(anchor='w')
+        step_desc = ttk.Label(text_box, text=step['text'], wraplength=640)
+        step_desc.pack(anchor='w')
+        step_labels.append(step_desc)
         if step['id'] == 'navegador':
-            ttk.Label(text_box, textvariable=password_var, wraplength=640).pack(anchor='w')
+            pw_label = ttk.Label(text_box, textvariable=password_var, wraplength=640)
+            pw_label.pack(anchor='w')
+            step_labels.append(pw_label)
         status_vars[step['id']] = tk.StringVar(master=dlg, value='')
-        ttk.Label(row, textvariable=status_vars[step['id']], width=10).pack(side='left', padx=6)
+        ttk.Label(row, textvariable=status_vars[step['id']], width=10).pack(side='left', padx=ESPACO_P)
         own = {}
         own['Abrir'] = ttk.Button(row, text='Abrir', command=lambda s=step['id']: open_step(s))
         own['Feito'] = ttk.Button(row, text='Feito', command=lambda s=step['id']: mark(s, DONE))
         own['Pular'] = ttk.Button(row, text='Pular',
                                   command=lambda s=step['id']: mark(s, SKIPPED))
         for name in ('Abrir', 'Feito', 'Pular'):
-            own[name].pack(side='left', padx=(4, 0))
+            own[name].pack(side='left', padx=(ESPACO_MINIMO, 0))
         buttons[step['id']] = own
         refresh_step(step['id'])
 
-    ttk.Separator(frame).pack(fill='x', pady=8)
+    ttk.Separator(frame).pack(fill='x', pady=ESPACO_P)
     ttk.Label(frame, text='Unidades deste computador agora (só leitura)',
-              font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+              font=(FONTE_UI, TAMANHO_CORPO, 'bold')).pack(anchor='w')
     drive_status = tk.StringVar(master=dlg, value='')
     dlg.after_format_drive_status = drive_status
-    ttk.Label(frame, textvariable=drive_status, wraplength=950).pack(fill='x', pady=(2, 4))
+    drive_status_label = ttk.Label(frame, textvariable=drive_status, wraplength=950)
+    drive_status_label.pack(fill='x', pady=(ESPACO_FINO, ESPACO_MINIMO))
+
+    def _update_wrap(event):
+        if event.widget is frame and event.width > 1:
+            wrap = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            intro_label.configure(wraplength=wrap)
+            backup_label.configure(wraplength=wrap)
+            progress_warning_label.configure(wraplength=wrap)
+            notice_label.configure(wraplength=wrap)
+            drive_status_label.configure(wraplength=wrap)
+            step_wrap = max(260, wrap - 310)
+            for lbl in step_labels:
+                lbl.configure(wraplength=step_wrap)
+
+    frame.bind('<Configure>', _update_wrap)
+
+    close_btn = ttk.Button(frame, text='Fechar', command=dlg.destroy)
+    close_btn.pack(side='bottom', anchor='e')
+    guide = tk.Text(
+        frame,
+        height=7,
+        wrap='word',
+        bg=COR_PAINEL,
+        fg=COR_TEXTO,
+        insertbackground=COR_TEXTO,
+        selectbackground=COR_SELECAO,
+        selectforeground=COR_TEXTO,
+        relief='flat',
+        highlightthickness=1,
+        highlightbackground=COR_BORDA,
+        padx=PADDING_CAIXA_TEXTO[0],
+        pady=PADDING_CAIXA_TEXTO[1],
+        font=(FONTE_UI, TAMANHO_CORPO),
+    )
+    guide.pack(side='bottom', fill='both', expand=False, pady=(ESPACO_P, ESPACO_P))
+    dlg.after_format_guide = guide
+
     grid = ttk.Frame(frame)
     grid.pack(fill='both', expand=True)
     tree = ttk.Treeview(grid, columns=('type', 'total', 'free', 'note'),
@@ -204,9 +292,6 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
     grid.rowconfigure(0, weight=1)
     grid.columnconfigure(0, weight=1)
     dlg.after_format_tree = tree
-    guide = tk.Text(frame, height=7, wrap='word')
-    guide.pack(fill='both', expand=False, pady=(6, 6))
-    dlg.after_format_guide = guide
 
     def show_guide(text):
         guide.configure(state='normal')
@@ -280,7 +365,6 @@ def show_after_format(app, *, manifest=None, base=None, ask_manifest=None, check
             show_recovery(dlg)
 
     dlg.after_format_open = open_step
-    ttk.Button(frame, text='Fechar', command=dlg.destroy).pack(anchor='e')
 
     def on_destroy(event):
         if event.widget is not dlg:

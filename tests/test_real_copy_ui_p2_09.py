@@ -311,8 +311,8 @@ class CodeShapeTests(unittest.TestCase):
         self.assertIn('real_copy_flow', modules)
         self.assertLessEqual(modules, {
             '__future__', 'shutil', 'tkinter', 'pathlib', 'diagnostics', 'real_copy_flow',
-            'multi_source_plan', 'multi_source_targets', 'restore_jobs', 'ui_timers',
-            'volume_paths'})
+            'multi_source_plan', 'multi_source_targets', 'restore_jobs', 'ui_scale',
+            'ui_timers', 'volume_paths'})
 
     def test_no_lock_names_and_no_deletes(self):
         for word in LOCKS + ('unlink', 'rmtree', 'remove(', 'rmdir', 'os.replace',

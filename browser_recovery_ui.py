@@ -9,28 +9,84 @@ from browser_recovery import (inspect_recovery, prepare_bookmarks, destination_s
                               help_missing_text)
 from browser_vault import discover_profiles, restore_to_staging
 from browser_guard import extract_to_staging
+from ui_scale import (
+    COR_BORDA,
+    COR_PAINEL,
+    COR_SELECAO,
+    COR_TEXTO,
+    ESPACO_ENTRE_BOTOES,
+    ESPACO_M,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    FONTE_UI,
+    PADDING_CAIXA_TEXTO,
+    PADDING_DIALOGO,
+    TAMANHO_CORPO,
+    TAMANHO_TITULO_MODAL,
+    safe_window_geometry,
+    safe_wraplength,
+)
+
+DESIRED_WIDTH = 880
+DESIRED_HEIGHT = 680
+MIN_WIDTH = 640
+MIN_HEIGHT = 480
 
 
 def show_recovery(parent):
     win = tk.Toplevel(parent)
     win.title('Restaurar navegador — v0.5.12')
-    win.geometry('880x680')
-    frame = ttk.Frame(win, padding=16)
+    win.geometry(safe_window_geometry(
+        DESIRED_WIDTH,
+        DESIRED_HEIGHT,
+        win.winfo_screenwidth() or 0,
+        win.winfo_screenheight() or 0,
+        min_w=MIN_WIDTH,
+        min_h=MIN_HEIGHT,
+    ))
+    win.minsize(MIN_WIDTH, MIN_HEIGHT)
+    frame = ttk.Frame(win, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
     state = {'root': None, 'info': None, 'busy': False, 'step': 'favoritos'}
     status = tk.StringVar(value='Escolha o cofre ou a pasta já recuperada no teste anterior.')
-    ttk.Label(frame, text='Restaurar navegador', font=('Segoe UI', 16, 'bold')).pack(anchor='w')
-    ttk.Label(frame, text='Favoritos e senhas por importação no próprio navegador. Nenhum perfil instalado é sobrescrito.', wraplength=820).pack(anchor='w', pady=8)
+    protect = tk.BooleanVar()
+    checked = tk.BooleanVar()
+    ttk.Label(
+        frame,
+        text='Restaurar navegador',
+        font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold'),
+    ).pack(anchor='w')
+    intro_label = ttk.Label(
+        frame,
+        text='Favoritos e senhas por importação no próprio navegador. Nenhum perfil instalado é sobrescrito.',
+        wraplength=820,
+    )
+    intro_label.pack(anchor='w', pady=ESPACO_P)
     profiles = discover_profiles()
     names = [f'{p.browser} — {p.label} — {p.path}' for p in profiles]
     ttk.Label(frame, text='1. Perfil de destino (abra o navegador uma vez para ele aparecer):').pack(anchor='w')
     choice = ttk.Combobox(frame, state='readonly', values=names, width=105)
-    choice.pack(fill='x', pady=6)
+    choice.pack(fill='x', pady=ESPACO_P)
     if names: choice.current(0)
     else: ttk.Label(frame, text='Nenhum perfil localizado. Instale/abra o navegador e reabra este assistente.').pack(anchor='w')
-    ttk.Label(frame, text='2. Origem dos dados:').pack(anchor='w', pady=(10, 4))
+    ttk.Label(frame, text='2. Origem dos dados:').pack(anchor='w', pady=(ESPACO_M, ESPACO_MINIMO))
     row = ttk.Frame(frame); row.pack(fill='x')
-    details = tk.Text(frame, height=10, wrap='word')
+    details = tk.Text(
+        frame,
+        height=10,
+        wrap='word',
+        bg=COR_PAINEL,
+        fg=COR_TEXTO,
+        insertbackground=COR_TEXTO,
+        selectbackground=COR_SELECAO,
+        selectforeground=COR_TEXTO,
+        relief='flat',
+        highlightthickness=1,
+        highlightbackground=COR_BORDA,
+        padx=PADDING_CAIXA_TEXTO[0],
+        pady=PADDING_CAIXA_TEXTO[1],
+        font=(FONTE_UI, TAMANHO_CORPO),
+    )
     def describe(root):
         state.update(root=None, info=None)
         checked.set(False)
@@ -73,13 +129,39 @@ def show_recovery(parent):
             except Exception as exc:
                 parent.after(0, lambda e=str(exc): finish(error=e))
         threading.Thread(target=worker, daemon=True).start()
-    ttk.Button(row, text='Abrir cofre com senha', command=vault).pack(side='left', padx=(0, 8))
+    ttk.Button(row, text='Abrir cofre com senha', command=vault).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     ttk.Button(row, text='Usar pasta já recuperada', command=folder).pack(side='left')
-    details.pack(fill='both', expand=True, pady=10); details.configure(state='disabled')
-    protect = tk.BooleanVar()
-    ttk.Checkbutton(frame, text='Já protegi os dados atuais do destino (cofre/exportação), ou este perfil é novo e vazio.', variable=protect).pack(anchor='w')
-    ttk.Label(frame, text='3. Escolha o que importar. Os botões preparam os arquivos; você confirma a importação no navegador.', wraplength=820).pack(anchor='w', pady=8)
-    actions = ttk.Frame(frame); actions.pack(fill='x')
+    status_label = ttk.Label(frame, textvariable=status, wraplength=820)
+    status_label.pack(side='bottom', anchor='w', fill='x')
+    ttk.Checkbutton(
+        frame,
+        text='Conferi no navegador os dados importados (confirmação manual).',
+        variable=checked,
+    ).pack(side='bottom', anchor='w', pady=ESPACO_P)
+    actions = ttk.Frame(frame)
+    actions.pack(side='bottom', fill='x')
+    step3_label = ttk.Label(
+        frame,
+        text='3. Escolha o que importar. Os botões preparam os arquivos; você confirma a importação no navegador.',
+        wraplength=820,
+    )
+    step3_label.pack(side='bottom', anchor='w', pady=ESPACO_P)
+    ttk.Checkbutton(
+        frame,
+        text='Já protegi os dados atuais do destino (cofre/exportação), ou este perfil é novo e vazio.',
+        variable=protect,
+    ).pack(side='bottom', anchor='w')
+    details.pack(fill='both', expand=True, pady=ESPACO_P)
+    details.configure(state='disabled')
+
+    def _update_wrap(event):
+        if event.widget is frame and event.width > 1:
+            wrap = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            intro_label.configure(wraplength=wrap)
+            step3_label.configure(wraplength=wrap)
+            status_label.configure(wraplength=wrap)
+
+    frame.bind('<Configure>', _update_wrap)
     def ready():
         if not state['info'] or choice.current() < 0:
             messagebox.showwarning('Seleção necessária', 'Selecione uma origem e um perfil instalado.', parent=win); return False
@@ -113,8 +195,8 @@ def show_recovery(parent):
         copy_path(path)
         messagebox.showinfo('Importar senhas', password_import_steps(profiles[choice.current()].browser), parent=win)
         status.set('Caminho do CSV preparado. A importação precisa ser confirmada no navegador.')
-    ttk.Button(actions, text='Preparar favoritos', command=bookmarks).pack(side='left', padx=(0, 8))
-    ttk.Button(actions, text='Orientar importação de senhas', command=passwords).pack(side='left', padx=(0, 8))
+    ttk.Button(actions, text='Preparar favoritos', command=bookmarks).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    ttk.Button(actions, text='Orientar importação de senhas', command=passwords).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     def official_help():
         if choice.current() < 0:
             messagebox.showinfo('Ajuda oficial', 'Escolha um perfil de destino para abrir a ajuda do navegador.', parent=win); return
@@ -123,10 +205,8 @@ def show_recovery(parent):
         if url: webbrowser.open(url)
         else: messagebox.showinfo('Ajuda oficial', help_missing_text(browser), parent=win)
     ttk.Button(actions, text='Ajuda oficial do navegador', command=official_help).pack(side='left')
-    checked = tk.BooleanVar()
-    ttk.Checkbutton(frame, text='Conferi no navegador os dados importados (confirmação manual).', variable=checked).pack(anchor='w', pady=10)
-    ttk.Label(frame, textvariable=status, wraplength=820).pack(anchor='w')
     def close():
         if state['busy']: messagebox.showinfo('Aguarde', 'Aguarde a extração terminar.', parent=win)
         else: win.destroy()
     win.protocol('WM_DELETE_WINDOW', close)
+    return win
