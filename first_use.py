@@ -331,19 +331,22 @@ def first_use_error_text(exc: BaseException, path=None) -> str:
         # A causa é o pedido, não o arquivo (R-37).
         return (
             'Não deu para salvar o progresso: as marcações não puderam ser salvas '
-            '(ValueError); o arquivo de progresso foi deixado como está. As '
-            'marcações valem só até fechar a janela.'
+            '(ValueError); o arquivo de progresso foi deixado como está. '
+            'O app tenta salvar de novo na próxima marcação; se você fechar a '
+            'janela antes disso, estas marcações se perdem.'
         )
     if isinstance(exc, FirstUseBadProgressFileError):
         return (
             f'Não deu para salvar o progresso: o arquivo de progresso{target} não é '
-            'um arquivo comum ou não pôde ser lido; ele foi deixado como está. As '
-            'marcações valem só até fechar a janela.'
+            'um arquivo comum ou não pôde ser lido; ele foi deixado como está. '
+            'O app tenta salvar de novo na próxima marcação; se você fechar a '
+            'janela antes disso, estas marcações se perdem.'
         )
     return (
         f'Não deu para salvar o progresso: o arquivo de progresso{target} não pôde '
-        f'ser gravado ({type(exc).__name__}); ele foi deixado como está. As '
-        'marcações valem só até fechar a janela.'
+        f'ser gravado ({type(exc).__name__}); ele foi deixado como está. '
+        'O app tenta salvar de novo na próxima marcação; se você fechar a '
+        'janela antes disso, estas marcações se perdem.'
     )
 
 
@@ -450,9 +453,13 @@ class FirstUseProgressSaver:
     - pedidos parciais que esperam são somados (`dict(anterior); update(novo)`),
       nunca trocados; um pedido com `reset=True` substitui o que esperava, e
       os pedidos seguintes herdam o `reset`;
-    - a base da diferença (`base_steps`) é o que ESTA janela pediu, nunca o que
-      foi lido do disco ou juntado com outra janela; `poll_merged()` devolve o
-      que ficou no disco;
+    - a base da diferença (`base_steps`) é o que ESTA janela pediu ou adotou
+      (R-94, R-96): um valor lido do disco ou juntado com outra janela só vira
+      base quando a tela passa a mostrá-lo e chama `adopt(steps)` (ou
+      `poll_merged(adopt=True)`); a adoção acontece numa tomada só da trava e
+      nunca muda a base de uma etapa com pedido pendente (que falhou, em
+      gravação ou esperando; com "Recomeçar" pendente, nenhuma). Sem adotar,
+      desmarcar o que outra janela marcou fica igual à base e não é gravado;
     - pedido inválido é recusado na hora, em `request` (`ValueError`), nunca
       somado aos válidos; se a gravação falha, o pedido que falhou volta para a
       fila, por baixo do que espera (mantendo o `reset`), e é gravado de novo
@@ -539,10 +546,44 @@ class FirstUseProgressSaver:
                 self._writing = None
                 self._error = error
 
-    def poll_merged(self) -> dict[str, str] | None:
-        """Último dicionário juntado e gravado com sucesso, ou `None`."""
+    def _adopt_locked(self, clean: dict[str, str]) -> None:
+        item = self._pending_locked()
+        if item is not None and item[1]:
+            return  # "Recomeçar" pendente: todas as etapas estão pendentes
+        busy = set() if item is None else set(item[0])
+        for key in STEP_IDS:
+            if key not in busy:
+                self._base[key] = clean[key]
+
+    def adopt(self, steps) -> None:
+        """Faz a base virar o que a tela passou a mostrar (R-96).
+
+        A tela chama isto sempre que passa a mostrar marcações vindas do disco
+        ou de outra janela (de `poll_merged()` ou `load_first_use_with_pending`).
+        Numa tomada só da trava, a base de cada etapa SEM pedido pendente (que
+        falhou, em gravação ou esperando) vira o valor mostrado; as etapas
+        pendentes ficam como estão, e com "Recomeçar" pendente nada muda.
+        Valores inválidos são recusados (`ValueError`).
+        """
+        clean = validate_first_use_steps(steps)
         with self._lock:
-            return None if self._merged is None else dict(self._merged)
+            self._adopt_locked(clean)
+
+    def poll_merged(self, *, adopt: bool = False) -> dict[str, str] | None:
+        """Último dicionário juntado e gravado com sucesso, ou `None`.
+
+        Se a tela for mostrar esse dicionário, ela precisa adotar o que mostra:
+        use `adopt=True` (ou chame `adopt()` com o que mostrar). Sem adotar,
+        desmarcar depois uma etapa marcada por outra janela não é gravado
+        (R-96). Com `adopt=True`, ler e adotar acontecem na mesma trava.
+        """
+        with self._lock:
+            if self._merged is None:
+                return None
+            merged = dict(self._merged)
+            if adopt:
+                self._adopt_locked(merged)
+            return merged
 
     def poll_error(self) -> str | None:
         """Erro da última gravação terminada (sem caminho completo) ou `None`."""
@@ -575,12 +616,22 @@ class FirstUseProgressSaver:
         return bool(item and item[1])
 
     def busy(self) -> bool:
-        """`True` enquanto há pedido esperando ou gravação em andamento."""
+        """`True` enquanto há pedido esperando ou gravação em andamento.
+
+        Depois de uma falha sem pedido novo, `busy()` é `False` mesmo com
+        marcações não gravadas: o "Fechar" da janela deve decidir por
+        `pending()`, nunca por `busy()`/`join()`.
+        """
         with self._lock:
             return self._thread is not None
 
     def close(self) -> None:
-        """Sinaliza que a janela fechou, sem cancelar gravação em andamento."""
+        """Sinaliza que a janela fechou, sem cancelar gravação em andamento.
+
+        Antes de fechar, a janela deve decidir pelo que `pending()` devolve
+        (marcações que falharam continuam lá mesmo com `busy()` `False` e
+        `join()` `True`); depois de `close()`, novos pedidos são ignorados.
+        """
         with self._lock:
             self.closed = True
 
@@ -602,7 +653,12 @@ def load_first_use_with_pending(
     *,
     load=None,
 ) -> dict:
-    """Lê o progresso preferindo marcações pendentes no `saver` antes do disco."""
+    """Lê o progresso preferindo marcações pendentes no `saver` antes do disco.
+
+    Se a tela for mostrar o resultado, ela precisa adotar o que mostra
+    (`saver.adopt(progress['steps'])`); sem isso, desmarcar uma etapa que
+    outra janela marcou não é gravado (R-96).
+    """
     load_fn = load_first_use_progress if load is None else load
     item = saver.pending() if saver is not None else None
     pending, pending_reset = (None, False) if item is None else item
