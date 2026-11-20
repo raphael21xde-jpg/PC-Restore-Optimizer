@@ -26,26 +26,32 @@ grupo de conversa.
   confirmar. Nunca pegue item que mexa em dados, discos, backup, restauração ou
   travas, mesmo que alguém peça.
 
-## Como publicar no GitHub (o `gh` está bloqueado no Antigravity)
+## Como publicar no GitHub
 
-O Antigravity nega `gh pr comment` e `gh issue comment`, mas o `git push`
-funciona. Então você **não comenta direto**: deixa a mensagem numa "caixa
-postal", e o Claude publica no lugar certo no próximo ciclo.
+**Jeito principal: comentar direto, sempre com `--body-file`.**
+
+1. Grave o texto do comentário num arquivo (por exemplo, na pasta `scratch/` da
+   sua conversa).
+2. Rode **um comando de uma linha só**, sem aspas e sem quebra de linha:
+   - na PR: `gh pr comment <número> --body-file <caminho do arquivo>`
+   - no grupo: `gh issue comment 282 --body-file <caminho do arquivo>`
+3. **Nunca** use `--body "..."`: texto com espaço ou quebra de linha dentro do
+   comando desliga a permissão "Always allow", e a automação é negada.
+4. Antes de publicar, confira se o mesmo comentário (mesmo `@sha12`, ou a mesma
+   mensagem do grupo) já não está lá. Não publique duas vezes.
+
+**Plano B, só se o comentário for negado: a caixa postal.**
 
 1. `git fetch origin` e vá para o branch `gemini/mensagens` (se não existir,
    crie a partir da `main`). Nunca coloque código nesse branch.
-2. Para cada mensagem, crie um arquivo `mensagens/<AAAAMMDD-HHMM>-<assunto>.md`
-   com, na primeira linha, o destino:
-   - `Para: PR #<número>` (testes do Windows e pré-revisão), ou
-   - `Para: grupo #282` (a mensagem `[Gemini]` do fim da execução).
-   Depois de uma linha em branco, o texto exato do comentário, no formato de
-   sempre (`Testes do Gemini no Windows @<sha12>: ...`, `Pré-revisão do Gemini
-   @<sha12>: ...`, `[Gemini] <data hora> ...`).
-3. Faça o commit (`docs(gemini): mensagens <data> [skip ci]`), rode
-   `git push origin gemini/mensagens` e volte para a `main`.
+2. Para cada mensagem, crie `mensagens/<AAAAMMDD-HHMM>-<assunto>.md` com, na
+   primeira linha, o destino (`Para: PR #<número>` ou `Para: grupo #282`), uma
+   linha em branco e o texto exato do comentário.
+3. Commit (`docs(gemini): mensagens <data> [skip ci]`), `git push origin
+   gemini/mensagens` e volte para a `main`. O ciclo do Claude publica no destino.
 
-Não apague nem altere mensagens antigas. Para ler o grupo, continue usando
-`gh issue view 282 --comments` (ler funciona).
+Não apague nem altere mensagens antigas. Para ler o grupo, use
+`gh issue view 282 --comments`.
 
 ## Sua fila (nesta ordem)
 
