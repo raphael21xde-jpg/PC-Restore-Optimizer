@@ -17,7 +17,28 @@ from drive_diagnostic_advice import FINDING_TEXT
 from backup_capacity_input import parse_estimated_backup_gib
 from preview_plan_capacity import reviewed_preview_capacity
 from runtime_volumes import discover_drive_letters
+from ui_scale import (
+    COR_BORDA,
+    COR_PAINEL,
+    COR_SELECAO,
+    COR_TEXTO,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    FONTE_MONO,
+    FONTE_UI,
+    PADDING_CAIXA_TEXTO,
+    PADDING_DIALOGO,
+    TAMANHO_CORPO,
+    TAMANHO_TITULO_MODAL,
+    safe_window_geometry,
+    safe_wraplength,
+)
 from ui_timers import WindowTimers
+
+DESIRED_WIDTH = 975
+DESIRED_HEIGHT = 680
+MIN_WIDTH = 720
+MIN_HEIGHT = 480
 
 HARDWARE_LABELS = {
     'not_applicable': 'não se aplica',
@@ -66,55 +87,66 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
 
     dialog = tk.Toplevel(parent)
     dialog.title('Conferir discos e destinos — SOMENTE LEITURA')
-    dialog.geometry('975x680')
-    dialog.minsize(720, 480)
+    dialog.geometry(safe_window_geometry(
+        DESIRED_WIDTH,
+        DESIRED_HEIGHT,
+        dialog.winfo_screenwidth() or 0,
+        dialog.winfo_screenheight() or 0,
+        min_w=MIN_WIDTH,
+        min_h=MIN_HEIGHT,
+    ))
+    dialog.minsize(MIN_WIDTH, MIN_HEIGHT)
     timers = WindowTimers(dialog)
     queue = Queue()
     state = {'busy': False, 'close_requested': False, 'result': None}
 
-    outer = ttk.Frame(dialog, padding=16)
+    outer = ttk.Frame(dialog, padding=PADDING_DIALOGO)
     outer.pack(fill='both', expand=True)
     ttk.Label(
         outer, text='Conferência de discos lógicos e destinos',
-        font=('Segoe UI', 13, 'bold'),
+        font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold'),
     ).pack(anchor='w')
-    ttk.Label(
+    intro_label = ttk.Label(
         outer,
         text=('Digite as letras das unidades escolhidas, separadas por vírgula. '
               'Nenhuma unidade é presumida como segura. A verificação não '
               'faz backups, exclusões, ajustes EFI ou formatação.'),
         wraplength=900,
-    ).pack(anchor='w', pady=(6, 8))
-    ttk.Label(
+    )
+    intro_label.pack(anchor='w', pady=ESPACO_P)
+    known_label = ttk.Label(
         outer, text='Unidades detectadas com letra: ' +
         (', '.join(x + ':' for x in known) if known else
          'nenhuma identificada; confira as unidades manualmente.'),
         wraplength=900,
-    ).pack(anchor='w', pady=(0, 9))
+    )
+    known_label.pack(anchor='w', pady=(0, ESPACO_P))
 
     fields = ttk.Frame(outer)
     fields.pack(fill='x')
     ttk.Label(fields, text='Origens a preservar:').grid(
-        row=0, column=0, sticky='w', pady=4)
+        row=0, column=0, sticky='w', pady=ESPACO_MINIMO)
     ttk.Label(fields, text='Destinos candidatos:').grid(
-        row=1, column=0, sticky='w', pady=4)
+        row=1, column=0, sticky='w', pady=ESPACO_MINIMO)
     source = tk.StringVar(master=dialog)
     target = tk.StringVar(master=dialog)
     source_input = ttk.Entry(fields, textvariable=source)
     target_input = ttk.Entry(fields, textvariable=target)
-    source_input.grid(row=0, column=1, sticky='ew', padx=(10, 0), pady=4)
-    target_input.grid(row=1, column=1, sticky='ew', padx=(10, 0), pady=4)
+    source_input.grid(row=0, column=1, sticky='ew', padx=(ESPACO_P, 0), pady=ESPACO_MINIMO)
+    target_input.grid(row=1, column=1, sticky='ew', padx=(ESPACO_P, 0), pady=ESPACO_MINIMO)
     ttk.Label(fields, text='Tamanho estimado do backup (GiB, opcional):').grid(
-        row=2, column=0, sticky='w', pady=4)
+        row=2, column=0, sticky='w', pady=ESPACO_MINIMO)
     size_estimate = tk.StringVar(master=dialog)
     # Keep existing drive-letter fields stable for older UI/test integrations.
     size_input = tk.Entry(
-        fields, textvariable=size_estimate, bg='#192438',
-        fg='#EFF4FF', insertbackground='#EFF4FF', relief='flat',
-        highlightthickness=1, highlightbackground='#2B3952')
-    size_input.grid(row=2, column=1, sticky='ew', padx=(10, 0), pady=4)
+        fields, textvariable=size_estimate, bg=COR_PAINEL,
+        fg=COR_TEXTO, insertbackground=COR_TEXTO,
+        selectbackground=COR_SELECAO, selectforeground=COR_TEXTO,
+        relief='flat', highlightthickness=1, highlightbackground=COR_BORDA,
+        font=(FONTE_UI, TAMANHO_CORPO))
+    size_input.grid(row=2, column=1, sticky='ew', padx=(ESPACO_P, 0), pady=ESPACO_MINIMO)
     fields.columnconfigure(1, weight=1)
-    ttk.Label(
+    hint_label = ttk.Label(
         outer,
         text=('Exemplo de formato: C:,D:  |  G:. '
               'São exemplos, não escolhas automáticas. '
@@ -122,11 +154,26 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
               'independência física entre dispositivos. O tamanho opcional '
               'é uma estimativa manual; não representa varredura de arquivos.'),
         wraplength=900,
-    ).pack(anchor='w', pady=(9, 7))
+    )
+    hint_label.pack(anchor='w', pady=ESPACO_P)
 
     status = tk.StringVar(master=dialog, value='Aguardando solicitação. Nenhum disco analisado.')
-    ttk.Label(outer, textvariable=status, wraplength=900).pack(
-        anchor='w', pady=(2, 8))
+    status_label = ttk.Label(outer, textvariable=status, wraplength=900)
+    status_label.pack(anchor='w', pady=(0, ESPACO_P))
+
+    def _update_wrap(event):
+        if event.widget is outer and event.width > 1:
+            wrap = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            intro_label.configure(wraplength=wrap)
+            known_label.configure(wraplength=wrap)
+            hint_label.configure(wraplength=wrap)
+            status_label.configure(wraplength=wrap)
+
+    outer.bind('<Configure>', _update_wrap)
+
+    controls = ttk.Frame(outer)
+    controls.pack(side='bottom', fill='x', pady=(ESPACO_P, 0))
+
     items = ttk.Treeview(
         outer, columns=('kind', 'state', 'disks'), show='tree headings',
         height=8,
@@ -139,17 +186,18 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
     items.column('kind', width=140, stretch=False)
     items.column('state', width=200)
     items.column('disks', width=300)
-    items.pack(fill='both', expand=True, pady=(0, 10))
+    items.pack(fill='both', expand=True, pady=(0, ESPACO_P))
 
-    details = tk.Text(outer, wrap='word', height=9,
-                      bg='#192438', fg='#EFF4FF', insertbackground='#EFF4FF',
-                      relief='flat', highlightthickness=1,
-                      highlightbackground='#2B3952')
+    details = tk.Text(
+        outer, wrap='word', height=9,
+        bg=COR_PAINEL, fg=COR_TEXTO, insertbackground=COR_TEXTO,
+        selectbackground=COR_SELECAO, selectforeground=COR_TEXTO,
+        relief='flat', highlightthickness=1, highlightbackground=COR_BORDA,
+        padx=PADDING_CAIXA_TEXTO[0], pady=PADDING_CAIXA_TEXTO[1],
+        font=(FONTE_MONO, TAMANHO_CORPO))
     details.pack(fill='both', expand=True)
     details.insert('1.0', 'Nenhuma unidade foi aprovada para backup ou formatação.')
     details.configure(state='disabled')
-    controls = ttk.Frame(outer)
-    controls.pack(fill='x', pady=(12, 0))
 
     def show_details(text):
         details.configure(state='normal')
@@ -342,11 +390,11 @@ def show_drive_safety_dialog(parent, *, available_letters=None):
     verify_btn.pack(side='left')
     preview_btn = ttk.Button(
         controls, text='Usar tamanho da prévia', command=use_preview_size)
-    preview_btn.pack(side='left', padx=(10, 0))
+    preview_btn.pack(side='left', padx=(ESPACO_P, 0))
     copy_btn = ttk.Button(
         controls, text='Copiar resumo seguro', command=copy_safe_summary,
         state='disabled')
-    copy_btn.pack(side='left', padx=(10, 0))
+    copy_btn.pack(side='left', padx=(ESPACO_P, 0))
     ttk.Button(controls, text='Fechar', command=close).pack(side='right')
 
     def invalidate_on_edit(*_):
