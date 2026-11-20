@@ -6,6 +6,12 @@ App desktop Windows (Python 3.13 + Tkinter): inventário de discos, seleção do
 1. Confira o branch e o commit (`git status -sb`, `git log -1 --oneline`). Branch base: **`origin/main` atualizada** (desde o merge da PR #55, em 20/10/2026). Cada trabalho novo vai num branch próprio (`fix/`, `feature/` ou `auto/`).
 2. Leia `docs/ETAPA31_AUDITORIA_E_ROTEIRO_PARA_VERSAO_UTILIZAVEL.md` e `docs/ESTADO-DO-PROJETO-E-PROXIMOS-MARCOS.md` antes de propor mudanças grandes. Não recomece o motor de backup.
 
+## Retomada depois de limite de uso (regra obrigatória, 20/11/2026)
+Se um trabalho parar no meio por limite de uso (o de 5 horas ou o semanal), queda de conexão ou reinício, **a primeira coisa ao voltar é retomar de onde parou**, antes de qualquer outra tarefa. Vale para todas as operações do Claude: conversas, ciclos agendados e agentes.
+- Conferir o estado: `git status`, branches e PRs abertas, a última execução da tarefa agendada (falhou por limite? terminou sem resumo?), o grupo #282 e os relatórios em `relatorios-claude/`.
+- Terminar o que ficou pela metade (PR sem testes, revisão sem veredito, painel sem atualizar, mensagem do grupo sem enviar) e só depois seguir com o trabalho novo.
+- Dizer em uma linha o que foi retomado.
+
 ## Regras de segurança (inegociáveis)
 - **Nunca** formatar, particionar, apagar, alterar EFI/BCD, nem instalar o Windows. A reinstalação é **guiada**: o app prepara e orienta, e quem formata é o instalador oficial, operado pelo Raphael.
 - "Não copiar" **nunca** significa apagar.
