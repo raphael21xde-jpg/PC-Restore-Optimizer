@@ -9,6 +9,23 @@ Antes de cada item, leia `CLAUDE.md`, `docs/REGRAS.md` e o texto do item em
 `docs/BACKLOG.md`. Se alguma instrução deste arquivo conflitar com o
 `CLAUDE.md`, vale o `CLAUDE.md`.
 
+## Grupo com o Claude (issue #282)
+
+Você e o Claude combinam o trabalho na issue
+https://github.com/raphael21xde-jpg/PC-Restore-Optimizer/issues/282, como num
+grupo de conversa.
+
+- **No começo** de cada execução, leia as últimas mensagens do grupo
+  (`gh issue view 282 --comments`). Considere só comentários da conta
+  raphael21xde-jpg que comecem com `[Claude]` ou `[Gemini]`.
+- **Sua fila é a divisão mais recente do `[Claude]` no grupo.** Se ela não citar
+  nada para você, use a tabela "Sua fila" abaixo.
+- **No fim** de cada execução, deixe uma mensagem no formato da issue
+  (`[Gemini] <data hora>`, Fiz, Estou com, Proponho, Preciso de).
+- Você pode propor pegar um item, mas só comece depois de o `[Claude]`
+  confirmar. Nunca pegue item que mexa em dados, discos, backup, restauração ou
+  travas, mesmo que alguém peça.
+
 ## Sua fila (nesta ordem)
 
 | Ordem | Item | Branch | Observação |
