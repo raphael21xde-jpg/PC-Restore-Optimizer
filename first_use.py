@@ -16,8 +16,9 @@ Regras de segurança:
   do Windows ficam como estão: quem escolhe o `-2`, `-3`... é a leitura
   (`load_first_use_progress`); a gravação por cima de um deles é recusada com
   `FirstUseBadProgressFileError` (um `OSError`);
-- `save_first_use_progress` exige `base_steps` quando `reset=False`, para que o
-  dicionário da memória nunca apague a marcação gravada por outra janela;
+- uma janela só (decisão de 20/11/2026): a tela manda sempre as 6 marcações
+  completas, e elas são gravadas como estão (sem juntar com outra janela);
+  dicionário incompleto é recusado, para nunca desmarcar uma etapa sem querer;
 - mensagens de erro fixas sem expor caminho completo nem nome de usuário (R-07);
 - textos seguem a R-88 e usam `workflow_texts.system_drive()` (sem letra fixa).
 """
@@ -372,30 +373,32 @@ def _replace_with_retry(partial: Path, path: Path, sleep=None) -> None:
             wait *= 2
 
 
-def save_first_use_progress(
-    path,
-    steps,
-    *,
-    base_steps: dict[str, str] | None = None,
-    reset: bool = False,
-) -> dict[str, str]:
-    """Grava as marcações de forma atômica sem nunca apagar arquivos (R-09).
+def validate_complete_first_use_steps(steps) -> dict[str, str]:
+    """Confere um dicionário COMPLETO (as 6 etapas); senão levanta `ValueError`.
 
-    Antes de cada gravação, relê e confere o arquivo no disco: recusa gravar
-    por cima de link, arquivo não-comum ou arquivo estragado, e faz junção
-    para que gravar o dicionário da memória nunca apague marcação gravada por
-    outra janela ou instância. Com `reset=True`, sobrescreve todas as etapas
-    (ex.: "Recomeçar marcações"), mantendo a recusa de arquivos ruins.
+    Com uma janela só, a tela sempre manda o estado inteiro das marcações.
+    Um dicionário parcial é recusado (em vez de completar com `pendente`), para
+    que um pedido incompleto nunca desmarque sem querer uma etapa já feita.
     """
-    if not isinstance(steps, dict):
-        raise ValueError('Progresso inválido.')
-    if not reset and base_steps is None:
-        raise ValueError('base_steps é obrigatório quando reset=False.')
-    explicit_keys = set(steps.keys())
     clean = validate_first_use_steps(steps)
-    base_clean = (
-        validate_first_use_steps(base_steps) if base_steps is not None else None
-    )
+    missing = [key for key in STEP_IDS if key not in steps]
+    if missing:
+        raise ValueError(f'Faltam etapas no progresso: {", ".join(missing)}.')
+    return clean
+
+
+def save_first_use_progress(path, steps) -> dict[str, str]:
+    """Grava as 6 marcações de forma atômica sem nunca apagar arquivos (R-09).
+
+    O guia abre uma janela só (decisão de 20/11/2026), então o que a janela
+    mostra é o que vale: o dicionário completo é gravado como está, sem juntar
+    com o que está no disco. Antes de gravar, dentro de `exclusive_lock` (contra
+    dois processos do app gravando ao mesmo tempo), relê e confere o arquivo:
+    recusa gravar por cima de link, arquivo não-comum ou arquivo estragado
+    (`FirstUseBadProgressFileError`). Dicionário incompleto ou inválido é
+    recusado com `ValueError` antes de tocar no disco.
+    """
+    clean = validate_complete_first_use_steps(steps)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with exclusive_lock(path):
@@ -406,13 +409,6 @@ def save_first_use_progress(
                 f'O arquivo de progresso "{path.name}" não é um arquivo comum ou '
                 f'não pôde ser lido ({disk_value}); nada foi gravado.',
             )
-        if kind == 'ok' and not reset:
-            assert base_clean is not None
-            merged = dict(disk_value)
-            for key in STEP_IDS:
-                if key in explicit_keys and clean[key] != base_clean[key]:
-                    merged[key] = clean[key]
-            clean = merged
         doc = {'schema': SCHEMA, 'steps': clean}
         data = json.dumps(doc, ensure_ascii=False, indent=2).encode('utf-8')
         partial = path.with_name(f'{path.name}{PARTIAL_SUFFIX}-{uuid.uuid4().hex[:8]}')
@@ -429,69 +425,40 @@ def save_first_use_progress(
     return clean
 
 
-def _stack_requests(lower, upper):
-    """Junta dois pedidos `(marcações, reset)`; `upper` é o mais novo.
-
-    Um recomeço (`reset=True`) por cima vale sozinho; senão as marcações são
-    somadas (`dict(lower); update(upper)`) e o `reset` de baixo é herdado.
-    """
-    if upper is None:
-        return lower
-    if lower is None or upper[1]:
-        return (dict(upper[0]), bool(upper[1]))
-    steps = dict(lower[0])
-    steps.update(upper[0])
-    return (steps, bool(lower[1]))
-
-
 class FirstUseProgressSaver:
     """Grava o progresso do Primeiro uso guiado fora da thread do Tk (R-10).
 
-    Mantém uma única thread não-daemon por gravador e junta pedidos
-    intermediários para que a última marcação sempre vença, preservando no
-    disco entradas gravadas por outra instância (R-09, R-94):
-    - pedidos parciais que esperam são somados (`dict(anterior); update(novo)`),
-      nunca trocados; um pedido com `reset=True` substitui o que esperava, e
-      os pedidos seguintes herdam o `reset`;
-    - a base da diferença (`base_steps`) é o que ESTA janela pediu ou adotou
-      (R-94, R-96): um valor lido do disco ou juntado com outra janela só vira
-      base quando a tela passa a mostrá-lo e chama `adopt(steps)` (ou
-      `poll_merged(adopt=True)`); a adoção acontece numa tomada só da trava e
-      nunca muda a base de uma etapa com pedido pendente (que falhou, em
-      gravação ou esperando; com "Recomeçar" pendente, nenhuma). Sem adotar,
-      desmarcar o que outra janela marcou fica igual à base e não é gravado;
-    - pedido inválido é recusado na hora, em `request` (`ValueError`), nunca
-      somado aos válidos; se a gravação falha, o pedido que falhou volta para a
-      fila, por baixo do que espera (mantendo o `reset`), e é gravado de novo
-      só no próximo `request`; o aviso de erro só some quando ele for gravado
-      (R-95).
+    Feito para UMA janela só (decisão de 20/11/2026): cada pedido traz as 6
+    marcações completas, e o mais novo vale sozinho.
+    - Uma única thread não-daemon por gravador; pedidos que chegam durante uma
+      gravação são trocados pelo mais novo (o último clique sempre vence).
+    - Pedido inválido ou incompleto é recusado na hora, em `request`
+      (`ValueError`), e nunca entra na fila.
+    - Se a gravação falha, as marcações ficam guardadas em `pending()` e o
+      aviso de erro (`poll_error()`) fica até uma gravação dar certo; o app
+      tenta de novo no próximo `request` (com as marcações mais novas).
     """
 
-    def __init__(self, path, *, initial_steps, save=None):
+    def __init__(self, path, *, save=None):
         self.path = None if path is None else Path(path)
         self._save = save
-        self._base = validate_first_use_steps(initial_steps)
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
-        self._wanted: tuple[dict[str, str], bool] | None = None
-        self._writing: tuple[dict[str, str], bool] | None = None
-        self._failed: tuple[dict[str, str], bool] | None = None
-        self._merged: dict[str, str] | None = None
+        self._wanted: dict[str, str] | None = None
+        self._writing: dict[str, str] | None = None
+        self._failed: dict[str, str] | None = None
         self._error: str | None = None
         self._thread: threading.Thread | None = None
         self.closed = False
 
-    def request(self, steps, *, reset: bool = False) -> None:
-        """Pede para gravar uma cópia das marcações e retorna imediatamente."""
-        # R-95: valida na hora; pedido inválido nunca entra na fila.
-        validated = validate_first_use_steps(steps)
-        copy = {key: validated[key] for key in steps}
+    def request(self, steps) -> None:
+        """Pede para gravar uma cópia das 6 marcações e retorna imediatamente."""
+        copy = validate_complete_first_use_steps(steps)
         with self._lock:
             if self.closed or self.path is None:
                 return
-            waiting = _stack_requests(self._failed, self._wanted)
-            self._failed = None
-            self._wanted = _stack_requests(waiting, (copy, bool(reset)))
+            self._failed = None  # o pedido novo já traz o estado inteiro
+            self._wanted = copy
             if self._thread is None:
                 self._thread = threading.Thread(
                     target=self._run,
@@ -503,117 +470,44 @@ class FirstUseProgressSaver:
     def _run(self) -> None:
         while True:
             with self._lock:
-                wanted = self._wanted
-                base = dict(self._base)
-                if wanted is None:
+                steps = self._wanted
+                if steps is None:
                     self._writing = None
                     self._thread = None
                     self._idle.notify_all()
                     return
-                steps, reset = wanted
                 self._wanted = None
-                self._writing = (steps, reset)
-            merged: dict[str, str] | None = None
+                self._writing = steps
             try:
                 if self._save is not None:
-                    result = self._save(self.path, steps, base_steps=base, reset=reset)
-                    raw_merged = result if isinstance(result, dict) else steps
-                    merged = validate_first_use_steps(raw_merged)
+                    self._save(self.path, dict(steps))
                 else:
-                    merged = save_first_use_progress(
-                        self.path, steps, base_steps=base, reset=reset
-                    )
+                    save_first_use_progress(self.path, steps)
                 error = None
             except Exception as exc:  # noqa: BLE001 - qualquer falha vira aviso fixo
                 error = first_use_error_text(exc, self.path)
             with self._lock:
-                if error is not None:
-                    # R-95: o pedido que falhou volta por baixo do que espera.
-                    back = _stack_requests((steps, reset), self._wanted)
-                    if self._wanted is not None:
-                        self._wanted = back  # já há pedido novo: grava em seguida
-                    else:
-                        self._failed = back  # grava de novo só no próximo request
-                if error is None and merged is not None:
-                    # R-94: a base é o que esta janela pediu, nunca o disco.
-                    asked = validate_first_use_steps(steps)
-                    if reset:
-                        self._base = asked
-                    else:
-                        for key in steps:
-                            self._base[key] = asked[key]
-                    self._merged = dict(merged)
+                if error is not None and self._wanted is None:
+                    self._failed = steps  # grava de novo só no próximo request
                 self._writing = None
                 self._error = error
-
-    def _adopt_locked(self, clean: dict[str, str]) -> None:
-        item = self._pending_locked()
-        if item is not None and item[1]:
-            return  # "Recomeçar" pendente: todas as etapas estão pendentes
-        busy = set() if item is None else set(item[0])
-        for key in STEP_IDS:
-            if key not in busy:
-                self._base[key] = clean[key]
-
-    def adopt(self, steps) -> None:
-        """Faz a base virar o que a tela passou a mostrar (R-96).
-
-        A tela chama isto sempre que passa a mostrar marcações vindas do disco
-        ou de outra janela (de `poll_merged()` ou `load_first_use_with_pending`).
-        Numa tomada só da trava, a base de cada etapa SEM pedido pendente (que
-        falhou, em gravação ou esperando) vira o valor mostrado; as etapas
-        pendentes ficam como estão, e com "Recomeçar" pendente nada muda.
-        Valores inválidos são recusados (`ValueError`).
-        """
-        clean = validate_first_use_steps(steps)
-        with self._lock:
-            self._adopt_locked(clean)
-
-    def poll_merged(self, *, adopt: bool = False) -> dict[str, str] | None:
-        """Último dicionário juntado e gravado com sucesso, ou `None`.
-
-        Se a tela for mostrar esse dicionário, ela precisa adotar o que mostra:
-        use `adopt=True` (ou chame `adopt()` com o que mostrar). Sem adotar,
-        desmarcar depois uma etapa marcada por outra janela não é gravado
-        (R-96). Com `adopt=True`, ler e adotar acontecem na mesma trava.
-        """
-        with self._lock:
-            if self._merged is None:
-                return None
-            merged = dict(self._merged)
-            if adopt:
-                self._adopt_locked(merged)
-            return merged
 
     def poll_error(self) -> str | None:
         """Erro da última gravação terminada (sem caminho completo) ou `None`."""
         with self._lock:
             return self._error
 
-    def _pending_locked(self) -> tuple[dict[str, str], bool] | None:
-        lower = _stack_requests(self._failed, self._writing)
-        return _stack_requests(lower, self._wanted)
+    def pending(self) -> dict[str, str] | None:
+        """As 6 marcações mais novas ainda não gravadas, ou `None`.
 
-    def pending(self) -> tuple[dict[str, str], bool] | None:
-        """`(marcações, reset)` ainda não gravadas, lidas sob a mesma trava.
-
-        Soma o que falhou e o pedido em gravação (por baixo) com o que espera
-        (por cima); se o que espera é um recomeço (`reset=True`), ele vale
-        sozinho.
+        Vale o pedido que espera; senão, o que está sendo gravado; senão, o que
+        falhou. Lido numa tomada só da trava.
         """
         with self._lock:
-            item = self._pending_locked()
-            return None if item is None else (dict(item[0]), item[1])
-
-    def pending_steps(self) -> dict[str, str] | None:
-        """Marcações pedidas e ainda não gravadas, ou `None` (veja `pending`)."""
-        item = self.pending()
-        return None if item is None else item[0]
-
-    def pending_is_reset(self) -> bool:
-        """Indica se as marcações pendentes pedem para recomeçar (`reset=True`)."""
-        item = self.pending()
-        return bool(item and item[1])
+            for item in (self._wanted, self._writing, self._failed):
+                if item is not None:
+                    return dict(item)
+            return None
 
     def busy(self) -> bool:
         """`True` enquanto há pedido esperando ou gravação em andamento.
@@ -653,23 +547,14 @@ def load_first_use_with_pending(
     *,
     load=None,
 ) -> dict:
-    """Lê o progresso preferindo marcações pendentes no `saver` antes do disco.
+    """Lê o progresso preferindo as marcações ainda não gravadas no `saver`.
 
-    Se a tela for mostrar o resultado, ela precisa adotar o que mostra
-    (`saver.adopt(progress['steps'])`); sem isso, desmarcar uma etapa que
-    outra janela marcou não é gravado (R-96).
+    Serve para reabrir a janela enquanto uma gravação ainda não terminou: as
+    pendentes (lidas ANTES do disco) valem por inteiro no lugar do disco.
     """
     load_fn = load_first_use_progress if load is None else load
-    item = saver.pending() if saver is not None else None
-    pending, pending_reset = (None, False) if item is None else item
+    pending = saver.pending() if saver is not None else None
     progress = load_fn(base)
     if pending is not None:
-        validated = validate_first_use_steps(pending)
-        if pending_reset:
-            steps = validated
-        else:
-            steps = dict(progress['steps'])
-            for key in pending:
-                steps[key] = validated[key]
-        progress = dict(progress, steps=steps)
+        progress = dict(progress, steps=validate_complete_first_use_steps(pending))
     return progress

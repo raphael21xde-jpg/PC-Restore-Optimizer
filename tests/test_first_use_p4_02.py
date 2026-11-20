@@ -15,6 +15,7 @@ Confere:
 from __future__ import annotations
 
 import ast
+import inspect
 import json
 import os
 import re
@@ -290,6 +291,12 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 )
 
 
+
+def _all(**changes) -> dict[str, str]:
+    """As 6 etapas (pendentes), com as mudanças pedidas."""
+    return dict(fu.empty_first_use_steps(), **changes)
+
+
 class FirstUseProgressTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -320,26 +327,71 @@ class FirstUseProgressTests(unittest.TestCase):
         self.assertEqual(loaded['path'], self.base / fu.PROGRESS_FILENAME)
 
         updated = dict(loaded['steps'], diagnostico=fu.DONE, explorar=fu.SKIPPED)
-        fu.save_first_use_progress(loaded['path'], updated, base_steps=loaded['steps'])
+        self.assertEqual(fu.save_first_use_progress(loaded['path'], updated), updated)
         again = fu.load_first_use_progress(self.base)
         self.assertEqual(again['steps'], updated)
         self.assertEqual(again['path'], loaded['path'])
         self.assertEqual(again['warnings'], [])
 
-    def test_invalid_step_or_status_or_missing_base_raises_value_error(self):
+    def test_invalid_or_incomplete_steps_raise_value_error_before_touching_disk(self):
         path = self.base / fu.PROGRESS_FILENAME
-        empty = fu.empty_first_use_steps()
         with self.assertRaises(ValueError):
             fu.validate_first_use_steps('invalido')
+        for bad in (
+            'invalido',
+            _all(inexistente=fu.DONE),
+            _all(diagnostico='talvez'),
+            {'diagnostico': fu.DONE},  # incompleto: nunca completa com pendente
+            {},
+        ):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    fu.save_first_use_progress(path, bad)
+                self.assertFalse(path.exists())
+        self.assertEqual(self._partials(path), [])
+
+    def test_incomplete_dict_never_unmarks_saved_step(self):
+        path = self.base / fu.PROGRESS_FILENAME
+        fu.save_first_use_progress(path, _all(explorar=fu.DONE))
+        before = path.read_bytes()
         with self.assertRaises(ValueError):
-            fu.save_first_use_progress(path, {'inexistente': fu.DONE}, base_steps=empty)
-        with self.assertRaises(ValueError):
-            fu.save_first_use_progress(path, {'diagnostico': 'talvez'}, base_steps=empty)
-        with self.assertRaises(ValueError):
-            fu.save_first_use_progress(path, empty)
-        with self.assertRaises(ValueError):
-            fu.save_first_use_progress(path, {'xyz': 'talvez'}, reset=True)
-        self.assertFalse(path.exists())
+            fu.save_first_use_progress(path, {'diagnostico': fu.DONE})
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self._partials(path), [])
+
+    def test_one_window_model_has_no_merge_api(self):
+        # Decisão de 20/11/2026: uma janela só; nada de base, reset ou adoção.
+        params = inspect.signature(fu.save_first_use_progress).parameters
+        self.assertEqual(list(params), ['path', 'steps'])
+        self.assertEqual(
+            list(inspect.signature(fu.FirstUseProgressSaver).parameters),
+            ['path', 'save'],
+        )
+        for name in ('poll_merged', 'adopt', 'pending_is_reset', 'pending_steps'):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(fu.FirstUseProgressSaver, name))
+        self.assertFalse(hasattr(fu, '_stack_requests'))
+        source = (ROOT / 'first_use.py').read_text(encoding='utf-8')
+        for word in ('base_steps', 'reset=', 'merged', 'adopt'):
+            with self.subTest(word=word):
+                self.assertNotIn(word, source)
+
+    def test_window_state_is_saved_as_is_including_back_to_pending(self):
+        # O que a janela mostra é o que vale: voltar para Pendente e
+        # "Recomeçar marcações" (tudo pendente) chegam ao disco.
+        path = self.base / fu.PROGRESS_FILENAME
+        fu.save_first_use_progress(path, _all(diagnostico=fu.DONE, explorar=fu.DONE))
+        shown = fu.load_first_use_progress(self.base)['steps']
+        self.assertEqual(shown['explorar'], fu.DONE)
+        shown['explorar'] = fu.PENDING
+        fu.save_first_use_progress(path, shown)
+        self.assertEqual(
+            fu.load_first_use_progress(self.base)['steps'], _all(diagnostico=fu.DONE)
+        )
+        fu.save_first_use_progress(path, fu.empty_first_use_steps())
+        self.assertEqual(
+            fu.load_first_use_progress(self.base)['steps'], fu.empty_first_use_steps()
+        )
 
     def test_corrupt_json_is_untouched_and_advances_to_2(self):
         first = self.base / fu.PROGRESS_FILENAME
@@ -354,15 +406,14 @@ class FirstUseProgressTests(unittest.TestCase):
         self.assertIn(fu.PROGRESS_FILENAME, loaded['warnings'][0])
         self.assertNotIn(str(self.base), loaded['warnings'][0])
 
-        fu.save_first_use_progress(
-            loaded['path'],
-            dict(loaded['steps'], diagnostico=fu.DONE),
-            base_steps=loaded['steps'],
-        )
+        fu.save_first_use_progress(loaded['path'], dict(loaded['steps'], diagnostico=fu.DONE))
         self.assertEqual(first.read_bytes(), before)
         again = fu.load_first_use_progress(self.base)
         self.assertEqual(again['steps']['diagnostico'], fu.DONE)
         self.assertEqual(again['path'], loaded['path'])
+        with self.assertRaises(fu.FirstUseBadProgressFileError):
+            fu.save_first_use_progress(first, fu.empty_first_use_steps())
+        self.assertEqual(first.read_bytes(), before)
 
     def test_too_large_file_is_untouched_and_advances_to_2(self):
         first = self.base / fu.PROGRESS_FILENAME
@@ -404,11 +455,7 @@ class FirstUseProgressTests(unittest.TestCase):
                 any('é um link ou um arquivo especial do Windows' in w for w in loaded['warnings'])
             )
             with self.assertRaises(OSError):
-                fu.save_first_use_progress(
-                    first,
-                    fu.empty_first_use_steps(),
-                    base_steps=fu.empty_first_use_steps(),
-                )
+                fu.save_first_use_progress(first, fu.empty_first_use_steps())
 
     def test_error_text_never_exposes_full_path_or_username(self):
         exc = PermissionError(
@@ -425,8 +472,6 @@ class FirstUseProgressTests(unittest.TestCase):
             self.assertNotIn(secret, msg)
 
     def test_error_text_without_filename_uses_saver_path_name_only(self):
-        # Ressalva A: erro sem nome de arquivo (ex.: trava ocupada) mostra o
-        # nome do arquivo de progresso e um motivo fixo, nunca a pasta.
         exc = OSError('falha em /home/usuario_secreto/pasta')
         path = self.base / 'usuario_secreto' / fu.PROGRESS_FILENAME
         msg = fu.first_use_error_text(exc, path)
@@ -434,23 +479,14 @@ class FirstUseProgressTests(unittest.TestCase):
         self.assertIn('ele foi deixado como está', msg)
         self.assertNotIn('usuario_secreto', msg)
         self.assertNotIn(str(self.base), msg)
-        self.assertNotIn('Não deu para salvar o progresso (OSError)', msg)
 
     def test_bad_progress_file_error_uses_fixed_reason_and_filename(self):
         first = self.base / fu.PROGRESS_FILENAME
         first.mkdir(parents=True)
         with self.assertRaises(fu.FirstUseBadProgressFileError) as ctx:
-            fu.save_first_use_progress(
-                first,
-                fu.empty_first_use_steps(),
-                base_steps=fu.empty_first_use_steps(),
-            )
+            fu.save_first_use_progress(first, fu.empty_first_use_steps())
         msg = fu.first_use_error_text(ctx.exception)
         self.assertIn(fu.PROGRESS_FILENAME, msg)
-        self.assertIn(
-            'o arquivo de progresso',
-            msg,
-        )
         self.assertIn(
             'não é um arquivo comum ou não pôde ser lido; ele foi deixado como está',
             msg,
@@ -459,100 +495,13 @@ class FirstUseProgressTests(unittest.TestCase):
 
     def test_failed_replace_keeps_partial_without_deleting(self):
         path = self.base / fu.PROGRESS_FILENAME
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(path, {'diagnostico': fu.DONE}, base_steps=empty)
+        fu.save_first_use_progress(path, _all(diagnostico=fu.DONE))
         before = path.read_bytes()
         with mock.patch.object(fu.os, 'replace', side_effect=OSError('falha')):
             with self.assertRaises(OSError):
-                fu.save_first_use_progress(
-                    path,
-                    {'diagnostico': fu.SKIPPED},
-                    base_steps=dict(empty, diagnostico=fu.DONE),
-                )
+                fu.save_first_use_progress(path, _all(diagnostico=fu.SKIPPED))
         self.assertEqual(path.read_bytes(), before)
         self.assertEqual(len(self._partials(path)), 1)
-
-    def test_concurrent_instance_save_preserves_other_instance_entry(self):
-        path = self.base / fu.PROGRESS_FILENAME
-        base_steps = fu.empty_first_use_steps()
-        fu.save_first_use_progress(path, base_steps, base_steps=base_steps)
-
-        # Outra instância grava 'explorar = feito' no disco
-        other_steps = dict(base_steps, explorar=fu.DONE)
-        fu.save_first_use_progress(path, other_steps, base_steps=base_steps)
-
-        # Esta instância ainda tinha 'explorar = pendente' na memória e marca 'diagnostico = feito'
-        my_steps = dict(base_steps, diagnostico=fu.DONE)
-        merged = fu.save_first_use_progress(path, my_steps, base_steps=base_steps)
-        self.assertEqual(merged['diagnostico'], fu.DONE)
-        self.assertEqual(merged['explorar'], fu.DONE)
-
-        loaded = fu.load_first_use_progress(self.base)
-        self.assertEqual(loaded['steps']['diagnostico'], fu.DONE)
-        self.assertEqual(loaded['steps']['explorar'], fu.DONE)
-
-    def test_full_memory_dict_without_base_is_refused_and_keeps_other_window_mark(self):
-        # Ponto 2 do revisor (reprodução): tudo pendente; outra janela grava
-        # explorar=feito; gravar o dicionário completo da memória SEM base
-        # apagaria explorar. Agora levanta ValueError e o disco fica igual.
-        path = self.base / fu.PROGRESS_FILENAME
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(path, empty, base_steps=empty)
-        fu.save_first_use_progress(path, {'explorar': fu.DONE}, base_steps=empty)
-        before = path.read_bytes()
-        with self.assertRaises(ValueError):
-            fu.save_first_use_progress(path, dict(empty, diagnostico=fu.DONE))
-        self.assertEqual(path.read_bytes(), before)
-        self.assertEqual(self._partials(path), [])
-        self.assertEqual(
-            fu.load_first_use_progress(self.base)['steps']['explorar'], fu.DONE
-        )
-        # Com a base certa, a mesma gravação junta as duas marcações.
-        merged = fu.save_first_use_progress(
-            path, dict(empty, diagnostico=fu.DONE), base_steps=empty
-        )
-        self.assertEqual(merged, dict(empty, diagnostico=fu.DONE, explorar=fu.DONE))
-
-    def test_reset_with_invalid_step_raises_and_does_not_touch_disk(self):
-        # Ponto 3a: reset=True valida o dicionário e não grava nada se falhar.
-        path = self.base / fu.PROGRESS_FILENAME
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(path, {'explorar': fu.DONE}, base_steps=empty)
-        before = path.read_bytes()
-        for bad in ({'xyz': 'talvez'}, {'diagnostico': 'talvez'}, 'invalido'):
-            with self.subTest(bad=bad):
-                with self.assertRaises(ValueError):
-                    fu.save_first_use_progress(path, bad, reset=True)
-                self.assertEqual(path.read_bytes(), before)
-        self.assertEqual(self._partials(path), [])
-
-    def test_can_revert_step_to_pending_and_reset_all_with_base_or_reset(self):
-        path = self.base / fu.PROGRESS_FILENAME
-        base = fu.empty_first_use_steps()
-        done_steps = dict(base, diagnostico=fu.DONE, explorar=fu.SKIPPED)
-        fu.save_first_use_progress(path, done_steps, base_steps=base)
-
-        # Com base_steps: voltar para pendente e recomeçar tudo gravam no disco
-        fu.save_first_use_progress(
-            path,
-            dict(done_steps, explorar=fu.PENDING),
-            base_steps=done_steps,
-        )
-        self.assertEqual(
-            fu.load_first_use_progress(self.base)['steps'],
-            dict(base, diagnostico=fu.DONE),
-        )
-        fu.save_first_use_progress(
-            path,
-            fu.empty_first_use_steps(),
-            base_steps=dict(base, diagnostico=fu.DONE),
-        )
-        self.assertEqual(fu.load_first_use_progress(self.base)['steps'], base)
-
-        # Com reset=True: recomeçar todas as marcações sem base_steps grava tudo pendente
-        fu.save_first_use_progress(path, done_steps, base_steps=base)
-        fu.save_first_use_progress(path, fu.empty_first_use_steps(), reset=True)
-        self.assertEqual(fu.load_first_use_progress(self.base)['steps'], base)
 
     def test_permission_error_is_not_called_corrupt_and_retries(self):
         first = self.base / fu.PROGRESS_FILENAME
@@ -563,6 +512,24 @@ class FirstUseProgressTests(unittest.TestCase):
         self.assertEqual(loaded['path'], self.base / 'primeiro-uso-progresso-2.json')
         self.assertTrue(any('não pôde ser lido' in w for w in loaded['warnings']))
         self.assertFalse(any('estragado' in w for w in loaded['warnings']))
+
+    def test_read_retries_permission_error_then_succeeds(self):
+        first = self.base / fu.PROGRESS_FILENAME
+        fu.save_first_use_progress(first, _all(backup=fu.DONE))
+        real_open = open
+        calls = []
+
+        def flaky_open(path, mode='r', *args, **kwargs):
+            calls.append(path)
+            if len(calls) == 1:
+                raise PermissionError(13, 'ocupado')
+            return real_open(path, mode, *args, **kwargs)
+
+        sleeps: list[float] = []
+        with mock.patch('builtins.open', side_effect=flaky_open):
+            data = fu._read_bytes_with_retry(first, 1000, sleep=sleeps.append)
+        self.assertEqual(len(sleeps), 1)
+        self.assertIn(b'backup', data)
 
     def test_deep_json_recursion_error_is_untouched_and_advances_to_2(self):
         first = self.base / fu.PROGRESS_FILENAME
@@ -580,8 +547,8 @@ class FirstUseProgressTests(unittest.TestCase):
         second = self.base / 'primeiro-uso-progresso-2.json'
         first.parent.mkdir(parents=True, exist_ok=True)
         first.write_text('{ quebrado', encoding='utf-8')
-        saved = dict(fu.empty_first_use_steps(), backup=fu.DONE)
-        fu.save_first_use_progress(second, saved, base_steps=fu.empty_first_use_steps())
+        saved = _all(backup=fu.DONE)
+        fu.save_first_use_progress(second, saved)
 
         loaded = fu.load_first_use_progress(self.base)
         self.assertEqual(loaded['path'], second)
@@ -593,7 +560,7 @@ class FirstUseProgressTests(unittest.TestCase):
     def test_real_symlink_is_not_followed_and_target_remains_unchanged(self):
         target = self.tmp / 'alvo-real.json'
         target_bytes = json.dumps(
-            {'schema': fu.SCHEMA, 'steps': dict(fu.empty_first_use_steps(), diagnostico=fu.DONE)}
+            {'schema': fu.SCHEMA, 'steps': _all(diagnostico=fu.DONE)}
         ).encode('utf-8')
         target.write_bytes(target_bytes)
         first = self.base / fu.PROGRESS_FILENAME
@@ -609,12 +576,9 @@ class FirstUseProgressTests(unittest.TestCase):
             any('é um link ou um arquivo especial do Windows' in w for w in loaded['warnings'])
         )
         with self.assertRaises(OSError):
-            fu.save_first_use_progress(
-                first,
-                fu.empty_first_use_steps(),
-                base_steps=fu.empty_first_use_steps(),
-            )
+            fu.save_first_use_progress(first, fu.empty_first_use_steps())
         self.assertEqual(target.read_bytes(), target_bytes)
+        self.assertTrue(first.is_symlink())
 
     def test_directory_in_place_of_file_is_untouched_and_refused(self):
         first = self.base / fu.PROGRESS_FILENAME
@@ -626,11 +590,7 @@ class FirstUseProgressTests(unittest.TestCase):
         self.assertEqual(loaded['path'], self.base / 'primeiro-uso-progresso-2.json')
         self.assertTrue(any('não é um arquivo comum' in w for w in loaded['warnings']))
         with self.assertRaises(OSError):
-            fu.save_first_use_progress(
-                first,
-                fu.empty_first_use_steps(),
-                base_steps=fu.empty_first_use_steps(),
-            )
+            fu.save_first_use_progress(first, fu.empty_first_use_steps())
         self.assertTrue(first.is_dir())
         self.assertEqual(marker.read_text(encoding='utf-8'), 'nao apagar')
 
@@ -642,66 +602,18 @@ class FirstUseProgressTests(unittest.TestCase):
             side_effect=TimeoutError('trava ocupada: .primeiro-uso-progresso.json.lock'),
         ):
             with self.assertRaises(TimeoutError) as ctx:
-                fu.save_first_use_progress(
-                    path,
-                    fu.empty_first_use_steps(),
-                    base_steps=fu.empty_first_use_steps(),
-                )
+                fu.save_first_use_progress(path, fu.empty_first_use_steps())
         msg = fu.first_use_error_text(ctx.exception)
         self.assertIn('TimeoutError', msg)
         self.assertNotIn(str(self.base), msg)
+        self.assertFalse(path.exists())
 
-    def test_partial_request_with_base_steps_preserves_other_window_entry(self):
+    def test_two_app_processes_are_serialized_by_exclusive_lock(self):
+        # Trava contra dois processos do app gravando ao mesmo tempo: a segunda
+        # gravação espera a primeira terminar; o arquivo fica sempre inteiro e
+        # vale o último a gravar (sem juntar, modelo de uma janela só).
         path = self.base / fu.PROGRESS_FILENAME
-        initial = fu.empty_first_use_steps()
-        fu.save_first_use_progress(path, initial, base_steps=initial)
-
-        # Outra janela grava explorar=feito
-        fu.save_first_use_progress(path, {'explorar': fu.DONE}, base_steps=initial)
-
-        # Pedido parcial com base_steps onde explorar estava feito na base local:
-        # etapas que não vieram no pedido não podem virar pendente e apagar o disco.
-        local_base = dict(initial, explorar=fu.DONE)
-        merged = fu.save_first_use_progress(
-            path,
-            {'diagnostico': fu.DONE},
-            base_steps=local_base,
-        )
-        self.assertEqual(merged['diagnostico'], fu.DONE)
-        self.assertEqual(merged['explorar'], fu.DONE)
-        self.assertEqual(
-            fu.load_first_use_progress(self.base)['steps']['explorar'],
-            fu.DONE,
-        )
-
-    def test_reset_flag_overwrites_other_window_entry_and_still_refuses_bad_file(self):
-        path = self.base / fu.PROGRESS_FILENAME
-        base = fu.empty_first_use_steps()
-        fu.save_first_use_progress(
-            path,
-            dict(base, diagnostico=fu.DONE, explorar=fu.DONE),
-            base_steps=base,
-        )
-
-        reset_result = fu.save_first_use_progress(
-            path,
-            dict(base, backup=fu.SKIPPED),
-            base_steps=dict(base, diagnostico=fu.DONE),
-            reset=True,
-        )
-        expected = dict(base, backup=fu.SKIPPED)
-        self.assertEqual(reset_result, expected)
-        self.assertEqual(fu.load_first_use_progress(self.base)['steps'], expected)
-
-        corrupt = self.base / 'primeiro-uso-progresso-2.json'
-        corrupt.write_text('{ quebrado', encoding='utf-8')
-        with self.assertRaises(OSError):
-            fu.save_first_use_progress(corrupt, fu.empty_first_use_steps(), reset=True)
-
-    def test_concurrent_threads_race_with_exclusive_lock_preserves_both(self):
-        path = self.base / fu.PROGRESS_FILENAME
-        base = fu.empty_first_use_steps()
-        fu.save_first_use_progress(path, base, base_steps=base)
+        fu.save_first_use_progress(path, fu.empty_first_use_steps())
 
         a_paused = threading.Event()
         release_a = threading.Event()
@@ -743,11 +655,7 @@ class FirstUseProgressTests(unittest.TestCase):
             nonlocal thread_a_id
             thread_a_id = threading.get_ident()
             try:
-                fu.save_first_use_progress(
-                    path,
-                    dict(base, diagnostico=fu.DONE),
-                    base_steps=base,
-                )
+                fu.save_first_use_progress(path, _all(diagnostico=fu.DONE))
             except Exception as exc:  # pragma: no cover - falha do teste
                 errors.append(exc)
 
@@ -755,11 +663,7 @@ class FirstUseProgressTests(unittest.TestCase):
             nonlocal thread_b_id
             thread_b_id = threading.get_ident()
             try:
-                fu.save_first_use_progress(
-                    path,
-                    dict(base, explorar=fu.DONE),
-                    base_steps=base,
-                )
+                fu.save_first_use_progress(path, _all(explorar=fu.DONE))
             except Exception as exc:  # pragma: no cover - falha do teste
                 errors.append(exc)
 
@@ -774,7 +678,6 @@ class FirstUseProgressTests(unittest.TestCase):
             tb = threading.Thread(target=writer_b)
             tb.start()
             self.assertTrue(b_entering_lock.wait(5))
-            # B está bloqueada na trava exclusiva enquanto A não termina
             self.assertFalse(b_acquired_lock.wait(0.05))
             release_a.set()
 
@@ -787,8 +690,9 @@ class FirstUseProgressTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(events, ['a_acquired', 'b_waiting', 'a_releasing', 'b_acquired'])
         loaded = fu.load_first_use_progress(self.base)
-        self.assertEqual(loaded['steps']['diagnostico'], fu.DONE)
-        self.assertEqual(loaded['steps']['explorar'], fu.DONE)
+        self.assertEqual(loaded['warnings'], [])
+        self.assertEqual(loaded['steps'], _all(explorar=fu.DONE))
+        self.assertEqual(self._partials(path), [])
 
 
 class FirstUseProgressSaverTests(unittest.TestCase):
@@ -810,9 +714,8 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         self._savers.append(saver)
         return saver
 
-    def test_initial_steps_is_required(self):
-        with self.assertRaises(TypeError):
-            fu.FirstUseProgressSaver(self.path)
+    def _disk(self) -> dict[str, str]:
+        return fu.load_first_use_progress(self.path.parent)['steps']
 
     def test_latest_request_wins_and_coalesces_intermediate(self):
         release = threading.Event()
@@ -820,14 +723,13 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         calls = []
         wait_results = []
 
-        def fake_save(path, steps, **kwargs):
+        def fake_save(path, steps):
             started.set()
             wait_results.append(release.wait(5))
-            calls.append((path, dict(steps), kwargs))
-            return steps
+            calls.append((path, dict(steps)))
 
-        saver = self._make_saver(initial_steps=fu.empty_first_use_steps(), save=fake_save)
-        first = dict(fu.empty_first_use_steps(), diagnostico=fu.DONE)
+        saver = self._make_saver(save=fake_save)
+        first = _all(diagnostico=fu.DONE)
         second = dict(first, explorar=fu.SKIPPED)
         third = dict(second, preservacao=fu.DONE)
 
@@ -835,198 +737,76 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         self.assertTrue(started.wait(5))
         saver.request(second)
         saver.request(third)
-        self.assertEqual(saver.pending_steps(), third)
+        self.assertEqual(saver.pending(), third)
         release.set()
         self.assertTrue(saver.join(5))
 
         self.assertEqual(wait_results, [True, True])
         self.assertEqual([c[1] for c in calls], [first, third])
-        self.assertIsNone(saver.pending_steps())
+        self.assertEqual([c[0] for c in calls], [self.path, self.path])
+        self.assertIsNone(saver.pending())
         self.assertIsNone(saver.poll_error())
 
-    def test_real_saver_preserves_other_instance_and_can_revert_to_pending(self):
-        initial = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, initial, base_steps=initial)
-        saver = self._make_saver(initial_steps=initial)
-
-        # Marca diagnostico=feito pelo gravador real
-        step1 = dict(initial, diagnostico=fu.DONE)
-        saver.request(step1)
+    def test_real_saver_writes_window_state_including_revert_and_restart(self):
+        saver = self._make_saver()
+        saver.request(_all(diagnostico=fu.DONE, explorar=fu.DONE))
         self.assertTrue(saver.join(5))
         self.assertIsNone(saver.poll_error())
+        self.assertEqual(self._disk(), _all(diagnostico=fu.DONE, explorar=fu.DONE))
 
-        # Outra instância grava explorar=feito entre dois pedidos
-        fu.save_first_use_progress(
-            self.path,
-            dict(initial, explorar=fu.DONE),
-            base_steps=initial,
-        )
+        # Clicar de novo em "Feito": volta para Pendente, e isso chega ao disco.
+        saver.request(_all(diagnostico=fu.DONE))
+        self.assertTrue(saver.join(5))
+        self.assertEqual(self._disk(), _all(diagnostico=fu.DONE))
 
-        # Esta janela volta diagnostico para pendente (feito -> clicar de novo -> pendente)
-        step2 = dict(initial, diagnostico=fu.PENDING)
-        saver.request(step2)
+        # "Recomeçar marcações": tudo pendente.
+        saver.request(fu.empty_first_use_steps())
         self.assertTrue(saver.join(5))
         self.assertIsNone(saver.poll_error())
-        merged = saver.poll_merged()
-        self.assertEqual(merged['diagnostico'], fu.PENDING)
-        self.assertEqual(merged['explorar'], fu.DONE)
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            merged,
-        )
+        self.assertEqual(self._disk(), fu.empty_first_use_steps())
 
-        # Recomeçar marcações com reset=True: volta todas as etapas (inclusive
-        # nova marcação gravada por outra janela) para pendente
-        fu.save_first_use_progress(
-            self.path,
-            dict(initial, backup=fu.DONE),
-            base_steps=merged,
-        )
-        reset = fu.empty_first_use_steps()
-        saver.request(reset, reset=True)
-        self.assertTrue(saver.join(5))
-        self.assertEqual(fu.load_first_use_progress(self.path.parent)['steps'], reset)
-
-    def test_saver_partial_request_preserves_other_window_entry(self):
-        initial = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, initial, base_steps=initial)
-        saver = self._make_saver(initial_steps=initial)
-
-        # Outra janela grava explorar=feito no disco
-        fu.save_first_use_progress(self.path, {'explorar': fu.DONE}, base_steps=initial)
-
-        # Esta janela envia apenas diagnostico=feito (pedido parcial)
-        saver.request({'diagnostico': fu.DONE})
-        self.assertTrue(saver.join(5))
-        self.assertIsNone(saver.poll_error())
-        merged = saver.poll_merged()
-        self.assertEqual(merged['diagnostico'], fu.DONE)
-        self.assertEqual(merged['explorar'], fu.DONE)
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            merged,
-        )
-
-    def test_saver_base_is_what_this_window_asked_never_the_disk(self):
-        # Ponto 1 do revisor na #284 (R-94), pelo gravador real (save=None).
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
-        saver = self._make_saver(initial_steps=empty)
-        # Outra janela grava explorar=feito.
-        fu.save_first_use_progress(self.path, {'explorar': fu.DONE}, base_steps=empty)
-
-        saver.request(dict(empty, diagnostico=fu.DONE))
-        self.assertTrue(saver.join(5))
-        self.assertIsNone(saver.poll_error())
-        disk = fu.load_first_use_progress(self.path.parent)['steps']
-        self.assertEqual(disk, dict(empty, diagnostico=fu.DONE, explorar=fu.DONE))
-        self.assertEqual(saver.poll_merged(), disk)
-
-        # A memória desta janela continua sem explorar=feito.
-        saver.request(dict(empty, diagnostico=fu.DONE, backup=fu.DONE))
-        self.assertTrue(saver.join(5))
-        self.assertIsNone(saver.poll_error())
-        disk = fu.load_first_use_progress(self.path.parent)['steps']
-        self.assertEqual(
-            disk,
-            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE, backup=fu.DONE),
-        )
-
-    def test_saver_sums_partial_requests_while_writing_is_paused(self):
-        # Ponto 2 do revisor na #284 (R-94): pedidos parciais somados.
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
+    def test_invalid_or_incomplete_request_is_refused_at_once(self):
         started = threading.Event()
         release = threading.Event()
         wait_results: list[bool] = []
-        calls: list[tuple[dict, dict]] = []
+        calls: list[dict] = []
 
-        def paused_save(path, steps, **kwargs):
-            calls.append((dict(steps), dict(kwargs)))
+        def paused_save(path, steps):
+            calls.append(dict(steps))
             if len(calls) == 1:
                 started.set()
                 wait_results.append(release.wait(5))
-            return fu.save_first_use_progress(path, steps, **kwargs)
+            fu.save_first_use_progress(path, steps)
 
-        saver = self._make_saver(initial_steps=empty, save=paused_save)
-        saver.request({'diagnostico': fu.DONE})
+        saver = self._make_saver(save=paused_save)
+        saver.request(_all(diagnostico=fu.DONE))
         self.assertTrue(started.wait(5))
-        saver.request({'explorar': fu.DONE})
-        saver.request({'testar': fu.DONE})
-        # Durante a pausa, as pendentes somam o que está sendo gravado.
-        self.assertEqual(
-            saver.pending_steps(),
-            {'diagnostico': fu.DONE, 'explorar': fu.DONE, 'testar': fu.DONE},
-        )
-        self.assertFalse(saver.pending_is_reset())
-        loaded = fu.load_first_use_with_pending(self.path.parent, saver)
-        self.assertEqual(
-            loaded['steps'],
-            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE, testar=fu.DONE),
-        )
+        saver.request(_all(diagnostico=fu.DONE, explorar=fu.DONE))
+        for bad in (_all(xyz=fu.DONE), _all(testar='talvez'), 'invalido', {'backup': fu.DONE}):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    saver.request(bad)
+        self.assertEqual(saver.pending(), _all(diagnostico=fu.DONE, explorar=fu.DONE))
         release.set()
         self.assertTrue(saver.join(5))
-
         self.assertEqual(wait_results, [True])
         self.assertEqual(
-            [c[0] for c in calls],
-            [{'diagnostico': fu.DONE}, {'explorar': fu.DONE, 'testar': fu.DONE}],
+            calls, [_all(diagnostico=fu.DONE), _all(diagnostico=fu.DONE, explorar=fu.DONE)]
         )
         self.assertIsNone(saver.poll_error())
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE, testar=fu.DONE),
-        )
+        self.assertEqual(self._disk(), _all(diagnostico=fu.DONE, explorar=fu.DONE))
 
-    def test_saver_reset_request_replaces_waiting_partial(self):
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
-        started = threading.Event()
-        release = threading.Event()
-        wait_results: list[bool] = []
-        calls: list[tuple[dict, dict]] = []
+    def test_failed_save_is_kept_in_pending_and_retried_on_next_request(self):
+        calls: list[dict] = []
 
-        def paused_save(path, steps, **kwargs):
-            calls.append((dict(steps), dict(kwargs)))
-            if len(calls) == 1:
-                started.set()
-                wait_results.append(release.wait(5))
-            return fu.save_first_use_progress(path, steps, **kwargs)
-
-        saver = self._make_saver(initial_steps=empty, save=paused_save)
-        saver.request({'diagnostico': fu.DONE})
-        self.assertTrue(started.wait(5))
-        saver.request({'explorar': fu.DONE})
-        saver.request(empty, reset=True)
-        saver.request({'backup': fu.SKIPPED})
-        self.assertEqual(saver.pending_steps(), dict(empty, backup=fu.SKIPPED))
-        self.assertTrue(saver.pending_is_reset())
-        release.set()
-        self.assertTrue(saver.join(5))
-
-        self.assertEqual(wait_results, [True])
-        self.assertEqual(calls[1], (dict(empty, backup=fu.SKIPPED), calls[1][1]))
-        self.assertTrue(calls[1][1]['reset'])
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            dict(empty, backup=fu.SKIPPED),
-        )
-
-    def test_saver_failed_partial_request_is_kept_and_error_stays_until_written(self):
-        # Achado 1(b) da #284 (R-95): a 1ª gravação falha (TimeoutError) com
-        # pedido parcial; o 2º pedido parcial grava as duas marcações.
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
-        calls: list[tuple[dict, dict]] = []
-
-        def flaky_save(path, steps, **kwargs):
-            calls.append((dict(steps), dict(kwargs)))
+        def flaky_save(path, steps):
+            calls.append(dict(steps))
             if len(calls) == 1:
                 raise TimeoutError('trava ocupada')
-            return fu.save_first_use_progress(path, steps, **kwargs)
+            fu.save_first_use_progress(path, steps)
 
-        saver = self._make_saver(initial_steps=empty, save=flaky_save)
-        saver.request({'diagnostico': fu.DONE})
+        saver = self._make_saver(save=flaky_save)
+        saver.request(_all(diagnostico=fu.DONE))
         self.assertTrue(saver.join(5))
         err = saver.poll_error()
         self.assertIsNotNone(err)
@@ -1034,118 +814,41 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         # Não tenta de novo sozinho: espera o próximo pedido.
         self.assertFalse(saver.busy())
         self.assertEqual(len(calls), 1)
-        self.assertEqual(saver.pending_steps(), {'diagnostico': fu.DONE})
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'], empty
-        )
+        self.assertEqual(saver.pending(), _all(diagnostico=fu.DONE))
+        self.assertFalse(self.path.exists())
 
-        saver.request({'explorar': fu.DONE})
+        saver.request(_all(diagnostico=fu.DONE, explorar=fu.DONE))
         self.assertTrue(saver.join(5))
-        self.assertEqual(
-            [c[0] for c in calls],
-            [{'diagnostico': fu.DONE},
-             {'diagnostico': fu.DONE, 'explorar': fu.DONE}],
-        )
+        self.assertEqual(calls[1], _all(diagnostico=fu.DONE, explorar=fu.DONE))
         self.assertIsNone(saver.poll_error())
-        self.assertIsNone(saver.pending_steps())
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE),
-        )
+        self.assertIsNone(saver.pending())
+        self.assertEqual(self._disk(), _all(diagnostico=fu.DONE, explorar=fu.DONE))
 
-    def test_saver_failed_reset_is_kept_under_new_partial_request(self):
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(
-            self.path, dict(empty, explorar=fu.DONE), base_steps=empty
-        )
-        calls: list[tuple[dict, dict]] = []
-
-        def flaky_save(path, steps, **kwargs):
-            calls.append((dict(steps), dict(kwargs)))
-            if len(calls) == 1:
-                raise PermissionError(13, 'ocupado')
-            return fu.save_first_use_progress(path, steps, **kwargs)
-
-        saver = self._make_saver(initial_steps=empty, save=flaky_save)
-        saver.request(empty, reset=True)
-        self.assertTrue(saver.join(5))
-        self.assertIsNotNone(saver.poll_error())
-        self.assertTrue(saver.pending_is_reset())
-        saver.request({'diagnostico': fu.DONE})
-        self.assertTrue(saver.join(5))
-        self.assertTrue(calls[1][1]['reset'])
-        self.assertIsNone(saver.poll_error())
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            dict(empty, diagnostico=fu.DONE),
-        )
-
-    def test_saver_failure_with_waiting_request_puts_failed_below_it(self):
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
+    def test_failure_with_newer_waiting_request_writes_the_newer(self):
         started = threading.Event()
         release = threading.Event()
         wait_results: list[bool] = []
         calls: list[dict] = []
 
-        def save(path, steps, **kwargs):
+        def save(path, steps):
             calls.append(dict(steps))
             if len(calls) == 1:
                 started.set()
                 wait_results.append(release.wait(5))
                 raise TimeoutError('trava ocupada')
-            return fu.save_first_use_progress(path, steps, **kwargs)
+            fu.save_first_use_progress(path, steps)
 
-        saver = self._make_saver(initial_steps=empty, save=save)
-        saver.request({'diagnostico': fu.DONE, 'explorar': fu.DONE})
+        saver = self._make_saver(save=save)
+        saver.request(_all(diagnostico=fu.DONE, explorar=fu.DONE))
         self.assertTrue(started.wait(5))
-        saver.request({'explorar': fu.SKIPPED})
+        saver.request(_all(diagnostico=fu.DONE, explorar=fu.SKIPPED))
         release.set()
         self.assertTrue(saver.join(5))
         self.assertEqual(wait_results, [True])
-        self.assertEqual(calls[1], {'diagnostico': fu.DONE, 'explorar': fu.SKIPPED})
+        self.assertEqual(calls[1], _all(diagnostico=fu.DONE, explorar=fu.SKIPPED))
         self.assertIsNone(saver.poll_error())
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            dict(empty, diagnostico=fu.DONE, explorar=fu.SKIPPED),
-        )
-
-    def test_saver_invalid_request_is_refused_at_once_and_never_summed(self):
-        # Achado 1(a) da #284 (R-95): pedido inválido recusado no request.
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
-        started = threading.Event()
-        release = threading.Event()
-        wait_results: list[bool] = []
-        calls: list[dict] = []
-
-        def paused_save(path, steps, **kwargs):
-            calls.append(dict(steps))
-            if len(calls) == 1:
-                started.set()
-                wait_results.append(release.wait(5))
-            return fu.save_first_use_progress(path, steps, **kwargs)
-
-        saver = self._make_saver(initial_steps=empty, save=paused_save)
-        saver.request({'diagnostico': fu.DONE})
-        self.assertTrue(started.wait(5))
-        saver.request({'explorar': fu.DONE})
-        for bad in ({'xyz': 'talvez'}, {'testar': 'talvez'}, 'invalido'):
-            with self.subTest(bad=bad):
-                with self.assertRaises(ValueError):
-                    saver.request(bad)
-        self.assertEqual(
-            saver.pending_steps(), {'diagnostico': fu.DONE, 'explorar': fu.DONE}
-        )
-        release.set()
-        self.assertTrue(saver.join(5))
-        self.assertEqual(wait_results, [True])
-        self.assertEqual(calls, [{'diagnostico': fu.DONE}, {'explorar': fu.DONE}])
-        self.assertIsNone(saver.poll_error())
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE),
-        )
+        self.assertIsNone(saver.pending())
+        self.assertEqual(self._disk(), _all(diagnostico=fu.DONE, explorar=fu.SKIPPED))
 
     def test_value_error_text_blames_the_marks_not_the_file(self):
         msg = fu.first_use_error_text(ValueError('Etapa desconhecida'), self.path)
@@ -1154,68 +857,20 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         self.assertNotIn('Etapa desconhecida', msg)
 
     def test_saver_ignores_requests_after_close(self):
-        saver = self._make_saver(
-            initial_steps=fu.empty_first_use_steps(),
-        )
+        saver = self._make_saver()
         saver.close()
-        saver.request({'diagnostico': fu.DONE})
+        saver.request(_all(diagnostico=fu.DONE))
         self.assertFalse(saver.busy())
-        self.assertIsNone(saver.pending_steps())
+        self.assertIsNone(saver.pending())
+        self.assertFalse(self.path.exists())
 
     def test_saver_accepts_none_path(self):
-        no_path_saver = fu.FirstUseProgressSaver(
-            None,
-            initial_steps=fu.empty_first_use_steps(),
-        )
+        no_path_saver = fu.FirstUseProgressSaver(None)
         self._savers.append(no_path_saver)
-        no_path_saver.request({'diagnostico': fu.DONE})
+        no_path_saver.request(_all(diagnostico=fu.DONE))
         self.assertFalse(no_path_saver.busy())
-        self.assertIsNone(no_path_saver.pending_steps())
+        self.assertIsNone(no_path_saver.pending())
         self.assertTrue(no_path_saver.join(1))
-
-    def test_saver_coalesces_reset_then_normal_preserving_reset_true(self):
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
-        started = threading.Event()
-        release = threading.Event()
-        seen_calls: list[tuple[dict[str, str], dict]] = []
-
-        release_results: list[bool] = []
-
-        def fake_save(path, steps, **kwargs):
-            seen_calls.append((dict(steps), dict(kwargs)))
-            if len(seen_calls) == 1:
-                started.set()
-                # Conferido depois do join, na thread do teste.
-                release_results.append(release.wait(5))
-            return fu.save_first_use_progress(path, steps, **kwargs)
-
-        saver = self._make_saver(initial_steps=empty, save=fake_save)
-        saver.request(dict(empty, preservacao=fu.DONE))
-        self.assertTrue(started.wait(5))
-
-        # Outra janela grava explorar=feito enquanto o primeiro pedido está pausado
-        fu.save_first_use_progress(
-            self.path,
-            dict(empty, explorar=fu.DONE),
-            base_steps=empty,
-        )
-        # Recomeçar seguido de um Feito rápido: o segundo pedido herda reset=True
-        saver.request(empty, reset=True)
-        saver.request(dict(empty, diagnostico=fu.DONE))
-        self.assertTrue(saver.pending_is_reset())
-        release.set()
-        self.assertTrue(saver.join(5))
-
-        self.assertEqual(release_results, [True])
-        self.assertEqual(len(seen_calls), 2)
-        self.assertFalse(seen_calls[0][1]['reset'])
-        self.assertTrue(seen_calls[1][1]['reset'])
-        self.assertEqual(seen_calls[1][0], dict(empty, diagnostico=fu.DONE))
-        self.assertIn('base_steps', seen_calls[1][1])
-        loaded = fu.load_first_use_progress(self.path.parent)['steps']
-        self.assertEqual(loaded['diagnostico'], fu.DONE)
-        self.assertEqual(loaded['explorar'], fu.PENDING)
 
     def test_save_error_is_sanitized_and_cleared_on_next_success(self):
         outcomes = [
@@ -1223,14 +878,14 @@ class FirstUseProgressSaverTests(unittest.TestCase):
             None,
         ]
 
-        def fake_save(path, steps, **kwargs):
+        def fake_save(path, steps):
             item = outcomes.pop(0)
             if item is not None:
                 raise item
-            return fu.save_first_use_progress(path, steps, **kwargs)
+            fu.save_first_use_progress(path, steps)
 
-        saver = self._make_saver(initial_steps=fu.empty_first_use_steps(), save=fake_save)
-        saver.request({'diagnostico': fu.DONE})
+        saver = self._make_saver(save=fake_save)
+        saver.request(_all(diagnostico=fu.DONE))
         self.assertTrue(saver.join(5))
         err = saver.poll_error()
         self.assertIsNotNone(err)
@@ -1239,22 +894,19 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         self.assertNotIn(str(self.tmp), err)
         self.assertEqual(fu.first_use_warning_text('aviso base', err), err)
 
-        saver.request({'diagnostico': fu.SKIPPED})
+        saver.request(_all(diagnostico=fu.SKIPPED))
         self.assertTrue(saver.join(5))
         self.assertIsNone(saver.poll_error())
         self.assertEqual(fu.first_use_warning_text('aviso base', saver.poll_error()), 'aviso base')
-        loaded = fu.load_first_use_progress(self.path.parent)
-        self.assertEqual(loaded['steps']['diagnostico'], fu.SKIPPED)
+        self.assertEqual(self._disk()['diagnostico'], fu.SKIPPED)
 
     def test_load_with_pending_reads_pending_before_disk(self):
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, {'diagnostico': fu.PENDING}, base_steps=empty)
+        fu.save_first_use_progress(self.path, fu.empty_first_use_steps())
         release = threading.Event()
         saver = self._make_saver(
-            initial_steps=empty,
-            save=lambda p, st, **kw: (release.wait(5), fu.save_first_use_progress(p, st, **kw))[1],
+            save=lambda p, st: (release.wait(5), fu.save_first_use_progress(p, st)),
         )
-        newer = dict(empty, diagnostico=fu.DONE)
+        newer = _all(diagnostico=fu.DONE)
         saver.request(newer)
         order = []
 
@@ -1270,220 +922,48 @@ class FirstUseProgressSaverTests(unittest.TestCase):
             order.append('pending')
             return real_pending()
 
-        # Achado 4 da #284: marcações e reset lidos numa tomada só da trava.
         saver.pending = spy_pending
         result = fu.load_first_use_with_pending(self.path.parent, saver, load=fake_load)
         self.assertEqual(order, ['pending', 'disk'])
-        self.assertEqual(result['steps']['diagnostico'], fu.DONE)
+        self.assertEqual(result['steps'], newer)
 
-    def test_load_with_pending_merges_partial_pending_over_disk(self):
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, dict(empty, explorar=fu.DONE), base_steps=empty)
+    def test_load_with_pending_uses_whole_pending_dict_over_disk(self):
+        # Reabrir a janela durante uma gravação: vale o que a janela pediu
+        # por inteiro (inclusive o que voltou para Pendente).
+        fu.save_first_use_progress(self.path, _all(explorar=fu.DONE))
         started = threading.Event()
         release = threading.Event()
         saver = self._make_saver(
-            initial_steps=empty,
-            save=lambda p, st, **kw: (started.set(), release.wait(5), fu.save_first_use_progress(p, st, **kw))[2],
+            save=lambda p, st: (started.set(), release.wait(5), fu.save_first_use_progress(p, st)),
         )
-        saver.request({'diagnostico': fu.DONE})
+        saver.request(_all(diagnostico=fu.DONE))
         self.assertTrue(started.wait(5))
         try:
             loaded = fu.load_first_use_with_pending(self.path.parent, saver)
-            self.assertEqual(set(loaded['steps'].keys()), set(fu.STEP_IDS))
-            self.assertEqual(loaded['steps']['diagnostico'], fu.DONE)
-            self.assertEqual(loaded['steps']['explorar'], fu.DONE)
+            self.assertEqual(loaded['steps'], _all(diagnostico=fu.DONE))
+            self.assertEqual(loaded['warnings'], [])
         finally:
             release.set()
-
-    def test_load_with_pending_reset_ignores_disk_and_returns_full_dict(self):
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, dict(empty, explorar=fu.DONE), base_steps=empty)
-        started = threading.Event()
-        release = threading.Event()
-        saver = self._make_saver(
-            initial_steps=empty,
-            save=lambda p, st, **kw: (started.set(), release.wait(5), fu.save_first_use_progress(p, st, **kw))[2],
-        )
-        saver.request({'diagnostico': fu.DONE}, reset=True)
-        self.assertTrue(started.wait(5))
-        try:
-            loaded = fu.load_first_use_with_pending(self.path.parent, saver)
-            self.assertEqual(set(loaded['steps'].keys()), set(fu.STEP_IDS))
-            self.assertEqual(loaded['steps']['diagnostico'], fu.DONE)
-            self.assertEqual(loaded['steps']['explorar'], fu.PENDING)
-        finally:
-            release.set()
-
-
-    # --- Achado 1 do revisor @e7c459f18db5 (R-96): adoção do que a tela mostra ---
-
-    def test_saver_adopted_value_from_other_window_can_be_reverted_on_disk(self):
-        # (a) Caso reproduzido pelo revisor, pelo gravador real (save=None).
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
-        saver = self._make_saver(initial_steps=empty)
-        # Outra janela grava explorar=feito.
-        fu.save_first_use_progress(self.path, {'explorar': fu.DONE}, base_steps=empty)
-        saver.request(dict(empty, diagnostico=fu.DONE))
         self.assertTrue(saver.join(5))
-        self.assertIsNone(saver.poll_error())
+        self.assertEqual(self._disk(), _all(diagnostico=fu.DONE))
 
-        # A tela passa a mostrar o que ficou no disco e adota esses valores.
-        mem = saver.poll_merged(adopt=True)
-        self.assertEqual(mem['explorar'], fu.DONE)
-        # O usuário desmarca explorar (Feito -> Pendente).
-        mem['explorar'] = fu.PENDING
-        saver.request(mem)
-        self.assertTrue(saver.join(5))
-        self.assertIsNone(saver.poll_error())
-        disk = fu.load_first_use_progress(self.path.parent)['steps']
-        self.assertEqual(disk, dict(empty, diagnostico=fu.DONE))
-
-    def test_saver_adopt_method_lets_partial_revert_reach_disk(self):
-        # (a) Mesmo caso, com `adopt(steps)` e pedido parcial.
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(
-            self.path, dict(empty, explorar=fu.DONE), base_steps=empty
-        )
-        saver = self._make_saver(initial_steps=empty)
-        shown = fu.load_first_use_with_pending(self.path.parent, saver)['steps']
-        self.assertEqual(shown['explorar'], fu.DONE)
-        saver.adopt(shown)
-        saver.request({'explorar': fu.PENDING})
-        self.assertTrue(saver.join(5))
-        self.assertIsNone(saver.poll_error())
-        self.assertEqual(fu.load_first_use_progress(self.path.parent)['steps'], empty)
-
-    def test_saver_without_adopt_still_keeps_other_window_mark(self):
-        # (b) R-94: sem adotar, o dicionário da memória não apaga a marcação
-        # de outra janela, mesmo depois de poll_merged() sem adoção.
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
-        saver = self._make_saver(initial_steps=empty)
-        fu.save_first_use_progress(self.path, {'explorar': fu.DONE}, base_steps=empty)
-        saver.request(dict(empty, diagnostico=fu.DONE))
-        self.assertTrue(saver.join(5))
-        self.assertEqual(saver.poll_merged()['explorar'], fu.DONE)
-        saver.request(dict(empty, diagnostico=fu.DONE, backup=fu.DONE))
-        self.assertTrue(saver.join(5))
-        self.assertIsNone(saver.poll_error())
+    def test_load_with_pending_without_saver_or_pending_reads_disk(self):
+        fu.save_first_use_progress(self.path, _all(testar=fu.SKIPPED))
         self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE, backup=fu.DONE),
+            fu.load_first_use_with_pending(self.path.parent)['steps'],
+            _all(testar=fu.SKIPPED),
         )
-
-    def test_saver_adopt_never_changes_base_of_pending_steps(self):
-        # (c) Adotar com pedido em gravação e pedido esperando: a base dessas
-        # etapas não muda; só a das etapas sem pedido.
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
-        started = threading.Event()
-        release = threading.Event()
-        wait_results: list[bool] = []
-        calls: list[tuple[dict, dict]] = []
-
-        def paused_save(path, steps, **kwargs):
-            calls.append((dict(steps), dict(kwargs)))
-            if len(calls) == 1:
-                started.set()
-                wait_results.append(release.wait(5))
-            return fu.save_first_use_progress(path, steps, **kwargs)
-
-        saver = self._make_saver(initial_steps=empty, save=paused_save)
-        saver.request({'diagnostico': fu.DONE})
-        self.assertTrue(started.wait(5))
-        saver.request({'backup': fu.DONE})
-        # A tela mostra valores juntados com outra janela e adota.
-        saver.adopt(
-            dict(empty, diagnostico=fu.SKIPPED, backup=fu.DONE, explorar=fu.DONE)
-        )
-        release.set()
-        self.assertTrue(saver.join(5))
-        self.assertEqual(wait_results, [True])
-        self.assertIsNone(saver.poll_error())
-        second_base = calls[1][1]['base_steps']
-        self.assertEqual(second_base['diagnostico'], fu.DONE)  # gravado, não adotado
-        self.assertEqual(second_base['backup'], fu.PENDING)  # pendente: não mudou
-        self.assertEqual(second_base['explorar'], fu.DONE)  # sem pedido: adotado
+        saver = self._make_saver()
         self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            dict(empty, diagnostico=fu.DONE, backup=fu.DONE),
+            fu.load_first_use_with_pending(self.path.parent, saver)['steps'],
+            _all(testar=fu.SKIPPED),
         )
 
-    def test_saver_adopt_never_changes_base_of_failed_request(self):
-        # (c) O pedido que falhou também é pendente: a base dele não muda.
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(self.path, empty, base_steps=empty)
-        calls: list[tuple[dict, dict]] = []
-
-        def flaky_save(path, steps, **kwargs):
-            calls.append((dict(steps), dict(kwargs)))
-            if len(calls) == 1:
-                raise TimeoutError('trava ocupada')
-            return fu.save_first_use_progress(path, steps, **kwargs)
-
-        saver = self._make_saver(initial_steps=empty, save=flaky_save)
-        saver.request({'diagnostico': fu.DONE})
-        self.assertTrue(saver.join(5))
-        self.assertIsNotNone(saver.poll_error())
-        saver.adopt(dict(empty, diagnostico=fu.DONE, explorar=fu.DONE))
-        saver.request({'explorar': fu.PENDING})
-        self.assertTrue(saver.join(5))
-        self.assertIsNone(saver.poll_error())
-        base = calls[1][1]['base_steps']
-        self.assertEqual(base['diagnostico'], fu.PENDING)
-        self.assertEqual(base['explorar'], fu.DONE)
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            dict(empty, diagnostico=fu.DONE),
-        )
-
-    def test_saver_adopt_is_ignored_while_reset_is_pending(self):
-        # (c) Com "Recomeçar" pendente, todas as etapas são pendentes.
-        empty = fu.empty_first_use_steps()
-        fu.save_first_use_progress(
-            self.path, dict(empty, explorar=fu.DONE), base_steps=empty
-        )
-        calls: list[tuple[dict, dict]] = []
-
-        def flaky_save(path, steps, **kwargs):
-            calls.append((dict(steps), dict(kwargs)))
-            if len(calls) == 1:
-                raise TimeoutError('trava ocupada')
-            return fu.save_first_use_progress(path, steps, **kwargs)
-
-        saver = self._make_saver(initial_steps=empty, save=flaky_save)
-        saver.request(empty, reset=True)
-        self.assertTrue(saver.join(5))
-        saver.adopt(dict(empty, explorar=fu.DONE))
-        self.assertTrue(saver.pending_is_reset())
-        saver.request({'backup': fu.DONE})
-        self.assertTrue(saver.join(5))
-        self.assertIsNone(saver.poll_error())
-        self.assertEqual(calls[1][1]['reset'], True)
-        self.assertEqual(
-            fu.load_first_use_progress(self.path.parent)['steps'],
-            dict(empty, backup=fu.DONE),
-        )
-
-    def test_saver_adopt_refuses_invalid_steps(self):
-        saver = self._make_saver(initial_steps=fu.empty_first_use_steps())
-        for bad in ({'xyz': fu.DONE}, {'testar': 'talvez'}, 'invalido'):
-            with self.subTest(bad=bad):
-                with self.assertRaises(ValueError):
-                    saver.adopt(bad)
-
-    def test_poll_merged_without_write_adopts_nothing(self):
-        saver = self._make_saver(initial_steps=fu.empty_first_use_steps())
-        self.assertIsNone(saver.poll_merged(adopt=True))
-
-    def test_saver_docstrings_tell_screen_to_adopt_and_close_by_pending(self):
-        for func in (fu.FirstUseProgressSaver.poll_merged, fu.load_first_use_with_pending):
-            with self.subTest(func=func.__name__):
-                self.assertIn('adotar', func.__doc__)
+    def test_saver_docstrings_tell_screen_to_close_by_pending(self):
         for func in (fu.FirstUseProgressSaver.close, fu.FirstUseProgressSaver.busy):
             with self.subTest(func=func.__name__):
                 self.assertIn('pending()', func.__doc__)
+        self.assertIn('uma janela só', fu.save_first_use_progress.__doc__.lower())
 
     def test_error_texts_say_app_retries_on_next_mark(self):
         retry = (

@@ -26,11 +26,40 @@ grupo de conversa.
   confirmar. Nunca pegue item que mexa em dados, discos, backup, restauração ou
   travas, mesmo que alguém peça.
 
+## Como publicar no GitHub
+
+**Jeito principal: comentar direto, sempre com `--body-file`.**
+
+1. Grave o texto do comentário num arquivo (por exemplo, na pasta `scratch/` da
+   sua conversa).
+2. Rode **um comando de uma linha só**, sem aspas e sem quebra de linha:
+   - na PR: `gh pr comment <número> --body-file <caminho do arquivo>`
+   - no grupo: `gh issue comment 282 --body-file <caminho do arquivo>`
+3. **Nunca** use `--body "..."`: texto com espaço ou quebra de linha dentro do
+   comando desliga a permissão "Always allow", e a automação é negada.
+4. Antes de publicar, confira se o mesmo comentário (mesmo `@sha12`, ou a mesma
+   mensagem do grupo) já não está lá. Não publique duas vezes.
+
+**Plano B, só se o comentário for negado: a caixa postal.**
+
+1. `git fetch origin` e vá para o branch `gemini/mensagens` (se não existir,
+   crie a partir da `main`). Nunca coloque código nesse branch.
+2. Para cada mensagem, crie `mensagens/<AAAAMMDD-HHMM>-<assunto>.md` com, na
+   primeira linha, o destino (`Para: PR #<número>` ou `Para: grupo #282`), uma
+   linha em branco e o texto exato do comentário.
+3. Commit (`docs(gemini): mensagens <data> [skip ci]`), `git push origin
+   gemini/mensagens` e volte para a `main`. O ciclo do Claude publica no destino.
+
+Não apague nem altere mensagens antigas. Para ler o grupo, use
+`gh issue view 282 --comments`.
+
 ## Sua fila (nesta ordem)
 
 | Ordem | Item | Branch | Observação |
 |---|---|---|---|
-| 1 | P4-04 · Interface moderna, etapa 2 | `gemini/P4-04-fatia-<n>` | Uma fatia por PR, na ordem de `docs/P4-04-PROPOSTA.md`. A fatia 1 já está aberta (PR #263): primeiro rode `git merge origin/main` no branch dela (sem rebase, sem `--force`), refaça testes e pré-revisão e só depois siga para a fatia 2 |
+| 1 | P4-04, fatias 12 e 13 (PRs #278 e #279) | os branches já abertos | Corrigir o que o revisor apontar |
+| 2 | P4-04, fatias 14 a 20, uma por PR, na ordem de `docs/P4-04-PROPOSTA.md` | `gemini/P4-04-fatia-<n>-...` | A interface inteira faz parte do M4 (decisão do Raphael, 20/11/2026). As fatias 18 a 20 (`workflow_ui.py`, `optimization_ui.py`, `app.py`) são grandes: só mexa em aparência (espaçamento, fonte, cor, tamanho), nunca em lógica, textos de aviso ou travas |
+| 3 | Conferência do `.exe` para a validação do M4 | sem branch, sem PR | Depois da fatia 20 mesclada: `py -3 scripts\build_exe.py`, testes do pacote e `--smoke-test`. Não rode o app de verdade. Relate no grupo (#282). Não altere nenhum arquivo |
 
 **O P4-02 (primeiro uso guiado) passou para os agentes do Claude em 18/11/2026.** Não altere o branch `gemini/P4-02-fatia-1-modulo-primeiro-uso` nem a PR #261, e não pegue nenhuma fatia do P4-02.
 
