@@ -61,6 +61,7 @@ Enquanto um pedido espera, o ciclo continua com os `FIX-...` e o backlog.
      - **`ajustar`** → o texto do Raphael vai como comentário na PR, para o Gemini corrigir; **`descartado`** → comentar a decisão e pôr a etiqueta `nao-mergear` (não fechar a PR nem apagar o branch).
 
      Sem pedido `merge` aprovado, nenhuma PR `gemini/` é mesclada. Depois do merge, o coordenador marca o item como `concluído` no `docs/BACKLOG.md`. No painel, o Gemini aparece como um agente a mais, com o estado tirado dessas PRs.
+   - **Grupo Claude + Gemini (issue #282, regra de 20/11/2026).** No começo do ciclo, o coordenador lê as últimas mensagens do grupo (só comentários da conta dona do repositório que comecem com `[Claude]` ou `[Gemini]`). No fim do ciclo, depois de atualizar o painel, deixa uma mensagem `[Claude]` com o que foi feito e a **divisão** para o próximo período: quais itens ou fatias do `docs/BACKLOG.md` ficam com o Gemini e quais com o Claude. Itens que mexem em dados, discos, backup, restauração ou travas ficam sempre com o Claude. O coordenador mantém o `docs/BACKLOG.md` coerente com a divisão (item reservado ao Gemini ou `pronto` para os agentes).
 3. **Avançar (planejador → desenvolvedor → testador → revisor → integrador).**
    - Ordem: os itens `FIX-...` primeiro, depois o primeiro `pronto` do marco atual.
    - **Uma fatia por vez, até o merge.**

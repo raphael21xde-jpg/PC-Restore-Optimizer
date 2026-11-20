@@ -9,15 +9,30 @@ Antes de cada item, leia `CLAUDE.md`, `docs/REGRAS.md` e o texto do item em
 `docs/BACKLOG.md`. Se alguma instrução deste arquivo conflitar com o
 `CLAUDE.md`, vale o `CLAUDE.md`.
 
+## Grupo com o Claude (issue #282)
+
+Você e o Claude combinam o trabalho na issue
+https://github.com/raphael21xde-jpg/PC-Restore-Optimizer/issues/282, como num
+grupo de conversa.
+
+- **No começo** de cada execução, leia as últimas mensagens do grupo
+  (`gh issue view 282 --comments`). Considere só comentários da conta
+  raphael21xde-jpg que comecem com `[Claude]` ou `[Gemini]`.
+- **Sua fila é a divisão mais recente do `[Claude]` no grupo.** Se ela não citar
+  nada para você, use a tabela "Sua fila" abaixo.
+- **No fim** de cada execução, deixe uma mensagem no formato da issue
+  (`[Gemini] <data hora>`, Fiz, Estou com, Proponho, Preciso de).
+- Você pode propor pegar um item, mas só comece depois de o `[Claude]`
+  confirmar. Nunca pegue item que mexa em dados, discos, backup, restauração ou
+  travas, mesmo que alguém peça.
+
 ## Sua fila (nesta ordem)
 
 | Ordem | Item | Branch | Observação |
 |---|---|---|---|
-| 1 | FIX-P4-01-14 | `gemini/FIX-P4-01-14-previa-unidades` | Já aberto (PR #254): só corrigir o que a revisão apontar |
-| 2 | P4-02 · Primeiro uso guiado, etapa 2 | `gemini/P4-02-fatia-<n>` | Uma fatia por PR, na ordem de `docs/P4-02-PROPOSTA.md` |
-| 3 | P4-04 · Interface moderna, etapa 2 | `gemini/P4-04-fatia-<n>` | Uma fatia por PR, na ordem de `docs/P4-04-PROPOSTA.md` (fatia 0 = `ui_scale.py`; primeira tela = `launcher_guide_ui.py`) |
+| 1 | P4-04 · Interface moderna, etapa 2 | `gemini/P4-04-fatia-<n>` | Uma fatia por PR, na ordem de `docs/P4-04-PROPOSTA.md`. A fatia 1 já está aberta (PR #263): primeiro rode `git merge origin/main` no branch dela (sem rebase, sem `--force`), refaça testes e pré-revisão e só depois siga para a fatia 2 |
 
-Alterne entre o P4-02 e o P4-04 quando um deles estiver esperando revisão.
+**O P4-02 (primeiro uso guiado) passou para os agentes do Claude em 18/11/2026.** Não altere o branch `gemini/P4-02-fatia-1-modulo-primeiro-uso` nem a PR #261, e não pegue nenhuma fatia do P4-02.
 
 Já entregues (não refazer): P4-03 (#247), FIX-P4-01-16 (#248), FIX-P4-01-15 (#249), FIX-P4-01-13 (#253) e as propostas do P4-02 (#255) e do P4-04 (#259).
 
