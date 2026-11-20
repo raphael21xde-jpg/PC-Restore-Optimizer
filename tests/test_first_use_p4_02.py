@@ -33,6 +33,7 @@ import first_use as fu
 from tests.test_manual import BLOCKED_EDGES, _Project, _norm, _quoted_names
 
 ROOT = Path(__file__).resolve().parents[1]
+NO_TK_CHILD_ENV = 'PCRO_FIRST_USE_NO_TK_CHILD'
 
 FORBIDDEN_R88 = (
     'não mexe',
@@ -99,6 +100,33 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 self.assertNotIn('tkinter', node.module or '')
         for forbidden in ('unlink', 'os.remove', 'rmtree', 'rmdir', 'subprocess', 'os.system'):
             self.assertNotIn(forbidden, source)
+
+    def test_whole_test_module_passes_in_subprocess_without_tkinter(self):
+        # Critério 1: todos os testes deste arquivo passam com tkinter=None,
+        # num processo separado (R-87: nada é trocado em sys.modules aqui).
+        if os.environ.get(NO_TK_CHILD_ENV) == '1':
+            self.skipTest('já está rodando no subprocesso sem tkinter')
+        env = dict(os.environ, **{NO_TK_CHILD_ENV: '1'})
+        proc = subprocess.run(
+            [
+                sys.executable,
+                '-c',
+                (
+                    "import sys, unittest; sys.modules['tkinter'] = None; "
+                    "suite = unittest.defaultTestLoader.loadTestsFromName("
+                    "'tests.test_first_use_p4_02'); "
+                    "result = unittest.TextTestRunner(verbosity=0).run(suite); "
+                    "assert result.testsRun >= 30, result.testsRun; "
+                    "sys.exit(0 if result.wasSuccessful() else 1)"
+                ),
+            ],
+            cwd=str(ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr[-4000:])
 
     def test_imports_and_runs_in_subprocess_without_tkinter(self):
         proc = subprocess.run(
@@ -171,6 +199,11 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
             self.assertIn(
                 f'se perde quando o instalador formatar o {drive}',
                 by_id['explorar']['text'],
+            )
+            self.assertIn(
+                'o app grava a cópia de teste numa pasta nova, dentro da pasta que '
+                'você escolher, e não apaga nenhum arquivo',
+                by_id['testar']['text'],
             )
             self.assertIn(
                 f'O que ficar desmarcado ou pendente no {drive} não entra no backup '
@@ -359,8 +392,22 @@ class FirstUseProgressTests(unittest.TestCase):
         msg = fu.first_use_error_text(exc)
         self.assertIn('primeiro-uso-progresso.json', msg)
         self.assertIn('PermissionError', msg)
+        self.assertIn('não pôde ser gravado', msg)
+        self.assertIn('ele foi deixado como está', msg)
         for secret in ('usuario_secreto', 'Users', 'AppData', 'Acesso negado'):
             self.assertNotIn(secret, msg)
+
+    def test_error_text_without_filename_uses_saver_path_name_only(self):
+        # Ressalva A: erro sem nome de arquivo (ex.: trava ocupada) mostra o
+        # nome do arquivo de progresso e um motivo fixo, nunca a pasta.
+        exc = OSError('falha em /home/usuario_secreto/pasta')
+        path = self.base / 'usuario_secreto' / fu.PROGRESS_FILENAME
+        msg = fu.first_use_error_text(exc, path)
+        self.assertIn(f'o arquivo de progresso "{fu.PROGRESS_FILENAME}" não pôde ser gravado (OSError)', msg)
+        self.assertIn('ele foi deixado como está', msg)
+        self.assertNotIn('usuario_secreto', msg)
+        self.assertNotIn(str(self.base), msg)
+        self.assertNotIn('Não deu para salvar o progresso (OSError)', msg)
 
     def test_bad_progress_file_error_uses_fixed_reason_and_filename(self):
         first = self.base / fu.PROGRESS_FILENAME
@@ -416,6 +463,41 @@ class FirstUseProgressTests(unittest.TestCase):
         loaded = fu.load_first_use_progress(self.base)
         self.assertEqual(loaded['steps']['diagnostico'], fu.DONE)
         self.assertEqual(loaded['steps']['explorar'], fu.DONE)
+
+    def test_full_memory_dict_without_base_is_refused_and_keeps_other_window_mark(self):
+        # Ponto 2 do revisor (reprodução): tudo pendente; outra janela grava
+        # explorar=feito; gravar o dicionário completo da memória SEM base
+        # apagaria explorar. Agora levanta ValueError e o disco fica igual.
+        path = self.base / fu.PROGRESS_FILENAME
+        empty = fu.empty_first_use_steps()
+        fu.save_first_use_progress(path, empty, base_steps=empty)
+        fu.save_first_use_progress(path, {'explorar': fu.DONE}, base_steps=empty)
+        before = path.read_bytes()
+        with self.assertRaises(ValueError):
+            fu.save_first_use_progress(path, dict(empty, diagnostico=fu.DONE))
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self._partials(path), [])
+        self.assertEqual(
+            fu.load_first_use_progress(self.base)['steps']['explorar'], fu.DONE
+        )
+        # Com a base certa, a mesma gravação junta as duas marcações.
+        merged = fu.save_first_use_progress(
+            path, dict(empty, diagnostico=fu.DONE), base_steps=empty
+        )
+        self.assertEqual(merged, dict(empty, diagnostico=fu.DONE, explorar=fu.DONE))
+
+    def test_reset_with_invalid_step_raises_and_does_not_touch_disk(self):
+        # Ponto 3a: reset=True valida o dicionário e não grava nada se falhar.
+        path = self.base / fu.PROGRESS_FILENAME
+        empty = fu.empty_first_use_steps()
+        fu.save_first_use_progress(path, {'explorar': fu.DONE}, base_steps=empty)
+        before = path.read_bytes()
+        for bad in ({'xyz': 'talvez'}, {'diagnostico': 'talvez'}, 'invalido'):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    fu.save_first_use_progress(path, bad, reset=True)
+                self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self._partials(path), [])
 
     def test_can_revert_step_to_pending_and_reset_all_with_base_or_reset(self):
         path = self.base / fu.PROGRESS_FILENAME
@@ -825,11 +907,14 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         release = threading.Event()
         seen_calls: list[tuple[dict[str, str], dict]] = []
 
+        release_results: list[bool] = []
+
         def fake_save(path, steps, **kwargs):
             seen_calls.append((dict(steps), dict(kwargs)))
             if len(seen_calls) == 1:
                 started.set()
-                self.assertTrue(release.wait(5))
+                # Conferido depois do join, na thread do teste.
+                release_results.append(release.wait(5))
             return fu.save_first_use_progress(path, steps, **kwargs)
 
         saver = self._make_saver(initial_steps=empty, save=fake_save)
@@ -849,8 +934,11 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         release.set()
         self.assertTrue(saver.join(5))
 
+        self.assertEqual(release_results, [True])
         self.assertEqual(len(seen_calls), 2)
+        self.assertFalse(seen_calls[0][1]['reset'])
         self.assertTrue(seen_calls[1][1]['reset'])
+        self.assertEqual(seen_calls[1][0], dict(empty, diagnostico=fu.DONE))
         self.assertIn('base_steps', seen_calls[1][1])
         loaded = fu.load_first_use_progress(self.path.parent)['steps']
         self.assertEqual(loaded['diagnostico'], fu.DONE)
@@ -874,6 +962,8 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         err = saver.poll_error()
         self.assertIsNotNone(err)
         self.assertNotIn('segredo', err)
+        self.assertIn(f'"{fu.PROGRESS_FILENAME}"', err)
+        self.assertNotIn(str(self.tmp), err)
         self.assertEqual(fu.first_use_warning_text('aviso base', err), err)
 
         saver.request({'diagnostico': fu.SKIPPED})

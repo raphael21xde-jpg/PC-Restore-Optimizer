@@ -6,13 +6,18 @@ ler e gravar as marcações (`pendente`, `feito`, `pulado`) fora da thread da
 interface.
 
 Regras de segurança:
-- somente orientação: este módulo nunca executa varredura, cópia, restauração,
-  diagnóstico de discos nem comandos do sistema;
+- orientação: este módulo nunca executa varredura, cópia, restauração,
+  diagnóstico de discos nem comandos do sistema; ele grava apenas o arquivo de
+  progresso das marcações na pasta de dados do app;
 - nunca apaga arquivos;
 - gravação atômica em `.parcial` de nome único (`O_CREAT | O_EXCL`), `fsync` e
-  `os.replace` com espera crescente; arquivos estragados, grandes demais ou que
-  sejam links ou arquivos especiais do Windows ficam intocados e a gravação passa
-  para `-2`, `-3`...;
+  `os.replace` com espera crescente, tudo dentro de `exclusive_lock` (R-09);
+- arquivos estragados, grandes demais ou que sejam links ou arquivos especiais
+  do Windows ficam como estão: quem escolhe o `-2`, `-3`... é a leitura
+  (`load_first_use_progress`); a gravação por cima de um deles é recusada com
+  `FirstUseBadProgressFileError` (um `OSError`);
+- `save_first_use_progress` exige `base_steps` quando `reset=False`, para que o
+  dicionário da memória nunca apague a marcação gravada por outra janela;
 - mensagens de erro fixas sem expor caminho completo nem nome de usuário (R-07);
 - textos seguem a R-88 e usam `workflow_texts.system_drive()` (sem letra fixa).
 """
@@ -139,7 +144,9 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
             'text': (
                 'Nunca formate sem testar o backup. Na tela "Histórico e relatórios", '
                 'escolha o backup criado e use "Testar restauração de arquivo pequeno" '
-                'para comprovar que os arquivos podem ser lidos.'
+                'para comprovar que os arquivos podem ser lidos (o app grava a cópia '
+                'de teste numa pasta nova, dentro da pasta que você escolher, e não '
+                'apaga nenhum arquivo).'
             ),
             'page': 'history',
         },
@@ -299,23 +306,30 @@ class FirstUseBadProgressFileError(OSError):
         self.filename = filename
 
 
-def first_use_error_text(exc: BaseException) -> str:
-    """Aviso fixo de falha ao salvar o progresso (sem caminho completo, R-07)."""
-    name = ''
-    filename = getattr(exc, 'filename', None)
-    if filename:
-        name = ntpath.basename(str(filename).replace('/', '\\'))
+def _file_name_only(value) -> str:
+    if not value:
+        return ''
+    return ntpath.basename(str(value).replace('/', '\\'))
+
+
+def first_use_error_text(exc: BaseException, path=None) -> str:
+    """Aviso fixo de falha ao salvar o progresso (sem caminho completo, R-07).
+
+    Mostra só o nome do arquivo (de `path`, ou do `filename` do erro) e o tipo
+    do erro; nunca a mensagem do sistema, que pode ter o caminho completo.
+    """
+    name = _file_name_only(path) or _file_name_only(getattr(exc, 'filename', None))
+    target = f' "{name}"' if name else ''
     if isinstance(exc, FirstUseBadProgressFileError):
-        target = f' "{name}"' if name else ''
         return (
             f'Não deu para salvar o progresso: o arquivo de progresso{target} não é '
             'um arquivo comum ou não pôde ser lido; ele foi deixado como está. As '
             'marcações valem só até fechar a janela.'
         )
-    detail = f'{name}, {type(exc).__name__}' if name else type(exc).__name__
     return (
-        f'Não deu para salvar o progresso ({detail}). As marcações valem só até '
-        'fechar a janela.'
+        f'Não deu para salvar o progresso: o arquivo de progresso{target} não pôde '
+        f'ser gravado ({type(exc).__name__}); ele foi deixado como está. As '
+        'marcações valem só até fechar a janela.'
     )
 
 
@@ -464,7 +478,7 @@ class FirstUseProgressSaver:
                     )
                 error = None
             except Exception as exc:  # noqa: BLE001 - qualquer falha vira aviso fixo
-                error = first_use_error_text(exc)
+                error = first_use_error_text(exc, self.path)
             with self._lock:
                 if error is None and merged is not None:
                     self._base = dict(merged)
