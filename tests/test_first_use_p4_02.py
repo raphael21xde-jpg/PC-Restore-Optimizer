@@ -220,6 +220,18 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 f'quando o instalador formatar o {drive}.',
                 by_id['testar']['text'],
             )
+            for step_id in ('backup', 'proximos'):
+                with self.subTest(step=step_id, drive=drive):
+                    self.assertIn(
+                        f'o que não for copiado do {drive} não entra no backup e se '
+                        f'perde quando o instalador formatar o {drive}.',
+                        by_id[step_id]['text'],
+                    )
+            self.assertIn(
+                'O app grava a cópia no destino que você escolher e não apaga '
+                'nenhum arquivo',
+                by_id['backup']['text'],
+            )
             self.assertIn(
                 f'O que ficar desmarcado ou pendente no {drive} não entra no backup '
                 f'e se perde quando o instalador formatar o {drive}.',
@@ -1000,6 +1012,147 @@ class FirstUseProgressSaverTests(unittest.TestCase):
             dict(empty, backup=fu.SKIPPED),
         )
 
+    def test_saver_failed_partial_request_is_kept_and_error_stays_until_written(self):
+        # Achado 1(b) da #284 (R-95): a 1ª gravação falha (TimeoutError) com
+        # pedido parcial; o 2º pedido parcial grava as duas marcações.
+        empty = fu.empty_first_use_steps()
+        fu.save_first_use_progress(self.path, empty, base_steps=empty)
+        calls: list[tuple[dict, dict]] = []
+
+        def flaky_save(path, steps, **kwargs):
+            calls.append((dict(steps), dict(kwargs)))
+            if len(calls) == 1:
+                raise TimeoutError('trava ocupada')
+            return fu.save_first_use_progress(path, steps, **kwargs)
+
+        saver = self._make_saver(initial_steps=empty, save=flaky_save)
+        saver.request({'diagnostico': fu.DONE})
+        self.assertTrue(saver.join(5))
+        err = saver.poll_error()
+        self.assertIsNotNone(err)
+        self.assertIn('TimeoutError', err)
+        # Não tenta de novo sozinho: espera o próximo pedido.
+        self.assertFalse(saver.busy())
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(saver.pending_steps(), {'diagnostico': fu.DONE})
+        self.assertEqual(
+            fu.load_first_use_progress(self.path.parent)['steps'], empty
+        )
+
+        saver.request({'explorar': fu.DONE})
+        self.assertTrue(saver.join(5))
+        self.assertEqual(
+            [c[0] for c in calls],
+            [{'diagnostico': fu.DONE},
+             {'diagnostico': fu.DONE, 'explorar': fu.DONE}],
+        )
+        self.assertIsNone(saver.poll_error())
+        self.assertIsNone(saver.pending_steps())
+        self.assertEqual(
+            fu.load_first_use_progress(self.path.parent)['steps'],
+            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE),
+        )
+
+    def test_saver_failed_reset_is_kept_under_new_partial_request(self):
+        empty = fu.empty_first_use_steps()
+        fu.save_first_use_progress(
+            self.path, dict(empty, explorar=fu.DONE), base_steps=empty
+        )
+        calls: list[tuple[dict, dict]] = []
+
+        def flaky_save(path, steps, **kwargs):
+            calls.append((dict(steps), dict(kwargs)))
+            if len(calls) == 1:
+                raise PermissionError(13, 'ocupado')
+            return fu.save_first_use_progress(path, steps, **kwargs)
+
+        saver = self._make_saver(initial_steps=empty, save=flaky_save)
+        saver.request(empty, reset=True)
+        self.assertTrue(saver.join(5))
+        self.assertIsNotNone(saver.poll_error())
+        self.assertTrue(saver.pending_is_reset())
+        saver.request({'diagnostico': fu.DONE})
+        self.assertTrue(saver.join(5))
+        self.assertTrue(calls[1][1]['reset'])
+        self.assertIsNone(saver.poll_error())
+        self.assertEqual(
+            fu.load_first_use_progress(self.path.parent)['steps'],
+            dict(empty, diagnostico=fu.DONE),
+        )
+
+    def test_saver_failure_with_waiting_request_puts_failed_below_it(self):
+        empty = fu.empty_first_use_steps()
+        fu.save_first_use_progress(self.path, empty, base_steps=empty)
+        started = threading.Event()
+        release = threading.Event()
+        wait_results: list[bool] = []
+        calls: list[dict] = []
+
+        def save(path, steps, **kwargs):
+            calls.append(dict(steps))
+            if len(calls) == 1:
+                started.set()
+                wait_results.append(release.wait(5))
+                raise TimeoutError('trava ocupada')
+            return fu.save_first_use_progress(path, steps, **kwargs)
+
+        saver = self._make_saver(initial_steps=empty, save=save)
+        saver.request({'diagnostico': fu.DONE, 'explorar': fu.DONE})
+        self.assertTrue(started.wait(5))
+        saver.request({'explorar': fu.SKIPPED})
+        release.set()
+        self.assertTrue(saver.join(5))
+        self.assertEqual(wait_results, [True])
+        self.assertEqual(calls[1], {'diagnostico': fu.DONE, 'explorar': fu.SKIPPED})
+        self.assertIsNone(saver.poll_error())
+        self.assertEqual(
+            fu.load_first_use_progress(self.path.parent)['steps'],
+            dict(empty, diagnostico=fu.DONE, explorar=fu.SKIPPED),
+        )
+
+    def test_saver_invalid_request_is_refused_at_once_and_never_summed(self):
+        # Achado 1(a) da #284 (R-95): pedido inválido recusado no request.
+        empty = fu.empty_first_use_steps()
+        fu.save_first_use_progress(self.path, empty, base_steps=empty)
+        started = threading.Event()
+        release = threading.Event()
+        wait_results: list[bool] = []
+        calls: list[dict] = []
+
+        def paused_save(path, steps, **kwargs):
+            calls.append(dict(steps))
+            if len(calls) == 1:
+                started.set()
+                wait_results.append(release.wait(5))
+            return fu.save_first_use_progress(path, steps, **kwargs)
+
+        saver = self._make_saver(initial_steps=empty, save=paused_save)
+        saver.request({'diagnostico': fu.DONE})
+        self.assertTrue(started.wait(5))
+        saver.request({'explorar': fu.DONE})
+        for bad in ({'xyz': 'talvez'}, {'testar': 'talvez'}, 'invalido'):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    saver.request(bad)
+        self.assertEqual(
+            saver.pending_steps(), {'diagnostico': fu.DONE, 'explorar': fu.DONE}
+        )
+        release.set()
+        self.assertTrue(saver.join(5))
+        self.assertEqual(wait_results, [True])
+        self.assertEqual(calls, [{'diagnostico': fu.DONE}, {'explorar': fu.DONE}])
+        self.assertIsNone(saver.poll_error())
+        self.assertEqual(
+            fu.load_first_use_progress(self.path.parent)['steps'],
+            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE),
+        )
+
+    def test_value_error_text_blames_the_marks_not_the_file(self):
+        msg = fu.first_use_error_text(ValueError('Etapa desconhecida'), self.path)
+        self.assertIn('as marcações não puderam ser salvas (ValueError)', msg)
+        self.assertNotIn('não pôde ser gravado', msg)
+        self.assertNotIn('Etapa desconhecida', msg)
+
     def test_saver_ignores_requests_after_close(self):
         saver = self._make_saver(
             initial_steps=fu.empty_first_use_steps(),
@@ -1111,13 +1264,14 @@ class FirstUseProgressSaverTests(unittest.TestCase):
             self.assertTrue(saver.join(5))
             return fu.load_first_use_progress(base)
 
-        real_pending = saver.pending_steps
+        real_pending = saver.pending
 
         def spy_pending():
             order.append('pending')
             return real_pending()
 
-        saver.pending_steps = spy_pending
+        # Achado 4 da #284: marcações e reset lidos numa tomada só da trava.
+        saver.pending = spy_pending
         result = fu.load_first_use_with_pending(self.path.parent, saver, load=fake_load)
         self.assertEqual(order, ['pending', 'disk'])
         self.assertEqual(result['steps']['diagnostico'], fu.DONE)

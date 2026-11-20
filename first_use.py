@@ -135,7 +135,10 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
                 'Na tela de revisão do backup (aberta por "Próximo: revisar backup dos '
                 'arquivos escolhidos →" em "Preservação"), use "Escolher destino" para '
                 'apontar para outro disco, clique em "1. Recalcular plano e espaço" e '
-                'depois em "2. Iniciar backup (confirmação dupla)".'
+                'depois em "2. Iniciar backup (confirmação dupla)". O app grava a '
+                'cópia no destino que você escolher e não apaga nenhum arquivo; '
+                f'o que não for copiado do {d} não entra no backup e se perde quando '
+                f'o instalador formatar o {d}.'
             ),
             'page': 'review',
         },
@@ -159,7 +162,9 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
                 'Com o backup testado, veja o checklist em "Instalar Windows" (quem '
                 'formata e instala é o instalador oficial da Microsoft, operado por '
                 'você). No Windows novo, use "Depois de formatar" para trazer tudo de '
-                'volta e "Otimização" para medir e ajustar o PC com segurança.'
+                'volta e "Otimização" para medir e ajustar o PC com segurança. '
+                f'Lembre-se: o que não for copiado do {d} não entra no backup e se '
+                f'perde quando o instalador formatar o {d}.'
             ),
             'page': 'installation',
         },
@@ -322,6 +327,13 @@ def first_use_error_text(exc: BaseException, path=None) -> str:
     """
     name = _file_name_only(path) or _file_name_only(getattr(exc, 'filename', None))
     target = f' "{name}"' if name else ''
+    if isinstance(exc, ValueError):
+        # A causa é o pedido, não o arquivo (R-37).
+        return (
+            'Não deu para salvar o progresso: as marcações não puderam ser salvas '
+            '(ValueError); o arquivo de progresso foi deixado como está. As '
+            'marcações valem só até fechar a janela.'
+        )
     if isinstance(exc, FirstUseBadProgressFileError):
         return (
             f'Não deu para salvar o progresso: o arquivo de progresso{target} não é '
@@ -414,6 +426,21 @@ def save_first_use_progress(
     return clean
 
 
+def _stack_requests(lower, upper):
+    """Junta dois pedidos `(marcações, reset)`; `upper` é o mais novo.
+
+    Um recomeço (`reset=True`) por cima vale sozinho; senão as marcações são
+    somadas (`dict(lower); update(upper)`) e o `reset` de baixo é herdado.
+    """
+    if upper is None:
+        return lower
+    if lower is None or upper[1]:
+        return (dict(upper[0]), bool(upper[1]))
+    steps = dict(lower[0])
+    steps.update(upper[0])
+    return (steps, bool(lower[1]))
+
+
 class FirstUseProgressSaver:
     """Grava o progresso do Primeiro uso guiado fora da thread do Tk (R-10).
 
@@ -425,7 +452,12 @@ class FirstUseProgressSaver:
       os pedidos seguintes herdam o `reset`;
     - a base da diferença (`base_steps`) é o que ESTA janela pediu, nunca o que
       foi lido do disco ou juntado com outra janela; `poll_merged()` devolve o
-      que ficou no disco.
+      que ficou no disco;
+    - pedido inválido é recusado na hora, em `request` (`ValueError`), nunca
+      somado aos válidos; se a gravação falha, o pedido que falhou volta para a
+      fila, por baixo do que espera (mantendo o `reset`), e é gravado de novo
+      só no próximo `request`; o aviso de erro só some quando ele for gravado
+      (R-95).
     """
 
     def __init__(self, path, *, initial_steps, save=None):
@@ -436,6 +468,7 @@ class FirstUseProgressSaver:
         self._idle = threading.Condition(self._lock)
         self._wanted: tuple[dict[str, str], bool] | None = None
         self._writing: tuple[dict[str, str], bool] | None = None
+        self._failed: tuple[dict[str, str], bool] | None = None
         self._merged: dict[str, str] | None = None
         self._error: str | None = None
         self._thread: threading.Thread | None = None
@@ -443,20 +476,15 @@ class FirstUseProgressSaver:
 
     def request(self, steps, *, reset: bool = False) -> None:
         """Pede para gravar uma cópia das marcações e retorna imediatamente."""
-        if not isinstance(steps, dict):
-            raise ValueError('Progresso inválido.')
-        copy = dict(steps)
+        # R-95: valida na hora; pedido inválido nunca entra na fila.
+        validated = validate_first_use_steps(steps)
+        copy = {key: validated[key] for key in steps}
         with self._lock:
             if self.closed or self.path is None:
                 return
-            if reset or self._wanted is None:
-                self._wanted = (copy, bool(reset) or (
-                    self._wanted is not None and self._wanted[1]
-                ))
-            else:
-                summed = dict(self._wanted[0])
-                summed.update(copy)
-                self._wanted = (summed, self._wanted[1])
+            waiting = _stack_requests(self._failed, self._wanted)
+            self._failed = None
+            self._wanted = _stack_requests(waiting, (copy, bool(reset)))
             if self._thread is None:
                 self._thread = threading.Thread(
                     target=self._run,
@@ -492,6 +520,13 @@ class FirstUseProgressSaver:
             except Exception as exc:  # noqa: BLE001 - qualquer falha vira aviso fixo
                 error = first_use_error_text(exc, self.path)
             with self._lock:
+                if error is not None:
+                    # R-95: o pedido que falhou volta por baixo do que espera.
+                    back = _stack_requests((steps, reset), self._wanted)
+                    if self._wanted is not None:
+                        self._wanted = back  # já há pedido novo: grava em seguida
+                    else:
+                        self._failed = back  # grava de novo só no próximo request
                 if error is None and merged is not None:
                     # R-94: a base é o que esta janela pediu, nunca o disco.
                     asked = validate_first_use_steps(steps)
@@ -514,29 +549,30 @@ class FirstUseProgressSaver:
         with self._lock:
             return self._error
 
-    def pending_steps(self) -> dict[str, str] | None:
-        """Marcações pedidas e ainda não gravadas, ou `None`.
+    def _pending_locked(self) -> tuple[dict[str, str], bool] | None:
+        lower = _stack_requests(self._failed, self._writing)
+        return _stack_requests(lower, self._wanted)
 
-        Soma o pedido em gravação (por baixo) com o que espera (por cima); se o
-        que espera é um recomeço (`reset=True`), ele vale sozinho.
+    def pending(self) -> tuple[dict[str, str], bool] | None:
+        """`(marcações, reset)` ainda não gravadas, lidas sob a mesma trava.
+
+        Soma o que falhou e o pedido em gravação (por baixo) com o que espera
+        (por cima); se o que espera é um recomeço (`reset=True`), ele vale
+        sozinho.
         """
         with self._lock:
-            if self._wanted is not None and (self._wanted[1] or self._writing is None):
-                return dict(self._wanted[0])
-            if self._writing is None:
-                return None
-            steps = dict(self._writing[0])
-            if self._wanted is not None:
-                steps.update(self._wanted[0])
-            return steps
+            item = self._pending_locked()
+            return None if item is None else (dict(item[0]), item[1])
+
+    def pending_steps(self) -> dict[str, str] | None:
+        """Marcações pedidas e ainda não gravadas, ou `None` (veja `pending`)."""
+        item = self.pending()
+        return None if item is None else item[0]
 
     def pending_is_reset(self) -> bool:
         """Indica se as marcações pendentes pedem para recomeçar (`reset=True`)."""
-        with self._lock:
-            return bool(
-                (self._wanted is not None and self._wanted[1])
-                or (self._writing is not None and self._writing[1])
-            )
+        item = self.pending()
+        return bool(item and item[1])
 
     def busy(self) -> bool:
         """`True` enquanto há pedido esperando ou gravação em andamento."""
@@ -568,12 +604,8 @@ def load_first_use_with_pending(
 ) -> dict:
     """Lê o progresso preferindo marcações pendentes no `saver` antes do disco."""
     load_fn = load_first_use_progress if load is None else load
-    pending = saver.pending_steps() if saver is not None else None
-    pending_reset = (
-        saver.pending_is_reset()
-        if saver is not None and hasattr(saver, 'pending_is_reset')
-        else False
-    )
+    item = saver.pending() if saver is not None else None
+    pending, pending_reset = (None, False) if item is None else item
     progress = load_fn(base)
     if pending is not None:
         validated = validate_first_use_steps(pending)
