@@ -9,7 +9,11 @@ Regras de segurança:
 - orientação: este módulo nunca executa varredura, cópia, restauração,
   diagnóstico de discos nem comandos do sistema; ele grava apenas o arquivo de
   progresso das marcações na pasta de dados do app;
-- nunca apaga arquivos;
+- nunca apaga arquivos do usuário nem o arquivo de progresso (o único arquivo
+  que some é o `.lock` que o próprio `exclusive_lock` cria e tira);
+- limite conhecido: se a gravação falha depois de criar o `.parcial-xxxxxxxx`,
+  ele fica na pasta de dados do app (nunca é apagado); com mais de
+  `MAX_PARTIAL_FILES` sobras, a gravação é recusada para não acumular;
 - gravação atômica em `.parcial` de nome único (`O_CREAT | O_EXCL`), `fsync` e
   `os.replace` com espera crescente, tudo dentro de `exclusive_lock` (R-09);
 - arquivos estragados, grandes demais ou que sejam links ou arquivos especiais
@@ -55,6 +59,7 @@ PROGRESS_FILENAME = 'primeiro-uso-progresso.json'
 PROGRESS_LIMIT = 64 * 1024
 MAX_PROGRESS_FILES = 50
 PARTIAL_SUFFIX = '.parcial'
+MAX_PARTIAL_FILES = 20
 
 REPLACE_FIRST_WAIT = 0.005
 REPLACE_MAX_WAIT = 0.2
@@ -79,9 +84,11 @@ def FIRST_USE_INTRO_TEXT(drive: str | None = None) -> str:
         'leitura de discos começa sozinha ao clicar em "Abrir"); ele guarda apenas '
         f'as suas marcações (Feito/Pulado) no arquivo {PROGRESS_FILENAME} na pasta de '
         'dados do app. O app não apaga nenhum arquivo: grava a cópia no destino de '
-        'backup que você escolher e, na restauração, nas pastas que você indicar '
-        '(um arquivo que já existia é renomeado para .antes-pcro-AAAAMMDD, nunca '
-        f'apagado); lembre-se de que o que não for copiado do {d} não entra no '
+        'backup que você escolher; na restauração, numa pasta nova dentro da pasta '
+        'que você escolher; e, se você usar "Colocar no lugar original", no lugar '
+        'original de cada arquivo, depois de mostrar uma prévia (um arquivo diferente '
+        'que já existia é renomeado para .antes-pcro-AAAAMMDD, nunca apagado); '
+        f'lembre-se de que o que não for copiado do {d} não entra no '
         f'backup e se perde quando o instalador formatar o {d}.'
     )
 
@@ -111,9 +118,11 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
                 'aplicativos e pastas como "Manter selecionados" ou "Não preservar" '
                 '(as suas escolhas ficam guardadas na pasta de dados do app; '
                 'o app não apaga nenhum arquivo: grava a cópia no destino de backup '
-                'que você escolher e, na restauração, nas pastas que você indicar, '
-                'onde um arquivo que já existia é renomeado para .antes-pcro-AAAAMMDD, '
-                f'nunca apagado; o que não for copiado do {d} não entra no backup e se '
+                'que você escolher; na restauração, numa pasta nova dentro da pasta '
+                'que você escolher; e, se você usar "Colocar no lugar original", no '
+                'lugar original de cada arquivo, depois de mostrar uma prévia (um '
+                'arquivo diferente que já existia é renomeado para .antes-pcro-AAAAMMDD, '
+                f'nunca apagado); o que não for copiado do {d} não entra no backup e se '
                 f'perde quando o instalador formatar o {d}). Para adicionar pastas '
                 'avulsas ou criar o cofre do navegador, use "Seleção avançada".'
             ),
@@ -314,6 +323,27 @@ class FirstUseBadProgressFileError(OSError):
         self.filename = filename
 
 
+class FirstUseTooManyPartialsError(OSError):
+    """Recusa gravar quando já há sobras `.parcial-*` demais do arquivo (nunca apaga)."""
+
+    def __init__(self, filename: str, count: int) -> None:
+        super().__init__(
+            f'Há {count} sobras de gravação de "{filename}"; nada foi gravado.'
+        )
+        self.filename = filename
+        self.count = count
+
+
+def _count_partials(path: Path) -> int:
+    """Conta as sobras `<nome>.parcial-*` DESTE arquivo de progresso (só leitura)."""
+    prefix = f'{path.name}{PARTIAL_SUFFIX}-'
+    try:
+        with os.scandir(path.parent) as entries:
+            return sum(1 for entry in entries if entry.name.startswith(prefix))
+    except OSError:
+        return 0
+
+
 def _file_name_only(value) -> str:
     if not value:
         return ''
@@ -336,10 +366,19 @@ def first_use_error_text(exc: BaseException, path=None) -> str:
             'O app tenta salvar de novo na próxima marcação; se você fechar a '
             'janela antes disso, estas marcações se perdem.'
         )
+    if isinstance(exc, FirstUseTooManyPartialsError):
+        return (
+            'Não deu para salvar o progresso: há sobras de gravações que falharam '
+            f'(arquivos com ".parcial" no nome, ao lado do arquivo de progresso{target}, '
+            'na pasta de dados do app); nada foi apagado e o arquivo de progresso '
+            'foi deixado como está. Se quiser, apague essas sobras você mesmo. '
+            'O app tenta salvar de novo na próxima marcação; se você fechar a '
+            'janela antes disso, estas marcações se perdem.'
+        )
     if isinstance(exc, FirstUseBadProgressFileError):
         return (
-            f'Não deu para salvar o progresso: o arquivo de progresso{target} não é '
-            'um arquivo comum ou não pôde ser lido; ele foi deixado como está. '
+            f'Não deu para salvar o progresso: o arquivo de progresso{target} não '
+            'pôde ser usado; ele foi deixado como está. '
             'O app tenta salvar de novo na próxima marcação; se você fechar a '
             'janela antes disso, estas marcações se perdem.'
         )
@@ -397,6 +436,17 @@ def save_first_use_progress(path, steps) -> dict[str, str]:
     recusa gravar por cima de link, arquivo não-comum ou arquivo estragado
     (`FirstUseBadProgressFileError`). Dicionário incompleto ou inválido é
     recusado com `ValueError` antes de tocar no disco.
+
+    Limite aceito (exceção à R-09 só para este arquivo, decisão de 20/11/2026):
+    o app não tem trava de instância única, então, se houver outro processo do
+    app aberto com o guia, vale o último a gravar; a marcação gravada por outro
+    processo do app pode ser trocada pela desta janela. O `exclusive_lock` só
+    impede que as duas gravações se misturem no mesmo arquivo.
+
+    Se a gravação falha depois de criar o `.parcial-xxxxxxxx`, ele fica como
+    está (nunca é apagado). Com mais de `MAX_PARTIAL_FILES` sobras deste
+    arquivo, a gravação é recusada (`FirstUseTooManyPartialsError`), para que
+    falhas repetidas não encham a pasta de dados do app.
     """
     clean = validate_complete_first_use_steps(steps)
     path = Path(path)
@@ -406,9 +456,12 @@ def save_first_use_progress(path, steps) -> dict[str, str]:
         if kind == 'ruim':
             raise FirstUseBadProgressFileError(
                 path.name,
-                f'O arquivo de progresso "{path.name}" não é um arquivo comum ou '
-                f'não pôde ser lido ({disk_value}); nada foi gravado.',
+                f'O arquivo de progresso "{path.name}" não pôde ser usado '
+                f'({disk_value}); nada foi gravado.',
             )
+        leftovers = _count_partials(path)
+        if leftovers > MAX_PARTIAL_FILES:
+            raise FirstUseTooManyPartialsError(path.name, leftovers)
         doc = {'schema': SCHEMA, 'steps': clean}
         data = json.dumps(doc, ensure_ascii=False, indent=2).encode('utf-8')
         partial = path.with_name(f'{path.name}{PARTIAL_SUFFIX}-{uuid.uuid4().hex[:8]}')

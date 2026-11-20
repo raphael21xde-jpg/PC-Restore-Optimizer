@@ -51,6 +51,9 @@ OLD_TEXTS = (
     'Conhecer os discos (só leitura)',
     'Conhecer os discos (a análise só lê)',
     'O guia só orienta',
+    # R-88: a restauração não grava "nas pastas que você indicar"; o .antes-pcro
+    # é do "Colocar no lugar original" (revisão da PR #284 @524c34f135fe).
+    'na restauração, nas pastas que você indicar',
 )
 
 # Mapa dos rótulos entre aspas citados em first_use.py -> (módulo, função que monta a tela)
@@ -79,6 +82,7 @@ EXPECTED_STEP_LABELS = {
     '8  Ajustes seguros': ('optimization_ui.py', 'OptimizationPanel._build'),
     '9  Ajustes avançados': ('optimization_ui.py', 'OptimizationPanel._build'),
     'Desfazer tudo': ('optimization_ui.py', 'OptimizationPanel._build_changes'),
+    'Colocar no lugar original': ('restore_ui.py', 'show_restore'),
 }
 
 # Rótulos da própria janela do Primeiro uso guiado (Fatia 2: first_use_ui.py, show_first_use).
@@ -173,7 +177,12 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 intro,
             )
             self.assertIn(
-                'O app não apaga nenhum arquivo: grava a cópia no destino de backup que você escolher e, na restauração, nas pastas que você indicar (um arquivo que já existia é renomeado para .antes-pcro-AAAAMMDD, nunca apagado)',
+                'O app não apaga nenhum arquivo: grava a cópia no destino de backup '
+                'que você escolher; na restauração, numa pasta nova dentro da pasta '
+                'que você escolher; e, se você usar "Colocar no lugar original", no '
+                'lugar original de cada arquivo, depois de mostrar uma prévia (um '
+                'arquivo diferente que já existia é renomeado para .antes-pcro-AAAAMMDD, '
+                'nunca apagado)',
                 intro,
             )
             self.assertIn(f'o que não for copiado do {drive} não entra no backup', intro)
@@ -202,9 +211,11 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
             )
             self.assertIn(
                 'o app não apaga nenhum arquivo: grava a cópia no destino de backup '
-                'que você escolher e, na restauração, nas pastas que você indicar, '
-                'onde um arquivo que já existia é renomeado para .antes-pcro-AAAAMMDD, '
-                'nunca apagado',
+                'que você escolher; na restauração, numa pasta nova dentro da pasta '
+                'que você escolher; e, se você usar "Colocar no lugar original", no '
+                'lugar original de cada arquivo, depois de mostrar uma prévia (um '
+                'arquivo diferente que já existia é renomeado para .antes-pcro-AAAAMMDD, '
+                'nunca apagado)',
                 by_id['explorar']['text'],
             )
             self.assertIn(
@@ -488,10 +499,69 @@ class FirstUseProgressTests(unittest.TestCase):
         msg = fu.first_use_error_text(ctx.exception)
         self.assertIn(fu.PROGRESS_FILENAME, msg)
         self.assertIn(
-            'não é um arquivo comum ou não pôde ser lido; ele foi deixado como está',
+            f'o arquivo de progresso "{fu.PROGRESS_FILENAME}" não pôde ser usado; '
+            'ele foi deixado como está',
             msg,
         )
         self.assertNotIn(str(self.base), msg)
+
+    def test_bad_progress_text_is_neutral_also_for_corrupt_json(self):
+        # R-37: JSON estragado não é "arquivo não comum"; o texto vale para as duas causas.
+        path = self.base / fu.PROGRESS_FILENAME
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{estragado', encoding='utf-8')
+        with self.assertRaises(fu.FirstUseBadProgressFileError) as ctx:
+            fu.save_first_use_progress(path, fu.empty_first_use_steps())
+        msg = fu.first_use_error_text(ctx.exception)
+        self.assertIn('não pôde ser usado; ele foi deixado como está', msg)
+        self.assertNotIn('arquivo comum', msg)
+        self.assertEqual(path.read_text(encoding='utf-8'), '{estragado')
+
+    def test_too_many_leftover_partials_refuses_to_write_and_deletes_nothing(self):
+        path = self.base / fu.PROGRESS_FILENAME
+        fu.save_first_use_progress(path, _all(diagnostico=fu.DONE))
+        before = path.read_bytes()
+        leftovers = []
+        for i in range(fu.MAX_PARTIAL_FILES):
+            extra = path.with_name(f'{path.name}{fu.PARTIAL_SUFFIX}-{i:08x}')
+            extra.write_text('sobra', encoding='utf-8')
+            leftovers.append(extra)
+        # Com exatamente o limite ainda grava (e não cria sobra nova).
+        fu.save_first_use_progress(path, _all(diagnostico=fu.SKIPPED))
+        self.assertEqual(len(self._partials(path)), fu.MAX_PARTIAL_FILES)
+        before = path.read_bytes()
+        extra = path.with_name(f'{path.name}{fu.PARTIAL_SUFFIX}-ffffffff')
+        extra.write_text('sobra', encoding='utf-8')
+        leftovers.append(extra)
+        with self.assertRaises(fu.FirstUseTooManyPartialsError) as ctx:
+            fu.save_first_use_progress(path, _all(diagnostico=fu.DONE))
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(len(self._partials(path)), fu.MAX_PARTIAL_FILES + 1)
+        for item in leftovers:
+            self.assertEqual(item.read_text(encoding='utf-8'), 'sobra')
+        msg = fu.first_use_error_text(ctx.exception)
+        self.assertIn('sobras de gravações que falharam', msg)
+        self.assertIn('nada foi apagado', msg)
+        self.assertNotIn(str(self.base), msg)
+
+    def test_partials_of_other_progress_file_do_not_count(self):
+        path = self.base / fu.PROGRESS_FILENAME
+        path.parent.mkdir(parents=True, exist_ok=True)
+        other = self.base / 'primeiro-uso-progresso-2.json'
+        for i in range(fu.MAX_PARTIAL_FILES + 3):
+            other.with_name(f'{other.name}{fu.PARTIAL_SUFFIX}-{i:08x}').write_text('x', encoding='utf-8')
+        fu.save_first_use_progress(path, _all(backup=fu.DONE))
+        self.assertEqual(fu.load_first_use_progress(self.base)['steps']['backup'], fu.DONE)
+
+    def test_save_docstring_says_other_process_marks_can_be_replaced(self):
+        doc = ' '.join((fu.save_first_use_progress.__doc__ or '').split())
+        self.assertIn('outro processo do app', doc)
+        self.assertIn('pode ser trocada pela desta janela', doc)
+
+    def test_module_docstring_says_user_files_and_progress_are_never_deleted(self):
+        doc = ' '.join((fu.__doc__ or '').split())
+        self.assertIn('nunca apaga arquivos do usuário nem o arquivo de progresso', doc)
+        self.assertNotIn('- nunca apaga arquivos;', doc)
 
     def test_failed_replace_keeps_partial_without_deleting(self):
         path = self.base / fu.PROGRESS_FILENAME
