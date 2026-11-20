@@ -30,7 +30,8 @@ grupo de conversa.
 
 | Ordem | Item | Branch | Observação |
 |---|---|---|---|
-| 1 | P4-04 · Interface moderna, etapa 2 | `gemini/P4-04-fatia-<n>` | Uma fatia por PR, na ordem de `docs/P4-04-PROPOSTA.md`. A fatia 1 já está aberta (PR #263): primeiro rode `git merge origin/main` no branch dela (sem rebase, sem `--force`), refaça testes e pré-revisão e só depois siga para a fatia 2 |
+| 1 | P4-04, fatias 12 e 13 (PRs #278 e #279) | os branches já abertos | Atualizar com `git merge origin/main`, refazer testes no Windows e pré-revisão, e corrigir o que o revisor apontar. **São as últimas fatias do M4: não comece a fatia 14** (ela foi para o P4-05, depois do M4) |
+| 2 | Conferência do `.exe` para a validação do M4 | sem branch, sem PR | Com a `main` atualizada: `py -3 scripts\build_exe.py`, depois os testes do pacote e o `--smoke-test`. Não rode o app de verdade. Escreva o resultado no grupo (#282). Não altere nenhum arquivo |
 
 **O P4-02 (primeiro uso guiado) passou para os agentes do Claude em 18/11/2026.** Não altere o branch `gemini/P4-02-fatia-1-modulo-primeiro-uso` nem a PR #261, e não pegue nenhuma fatia do P4-02.
 
