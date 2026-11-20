@@ -83,6 +83,10 @@ EXPECTED_STEP_LABELS = {
 # Rótulos da própria janela do Primeiro uso guiado (Fatia 2: first_use_ui.py, show_first_use).
 SLICE_2_WINDOW_LABELS = {'Abrir'}
 
+# "Executar como administrador" não é botão do app: é o item do menu do botão
+# direito do Windows no atalho do programa. Por isso é conferido como frase nos
+# textos de tela de optimization_ui.py (recusa por conta, R-55/R-60), e não como
+# rótulo de um botão numa função que monta a tela (R-62).
 WINDOWS_LABELS = {
     'Executar como administrador': 'optimization_ui.py',
 }
@@ -183,7 +187,13 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 'grava um relatório apenas se você clicar em "Exportar relatório JSON"',
                 by_id['diagnostico']['text'],
             )
-            self.assertIn('pasta que você escolher', by_id['diagnostico']['text'])
+            # "Exportar relatório JSON" abre um "Salvar como" (arquivo, não pasta).
+            self.assertIn('(no arquivo que você escolher)', by_id['diagnostico']['text'])
+            self.assertNotIn('pasta que você escolher', by_id['diagnostico']['text'])
+            self.assertIn(
+                'as suas escolhas ficam guardadas na pasta de dados do app',
+                by_id['explorar']['text'],
+            )
             self.assertIn(
                 f'o que não for copiado do {drive} não entra no backup e se perde '
                 f'quando o instalador formatar o {drive}',
@@ -203,6 +213,11 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
             self.assertIn(
                 'o app grava a cópia de teste numa pasta nova, dentro da pasta que '
                 'você escolher, e não apaga nenhum arquivo',
+                by_id['testar']['text'],
+            )
+            self.assertIn(
+                f'O que não for copiado do {drive} não entra no backup e se perde '
+                f'quando o instalador formatar o {drive}.',
                 by_id['testar']['text'],
             )
             self.assertIn(
@@ -878,6 +893,111 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         self.assertEqual(
             fu.load_first_use_progress(self.path.parent)['steps'],
             merged,
+        )
+
+    def test_saver_base_is_what_this_window_asked_never_the_disk(self):
+        # Ponto 1 do revisor na #284 (R-94), pelo gravador real (save=None).
+        empty = fu.empty_first_use_steps()
+        fu.save_first_use_progress(self.path, empty, base_steps=empty)
+        saver = self._make_saver(initial_steps=empty)
+        # Outra janela grava explorar=feito.
+        fu.save_first_use_progress(self.path, {'explorar': fu.DONE}, base_steps=empty)
+
+        saver.request(dict(empty, diagnostico=fu.DONE))
+        self.assertTrue(saver.join(5))
+        self.assertIsNone(saver.poll_error())
+        disk = fu.load_first_use_progress(self.path.parent)['steps']
+        self.assertEqual(disk, dict(empty, diagnostico=fu.DONE, explorar=fu.DONE))
+        self.assertEqual(saver.poll_merged(), disk)
+
+        # A memória desta janela continua sem explorar=feito.
+        saver.request(dict(empty, diagnostico=fu.DONE, backup=fu.DONE))
+        self.assertTrue(saver.join(5))
+        self.assertIsNone(saver.poll_error())
+        disk = fu.load_first_use_progress(self.path.parent)['steps']
+        self.assertEqual(
+            disk,
+            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE, backup=fu.DONE),
+        )
+
+    def test_saver_sums_partial_requests_while_writing_is_paused(self):
+        # Ponto 2 do revisor na #284 (R-94): pedidos parciais somados.
+        empty = fu.empty_first_use_steps()
+        fu.save_first_use_progress(self.path, empty, base_steps=empty)
+        started = threading.Event()
+        release = threading.Event()
+        wait_results: list[bool] = []
+        calls: list[tuple[dict, dict]] = []
+
+        def paused_save(path, steps, **kwargs):
+            calls.append((dict(steps), dict(kwargs)))
+            if len(calls) == 1:
+                started.set()
+                wait_results.append(release.wait(5))
+            return fu.save_first_use_progress(path, steps, **kwargs)
+
+        saver = self._make_saver(initial_steps=empty, save=paused_save)
+        saver.request({'diagnostico': fu.DONE})
+        self.assertTrue(started.wait(5))
+        saver.request({'explorar': fu.DONE})
+        saver.request({'testar': fu.DONE})
+        # Durante a pausa, as pendentes somam o que está sendo gravado.
+        self.assertEqual(
+            saver.pending_steps(),
+            {'diagnostico': fu.DONE, 'explorar': fu.DONE, 'testar': fu.DONE},
+        )
+        self.assertFalse(saver.pending_is_reset())
+        loaded = fu.load_first_use_with_pending(self.path.parent, saver)
+        self.assertEqual(
+            loaded['steps'],
+            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE, testar=fu.DONE),
+        )
+        release.set()
+        self.assertTrue(saver.join(5))
+
+        self.assertEqual(wait_results, [True])
+        self.assertEqual(
+            [c[0] for c in calls],
+            [{'diagnostico': fu.DONE}, {'explorar': fu.DONE, 'testar': fu.DONE}],
+        )
+        self.assertIsNone(saver.poll_error())
+        self.assertEqual(
+            fu.load_first_use_progress(self.path.parent)['steps'],
+            dict(empty, diagnostico=fu.DONE, explorar=fu.DONE, testar=fu.DONE),
+        )
+
+    def test_saver_reset_request_replaces_waiting_partial(self):
+        empty = fu.empty_first_use_steps()
+        fu.save_first_use_progress(self.path, empty, base_steps=empty)
+        started = threading.Event()
+        release = threading.Event()
+        wait_results: list[bool] = []
+        calls: list[tuple[dict, dict]] = []
+
+        def paused_save(path, steps, **kwargs):
+            calls.append((dict(steps), dict(kwargs)))
+            if len(calls) == 1:
+                started.set()
+                wait_results.append(release.wait(5))
+            return fu.save_first_use_progress(path, steps, **kwargs)
+
+        saver = self._make_saver(initial_steps=empty, save=paused_save)
+        saver.request({'diagnostico': fu.DONE})
+        self.assertTrue(started.wait(5))
+        saver.request({'explorar': fu.DONE})
+        saver.request(empty, reset=True)
+        saver.request({'backup': fu.SKIPPED})
+        self.assertEqual(saver.pending_steps(), dict(empty, backup=fu.SKIPPED))
+        self.assertTrue(saver.pending_is_reset())
+        release.set()
+        self.assertTrue(saver.join(5))
+
+        self.assertEqual(wait_results, [True])
+        self.assertEqual(calls[1], (dict(empty, backup=fu.SKIPPED), calls[1][1]))
+        self.assertTrue(calls[1][1]['reset'])
+        self.assertEqual(
+            fu.load_first_use_progress(self.path.parent)['steps'],
+            dict(empty, backup=fu.SKIPPED),
         )
 
     def test_saver_ignores_requests_after_close(self):

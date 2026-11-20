@@ -97,7 +97,7 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
                 'disco do Windows. O backup precisará ir para outro disco físico, que '
                 'não será formatado. O app não apaga nenhum arquivo e, nessa tela, '
                 'grava um relatório apenas se você clicar em "Exportar relatório JSON" '
-                f'(na pasta que você escolher); o que não for copiado do {d} não entra '
+                f'(no arquivo que você escolher); o que não for copiado do {d} não entra '
                 f'no backup e se perde quando o instalador formatar o {d}.'
             ),
             'page': 'diagnostic',
@@ -108,7 +108,8 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
             'text': (
                 'Na tela "Meu computador", examine as unidades desejadas e marque jogos, '
                 'aplicativos e pastas como "Manter selecionados" ou "Não preservar" '
-                '(o app não apaga nenhum arquivo: grava a cópia no destino de backup '
+                '(as suas escolhas ficam guardadas na pasta de dados do app; '
+                'o app não apaga nenhum arquivo: grava a cópia no destino de backup '
                 'que você escolher e, na restauração, nas pastas que você indicar, '
                 'onde um arquivo que já existia é renomeado para .antes-pcro-AAAAMMDD, '
                 f'nunca apagado; o que não for copiado do {d} não entra no backup e se '
@@ -146,7 +147,8 @@ def FIRST_USE_STEPS(drive: str | None = None) -> tuple[dict[str, str], ...]:
                 'escolha o backup criado e use "Testar restauração de arquivo pequeno" '
                 'para comprovar que os arquivos podem ser lidos (o app grava a cópia '
                 'de teste numa pasta nova, dentro da pasta que você escolher, e não '
-                'apaga nenhum arquivo).'
+                f'apaga nenhum arquivo). O que não for copiado do {d} não entra no '
+                f'backup e se perde quando o instalador formatar o {d}.'
             ),
             'page': 'history',
         },
@@ -417,7 +419,13 @@ class FirstUseProgressSaver:
 
     Mantém uma única thread não-daemon por gravador e junta pedidos
     intermediários para que a última marcação sempre vença, preservando no
-    disco entradas gravadas por outra instância (R-09).
+    disco entradas gravadas por outra instância (R-09, R-94):
+    - pedidos parciais que esperam são somados (`dict(anterior); update(novo)`),
+      nunca trocados; um pedido com `reset=True` substitui o que esperava, e
+      os pedidos seguintes herdam o `reset`;
+    - a base da diferença (`base_steps`) é o que ESTA janela pediu, nunca o que
+      foi lido do disco ou juntado com outra janela; `poll_merged()` devolve o
+      que ficou no disco.
     """
 
     def __init__(self, path, *, initial_steps, save=None):
@@ -441,10 +449,14 @@ class FirstUseProgressSaver:
         with self._lock:
             if self.closed or self.path is None:
                 return
-            self._wanted = (
-                copy,
-                bool(reset) or (self._wanted is not None and self._wanted[1]),
-            )
+            if reset or self._wanted is None:
+                self._wanted = (copy, bool(reset) or (
+                    self._wanted is not None and self._wanted[1]
+                ))
+            else:
+                summed = dict(self._wanted[0])
+                summed.update(copy)
+                self._wanted = (summed, self._wanted[1])
             if self._thread is None:
                 self._thread = threading.Thread(
                     target=self._run,
@@ -481,7 +493,13 @@ class FirstUseProgressSaver:
                 error = first_use_error_text(exc, self.path)
             with self._lock:
                 if error is None and merged is not None:
-                    self._base = dict(merged)
+                    # R-94: a base é o que esta janela pediu, nunca o disco.
+                    asked = validate_first_use_steps(steps)
+                    if reset:
+                        self._base = asked
+                    else:
+                        for key in steps:
+                            self._base[key] = asked[key]
                     self._merged = dict(merged)
                 self._writing = None
                 self._error = error
@@ -497,22 +515,28 @@ class FirstUseProgressSaver:
             return self._error
 
     def pending_steps(self) -> dict[str, str] | None:
-        """Cópia das marcações pedidas e ainda não gravadas, ou `None`."""
+        """Marcações pedidas e ainda não gravadas, ou `None`.
+
+        Soma o pedido em gravação (por baixo) com o que espera (por cima); se o
+        que espera é um recomeço (`reset=True`), ele vale sozinho.
+        """
         with self._lock:
-            if self._wanted is not None:
+            if self._wanted is not None and (self._wanted[1] or self._writing is None):
                 return dict(self._wanted[0])
-            if self._writing is not None:
-                return dict(self._writing[0])
-            return None
+            if self._writing is None:
+                return None
+            steps = dict(self._writing[0])
+            if self._wanted is not None:
+                steps.update(self._wanted[0])
+            return steps
 
     def pending_is_reset(self) -> bool:
-        """Indica se a marcação pendente atual pede para recomeçar (`reset=True`)."""
+        """Indica se as marcações pendentes pedem para recomeçar (`reset=True`)."""
         with self._lock:
-            if self._wanted is not None:
-                return bool(self._wanted[1])
-            if self._writing is not None:
-                return bool(self._writing[1])
-            return False
+            return bool(
+                (self._wanted is not None and self._wanted[1])
+                or (self._writing is not None and self._writing[1])
+            )
 
     def busy(self) -> bool:
         """`True` enquanto há pedido esperando ou gravação em andamento."""
