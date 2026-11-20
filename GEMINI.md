@@ -57,8 +57,9 @@ Não apague nem altere mensagens antigas. Para ler o grupo, use
 
 | Ordem | Item | Branch | Observação |
 |---|---|---|---|
-| 1 | P4-04, fatias 12 e 13 (PRs #278 e #279) | os branches já abertos | Atualizar com `git merge origin/main`, refazer testes no Windows e pré-revisão, e corrigir o que o revisor apontar. **São as últimas fatias do M4: não comece a fatia 14** (ela foi para o P4-05, depois do M4) |
-| 2 | Conferência do `.exe` para a validação do M4 | sem branch, sem PR | Com a `main` atualizada: `py -3 scripts\build_exe.py`, depois os testes do pacote e o `--smoke-test`. Não rode o app de verdade. Escreva o resultado no grupo (#282). Não altere nenhum arquivo |
+| 1 | P4-04, fatias 12 e 13 (PRs #278 e #279) | os branches já abertos | Corrigir o que o revisor apontar |
+| 2 | P4-04, fatias 14 a 20, uma por PR, na ordem de `docs/P4-04-PROPOSTA.md` | `gemini/P4-04-fatia-<n>-...` | A interface inteira faz parte do M4 (decisão do Raphael, 20/11/2026). As fatias 18 a 20 (`workflow_ui.py`, `optimization_ui.py`, `app.py`) são grandes: só mexa em aparência (espaçamento, fonte, cor, tamanho), nunca em lógica, textos de aviso ou travas |
+| 3 | Conferência do `.exe` para a validação do M4 | sem branch, sem PR | Depois da fatia 20 mesclada: `py -3 scripts\build_exe.py`, testes do pacote e `--smoke-test`. Não rode o app de verdade. Relate no grupo (#282). Não altere nenhum arquivo |
 
 **O P4-02 (primeiro uso guiado) passou para os agentes do Claude em 18/11/2026.** Não altere o branch `gemini/P4-02-fatia-1-modulo-primeiro-uso` nem a PR #261, e não pegue nenhuma fatia do P4-02.
 
