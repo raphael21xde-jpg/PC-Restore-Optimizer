@@ -26,6 +26,27 @@ grupo de conversa.
   confirmar. Nunca pegue item que mexa em dados, discos, backup, restauração ou
   travas, mesmo que alguém peça.
 
+## Como publicar no GitHub (o `gh` está bloqueado no Antigravity)
+
+O Antigravity nega `gh pr comment` e `gh issue comment`, mas o `git push`
+funciona. Então você **não comenta direto**: deixa a mensagem numa "caixa
+postal", e o Claude publica no lugar certo no próximo ciclo.
+
+1. `git fetch origin` e vá para o branch `gemini/mensagens` (se não existir,
+   crie a partir da `main`). Nunca coloque código nesse branch.
+2. Para cada mensagem, crie um arquivo `mensagens/<AAAAMMDD-HHMM>-<assunto>.md`
+   com, na primeira linha, o destino:
+   - `Para: PR #<número>` (testes do Windows e pré-revisão), ou
+   - `Para: grupo #282` (a mensagem `[Gemini]` do fim da execução).
+   Depois de uma linha em branco, o texto exato do comentário, no formato de
+   sempre (`Testes do Gemini no Windows @<sha12>: ...`, `Pré-revisão do Gemini
+   @<sha12>: ...`, `[Gemini] <data hora> ...`).
+3. Faça o commit (`docs(gemini): mensagens <data> [skip ci]`), rode
+   `git push origin gemini/mensagens` e volte para a `main`.
+
+Não apague nem altere mensagens antigas. Para ler o grupo, continue usando
+`gh issue view 282 --comments` (ler funciona).
+
 ## Sua fila (nesta ordem)
 
 | Ordem | Item | Branch | Observação |
