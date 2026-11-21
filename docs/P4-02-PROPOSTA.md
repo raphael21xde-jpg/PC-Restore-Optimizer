@@ -23,7 +23,7 @@ Embora o assistente **"Depois de formatar"** (`after_format_ui.py`) já guie pas
 
 Para manter o app 100% seguro e simples:
 
-1. **Não executa operações por conta própria:** o primeiro uso guiado **só orienta e leva às telas que já existem**. Ele não roda diagnóstico de discos, não inicia varredura, não faz cópia de backup, não restaura arquivos, não aplica ajustes de otimização e não executa comandos do sistema.
+1. **Não executa operações por conta própria:** o primeiro uso guiado **orienta e leva às telas que já existem**; ele grava apenas as marcações (Feito/Pulado) na pasta de dados do app. Ele não roda diagnóstico de discos, não inicia varredura, não faz cópia de backup, não restaura arquivos, não aplica ajustes de otimização e não executa comandos do sistema.
 2. **Não altera nenhuma trava de segurança:** `copy_authorized`, `physical_independence_verified`, `ready_for_format`, `installation_authorized` e `deletions_authorized` continuam intocadas.
 3. **Não formata, não particiona e não apaga nada:** mantém os avisos claros de que o app nunca apaga arquivos e de que o que não for copiado do disco do Windows não entra no backup e se perde quando o instalador oficial da Microsoft formatar esse disco (R-88).
 4. **Não substitui o assistente "Depois de formatar":** a última etapa apenas apresenta o caminho para o "Depois de formatar" e a "Otimização" quando o usuário já tiver terminado o preparo ou a reinstalação.
@@ -44,7 +44,7 @@ Para manter o app 100% seguro e simples:
 **Cabeçalho e introdução (`FIRST_USE_INTRO_TEXT`):**
 > Bem-vindo ao PC Restore & Optimizer. Este guia mostra a ordem recomendada para usar o aplicativo com segurança, passo a passo.
 >
-> O guia só orienta e abre cada tela para você: nenhuma cópia, restauração ou leitura de discos começa sozinha ao clicar em "Abrir". O app não apaga nenhum arquivo; lembre-se de que o que não for copiado do {drive} não entra no backup e se perde quando o instalador formatar o {drive}.
+> O guia orienta e abre cada tela para você (nenhuma cópia, restauração ou leitura de discos começa sozinha ao clicar em "Abrir"); ele guarda apenas as suas marcações (Feito/Pulado) no arquivo primeiro-uso-progresso.json na pasta de dados do app. O app não apaga nenhum arquivo [...]; lembre-se de que o que não for copiado do {drive} não entra no backup e se perde quando o instalador formatar o {drive}.
 
 *(onde `{drive}` vem de `workflow_texts.system_drive()`, nunca `"C:"` fixo no código).*
 
@@ -53,9 +53,11 @@ Para manter o app 100% seguro e simples:
 
 **As 6 etapas (`FIRST_USE_STEPS`):**
 
+> Atualizado na fatia 2 (21/11/2026): os títulos abaixo são os de `first_use.py`. Os textos completos de cada etapa (com onde o app grava e o aviso de que o que não for copiado do {drive} se perde na formatação, R-88) valem como estão em `first_use.py`; a tabela mostra um resumo.
+
 | Nº | ID | Título da etapa | Texto de orientação na tela | O que o botão "Abrir" faz |
 |---|---|---|---|---|
-| 1 | `diagnostico` | **Conhecer os discos (só leitura)** | Veja na tela "Diagnóstico" quais discos existem no seu PC e qual é o disco do Windows. O backup precisará ir para outro disco físico, que não será formatado. | Navega para a página **"Diagnóstico"** (`app.navigate(app.diagnostic)`). |
+| 1 | `diagnostico` | **Conhecer os discos** | Veja na tela "Diagnóstico" quais discos existem no seu PC e qual é o disco do Windows. O backup precisará ir para outro disco físico, que não será formatado. | Navega para a página **"Diagnóstico"** (`app.navigate(app.diagnostic)`). |
 | 2 | `explorar` | **Varrer e escolher o que manter** | Na tela "Meu computador", examine as unidades desejadas e marque jogos, aplicativos e pastas como "Manter selecionados" ou "Não preservar" (não copiar nunca apaga nada). Para adicionar pastas avulsas ou criar o cofre do navegador, use "Seleção avançada". | Navega para a página **"Meu computador"** (`app.navigate(app.home)`). |
 | 3 | `preservacao` | **Revisar o plano de preservação** | Na tela "Preservação", confira tudo o que foi marcado e os saves de jogos que estão no {drive}. O que ficar desmarcado ou pendente no {drive} não entra no backup e se perde quando o instalador formatar o {drive}. | Navega para a página **"Preservação"** (`app.navigate(app.preservation)`). |
 | 4 | `backup` | **Escolher destino e fazer o backup** | Na tela de revisão do backup (aberta por "Próximo: revisar backup dos arquivos escolhidos →" em "Preservação"), use "Escolher destino" para apontar para outro disco, clique em "1. Recalcular plano e espaço" e depois em "2. Iniciar backup (confirmação dupla)". | Navega para a página de revisão do backup (`app.navigate(app.review)`). |

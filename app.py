@@ -35,6 +35,7 @@ from restore_jobs import Job
 from app_recovery_ui import show_app_recovery
 from browser_recovery_ui import show_recovery
 from after_format_ui import show_after_format
+from first_use_ui import show_first_use
 from recovery_center_ui import show_recovery_center
 from browser_guard import (verify_encrypted_backup as verify_legacy_opera,
                            extract_to_staging as restore_legacy_opera)
@@ -166,6 +167,8 @@ class App(tk.Tk):
         self.browser_keep_paths = set()
         self.browser_vaults = {}
         self.pending_browser_path = None
+        self.first_use_dialog = None  # P4-02: janela única do Primeiro uso guiado
+        self.first_use_saver = None   # gravador das marcações (um por app)
         self._migrate_choices_if_needed()
         self._restore_choices()
         self._build()
@@ -247,6 +250,8 @@ class App(tk.Tk):
             self.tabs.add(page, text=label)
 
         build_overview(self)
+        ttk.Button(self.overview, text='Primeiro uso guiado  →', style='Primary.TButton',
+                   command=self.open_first_use).pack(anchor='w', padx=16, pady=(0, 8))
         ttk.Button(self.overview, text='Depois de formatar  →', style='Primary.TButton',
                    command=self.open_after_format).pack(anchor='w', padx=16, pady=(0, 12))
         self._build_home()
@@ -283,6 +288,7 @@ class App(tk.Tk):
         self.nav_buttons = {}
         self._nav_heading('MENU PRINCIPAL')
         self._nav_entry('overview', '⌂', 'Visão geral')
+        self.first_use_nav = self._nav_action('★', 'Primeiro uso guiado', self.open_first_use)
         self._nav_entry('home', '▣', 'Meu computador')
         self._nav_entry('preservation', '✓', 'Preservação')
         self._nav_entry('catalog', '☰', 'Seleção avançada')
@@ -355,6 +361,10 @@ class App(tk.Tk):
         """
         destination = self.dest.get()
         return show_recovery_center(self, folder=Path(destination) if destination else None)
+
+    def open_first_use(self):
+        """P4-02: janela única "Primeiro uso guiado" (orienta e abre as telas)."""
+        return show_first_use(self)
 
     def open_after_format(self):
         """P2-11: assistente "Depois de formatar" (pede o manifest.json do backup)."""
