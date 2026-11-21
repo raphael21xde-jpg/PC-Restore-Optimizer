@@ -394,6 +394,45 @@ class FlowCloseTests(FlowTestBase):
         self.assertEqual(self.view.events[-1], ('warn', error))
         self.assertNotIn(str(self.base), error)
 
+    def test_failed_save_after_close_shows_error_when_guide_reopens(self):
+        # R-86: o caminho que FIRST_USE_CLOSE_SAVING_TEXT promete, com o
+        # gravador REAL: a gravação ainda está em curso ao fechar, falha depois,
+        # e o aviso de erro aparece ao reabrir, sem nenhum clique novo.
+        started = threading.Event()
+        release = threading.Event()
+        waited = []
+
+        def failing_save(path, steps):
+            started.set()
+            waited.append(release.wait(5))
+            raise PermissionError(13, 'acesso negado', str(path))
+
+        saver = fu.FirstUseProgressSaver(self.path, save=failing_save)
+        self._savers.append(saver)
+        self.addCleanup(release.set)  # registrado depois: roda antes do join (R-29)
+        flow = self._flow_with(saver)
+        flow.mark('backup', fu.DONE)
+        self.assertTrue(started.wait(5))
+        flow.close()
+        self.assertEqual(self.view.events[-2:], [
+            ('destroy',), ('warn', fu.FIRST_USE_CLOSE_SAVING_TEXT)])
+        release.set()
+        self.assertTrue(saver.join(5))
+        self.assertEqual(waited, [True])
+        expected = fu.first_use_error_text(PermissionError(13, 'x'), self.path)
+        self.assertEqual(saver.poll_error(), expected)
+        self.assertFalse(self.path.exists())
+
+        # reabre com o MESMO app, sem marcar nada
+        self.view = FakeView()
+        again = self.loaded_flow()
+        self.assertIs(again.saver, saver)
+        self.assertEqual(self.view.warning, expected)
+        self.assertNotIn(str(self.base), self.view.warning)
+        self.assertEqual(self.view.status['backup'], 'Feito')
+        self.assertEqual(again.steps, _all(backup=fu.DONE))
+        self.assertFalse(saver.busy())  # nenhuma gravação nova foi pedida
+
     def test_close_cancels_reading_and_stops_polling(self):
         flow = self.make_flow()
         flow.start()
@@ -469,12 +508,43 @@ class FirstUseUiSourceTests(unittest.TestCase):
         self.assertIn('Primeiro uso guiado', project.labels('app.py', 'App._build_sidebar'))
 
     def test_app_wires_overview_button_and_sidebar_action(self):
-        src = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn("text='Primeiro uso guiado  →'", src)
-        self.assertIn("command=self.open_first_use", src)
-        self.assertIn(
-            "self._nav_action('★', 'Primeiro uso guiado', self.open_first_use)", src)
-        self.assertIn('return show_first_use(self)', src)
+        # Revisão da PR #293: o botão é conferido com ast dentro da função que
+        # monta a "Visão geral" (App._build chama build_overview(self) e põe os
+        # botões em self.overview), e não por busca de texto no app.py inteiro.
+        project = _Project(ROOT)
+        mod = project.mod('app.py')
+        self.assertIn('build_overview', mod.imports)
+        found = []
+        builds_overview = False
+        for node in mod.own_nodes('App._build'):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, 'id', None) == 'build_overview':
+                builds_overview = True
+            texts = [kw.value.value for kw in node.keywords if kw.arg == 'text'
+                     and isinstance(kw.value, ast.Constant)]
+            if texts != ['Primeiro uso guiado  →']:
+                continue
+            parent = node.args[0] if node.args else None
+            command = next((kw.value for kw in node.keywords if kw.arg == 'command'), None)
+            found.append((
+                isinstance(parent, ast.Attribute) and parent.attr == 'overview',
+                isinstance(command, ast.Attribute) and command.attr == 'open_first_use',
+            ))
+        self.assertTrue(builds_overview)
+        self.assertEqual(found, [(True, True)])
+        self.assertIn('Primeiro uso guiado', project.labels('app.py', 'App._build_sidebar'))
+        sidebar_actions = [
+            node for node in mod.own_nodes('App._build_sidebar')
+            if isinstance(node, ast.Call) and getattr(node.func, 'attr', None) == '_nav_action'
+            and len(node.args) == 3 and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == 'Primeiro uso guiado']
+        self.assertEqual(len(sidebar_actions), 1)
+        self.assertEqual(getattr(sidebar_actions[0].args[2], 'attr', None), 'open_first_use')
+        reach = project.reachable(blocked=BLOCKED_EDGES)
+        self.assertIn(('app.py', 'App.open_first_use'), reach)
+        self.assertIn(('first_use_ui.py', 'show_first_use'),
+                      project.edges('app.py', 'App.open_first_use'))
 
     def test_close_button_and_window_x_share_the_same_handler(self):
         self.assertIn("close_btn.configure(command=flow.close)", SOURCE)

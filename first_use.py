@@ -76,9 +76,10 @@ FIRST_USE_MODE_NOTE = (
 
 # Fatia 2: avisos fixos da janela (R-07: sem caminho, sem mensagem do sistema).
 FIRST_USE_CLOSE_SAVING_TEXT = (
-    'O app continua tentando salvar as marcações no arquivo '
-    f'{PROGRESS_FILENAME}, na pasta de dados do app, mesmo com a janela fechada; '
-    'se não der, o aviso aparece quando você abrir o guia de novo.'
+    'O app ainda está salvando as marcações no arquivo '
+    f'{PROGRESS_FILENAME}, na pasta de dados do app; se não der, o aviso aparece '
+    'quando você abrir o guia de novo (se você fechar o app antes disso, essas '
+    'marcações podem se perder).'
 )
 FIRST_USE_LOAD_ERROR_TEXT = (
     'O progresso salvo não pôde ser lido e o guia começou do zero; nenhum arquivo '

@@ -60,6 +60,8 @@ OLD_TEXTS = (
     'se você fechar a janela antes disso',
     'feche e abra o guia',
     'termina de salvar',
+    # Revisão da PR #293 @fd406e7977f4: o aviso de fechar diz o que acontece agora.
+    'continua tentando',
 )
 
 # Mapa dos rótulos entre aspas citados em first_use.py -> (módulo, função que monta a tela)
@@ -283,9 +285,10 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
             fu.FIRST_USE_LOAD_ERROR_TEXT,
         )
         self.assertIn(
-            'O app continua tentando salvar as marcações no arquivo '
-            f'{fu.PROGRESS_FILENAME}, na pasta de dados do app, mesmo com a janela '
-            'fechada; se não der, o aviso aparece quando você abrir o guia de novo.',
+            'O app ainda está salvando as marcações no arquivo '
+            f'{fu.PROGRESS_FILENAME}, na pasta de dados do app; se não der, o aviso '
+            'aparece quando você abrir o guia de novo (se você fechar o app antes '
+            'disso, essas marcações podem se perder).',
             fu.FIRST_USE_CLOSE_SAVING_TEXT,
         )
         project = _Project(ROOT)

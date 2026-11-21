@@ -148,6 +148,15 @@ UI_LABELS = {
     'Desfazer alteração antiga': ('optimization_ui.py', 'OptimizationPanel._build_power'),
 }
 
+# Rótulos que o manual cita e que também existem em outra tela (o mapa acima
+# tem uma tela por nome): "Abrir", "Feito" e "Pular" também são botões do
+# "Primeiro uso guiado" (P4-02).
+ALSO_IN = {
+    'Abrir': (FIRST_USE,),
+    'Feito': (FIRST_USE,),
+    'Pular': (FIRST_USE,),
+}
+
 # Nomes do próprio Windows citados no manual -> módulo cujo texto de tela os cita.
 WINDOWS_NAMES = {
     'Executar como administrador': 'optimization_ui.py',
@@ -505,6 +514,16 @@ class ManualTests(unittest.TestCase):
                 self.assertIn(screen, self.reach, f'{screen} não é alcançável')
                 self.assertIn(_norm(name), self.project.labels(*screen),
                               f'"{name}" não é rótulo da tela {screen}')
+        for name, screens in ALSO_IN.items():
+            self.assertIn(name, UI_LABELS)
+            if _norm(name) not in quoted:
+                continue
+            for screen in screens:
+                with self.subTest(name=name, screen=screen):
+                    self.assertNotIn(screen, HIDDEN_BUILDERS)
+                    self.assertIn(screen, self.reach, f'{screen} não é alcançável')
+                    self.assertIn(_norm(name), self.project.labels(*screen),
+                                  f'"{name}" não é rótulo da tela {screen}')
         for name, filename in WINDOWS_NAMES.items():
             if _norm(name) not in quoted:
                 continue
