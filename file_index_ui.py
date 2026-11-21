@@ -27,6 +27,18 @@ from ui_scale import (
 )
 
 
+def _bind_wraplength(container, *labels):
+    """Atualiza o wraplength apenas quando o proprio container muda de largura."""
+    def _on_configure(event):
+        if event.widget is not container:
+            return
+        width = safe_wraplength(event.width, PADDING_DIALOGO)
+        for label in labels:
+            label.configure(wraplength=width)
+
+    container.bind("<Configure>", _on_configure)
+
+
 def format_index_row(entry):
     """Directories are indexed with 0 placeholder bytes, NOT a measured size."""
     is_folder = entry["kind"] == "directory"
@@ -67,13 +79,7 @@ def show_file_index(parent, app=None):
     roots_label = ttk.Label(header, textvariable=selected_roots_text,
                             wraplength=safe_wraplength(1040, PADDING_DIALOGO))
     roots_label.pack(anchor="w", pady=(0, ESPACO_MINIMO))
-    header.bind(
-        "<Configure>",
-        lambda event: (
-            intro_label.configure(wraplength=safe_wraplength(event.width, PADDING_DIALOGO)),
-            roots_label.configure(wraplength=safe_wraplength(event.width, PADDING_DIALOGO)),
-        ),
-    )
+    _bind_wraplength(header, intro_label, roots_label)
     actions = ttk.Frame(header)
     actions.pack(fill="x")
     top_actions = ttk.Frame(actions)
@@ -91,12 +97,7 @@ def show_file_index(parent, app=None):
     status_label = ttk.Label(controls, textvariable=status,
                              wraplength=safe_wraplength(1040, PADDING_DIALOGO))
     status_label.pack(anchor="w", pady=(0, ESPACO_MINIMO))
-    controls.bind(
-        "<Configure>",
-        lambda event: status_label.configure(
-            wraplength=safe_wraplength(event.width, PADDING_DIALOGO)
-        ),
-    )
+    _bind_wraplength(controls, status_label)
     choice_row = ttk.Frame(controls)
     choice_row.pack(fill="x")
     paging_row = ttk.Frame(controls)
@@ -190,12 +191,7 @@ def show_file_index(parent, app=None):
             "Não copia, não apaga e não formata arquivos."),
             wraplength=safe_wraplength(510, PADDING_DIALOGO))
         popup_label.pack(anchor="w", padx=PADDING_DIALOGO, pady=(PADDING_DIALOGO, ESPACO_P))
-        popup.bind(
-            "<Configure>",
-            lambda event: popup_label.configure(
-                wraplength=safe_wraplength(event.width, PADDING_DIALOGO)
-            ),
-        )
+        _bind_wraplength(popup, popup_label)
         actions_popup = ttk.Frame(popup)
         actions_popup.pack(side="bottom", fill="x", padx=PADDING_DIALOGO, pady=PADDING_DIALOGO)
         selections = []
