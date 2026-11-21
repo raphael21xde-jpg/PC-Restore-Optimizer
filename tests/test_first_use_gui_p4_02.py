@@ -472,6 +472,157 @@ class FlowCloseTests(FlowTestBase):
                          _all(preservacao=fu.DONE))
 
 
+class PreviousSaverTests(FlowTestBase):
+    """FIX-P4-02-01: a janela reabre e escolhe entre o gravador antigo do app e
+    um novo; o erro e as marcações pendentes do antigo continuam visíveis ou
+    passam ao novo (leitura falhando, arquivo trocado e fechar carregando)."""
+
+    def _error(self):
+        return fu.first_use_error_text(PermissionError(13, 'x', str(self.path)), self.path)
+
+    def _failing_load(self):
+        return mock.patch.object(fui, 'load_first_use_with_pending',
+                                 side_effect=OSError(f'falha em {self.base}'))
+
+    # item 1: gravação falhou e, ao reabrir, a leitura também falha
+    def test_load_error_keeps_failed_pending_and_error_of_old_saver(self):
+        error = self._error()
+        old = FakeSaver(self.path, pending=_all(backup=fu.DONE), error=error)
+        self.app.first_use_saver = old
+        flow = self.make_flow()
+        with self._failing_load():
+            flow.start()
+            self.jobs[0].finish()
+        self.view.pump()
+        self.assertTrue(flow.ready)
+        self.assertIsNone(flow.saver)  # nesta janela nada é gravado
+        self.assertIs(self.app.first_use_saver, old)  # o antigo não é largado
+        self.assertEqual(self.view.status['backup'], 'Feito')
+        self.assertEqual(flow.steps, _all(backup=fu.DONE))
+        self.assertEqual(self.view.warning, fu.first_use_load_error_text(True, True))
+        self.assertIn(fu.FIRST_USE_PREVIOUS_FAILED_TEXT, self.view.warning)
+        self.assertNotIn(str(self.base), self.view.warning)
+        flow.mark('explorar', fu.DONE)
+        self.assertEqual(old.requests, [])
+        flow.close()  # o "Fechar" ainda avisa do erro do gravador antigo
+        self.assertEqual(self.view.events[-2:], [('destroy',), ('warn', error)])
+
+    def test_load_error_with_real_failing_saver_shows_its_marks_and_error(self):
+        def failing_save(path, steps):
+            raise PermissionError(13, 'acesso negado', str(path))
+
+        saver = fu.FirstUseProgressSaver(self.path, save=failing_save)
+        self._savers.append(saver)
+        self.app.first_use_saver = saver
+        flow = self.loaded_flow()
+        flow.mark('backup', fu.DONE)
+        self.assertTrue(saver.join(5))
+        self.assertIsNotNone(saver.poll_error())
+        flow.close()
+
+        self.view = FakeView()
+        again = self.make_flow()
+        with self._failing_load():
+            again.start()
+            self.jobs[-1].finish()
+        self.view.pump()
+        self.assertEqual(self.view.status['backup'], 'Feito')
+        self.assertEqual(self.view.warning, fu.first_use_load_error_text(True, True))
+        self.assertEqual(saver.pending(), _all(backup=fu.DONE))
+        self.assertFalse(self.path.exists())
+
+    def test_load_error_while_old_saver_still_writes_warns_on_close(self):
+        old = FakeSaver(self.path, pending=_all(backup=fu.DONE), busy=True)
+        self.app.first_use_saver = old
+        flow = self.make_flow()
+        with self._failing_load():
+            flow.start()
+            self.jobs[0].finish()
+        self.view.pump()
+        self.assertEqual(self.view.warning, fu.first_use_load_error_text(True, False))
+        self.assertTrue(flow.watching)  # olha o antigo enquanto ele grava
+        old._busy = False
+        old._error = self._error()
+        self.view.pump()
+        self.assertEqual(self.view.warning, fu.first_use_load_error_text(True, True))
+        self.assertFalse(flow.watching)
+        flow.close()
+        self.assertEqual(self.view.events[-1], ('warn', old._error))
+
+    def test_load_error_without_old_pending_starts_from_zero(self):
+        self.app.first_use_saver = FakeSaver(self.path)
+        flow = self.make_flow()
+        with self._failing_load():
+            flow.start()
+            self.jobs[0].finish()
+        self.view.pump()
+        self.assertEqual(self.view.warning, fu.FIRST_USE_LOAD_ERROR_TEXT)
+        self.assertEqual(flow.steps, fu.empty_first_use_steps())
+        flow.close()
+        self.assertEqual(self.view.events[-1], ('destroy',))
+
+    # item 2: a leitura cai no arquivo -2
+    def test_reading_moved_to_second_file_passes_pending_to_new_saver(self):
+        self.base.mkdir(parents=True)
+        self.path.write_text('{estragado', encoding='utf-8')
+        error = self._error()
+        old = FakeSaver(self.path, pending=_all(backup=fu.DONE), error=error)
+        self.app.first_use_saver = old
+        flow = self.loaded_flow()
+        second = self.base / 'primeiro-uso-progresso-2.json'
+        self.assertEqual(flow.path, second)
+        self.assertIsInstance(flow.saver, fu.FirstUseProgressSaver)
+        self.assertIs(self.app.first_use_saver, flow.saver)
+        self.assertIsNone(flow.previous)
+        self.assertEqual(self.view.status['backup'], 'Feito')
+        self.assertTrue(flow.saver.join(5))
+        self.assertIsNone(flow.saver.poll_error())
+        self.assertEqual(fu.load_first_use_progress(self.base)['steps'], _all(backup=fu.DONE))
+        self.assertEqual(self.path.read_text(encoding='utf-8'), '{estragado')
+        self.assertEqual(old.requests, [])
+
+    def test_reading_moved_to_second_file_without_pending_writes_nothing(self):
+        self.base.mkdir(parents=True)
+        self.path.write_text('{estragado', encoding='utf-8')
+        self.app.first_use_saver = FakeSaver(self.path)
+        flow = self.loaded_flow()
+        self.assertFalse(flow.saver.busy())
+        self.assertFalse((self.base / 'primeiro-uso-progresso-2.json').exists())
+
+    # item 3: fechar durante "Carregando..."
+    def test_close_while_loading_warns_pending_of_app_saver(self):
+        old = FakeSaver(self.path, pending=_all(backup=fu.DONE), busy=True)
+        self.app.first_use_saver = old
+        flow = self.make_flow()
+        flow.start()
+        self.assertFalse(flow.ready)
+        flow.close()
+        self.assertTrue(self.jobs[0].cancelled.is_set())
+        self.assertEqual(self.view.events[-2:], [
+            ('destroy',), ('warn', fu.FIRST_USE_CLOSE_SAVING_TEXT)])
+
+    def test_close_while_loading_after_failed_save_warns_error(self):
+        error = self._error()
+        self.app.first_use_saver = FakeSaver(self.path, pending=_all(backup=fu.DONE),
+                                             error=error)
+        flow = self.make_flow()
+        flow.start()
+        flow.close()
+        self.assertEqual(self.view.events[-1], ('warn', error))
+
+    def test_close_while_loading_without_pending_does_not_warn(self):
+        self.app.first_use_saver = FakeSaver(self.path)
+        flow = self.make_flow()
+        flow.start()
+        flow.close()
+        self.assertEqual(self.view.events[-1], ('destroy',))
+        flow = self.make_flow()  # sem gravador no app
+        self.app.first_use_saver = None
+        flow.start()
+        flow.close()
+        self.assertEqual(self.view.events[-1], ('destroy',))
+
+
 class SingleWindowNoTkTests(unittest.TestCase):
     def test_second_open_reuses_window_without_tkinter(self):
         class FakeDialog:
@@ -575,6 +726,7 @@ class FirstUseUiSourceTests(unittest.TestCase):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 self.assertNotIn('C:', node.value)
         for text in (fu.FIRST_USE_CLOSE_SAVING_TEXT, fu.FIRST_USE_LOAD_ERROR_TEXT,
+                     fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT, fu.FIRST_USE_PREVIOUS_FAILED_TEXT,
                      fui.LOADING_TEXT, fui.TITLE):
             for bad in FORBIDDEN_R88:
                 self.assertNotIn(bad, text.lower())

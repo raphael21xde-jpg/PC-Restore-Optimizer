@@ -81,12 +81,40 @@ FIRST_USE_CLOSE_SAVING_TEXT = (
     'quando você abrir o guia de novo (se você fechar o app antes disso, essas '
     'marcações podem se perder).'
 )
+# Rótulos exatos dos dois lugares que abrem o guia (conferidos com `ast` em
+# app.py: menu da esquerda e botão da "Visão geral", que tem a seta).
+FIRST_USE_SIDEBAR_LABEL = 'Primeiro uso guiado'
+FIRST_USE_OVERVIEW_BUTTON_LABEL = 'Primeiro uso guiado  →'
+_FIRST_USE_TRY_AGAIN = (
+    'Nesta janela, as marcações não serão salvas: para tentar outra vez, clique em '
+    '"Fechar" e abra o guia de novo, no menu da esquerda (botão '
+    f'"{FIRST_USE_SIDEBAR_LABEL}") ou na página "Visão geral" (botão '
+    f'"{FIRST_USE_OVERVIEW_BUTTON_LABEL}").'
+)
 FIRST_USE_LOAD_ERROR_TEXT = (
     'O progresso salvo não pôde ser lido e o guia começou do zero; nenhum arquivo '
-    'foi apagado. Nesta janela, as marcações não serão salvas: para tentar outra '
-    'vez, clique em "Fechar" e abra de novo o "Primeiro uso guiado" (no menu da '
-    'esquerda ou na "Visão geral").'
+    f'foi apagado. {_FIRST_USE_TRY_AGAIN}'
 )
+# FIX-P4-02-01: a leitura falhou, mas o app ainda tinha marcações não salvas
+# (de quando o guia esteve aberto antes): elas continuam na tela.
+FIRST_USE_LOAD_ERROR_KEPT_TEXT = (
+    'O progresso salvo não pôde ser lido; nenhum arquivo foi apagado. As marcações '
+    'mostradas são as últimas que você fez desde que abriu o app e talvez ainda não '
+    f'tenham sido salvas. {_FIRST_USE_TRY_AGAIN}'
+)
+FIRST_USE_PREVIOUS_FAILED_TEXT = (
+    'A última tentativa de salvar essas marcações também falhou.'
+)
+
+
+def first_use_load_error_text(kept: bool, previous_failed: bool) -> str:
+    """Aviso fixo da leitura que falhou (R-07), dizendo se as marcações não
+    salvas da vez anterior continuam na tela e se a gravação delas falhou."""
+    if not kept:
+        return FIRST_USE_LOAD_ERROR_TEXT
+    if previous_failed:
+        return f'{FIRST_USE_LOAD_ERROR_KEPT_TEXT} {FIRST_USE_PREVIOUS_FAILED_TEXT}'
+    return FIRST_USE_LOAD_ERROR_KEPT_TEXT
 
 
 def FIRST_USE_INTRO_TEXT(drive: str | None = None) -> str:
