@@ -17,6 +17,12 @@ Regras de segurança:
 - o gravador é um por app (`app.first_use_saver`) e não é fechado quando a
   janela fecha: reabrir a janela continua no mesmo gravador, então uma
   marcação nova nunca é gravada antes de uma antiga ainda pendente;
+- quando a janela reabre e escolhe entre o gravador antigo do app e um novo
+  (FIX-P4-02-01), o erro e as marcações pendentes do antigo continuam
+  visíveis ou passam ao novo: leitura que falha mostra as marcações pendentes
+  do antigo e diz se a gravação delas falhou; leitura que cai noutro arquivo
+  (`-2`...) manda as pendentes ao gravador novo; fechar durante
+  "Carregando..." avisa da gravação pendente do gravador do app;
 - os avisos mostram só o nome do arquivo (R-07) e os timers da janela são
   cancelados ao fechar (`WindowTimers`, R-11).
 
@@ -29,8 +35,8 @@ from first_use import (
     DONE,
     FIRST_USE_CLOSE_SAVING_TEXT,
     FIRST_USE_INTRO_TEXT,
-    FIRST_USE_LOAD_ERROR_TEXT,
     FIRST_USE_MODE_NOTE,
+    FIRST_USE_PREVIOUS_FAILED_TEXT,
     FIRST_USE_STEPS,
     PENDING,
     SKIPPED,
@@ -38,6 +44,7 @@ from first_use import (
     STEP_IDS,
     FirstUseProgressSaver,
     empty_first_use_steps,
+    first_use_load_error_text,
     first_use_warning_text,
     load_first_use_with_pending,
 )
@@ -93,6 +100,10 @@ class FirstUseFlow:
         self.job_factory = job_factory
         self.steps = empty_first_use_steps()
         self.saver: FirstUseProgressSaver | None = None
+        # gravador do app de quando a janela abriu, enquanto ele não é o
+        # `saver` desta janela nem passou as pendentes a um novo: o "Fechar" e a
+        # linha de aviso continuam olhando para ele (FIX-P4-02-01)
+        self.previous = None
         self.path = None
         self.base_warning = ''
         self.ready = False
@@ -107,6 +118,7 @@ class FirstUseFlow:
         self.view.set_warning('')
         self.view.set_ready(False)
         old = getattr(self.app, 'first_use_saver', None)
+        self.previous = old
         base = self.base
         self.job = self.job_factory(
             lambda cancelled, progress: load_first_use_with_pending(base, old))
@@ -124,25 +136,37 @@ class FirstUseFlow:
         if kind == 'done':
             self._loaded(value)
         else:
-            # mensagem do sistema pode ter o caminho completo: texto fixo (R-07)
-            self.steps = empty_first_use_steps()
-            self.saver = None
-            self.path = None
-            self.base_warning = FIRST_USE_LOAD_ERROR_TEXT
-            self._finish_loading()
+            self._load_failed()
+
+    def _load_failed(self) -> None:
+        # mensagem do sistema pode ter o caminho completo: texto fixo (R-07)
+        old = self.previous
+        kept = old.pending() if old is not None else None
+        self.steps = dict(kept) if kept is not None else empty_first_use_steps()
+        self.saver = None  # nesta janela, nada é gravado
+        self.path = None
+        self.base_warning = first_use_load_error_text(
+            kept is not None, kept is not None and bool(old.poll_error()))
+        self._finish_loading()
 
     def _loaded(self, progress) -> None:
         self.steps = dict(progress['steps'])
         self.path = progress['path']
         self.base_warning = ' '.join(progress['warnings'])
-        old = getattr(self.app, 'first_use_saver', None)
+        old = self.previous
         if self.path is None:
             self.saver = None  # sem lugar seguro: as marcações valem até fechar
         elif old is not None and not old.closed and old.path == self.path:
             self.saver = old
+            self.previous = None
         else:
             self.saver = FirstUseProgressSaver(self.path)
             self.app.first_use_saver = self.saver
+            if old is not None and old.pending() is not None:
+                # a leitura caiu noutro arquivo (-2...): as pendentes do
+                # gravador antigo já estão em self.steps e vão para o novo
+                self.saver.request(dict(self.steps))
+            self.previous = None
         self._finish_loading()
 
     def _finish_loading(self) -> None:
@@ -151,16 +175,29 @@ class FirstUseFlow:
             self._refresh(step_id)
         self._show_warning()
         self.view.set_ready(True)
-        if self.saver is not None and self.saver.busy():
+        watched = self._watched()
+        if watched is not None and watched.busy():
             self._watch()
+
+    def _watched(self):
+        """Gravador que a janela olha: o dela, ou o antigo do app (FIX-P4-02-01)."""
+        return self.saver if self.saver is not None else self.previous
 
     # marcações
     def _refresh(self, step_id) -> None:
         self.view.set_status(step_id, STATUS_TEXT[self.steps[step_id]])
 
     def _show_warning(self) -> None:
-        error = self.saver.poll_error() if self.saver is not None else None
-        self.view.set_warning(first_use_warning_text(self.base_warning, error))
+        if self.saver is not None:
+            error = self.saver.poll_error()
+            self.view.set_warning(first_use_warning_text(self.base_warning, error))
+            return
+        text = self.base_warning
+        old = self.previous
+        if (old is not None and old.pending() is not None and old.poll_error()
+                and FIRST_USE_PREVIOUS_FAILED_TEXT not in text):
+            text = f'{text} {FIRST_USE_PREVIOUS_FAILED_TEXT}'.strip()
+        self.view.set_warning(text)
 
     def _request(self) -> None:
         if self.saver is None:
@@ -174,10 +211,11 @@ class FirstUseFlow:
             self.view.after(WATCH_MS, self._watch_tick)
 
     def _watch_tick(self) -> None:
-        if self.closed or self.saver is None:
+        watched = self._watched()
+        if self.closed or watched is None:
             self.watching = False
             return
-        busy = self.saver.busy()  # antes do erro: se terminou, o erro já está lá
+        busy = watched.busy()  # antes do erro: se terminou, o erro já está lá
         self._show_warning()
         if busy:
             self.view.after(WATCH_MS, self._watch_tick)
@@ -214,9 +252,11 @@ class FirstUseFlow:
         if self.closed:
             return
         text = None
-        if self.saver is not None and self.saver.pending() is not None:
-            busy = self.saver.busy()
-            error = self.saver.poll_error()
+        # durante "Carregando..." (ou se a leitura falhou) vale o gravador do app
+        watched = self._watched()
+        if watched is not None and watched.pending() is not None:
+            busy = watched.busy()
+            error = watched.poll_error()
             text = FIRST_USE_CLOSE_SAVING_TEXT if busy or not error else error
         self.forget()
         self.view.destroy()  # não espera a gravação: ela continua na thread dela

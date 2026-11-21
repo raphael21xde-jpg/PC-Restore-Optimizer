@@ -96,6 +96,8 @@ EXPECTED_STEP_LABELS = {
     'Fechar': ('first_use_ui.py', 'show_first_use'),
     'Primeiro uso guiado': ('app.py', 'App._build_sidebar'),
     'Visão geral': ('app.py', 'App._build_sidebar'),
+    # FIX-P4-02-01: o botão da "Visão geral" é citado com a seta, igual ao rótulo.
+    'Primeiro uso guiado  →': ('app.py', 'App._build'),
 }
 
 # "Executar como administrador" não é botão do app: é o item do menu do botão
@@ -265,6 +267,8 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 fu.FIRST_USE_MODE_NOTE,
                 fu.FIRST_USE_CLOSE_SAVING_TEXT,
                 fu.FIRST_USE_LOAD_ERROR_TEXT,
+                fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT,
+                fu.FIRST_USE_PREVIOUS_FAILED_TEXT,
             ] + [
                 s['title'] + ' ' + s['text'] for s in steps
             ]
@@ -279,11 +283,13 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
 
     def test_window_texts_name_real_buttons_and_promise_nothing(self):
         # Revisão da PR #293: o caminho para tentar de novo usa botões que existem.
-        self.assertIn(
-            'para tentar outra vez, clique em "Fechar" e abra de novo o '
-            '"Primeiro uso guiado" (no menu da esquerda ou na "Visão geral").',
-            fu.FIRST_USE_LOAD_ERROR_TEXT,
+        try_again = (
+            'para tentar outra vez, clique em "Fechar" e abra o guia de novo, no menu '
+            'da esquerda (botão "Primeiro uso guiado") ou na página "Visão geral" '
+            '(botão "Primeiro uso guiado  →").'
         )
+        self.assertIn(try_again, fu.FIRST_USE_LOAD_ERROR_TEXT)
+        self.assertIn(try_again, fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT)
         self.assertIn(
             'O app ainda está salvando as marcações no arquivo '
             f'{fu.PROGRESS_FILENAME}, na pasta de dados do app; se não der, o aviso '
@@ -310,6 +316,48 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 for old in OLD_TEXTS:
                     self.assertNotIn(old.lower(), msg.lower())
 
+    def test_load_error_cites_exact_labels_of_the_buttons_in_app(self):
+        # FIX-P4-02-01 (item 4): o aviso cita o rótulo EXATO de cada botão que
+        # abre o guia, lido com ast no app.py (o da "Visão geral" tem a seta).
+        tree = ast.parse((ROOT / 'app.py').read_text(encoding='utf-8'))
+        overview, sidebar = [], []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            command = next((kw.value for kw in node.keywords if kw.arg == 'command'), None)
+            for kw in node.keywords:
+                if (kw.arg == 'text' and isinstance(kw.value, ast.Constant)
+                        and getattr(command, 'attr', None) == 'open_first_use'):
+                    overview.append(kw.value.value)
+            if (getattr(node.func, 'attr', None) == '_nav_action' and len(node.args) == 3
+                    and getattr(node.args[2], 'attr', None) == 'open_first_use'):
+                sidebar.append(node.args[1].value)
+        self.assertEqual(overview, [fu.FIRST_USE_OVERVIEW_BUTTON_LABEL])
+        self.assertEqual(sidebar, [fu.FIRST_USE_SIDEBAR_LABEL])
+        self.assertEqual(fu.FIRST_USE_OVERVIEW_BUTTON_LABEL, 'Primeiro uso guiado  →')
+        for text in (fu.FIRST_USE_LOAD_ERROR_TEXT, fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT,
+                     fu.first_use_load_error_text(True, True)):
+            with self.subTest(text=text[:40]):
+                self.assertIn(f'(botão "{overview[0]}")', text)
+                self.assertIn(f'(botão "{sidebar[0]}")', text)
+                # o nome sem a seta só aparece como o botão do menu da esquerda
+                self.assertEqual(text.count('"Primeiro uso guiado"'), 1)
+
+    def test_load_error_text_variants(self):
+        self.assertEqual(fu.first_use_load_error_text(False, False),
+                         fu.FIRST_USE_LOAD_ERROR_TEXT)
+        self.assertEqual(fu.first_use_load_error_text(False, True),
+                         fu.FIRST_USE_LOAD_ERROR_TEXT)
+        self.assertEqual(fu.first_use_load_error_text(True, False),
+                         fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT)
+        self.assertEqual(fu.first_use_load_error_text(True, True),
+                         fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT + ' '
+                         + fu.FIRST_USE_PREVIOUS_FAILED_TEXT)
+        self.assertIn('começou do zero', fu.FIRST_USE_LOAD_ERROR_TEXT)
+        self.assertNotIn('começou do zero', fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT)
+        for text in (fu.FIRST_USE_LOAD_ERROR_TEXT, fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT):
+            self.assertIn('nenhum arquivo foi apagado', text)
+
     def test_default_drive_uses_workflow_texts_system_drive(self):
         with mock.patch.object(fu, 'system_drive', return_value='Z:'):
             self.assertIn('Z:', fu.FIRST_USE_INTRO_TEXT())
@@ -327,6 +375,8 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
             fu.FIRST_USE_MODE_NOTE,
             fu.FIRST_USE_CLOSE_SAVING_TEXT,
             fu.FIRST_USE_LOAD_ERROR_TEXT,
+            fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT,
+            fu.FIRST_USE_PREVIOUS_FAILED_TEXT,
         ] + [step['text'] for step in fu.FIRST_USE_STEPS('C:')]
         quoted = set()
         for text in texts:
