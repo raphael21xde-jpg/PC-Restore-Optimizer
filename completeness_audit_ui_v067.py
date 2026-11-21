@@ -8,32 +8,77 @@ from pathlib import Path
 
 from backup_core import atomic_json
 from completeness_audit_v067 import build_completeness_report
+from ui_scale import (
+    COR_ALERTA,
+    COR_PAINEL,
+    COR_TEXTO,
+    ESPACO_DENTRO_GRUPO,
+    ESPACO_ENTRE_BOTOES,
+    ESPACO_P,
+    ESPACO_ROTULO_CAMPO,
+    FONTE_UI,
+    PADDING_ABA_NOTEBOOK,
+    PADDING_CAIXA_TEXTO,
+    PADDING_DIALOGO,
+    TAMANHO_CORPO,
+    TAMANHO_TITULO_MODAL,
+    safe_window_geometry,
+    safe_window_size,
+    safe_wraplength,
+)
 
 
 def show_completeness_audit(app, plan):
     window = tk.Toplevel(app)
     window.title('v0.6.7 • Auditoria de preservação do C: e situação EFI')
-    window.geometry('1120x745')
-    window.minsize(870, 590)
+    screen_w = window.winfo_screenwidth()
+    screen_h = window.winfo_screenheight()
+    min_w, min_h = safe_window_size(870, 590, screen_w, screen_h, min_w=640, min_h=480)
+    window.geometry(safe_window_geometry(1120, 745, screen_w, screen_h, min_w=min_w, min_h=min_h))
+    window.minsize(min_w, min_h)
     window.transient(app)
-    frame = ttk.Frame(window, padding=15)
+    frame = ttk.Frame(window, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='Auditoria de dados do C: — somente leitura',
-              font=('Segoe UI', 16, 'bold')).pack(anchor='w', pady=(0, 5))
-    ttk.Label(frame, text=('Verifica locais que podem conter dados importantes e consulta a relação entre '
-                          'o disco do Windows e as partições EFI. NÃO lê todos os arquivos, '
-                          'não altera escolhas e NÃO libera formatação.'),
-              wraplength=1050, foreground='#F3BE67').pack(anchor='w', pady=(0, 8))
+              font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold')).pack(anchor='w', pady=ESPACO_ROTULO_CAMPO)
+    initial_wrap = safe_wraplength(1120, padding=PADDING_DIALOGO)
+    warning_label = ttk.Label(
+        frame,
+        text=('Verifica locais que podem conter dados importantes e consulta a relação entre '
+              'o disco do Windows e as partições EFI. NÃO lê todos os arquivos, '
+              'não altera escolhas e NÃO libera formatação.'),
+        wraplength=initial_wrap,
+        foreground=COR_ALERTA,
+    )
+    warning_label.pack(anchor='w', pady=ESPACO_DENTRO_GRUPO)
     status = tk.StringVar(value='Conferindo caminhos e consultando discos; aguarde...')
-    ttk.Label(frame, textvariable=status, wraplength=1050).pack(anchor='w', pady=(0, 7))
+    status_label = ttk.Label(frame, textvariable=status, wraplength=initial_wrap)
+    status_label.pack(anchor='w', pady=ESPACO_DENTRO_GRUPO)
+
+    def _update_wrap(event):
+        if event.widget is frame and event.width > 1:
+            w = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            warning_label.configure(wraplength=w)
+            status_label.configure(wraplength=w)
+
+    frame.bind('<Configure>', _update_wrap)
+
+    controls = ttk.Frame(frame)
+    controls.pack(side='bottom', fill='x', pady=(ESPACO_P, 0))
+    export_button = ttk.Button(controls, text='Exportar auditoria JSON', state='disabled')
+    export_button.pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    ttk.Button(controls, text='Ver escolhas em Meu Computador',
+               command=lambda: (window.destroy(), app.navigate(app.home))).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    ttk.Button(controls, text='Fechar', command=window.destroy).pack(side='right')
+
     notebook = ttk.Notebook(frame)
     notebook.pack(fill='both', expand=True)
 
-    paths_tab = ttk.Frame(notebook, padding=8)
-    gaps_tab = ttk.Frame(notebook, padding=8)
-    boot_tab = ttk.Frame(notebook, padding=8)
-    recovery_tab = ttk.Frame(notebook, padding=8)
-    tasks_tab = ttk.Frame(notebook, padding=8)
+    paths_tab = ttk.Frame(notebook, padding=PADDING_ABA_NOTEBOOK)
+    gaps_tab = ttk.Frame(notebook, padding=PADDING_ABA_NOTEBOOK)
+    boot_tab = ttk.Frame(notebook, padding=PADDING_ABA_NOTEBOOK)
+    recovery_tab = ttk.Frame(notebook, padding=PADDING_ABA_NOTEBOOK)
+    tasks_tab = ttk.Frame(notebook, padding=PADDING_ABA_NOTEBOOK)
     for tab, label in ((paths_tab, 'Locais de dados'),
                        (gaps_tab, 'Erros do C:'),
                        (boot_tab, 'Discos e EFI'),
@@ -46,10 +91,10 @@ def show_completeness_audit(app, plan):
         area.pack(fill='both', expand=True)
         tree = ttk.Treeview(area, columns=[k for k, _ in cols], show='tree headings')
         tree.heading('#0', text='Item / caminho')
-        tree.column('#0', width=300, stretch=True)
+        tree.column('#0', width=300, minwidth=160, stretch=True)
         for key, label in cols:
             tree.heading(key, text=label)
-            tree.column(key, width=220 if key == 'status' else 440, stretch=True)
+            tree.column(key, width=220 if key == 'status' else 440, minwidth=120, stretch=True)
         scroll = ttk.Scrollbar(area, orient='vertical', command=tree.yview)
         tree.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right', fill='y')
@@ -60,19 +105,13 @@ def show_completeness_audit(app, plan):
     gaps_tree = make_table(gaps_tab, [('type', 'Categoria'), ('detail', 'Motivo')])
     efi_tree = make_table(boot_tab, [('type', 'Tipo'), ('detail', 'Detalhes')])
     recovery_tree = make_table(recovery_tab, [('status', 'Situação'), ('detail', 'Destino após reinstalação')])
-    notes = tk.Text(tasks_tab, wrap='word', font=('Segoe UI', 10), relief='flat',
-                    bg='#192438', fg='#EFF4FF', padx=14, pady=14)
+    notes = tk.Text(tasks_tab, wrap='word', font=(FONTE_UI, TAMANHO_CORPO), relief='flat',
+                    bg=COR_PAINEL, fg=COR_TEXTO,
+                    padx=PADDING_CAIXA_TEXTO[0], pady=PADDING_CAIXA_TEXTO[1])
     notes.pack(fill='both', expand=True)
     notes.insert('1.0', 'Carregando checklist...')
     notes.configure(state='disabled')
 
-    controls = ttk.Frame(frame)
-    controls.pack(fill='x', pady=(9, 0))
-    export_button = ttk.Button(controls, text='Exportar auditoria JSON', state='disabled')
-    export_button.pack(side='left', padx=(0, 8))
-    ttk.Button(controls, text='Ver escolhas em Meu Computador',
-               command=lambda: (window.destroy(), app.navigate(app.home))).pack(side='left', padx=(0, 8))
-    ttk.Button(controls, text='Fechar', command=window.destroy).pack(side='right')
     result = {'report': None}
 
     def draw(report):
