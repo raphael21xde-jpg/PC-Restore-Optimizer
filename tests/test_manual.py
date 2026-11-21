@@ -55,6 +55,7 @@ DIAGNOSTIC = ('app.py', 'App._build_diagnostic')
 OPT_TABS = ('optimization_ui.py', 'OptimizationPanel._build')
 OPT_DIAG = ('optimization_ui.py', 'OptimizationPanel._build_diagnostics')
 AFTER = ('after_format_ui.py', 'show_after_format')
+FIRST_USE = ('first_use_ui.py', 'show_first_use')
 INSTALL = ('workflow_ui.py', 'build_installation')
 CATALOG = ('app.py', 'App._build_catalog')
 BROWSERS = ('app.py', 'App._build_browsers')
@@ -68,6 +69,7 @@ UI_LABELS = {
     'Preservação': SIDEBAR,
     'Instalar Windows': SIDEBAR,
     'Recuperação': SIDEBAR,
+    'Primeiro uso guiado': SIDEBAR,
     'Depois de formatar': SIDEBAR,
     'Central de recuperação': SIDEBAR,
     'Cópia protegida para outro disco': SIDEBAR,
@@ -123,6 +125,8 @@ UI_LABELS = {
     'Abrir': AFTER,
     'Feito': AFTER,
     'Pular': AFTER,
+    # Primeiro uso guiado (P4-02); "Abrir", "Feito" e "Pular" também existem nele
+    'Recomeçar marcações': FIRST_USE,
     # otimização
     '1  Diagnóstico': OPT_TABS,
     '4  Energia reversível': OPT_TABS,
@@ -142,6 +146,15 @@ UI_LABELS = {
     'Desfazer tudo': ('optimization_ui.py', 'OptimizationPanel._build_changes'),
     'Conferir de novo': ('optimization_ui.py', 'OptimizationPanel._build_changes'),
     'Desfazer alteração antiga': ('optimization_ui.py', 'OptimizationPanel._build_power'),
+}
+
+# Rótulos que o manual cita e que também existem em outra tela (o mapa acima
+# tem uma tela por nome): "Abrir", "Feito" e "Pular" também são botões do
+# "Primeiro uso guiado" (P4-02).
+ALSO_IN = {
+    'Abrir': (FIRST_USE,),
+    'Feito': (FIRST_USE,),
+    'Pular': (FIRST_USE,),
 }
 
 # Nomes do próprio Windows citados no manual -> módulo cujo texto de tela os cita.
@@ -501,6 +514,16 @@ class ManualTests(unittest.TestCase):
                 self.assertIn(screen, self.reach, f'{screen} não é alcançável')
                 self.assertIn(_norm(name), self.project.labels(*screen),
                               f'"{name}" não é rótulo da tela {screen}')
+        for name, screens in ALSO_IN.items():
+            self.assertIn(name, UI_LABELS)
+            if _norm(name) not in quoted:
+                continue
+            for screen in screens:
+                with self.subTest(name=name, screen=screen):
+                    self.assertNotIn(screen, HIDDEN_BUILDERS)
+                    self.assertIn(screen, self.reach, f'{screen} não é alcançável')
+                    self.assertIn(_norm(name), self.project.labels(*screen),
+                                  f'"{name}" não é rótulo da tela {screen}')
         for name, filename in WINDOWS_NAMES.items():
             if _norm(name) not in quoted:
                 continue

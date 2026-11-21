@@ -33,6 +33,34 @@ from restore_place_flow import (confirmation_text, friendly_report, run_placemen
 from winget_programs_ui import show_programs
 from recovery_center import load_partial_info, partial_report_text
 from launcher_guide_ui import show_launchers
+from ui_scale import (
+    COR_BORDA,
+    COR_PAINEL,
+    COR_PERIGO,
+    COR_SELECAO,
+    COR_TEXTO,
+    ESPACO_ENTRE_BOTOES,
+    ESPACO_M,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    FONTE_MONO,
+    FONTE_UI,
+    PADDING_CAIXA_TEXTO,
+    PADDING_DIALOGO,
+    TAMANHO_CORPO,
+    TAMANHO_TITULO_MODAL,
+    safe_window_geometry,
+    safe_wraplength,
+)
+
+DESIRED_WIDTH = 1130
+DESIRED_HEIGHT = 740
+MIN_WIDTH = 800
+MIN_HEIGHT = 500
+REPORT_DESIRED_WIDTH = 820
+REPORT_DESIRED_HEIGHT = 480
+REPORT_MIN_WIDTH = 520
+REPORT_MIN_HEIGHT = 320
 
 PARTIAL_MODE_TEXT = ('Modo "só os arquivos conferidos": os arquivos que falharam no backup ficam '
                      'de fora. A restauração vai sempre para uma pasta NOVA, cada arquivo é '
@@ -59,10 +87,17 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None, only_verif
     app.restore_dialog = dlg
     timers = WindowTimers(dlg)
     dlg.title('Restauração organizada por jogo, aplicativo e pasta · v0.5.19')
-    dlg.geometry('1130x740')
-    dlg.minsize(800, 500)
+    dlg.geometry(safe_window_geometry(
+        DESIRED_WIDTH,
+        DESIRED_HEIGHT,
+        dlg.winfo_screenwidth() or 0,
+        dlg.winfo_screenheight() or 0,
+        min_w=MIN_WIDTH,
+        min_h=MIN_HEIGHT,
+    ))
+    dlg.minsize(MIN_WIDTH, MIN_HEIGHT)
 
-    frame = ttk.Frame(dlg, padding=14)
+    frame = ttk.Frame(dlg, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
     status = tk.StringVar(value='Lendo arquivos verificados em segundo plano…')
     selected_text = tk.StringVar(value='Nenhum arquivo marcado para restaurar.')
@@ -71,31 +106,64 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None, only_verif
                  shown={}, after=None, small=small, started=None, meter=None, active_keys=None, prefix=None,
                  partial_failed=None, partial_total=0)
 
+    wrapped_labels = []
     ttk.Label(frame, text='Restauração organizada — sem substituir arquivos originais',
-              font=('Segoe UI', 13, 'bold')).pack(anchor='w')
+              font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold')).pack(anchor='w')
     if is_process_elevated(elevation_probe):
         # P2-02: fixed warning; there is deliberately no "continue anyway" button.
-        ttk.Label(frame, text=ELEVATION_WARNING, wraplength=1080, foreground='#9a1c1c',
-                  font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(6, 2))
-    ttk.Label(frame, text='Marque jogos, categorias, pastas ou arquivos. A seleção permanece ao pesquisar e navegar.',
-              wraplength=1080).pack(anchor='w', pady=(5, 2))
+        elev_label = ttk.Label(
+            frame, text=ELEVATION_WARNING, wraplength=1080, foreground=COR_PERIGO,
+            font=(FONTE_UI, TAMANHO_CORPO, 'bold'))
+        elev_label.pack(fill='x', pady=(ESPACO_P, ESPACO_MINIMO))
+        wrapped_labels.append(elev_label)
+    intro_label = ttk.Label(
+        frame, text='Marque jogos, categorias, pastas ou arquivos. A seleção permanece ao pesquisar e navegar.',
+        wraplength=1080)
+    intro_label.pack(anchor='w', pady=(ESPACO_MINIMO, ESPACO_MINIMO))
+    wrapped_labels.append(intro_label)
     if only_verified:
-        ttk.Label(frame, text=PARTIAL_MODE_TEXT, wraplength=1080,
-                  font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(2, 2))
-    ttk.Label(frame, textvariable=status, wraplength=1080).pack(fill='x', pady=(5, 6))
+        partial_label = ttk.Label(
+            frame, text=PARTIAL_MODE_TEXT, wraplength=1080,
+            font=(FONTE_UI, TAMANHO_CORPO, 'bold'))
+        partial_label.pack(anchor='w', pady=(ESPACO_MINIMO, ESPACO_MINIMO))
+        wrapped_labels.append(partial_label)
+    status_label = ttk.Label(frame, textvariable=status, wraplength=1080)
+    status_label.pack(fill='x', pady=(ESPACO_MINIMO, ESPACO_P))
+    wrapped_labels.append(status_label)
     progress_bar = ttk.Progressbar(frame, mode='indeterminate')
-    progress_bar.pack(fill='x', pady=(0, 8))
+    progress_bar.pack(fill='x', pady=(0, ESPACO_P))
     progress_bar.start(15)
 
     filter_area = ttk.Frame(frame)
-    filter_area.pack(fill='x', pady=4)
-    ttk.Label(filter_area, text='Pesquisar jogo, pasta ou arquivo:').pack(side='left', padx=(0, 8))
+    filter_area.pack(fill='x', pady=ESPACO_MINIMO)
+    ttk.Label(filter_area, text='Pesquisar jogo, pasta ou arquivo:').pack(side='left', padx=(0, ESPACO_P))
     query = tk.StringVar()
     field = ttk.Entry(filter_area, textvariable=query)
     field.pack(side='left', fill='x', expand=True)
 
+    # Empacota o rodapé e os botões antes da árvore expansível para manter
+    # as ações visíveis ao reduzir a janela ou usar escala de 125%/150%.
+    actions = ttk.Frame(frame)
+    actions.pack(side='bottom', fill='x')
+    tools = ttk.Frame(frame)
+    tools.pack(side='bottom', fill='x', pady=(0, ESPACO_P))
+    selected_label = ttk.Label(
+        frame, textvariable=selected_text, font=(FONTE_UI, TAMANHO_CORPO, 'bold'))
+    selected_label.pack(side='bottom', fill='x', pady=(ESPACO_MINIMO, ESPACO_MINIMO))
+    hint_label = ttk.Label(frame, textvariable=hint, wraplength=1080)
+    hint_label.pack(side='bottom', fill='x')
+    wrapped_labels.append(hint_label)
+
+    def _update_wrap(event):
+        if event.widget is frame and event.width > 1:
+            wrap = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            for lbl in wrapped_labels:
+                lbl.configure(wraplength=wrap)
+
+    frame.bind('<Configure>', _update_wrap)
+
     grid = ttk.Frame(frame)
-    grid.pack(fill='both', expand=True, pady=8)
+    grid.pack(fill='both', expand=True, pady=ESPACO_P)
     tree = ttk.Treeview(grid, columns=('mark', 'count', 'size'), show='tree headings', selectmode='browse')
     tree.heading('#0', text='Jogos, aplicativos, categorias e arquivos')
     tree.heading('mark', text='Restaurar')
@@ -113,14 +181,6 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None, only_verif
     scrollbar_x.grid(row=1, column=0, sticky='ew')
     grid.rowconfigure(0, weight=1)
     grid.columnconfigure(0, weight=1)
-
-    ttk.Label(frame, textvariable=hint, wraplength=1080).pack(fill='x')
-    ttk.Label(frame, textvariable=selected_text, font=('Segoe UI', 10, 'bold')).pack(fill='x', pady=(5, 4))
-
-    tools = ttk.Frame(frame)
-    tools.pack(fill='x', pady=(0, 7))
-    actions = ttk.Frame(frame)
-    actions.pack(fill='x')
 
     def node_for(iid):
         if not iid.isdigit() or state['index'] is None:
@@ -264,8 +324,8 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None, only_verif
     tree.bind('<Button-1>', on_click)
     tree.bind('<Double-1>', on_double)
     tree.bind('<Return>', on_enter)
-    ttk.Button(tools, text='Marcar grupo / item', command=lambda: toggle(current_node(), True)).pack(side='left', padx=(0, 7))
-    ttk.Button(tools, text='Desmarcar grupo / item', command=lambda: toggle(current_node(), False)).pack(side='left', padx=(0, 7))
+    ttk.Button(tools, text='Marcar grupo / item', command=lambda: toggle(current_node(), True)).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    ttk.Button(tools, text='Desmarcar grupo / item', command=lambda: toggle(current_node(), False)).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     ttk.Button(tools, text='Limpar seleção', command=lambda: clear_selection()).pack(side='left')
 
     def clear_selection():
@@ -419,7 +479,7 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None, only_verif
         start_job(chosen,str(Path(folder).resolve().parent),resume_from=folder)
 
     resume_button=ttk.Button(actions,text='Retomar restauração interrompida',command=resume_restore)
-    resume_button.pack(side='left',padx=(9,0))
+    resume_button.pack(side='left',padx=(ESPACO_P,0))
 
     place_button = resume_place_button = None
     if not only_verified:
@@ -430,12 +490,35 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None, only_verif
         def show_report(text):
             window = tk.Toplevel(dlg)
             window.title('Colocar no lugar original — resultado')
-            window.geometry('820x480')
-            box = tk.Text(window, wrap='word')
+            window.geometry(safe_window_geometry(
+                REPORT_DESIRED_WIDTH,
+                REPORT_DESIRED_HEIGHT,
+                window.winfo_screenwidth() or 0,
+                window.winfo_screenheight() or 0,
+                min_w=REPORT_MIN_WIDTH,
+                min_h=REPORT_MIN_HEIGHT,
+            ))
+            window.minsize(REPORT_MIN_WIDTH, REPORT_MIN_HEIGHT)
+            ttk.Button(window, text='Fechar', command=window.destroy).pack(
+                side='bottom', pady=(0, PADDING_DIALOGO))
+            box = tk.Text(
+                window,
+                wrap='word',
+                bg=COR_PAINEL,
+                fg=COR_TEXTO,
+                insertbackground=COR_TEXTO,
+                selectbackground=COR_SELECAO,
+                selectforeground=COR_TEXTO,
+                relief='flat',
+                highlightthickness=1,
+                highlightbackground=COR_BORDA,
+                padx=PADDING_CAIXA_TEXTO[0],
+                pady=PADDING_CAIXA_TEXTO[1],
+                font=(FONTE_MONO, TAMANHO_CORPO),
+            )
             box.insert('1.0', text)
             box.configure(state='disabled')
-            box.pack(fill='both', expand=True, padx=10, pady=10)
-            ttk.Button(window, text='Fechar', command=window.destroy).pack(pady=(0, 10))
+            box.pack(fill='both', expand=True, padx=PADDING_DIALOGO, pady=(PADDING_DIALOGO, ESPACO_P))
 
         def start_placement(info, resuming):
             """Monta a prévia em segundo plano, confirma e coloca os arquivos."""
@@ -518,17 +601,17 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None, only_verif
             choose_staging(True)
 
         place_button = ttk.Button(actions, text='Colocar no lugar original', command=place_original)
-        place_button.pack(side='left', padx=(9, 0))
+        place_button.pack(side='left', padx=(ESPACO_P, 0))
         resume_place_button = ttk.Button(actions, text='Retomar colocação interrompida',
                                          command=resume_place)
-        resume_place_button.pack(side='left', padx=(9, 0))
+        resume_place_button.pack(side='left', padx=(ESPACO_P, 0))
     # P2-04: abre a lista de programas salva na pasta deste backup; a instalação
     # só acontece lá dentro, depois de uma confirmação explícita.
     ttk.Button(tools, text='Programas do backup',
-               command=lambda: show_programs(dlg, Path(manifest).parent)).pack(side='left', padx=(7, 0))
+               command=lambda: show_programs(dlg, Path(manifest).parent)).pack(side='left', padx=(ESPACO_P, 0))
     # P2-05: só leitura; mostra onde estão as bibliotecas de jogos e como religá-las.
     ttk.Button(tools, text='Launchers de jogos',
-               command=lambda: show_launchers(dlg)).pack(side='left', padx=(7, 0))
+               command=lambda: show_launchers(dlg)).pack(side='left', padx=(ESPACO_P, 0))
     if not only_verified:
         ttk.Checkbutton(tools, variable=include_protected,
                         text='Incluir arquivos de Program Files/ProgramData ao colocar no lugar original'
@@ -540,7 +623,7 @@ def show_restore(app, manifest, small=False, *, elevation_probe=None, only_verif
             status.set('Cancelamento solicitado. Aguardando a operação atual de disco…')
 
     cancel_button = ttk.Button(actions, text='Cancelar operação', command=cancel)
-    cancel_button.pack(side='left', padx=12)
+    cancel_button.pack(side='left', padx=(ESPACO_M, 0))
 
     def close():
         if state['busy']:

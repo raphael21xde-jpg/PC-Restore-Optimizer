@@ -25,6 +25,29 @@ from scripts import build_exe
 ROOT = Path(__file__).resolve().parent.parent
 DIST_EXE = ROOT / 'dist' / build_exe.APP_NAME / f'{build_exe.APP_NAME}.exe'
 
+# Código do Windows quando o Controle Inteligente de Aplicativos bloqueia um
+# programa sem assinatura.
+WINERROR_SMART_APP_CONTROL = 4551
+EXE_BLOCKED_SKIP_REASON = (
+    'O Controle Inteligente de Aplicativos do Windows bloqueou o .exe sem '
+    'assinatura (WinError 4551); nada foi testado nem aprovado; não mude '
+    'configurações do Windows.'
+)
+
+
+def _run_exe_smoke(cmd, *, runner=subprocess.run, **kwargs):
+    """Roda o .exe; só o bloqueio do Windows (WinError 4551) vira "ignorado".
+
+    O motivo é fixo (sem caminho nem nome de usuário). Qualquer outro OSError
+    sobe sem mudança, como o WinError 1314 em tests/test_audit_v068.py.
+    """
+    try:
+        return runner(cmd, **kwargs)
+    except OSError as exc:
+        if getattr(exc, 'winerror', None) == WINERROR_SMART_APP_CONTROL:
+            raise unittest.SkipTest(EXE_BLOCKED_SKIP_REASON) from None
+        raise
+
 
 class AppDataDirTests(unittest.TestCase):
     """Confere `choices_store.app_data_dir` nos dois modos (Python e sys.frozen)."""
@@ -179,6 +202,84 @@ class SmokeTestModeTests(unittest.TestCase):
         self.assertIn('raise SystemExit(_smoke_test())', source)
 
 
+class ExeSmokeBlockedTests(unittest.TestCase):
+    """Confere `_run_exe_smoke` com um runner falso (roda em qualquer sistema)."""
+
+    FAKE_CMD = [
+        str(Path('C:/Users/usuario-secreto/dist/PCRestoreOptimizer.exe')),
+        '--smoke-test',
+    ]
+
+    @staticmethod
+    def _raising(exc):
+        def runner(cmd, **kwargs):
+            raise exc
+        return runner
+
+    def _blocked_error(self, winerror):
+        exc = OSError(f'bloqueado: {self.FAKE_CMD[0]}')
+        exc.winerror = winerror
+        return exc
+
+    def test_winerror_4551_becomes_skip_with_fixed_reason(self):
+        runner = self._raising(self._blocked_error(4551))
+        with self.assertRaises(unittest.SkipTest) as ctx:
+            _run_exe_smoke(self.FAKE_CMD, runner=runner, timeout=30)
+        self.assertEqual(str(ctx.exception), EXE_BLOCKED_SKIP_REASON)
+        self.assertIn('WinError 4551', str(ctx.exception))
+        self.assertIn('nada foi testado nem aprovado', str(ctx.exception))
+
+    def test_skip_reason_has_no_path_or_user_name(self):
+        runner = self._raising(self._blocked_error(4551))
+        with self.assertRaises(unittest.SkipTest) as ctx:
+            _run_exe_smoke(self.FAKE_CMD, runner=runner)
+        reason = str(ctx.exception)
+        self.assertNotIn('usuario-secreto', reason)
+        self.assertNotIn('Users', reason)
+        self.assertNotIn('PCRestoreOptimizer.exe', reason)
+
+    def test_other_winerror_is_raised_unchanged(self):
+        exc = self._blocked_error(5)
+        with self.assertRaises(OSError) as ctx:
+            _run_exe_smoke(self.FAKE_CMD, runner=self._raising(exc))
+        self.assertIs(ctx.exception, exc)
+
+    def test_oserror_without_winerror_is_raised_unchanged(self):
+        exc = OSError('sem winerror')
+        with self.assertRaises(OSError) as ctx:
+            _run_exe_smoke(self.FAKE_CMD, runner=self._raising(exc))
+        self.assertIs(ctx.exception, exc)
+
+    def test_file_not_found_is_raised_unchanged(self):
+        exc = FileNotFoundError('programa não encontrado')
+        with self.assertRaises(FileNotFoundError) as ctx:
+            _run_exe_smoke(self.FAKE_CMD, runner=self._raising(exc))
+        self.assertIs(ctx.exception, exc)
+
+    def test_success_returns_same_result_and_passes_arguments(self):
+        result = SimpleNamespace(returncode=0, stdout='', stderr='')
+        calls = []
+
+        def runner(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return result
+
+        got = _run_exe_smoke(self.FAKE_CMD, runner=runner, timeout=30, check=False)
+        self.assertIs(got, result)
+        self.assertEqual(calls, [(self.FAKE_CMD, {'timeout': 30, 'check': False})])
+
+    def test_real_smoke_test_checks_bundle_before_running_exe(self):
+        import inspect
+        source = inspect.getsource(
+            BuiltExecutableSmokeTests.test_bundle_is_clean_and_exe_opens_and_closes_cleanly
+        )
+        self.assertNotIn('subprocess.run(', source)
+        self.assertIn('_run_exe_smoke(', source)
+        self.assertLess(
+            source.index('verify_clean_bundle('), source.index('_run_exe_smoke(')
+        )
+
+
 class BuiltExecutableSmokeTests(unittest.TestCase):
     """Teste do pacote real gerado em dist/PCRestoreOptimizer/PCRestoreOptimizer.exe."""
 
@@ -203,7 +304,7 @@ class BuiltExecutableSmokeTests(unittest.TestCase):
 
         env = dict(os.environ)
         env['LOCALAPPDATA'] = str(self.folder / 'LocalAppData')
-        result = subprocess.run(
+        result = _run_exe_smoke(
             [str(DIST_EXE), '--smoke-test'],
             cwd=str(self.folder),
             env=env,
