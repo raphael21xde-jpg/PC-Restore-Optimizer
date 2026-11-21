@@ -83,10 +83,9 @@ EXPECTED_STEP_LABELS = {
     '9  Ajustes avançados': ('optimization_ui.py', 'OptimizationPanel._build'),
     'Desfazer tudo': ('optimization_ui.py', 'OptimizationPanel._build_changes'),
     'Colocar no lugar original': ('restore_ui.py', 'show_restore'),
+    # Fatia 2: botão da própria janela do Primeiro uso guiado (R-62/R-74).
+    'Abrir': ('first_use_ui.py', 'show_first_use'),
 }
-
-# Rótulos da própria janela do Primeiro uso guiado (Fatia 2: first_use_ui.py, show_first_use).
-SLICE_2_WINDOW_LABELS = {'Abrir'}
 
 # "Executar como administrador" não é botão do app: é o item do menu do botão
 # direito do Windows no atalho do programa. Por isso é conferido como frase nos
@@ -250,7 +249,12 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 by_id['preservacao']['text'],
             )
 
-            all_texts = [intro, fu.FIRST_USE_MODE_NOTE] + [
+            all_texts = [
+                intro,
+                fu.FIRST_USE_MODE_NOTE,
+                fu.FIRST_USE_CLOSE_SAVING_TEXT,
+                fu.FIRST_USE_LOAD_ERROR_TEXT,
+            ] + [
                 s['title'] + ' ' + s['text'] for s in steps
             ]
             for text in all_texts:
@@ -283,7 +287,6 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
 
         known = (
             {_norm(k) for k in EXPECTED_STEP_LABELS}
-            | {_norm(k) for k in SLICE_2_WINDOW_LABELS}
             | {_norm(k) for k in WINDOWS_LABELS}
         )
         self.assertEqual(sorted(quoted - known), [])

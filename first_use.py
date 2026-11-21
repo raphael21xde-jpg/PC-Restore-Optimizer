@@ -74,6 +74,19 @@ FIRST_USE_MODE_NOTE = (
 )
 
 
+# Fatia 2: avisos fixos da janela (R-07: sem caminho, sem mensagem do sistema).
+FIRST_USE_CLOSE_SAVING_TEXT = (
+    'As últimas marcações ainda estão sendo salvas no arquivo '
+    f'{PROGRESS_FILENAME}, na pasta de dados do app. O app termina de salvar '
+    'sozinho, mesmo com a janela fechada.'
+)
+FIRST_USE_LOAD_ERROR_TEXT = (
+    'O progresso salvo não pôde ser lido e o guia começou do zero; nenhum arquivo '
+    'foi apagado. Nesta janela, as marcações não serão salvas: feche e abra o guia '
+    'de novo para tentar outra vez.'
+)
+
+
 def FIRST_USE_INTRO_TEXT(drive: str | None = None) -> str:
     """Texto de boas-vindas e regras de segurança do Primeiro uso guiado (R-88)."""
     d = system_drive() if drive is None else drive
