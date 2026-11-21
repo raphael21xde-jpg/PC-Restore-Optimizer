@@ -1053,6 +1053,10 @@ Issue "Validar M3": rodar o check-up de segurança, medir, aplicar os ajustes se
 ### FIX-P4-02-02 · `GEMINI.md` ainda diz que o primeiro uso guiado "só orienta" — `bloqueado` (precisa de uma conversa com o Raphael: `GEMINI.md` é protegido)
 - Origem: item (5) da revisão da PR #293 (antes dentro de FIX-P4-02-01). Os textos do app já não dizem "só orienta" (R-88); falta alinhar o `GEMINI.md`, que os agentes do ciclo não mudam.
 
+### FIX-P4-02-03 · Aviso ao fechar depois de uma leitura que falhou — `pronto`
+- Origem: revisão da PR #296 (FIX-P4-02-01, 594642760656). Marco M4.
+- O que fazer: ao fechar a janela depois de uma leitura que falhou, o erro antigo promete "tenta salvar de novo na próxima marcação", mas as marcações feitas nesta janela não são salvas; acrescentar um aviso próprio com teste.
+
 ### P4-03 · Instalador (.exe) — `concluído` (Gemini, PR #247; build de teste, ver FIX-P4-03-01)
 - Reservado pelo Raphael em 13/11/2026: o Gemini faz este item no branch `gemini/P4-03-instalador`, no PC do Raphael, e abre a PR. Os agentes do ciclo não pegam este item; a revisão é do Claude numa conversa com o Raphael. Se o piloto for cancelado, voltar para `pronto` (depois de P4-02).
 - Script de build (PyInstaller) e teste do pacote.

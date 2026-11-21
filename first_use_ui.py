@@ -162,6 +162,9 @@ class FirstUseFlow:
         else:
             self.saver = FirstUseProgressSaver(self.path)
             self.app.first_use_saver = self.saver
+            # Se o gravador antigo terminar entre a leitura (que já pegou as
+            # pendentes dele para self.steps) e este segundo old.pending(),
+            # nada se perde: ele já salvou essas marcações no arquivo dele.
             if old is not None and old.pending() is not None:
                 # a leitura caiu noutro arquivo (-2...): as pendentes do
                 # gravador antigo já estão em self.steps e vão para o novo
