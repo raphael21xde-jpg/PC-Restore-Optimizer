@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 8 (última poda: 13/11/2026, pedido `regras-20261113-poda-r79-r90`, issue #241). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-91.
+poda: 9 (última poda: 13/11/2026, pedido `regras-20261113-poda-r79-r90`, issue #241). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-91.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -113,3 +113,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-96 | Gravador que grava só a diferença para uma base: quando a tela passa a mostrar um valor que veio do disco ou de outra janela, a base daquela entrada vira o valor mostrado (numa tomada só da trava, e nunca para uma entrada com pedido pendente); senão, desmarcar o que outra janela marcou fica igual à base e nunca é gravado, sem aviso. Teste: outra janela marca, a tela mostra o valor juntado, o usuário desmarca, e o disco é conferido. | Revisão da PR #284 (P4-02 fatia 1, e7c459f18db5) | 2026-11-20 |
 | R-97 | Antes de corrigir os achados de uma PR, o desenvolvedor atualiza o branch com a `origin/main` (merge, sem rebase) e relê o item no `docs/BACKLOG.md`; se uma decisão do Raphael mudou o escopo, segue a decisão e diz isso na PR. | Revisão da PR #284 (P4-02 fatia 1, 57bdc945988a) | 2026-11-20 |
 | R-98 | Exceção à R-09 só para `primeiro-uso-progresso.json` (decisão do Raphael de 20/11/2026, uma janela só): entre dois processos do app vale o último a gravar, sem juntar; a gravação continua atômica dentro de `exclusive_lock`, e a docstring de `save_first_use_progress` diz que a marcação de outro processo pode ser trocada pela desta janela. Qualquer outro arquivo que o app grava segue a R-09. | Revisão da PR #284 (P4-02 fatia 1, 524c34f135fe) | 2026-11-20 |
+| R-99 | Teste que executa um programa real (.exe) trata o bloqueio do Windows pelo código exato (WinError 4551, Controle Inteligente de Aplicativos) como 'ignorado', com motivo fixo, sem caminho, dizendo que nada foi aprovado; qualquer outro erro continua erro, e a conferência que não depende de executar roda antes. Tem teste com runner falso para o código bloqueado e para outro código. | Suíte no Windows de 20/11/2026 (issue #282, test_installer_p4_03.py) | 2026-11-21 |
