@@ -54,6 +54,12 @@ OLD_TEXTS = (
     # R-88: a restauração não grava "nas pastas que você indicar"; o .antes-pcro
     # é do "Colocar no lugar original" (revisão da PR #284 @524c34f135fe).
     'na restauração, nas pastas que você indicar',
+    # Revisão da PR #293 @9936711e5d86: a janela não tem "feche e abra o guia";
+    # o gravador continua no app, então o que se perde é ao fechar o app; e o
+    # aviso de fechar não promete que a gravação deu certo.
+    'se você fechar a janela antes disso',
+    'feche e abra o guia',
+    'termina de salvar',
 )
 
 # Mapa dos rótulos entre aspas citados em first_use.py -> (módulo, função que monta a tela)
@@ -85,6 +91,9 @@ EXPECTED_STEP_LABELS = {
     'Colocar no lugar original': ('restore_ui.py', 'show_restore'),
     # Fatia 2: botão da própria janela do Primeiro uso guiado (R-62/R-74).
     'Abrir': ('first_use_ui.py', 'show_first_use'),
+    'Fechar': ('first_use_ui.py', 'show_first_use'),
+    'Primeiro uso guiado': ('app.py', 'App._build_sidebar'),
+    'Visão geral': ('app.py', 'App._build_sidebar'),
 }
 
 # "Executar como administrador" não é botão do app: é o item do menu do botão
@@ -266,6 +275,38 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 if drive == 'W:':
                     self.assertNotIn('C:', text)
 
+    def test_window_texts_name_real_buttons_and_promise_nothing(self):
+        # Revisão da PR #293: o caminho para tentar de novo usa botões que existem.
+        self.assertIn(
+            'para tentar outra vez, clique em "Fechar" e abra de novo o '
+            '"Primeiro uso guiado" (no menu da esquerda ou na "Visão geral").',
+            fu.FIRST_USE_LOAD_ERROR_TEXT,
+        )
+        self.assertIn(
+            'O app continua tentando salvar as marcações no arquivo '
+            f'{fu.PROGRESS_FILENAME}, na pasta de dados do app, mesmo com a janela '
+            'fechada; se não der, o aviso aparece quando você abrir o guia de novo.',
+            fu.FIRST_USE_CLOSE_SAVING_TEXT,
+        )
+        project = _Project(ROOT)
+        reach = project.reachable(blocked=BLOCKED_EDGES)
+        for label, screen in (
+            ('Fechar', ('first_use_ui.py', 'show_first_use')),
+            ('Primeiro uso guiado', ('app.py', 'App._build_sidebar')),
+            ('Visão geral', ('app.py', 'App._build_sidebar')),
+        ):
+            with self.subTest(label=label):
+                self.assertIn(screen, reach)
+                self.assertIn(_norm(label), project.labels(*screen))
+        for exc in (ValueError('x'), OSError('x'),
+                    fu.FirstUseBadProgressFileError(fu.PROGRESS_FILENAME, 'x'),
+                    fu.FirstUseTooManyPartialsError(fu.PROGRESS_FILENAME, 21)):
+            msg = fu.first_use_error_text(exc)
+            with self.subTest(exc=type(exc).__name__):
+                self.assertIn('se você fechar o app antes disso, estas marcações se perdem.', msg)
+                for old in OLD_TEXTS:
+                    self.assertNotIn(old.lower(), msg.lower())
+
     def test_default_drive_uses_workflow_texts_system_drive(self):
         with mock.patch.object(fu, 'system_drive', return_value='Z:'):
             self.assertIn('Z:', fu.FIRST_USE_INTRO_TEXT())
@@ -278,9 +319,12 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
     def test_every_quoted_label_exists_in_reachable_screen_builder(self):
         project = _Project(ROOT)
         reach = project.reachable(blocked=BLOCKED_EDGES)
-        texts = [fu.FIRST_USE_INTRO_TEXT('C:'), fu.FIRST_USE_MODE_NOTE] + [
-            step['text'] for step in fu.FIRST_USE_STEPS('C:')
-        ]
+        texts = [
+            fu.FIRST_USE_INTRO_TEXT('C:'),
+            fu.FIRST_USE_MODE_NOTE,
+            fu.FIRST_USE_CLOSE_SAVING_TEXT,
+            fu.FIRST_USE_LOAD_ERROR_TEXT,
+        ] + [step['text'] for step in fu.FIRST_USE_STEPS('C:')]
         quoted = set()
         for text in texts:
             quoted |= _quoted_names(text)
@@ -1040,8 +1084,8 @@ class FirstUseProgressSaverTests(unittest.TestCase):
 
     def test_error_texts_say_app_retries_on_next_mark(self):
         retry = (
-            'O app tenta salvar de novo na próxima marcação; se você fechar a '
-            'janela antes disso, estas marcações se perdem.'
+            'O app tenta salvar de novo na próxima marcação; se você fechar o '
+            'app antes disso, estas marcações se perdem.'
         )
         excs = (
             ValueError('x'),

@@ -76,14 +76,15 @@ FIRST_USE_MODE_NOTE = (
 
 # Fatia 2: avisos fixos da janela (R-07: sem caminho, sem mensagem do sistema).
 FIRST_USE_CLOSE_SAVING_TEXT = (
-    'As últimas marcações ainda estão sendo salvas no arquivo '
-    f'{PROGRESS_FILENAME}, na pasta de dados do app. O app termina de salvar '
-    'sozinho, mesmo com a janela fechada.'
+    'O app continua tentando salvar as marcações no arquivo '
+    f'{PROGRESS_FILENAME}, na pasta de dados do app, mesmo com a janela fechada; '
+    'se não der, o aviso aparece quando você abrir o guia de novo.'
 )
 FIRST_USE_LOAD_ERROR_TEXT = (
     'O progresso salvo não pôde ser lido e o guia começou do zero; nenhum arquivo '
-    'foi apagado. Nesta janela, as marcações não serão salvas: feche e abra o guia '
-    'de novo para tentar outra vez.'
+    'foi apagado. Nesta janela, as marcações não serão salvas: para tentar outra '
+    'vez, clique em "Fechar" e abra de novo o "Primeiro uso guiado" (no menu da '
+    'esquerda ou na "Visão geral").'
 )
 
 
@@ -376,8 +377,8 @@ def first_use_error_text(exc: BaseException, path=None) -> str:
         return (
             'Não deu para salvar o progresso: as marcações não puderam ser salvas '
             '(ValueError); o arquivo de progresso foi deixado como está. '
-            'O app tenta salvar de novo na próxima marcação; se você fechar a '
-            'janela antes disso, estas marcações se perdem.'
+            'O app tenta salvar de novo na próxima marcação; se você fechar o '
+            'app antes disso, estas marcações se perdem.'
         )
     if isinstance(exc, FirstUseTooManyPartialsError):
         return (
@@ -385,21 +386,21 @@ def first_use_error_text(exc: BaseException, path=None) -> str:
             f'(arquivos com ".parcial" no nome, ao lado do arquivo de progresso{target}, '
             'na pasta de dados do app); nada foi apagado e o arquivo de progresso '
             'foi deixado como está. Se quiser, apague essas sobras você mesmo. '
-            'O app tenta salvar de novo na próxima marcação; se você fechar a '
-            'janela antes disso, estas marcações se perdem.'
+            'O app tenta salvar de novo na próxima marcação; se você fechar o '
+            'app antes disso, estas marcações se perdem.'
         )
     if isinstance(exc, FirstUseBadProgressFileError):
         return (
             f'Não deu para salvar o progresso: o arquivo de progresso{target} não '
             'pôde ser usado; ele foi deixado como está. '
-            'O app tenta salvar de novo na próxima marcação; se você fechar a '
-            'janela antes disso, estas marcações se perdem.'
+            'O app tenta salvar de novo na próxima marcação; se você fechar o '
+            'app antes disso, estas marcações se perdem.'
         )
     return (
         f'Não deu para salvar o progresso: o arquivo de progresso{target} não pôde '
         f'ser gravado ({type(exc).__name__}); ele foi deixado como está. '
-        'O app tenta salvar de novo na próxima marcação; se você fechar a '
-        'janela antes disso, estas marcações se perdem.'
+        'O app tenta salvar de novo na próxima marcação; se você fechar o '
+        'app antes disso, estas marcações se perdem.'
     )
 
 

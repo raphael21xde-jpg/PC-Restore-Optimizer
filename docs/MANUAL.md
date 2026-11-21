@@ -21,7 +21,7 @@ O menu da esquerda tem: "Visão geral", "Primeiro uso guiado", "Meu computador",
 "Cópia protegida para outro disco", "Otimização", "Diagnóstico" e "Histórico e relatórios". O item
 "Cópia protegida para outro disco" é um recurso protegido, ainda em teste: use o backup normal abaixo.
 Na primeira vez, abra o "Primeiro uso guiado" (no menu ou na "Visão geral"), que mostra as 6 etapas:
-"Abrir" leva à tela da etapa sem começar nada; "Feito", "Pular" e "Recomeçar marcações" marcam o progresso.
+"Abrir" leva à tela da etapa sem começar nada; "Feito", "Pular" e "Recomeçar marcações" marcam ou desmarcam o progresso.
 
 ## Instalar e abrir
 

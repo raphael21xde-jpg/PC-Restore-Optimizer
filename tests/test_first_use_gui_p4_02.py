@@ -476,6 +476,10 @@ class FirstUseUiSourceTests(unittest.TestCase):
             "self._nav_action('★', 'Primeiro uso guiado', self.open_first_use)", src)
         self.assertIn('return show_first_use(self)', src)
 
+    def test_close_button_and_window_x_share_the_same_handler(self):
+        self.assertIn("close_btn.configure(command=flow.close)", SOURCE)
+        self.assertIn("dlg.protocol('WM_DELETE_WINDOW', flow.close)", SOURCE)
+
     def test_open_step_calls_nothing_but_navigate_on_app(self):
         tree = ast.parse(SOURCE)
         flow = next(n for n in tree.body if isinstance(n, ast.ClassDef)
@@ -662,6 +666,37 @@ class FirstUseWindowTkTests(unittest.TestCase):
         self.assertIsNot(dlg2, dlg)
         self._wait_ready(dlg2)
         self.assertEqual(dlg2.first_use_status['backup'].get(), 'Feito')
+
+    def test_window_x_uses_same_path_as_close_button(self):
+        started = threading.Event()
+        release = threading.Event()
+        self.addCleanup(release.set)
+
+        def slow_save(path, steps):
+            started.set()
+            release.wait(5)
+            fu.save_first_use_progress(path, steps)
+
+        self.root.first_use_saver = fu.FirstUseProgressSaver(
+            fu.first_use_progress_path(self.base), save=slow_save)
+        dlg = self._open()
+        self._wait_ready(dlg)
+        timers = dlg.first_use_timers
+        dlg.first_use_buttons['testar']['Pular'].invoke()
+        self.assertTrue(started.wait(5))
+        command = dlg.protocol('WM_DELETE_WINDOW')
+        self.assertTrue(command)
+        with mock.patch.object(fui, '_show_close_warning') as warn:
+            dlg.tk.call(command)  # o mesmo que clicar no "X" da janela
+        warn.assert_called_once_with(self.root, fu.FIRST_USE_CLOSE_SAVING_TEXT)
+        self.assertFalse(dlg.winfo_exists())
+        self.assertIsNone(self.root.first_use_dialog)
+        self.assertTrue(timers.closed)
+        self.assertTrue(dlg.first_use_flow.closed)
+        release.set()
+        self.assertTrue(self.root.first_use_saver.join(5))
+        self.assertEqual(fu.load_first_use_progress(self.base)['steps'],
+                         _all(testar=fu.SKIPPED))
 
     def test_close_without_pending_does_not_warn(self):
         dlg = self._open()
