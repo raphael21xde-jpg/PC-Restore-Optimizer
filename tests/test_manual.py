@@ -55,6 +55,7 @@ DIAGNOSTIC = ('app.py', 'App._build_diagnostic')
 OPT_TABS = ('optimization_ui.py', 'OptimizationPanel._build')
 OPT_DIAG = ('optimization_ui.py', 'OptimizationPanel._build_diagnostics')
 AFTER = ('after_format_ui.py', 'show_after_format')
+FIRST_USE = ('first_use_ui.py', 'show_first_use')
 INSTALL = ('workflow_ui.py', 'build_installation')
 CATALOG = ('app.py', 'App._build_catalog')
 BROWSERS = ('app.py', 'App._build_browsers')
@@ -68,6 +69,7 @@ UI_LABELS = {
     'Preservação': SIDEBAR,
     'Instalar Windows': SIDEBAR,
     'Recuperação': SIDEBAR,
+    'Primeiro uso guiado': SIDEBAR,
     'Depois de formatar': SIDEBAR,
     'Central de recuperação': SIDEBAR,
     'Cópia protegida para outro disco': SIDEBAR,
@@ -123,6 +125,8 @@ UI_LABELS = {
     'Abrir': AFTER,
     'Feito': AFTER,
     'Pular': AFTER,
+    # Primeiro uso guiado (P4-02); "Abrir", "Feito" e "Pular" também existem nele
+    'Recomeçar marcações': FIRST_USE,
     # otimização
     '1  Diagnóstico': OPT_TABS,
     '4  Energia reversível': OPT_TABS,

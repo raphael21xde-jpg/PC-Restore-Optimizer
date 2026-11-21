@@ -16,11 +16,12 @@ a deixar o computador mais rápido com segurança. Ele:
 - orienta a reinstalação do Windows e a volta dos seus dados depois;
 - mede o computador e aplica ajustes de desempenho, anotando cada um para poder desfazer.
 
-O menu da esquerda tem: "Visão geral", "Meu computador", "Preservação",
+O menu da esquerda tem: "Visão geral", "Primeiro uso guiado", "Meu computador", "Preservação",
 "Instalar Windows", "Recuperação", "Depois de formatar", "Central de recuperação",
-"Cópia protegida para outro disco", "Otimização", "Diagnóstico" e
-"Histórico e relatórios". O item "Cópia protegida para outro disco" é um recurso
-protegido, ainda em teste: por enquanto, use o backup normal descrito abaixo.
+"Cópia protegida para outro disco", "Otimização", "Diagnóstico" e "Histórico e relatórios". O item
+"Cópia protegida para outro disco" é um recurso protegido, ainda em teste: use o backup normal abaixo.
+Na primeira vez, abra o "Primeiro uso guiado" (no menu ou na "Visão geral"), que mostra as 6 etapas:
+"Abrir" leva à tela da etapa sem começar nada; "Feito", "Pular" e "Recomeçar marcações" marcam o progresso.
 
 ## Instalar e abrir
 
@@ -46,8 +47,7 @@ Nas abas "8  Ajustes seguros" e "9  Ajustes avançados", o app também confere a
 conta: se o Windows pedir a senha de outra conta, os ajustes valeriam para aquela
 outra conta; por isso, se não for a sua, o app não lê nem muda nada.
 
-Terminou os ajustes? Feche e abra o app de novo do jeito normal para fazer backup ou
-restaurar.
+Terminou os ajustes? Feche e abra o app de novo do jeito normal para fazer backup ou restaurar.
 
 ## Diagnóstico de discos (só leitura)
 
