@@ -114,19 +114,20 @@ FIRST_USE_PREVIOUS_FAILED_TEXT = (
 # Nada desta janela é gravado, então o aviso não promete nova tentativa (o erro
 # do gravador antigo diz "tenta salvar de novo na próxima marcação").
 FIRST_USE_CLOSE_LOAD_FAILED_TEXT = (
-    'Nesta janela, nenhuma marcação foi salva, porque o progresso salvo não pôde '
-    'ser lido (nenhum arquivo foi apagado): o que você marcou ou desmarcou nela se '
-    f'perde ao fechar. Para tentar outra vez, {_FIRST_USE_OPEN_AGAIN}'
+    'O progresso salvo não pôde ser lido. Nenhum arquivo foi apagado. Por isso, '
+    'nenhuma marcação desta janela foi salva. O que você marcou ou desmarcou nela '
+    f'se perde ao fechar. Para tentar outra vez, {_FIRST_USE_OPEN_AGAIN}'
 )
+# FIX-P4-02-04: frases curtas, com as mesmas promessas de antes.
 FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT = (
-    'As marcações de antes, que já estavam na tela quando o guia abriu, o app ainda '
-    'está salvando; se não der, o aviso aparece quando você abrir o guia de novo '
-    '(se você fechar o app antes disso, elas podem se perder).'
+    'O app ainda está salvando as marcações que já estavam na tela quando o guia '
+    'abriu. Se não der certo, o aviso aparece quando você abrir o guia de novo. '
+    'Se você fechar o app antes disso, elas podem se perder.'
 )
 FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT = (
-    'As marcações de antes, que já estavam na tela quando o guia abriu, também não '
-    'foram salvas: o app ainda as guarda e elas aparecem quando você abrir o guia de '
-    'novo (se você fechar o app antes disso, elas se perdem).'
+    'As marcações que já estavam na tela quando o guia abriu também não foram '
+    'salvas. O app ainda as guarda, e elas aparecem quando você abrir o guia de '
+    'novo. Se você fechar o app antes disso, elas se perdem.'
 )
 
 

@@ -322,21 +322,44 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
     def test_load_error_cites_exact_labels_of_the_buttons_in_app(self):
         # FIX-P4-02-01 (item 4): o aviso cita o rótulo EXATO de cada botão que
         # abre o guia, lido com ast no app.py (o da "Visão geral" tem a seta).
+        # FIX-P4-02-04 (item 2, R-81): cada rótulo é procurado só na função que
+        # monta a tela dele, nunca no app.py inteiro: o menu da esquerda (com a
+        # entrada "Visão geral") em App._build_sidebar; o botão com a seta em
+        # App._build, logo depois de build_overview (que monta a "Visão geral").
         tree = ast.parse((ROOT / 'app.py').read_text(encoding='utf-8'))
-        overview, sidebar = [], []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            command = next((kw.value for kw in node.keywords if kw.arg == 'command'), None)
-            for kw in node.keywords:
-                if (kw.arg == 'text' and isinstance(kw.value, ast.Constant)
-                        and getattr(command, 'attr', None) == 'open_first_use'):
-                    overview.append(kw.value.value)
-            if (getattr(node.func, 'attr', None) == '_nav_action' and len(node.args) == 3
-                    and getattr(node.args[2], 'attr', None) == 'open_first_use'):
-                sidebar.append(node.args[1].value)
+        app_class = next(n for n in tree.body
+                         if isinstance(n, ast.ClassDef) and n.name == 'App')
+        methods = {n.name: n for n in app_class.body if isinstance(n, ast.FunctionDef)}
+
+        def calls(name):
+            return [n for n in ast.walk(methods[name]) if isinstance(n, ast.Call)]
+
+        def opens_guide(node):
+            return getattr(node, 'attr', None) == 'open_first_use'
+
+        sidebar = [c.args[1].value for c in calls('_build_sidebar')
+                   if getattr(c.func, 'attr', None) == '_nav_action'
+                   and len(c.args) == 3 and opens_guide(c.args[2])]
+        nav_entries = [c.args[2].value for c in calls('_build_sidebar')
+                       if getattr(c.func, 'attr', None) == '_nav_entry'
+                       and len(c.args) == 3 and isinstance(c.args[2], ast.Constant)]
+        build_calls = calls('_build')
+        self.assertIn('build_overview',
+                      [getattr(c.func, 'id', None) for c in build_calls])
+        overview = [kw.value.value for c in build_calls for kw in c.keywords
+                    if kw.arg == 'text' and isinstance(kw.value, ast.Constant)
+                    and any(k.arg == 'command' and opens_guide(k.value)
+                            for k in c.keywords)]
         self.assertEqual(overview, [fu.FIRST_USE_OVERVIEW_BUTTON_LABEL])
         self.assertEqual(sidebar, [fu.FIRST_USE_SIDEBAR_LABEL])
+        self.assertIn('Visão geral', nav_entries)
+        # fora dessas duas funções, nenhum outro botão do app.py abre o guia
+        others = [c for name, method in methods.items()
+                  if name not in ('_build', '_build_sidebar')
+                  for c in ast.walk(method) if isinstance(c, ast.Call)
+                  and (any(opens_guide(a) for a in c.args)
+                       or any(opens_guide(k.value) for k in c.keywords))]
+        self.assertEqual(others, [])
         self.assertEqual(fu.FIRST_USE_OVERVIEW_BUTTON_LABEL, 'Primeiro uso guiado  →')
         for text in (fu.FIRST_USE_LOAD_ERROR_TEXT, fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT,
                      fu.first_use_load_error_text(True, True),
@@ -368,9 +391,10 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
         # FIX-P4-02-03: ao fechar depois de uma leitura que falhou, o aviso diz
         # que nada desta janela foi salvo e não promete nova tentativa.
         text = fu.FIRST_USE_CLOSE_LOAD_FAILED_TEXT
-        self.assertIn('nenhuma marcação foi salva', text)
-        self.assertIn('o progresso salvo não pôde ser lido', text)
-        self.assertIn('nenhum arquivo foi apagado', text)
+        self.assertIn('nenhuma marcação desta janela foi salva', text)
+        self.assertIn('O progresso salvo não pôde ser lido.', text)
+        self.assertIn('Nenhum arquivo foi apagado.', text)
+        self.assertIn('se perde ao fechar', text)
         self.assertIn('abra o guia de novo', text)
         self.assertNotIn('"Fechar"', text)  # a janela já está fechando
         self.assertNotIn(fu.PROGRESS_FILENAME, text)
@@ -390,11 +414,27 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 lower = variant.lower()
                 self.assertNotIn('tenta salvar de novo', lower)
                 self.assertNotIn('próxima marcação', lower)
-        self.assertIn('o app ainda está salvando', fu.FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT)
-        self.assertIn('se não der', fu.FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT)
-        self.assertIn('também não foram salvas', fu.FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT)
-        self.assertIn('se você fechar o app antes disso, elas se perdem',
-                      fu.FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT)
+        # FIX-P4-02-04 (item 3): frases curtas, com as mesmas promessas de antes
+        self.assertEqual(
+            fu.FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT,
+            'O app ainda está salvando as marcações que já estavam na tela quando o '
+            'guia abriu. Se não der certo, o aviso aparece quando você abrir o guia de '
+            'novo. Se você fechar o app antes disso, elas podem se perder.')
+        self.assertEqual(
+            fu.FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT,
+            'As marcações que já estavam na tela quando o guia abriu também não foram '
+            'salvas. O app ainda as guarda, e elas aparecem quando você abrir o guia de '
+            'novo. Se você fechar o app antes disso, elas se perdem.')
+        # a frase com os dois botões (igual à do erro de leitura) fica de fora
+        open_again = f'Para tentar outra vez, {fu._FIRST_USE_OPEN_AGAIN}'
+        for variant in variants:
+            self.assertIn(open_again, variant)
+            short = variant.replace(open_again, '')
+            for sentence in re.split(r'(?<=\.)\s+', short.strip()):
+                with self.subTest(sentence=sentence):
+                    self.assertLessEqual(len(sentence.split()), 16)
+                    for mark in (';', ':', '('):
+                        self.assertNotIn(mark, sentence)
 
     def test_default_drive_uses_workflow_texts_system_drive(self):
         with mock.patch.object(fu, 'system_drive', return_value='Z:'):
