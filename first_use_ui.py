@@ -23,6 +23,9 @@ Regras de segurança:
   do antigo e diz se a gravação delas falhou; leitura que cai noutro arquivo
   (`-2`...) manda as pendentes ao gravador novo; fechar durante
   "Carregando..." avisa da gravação pendente do gravador do app;
+- fechar depois de uma leitura que falhou nesta janela sempre avisa que nada
+  desta janela foi salvo e como tentar de novo (FIX-P4-02-03), sem prometer
+  nova tentativa de gravação;
 - os avisos mostram só o nome do arquivo (R-07) e os timers da janela são
   cancelados ao fechar (`WindowTimers`, R-11).
 
@@ -44,6 +47,7 @@ from first_use import (
     STEP_IDS,
     FirstUseProgressSaver,
     empty_first_use_steps,
+    first_use_close_load_failed_text,
     first_use_load_error_text,
     first_use_warning_text,
     load_first_use_with_pending,
@@ -107,6 +111,8 @@ class FirstUseFlow:
         self.path = None
         self.base_warning = ''
         self.ready = False
+        # a leitura falhou nesta janela: nada dela é gravado (FIX-P4-02-03)
+        self.load_failed = False
         self.job = None
         self.watching = False
         self.closed = False
@@ -144,6 +150,7 @@ class FirstUseFlow:
         kept = old.pending() if old is not None else None
         self.steps = dict(kept) if kept is not None else empty_first_use_steps()
         self.saver = None  # nesta janela, nada é gravado
+        self.load_failed = True
         self.path = None
         self.base_warning = first_use_load_error_text(
             kept is not None, kept is not None and bool(old.poll_error()))
@@ -257,10 +264,18 @@ class FirstUseFlow:
         text = None
         # durante "Carregando..." (ou se a leitura falhou) vale o gravador do app
         watched = self._watched()
+        saving = failed = False
         if watched is not None and watched.pending() is not None:
             busy = watched.busy()
             error = watched.poll_error()
-            text = FIRST_USE_CLOSE_SAVING_TEXT if busy or not error else error
+            saving = bool(busy or not error)
+            failed = not saving
+            text = FIRST_USE_CLOSE_SAVING_TEXT if saving else error
+        if self.load_failed:
+            # FIX-P4-02-03: nada desta janela foi salvo; o erro do gravador
+            # antigo promete nova tentativa "na próxima marcação", que aqui não
+            # acontece, então o aviso é próprio e fixo
+            text = first_use_close_load_failed_text(saving, failed)
         self.forget()
         self.view.destroy()  # não espera a gravação: ela continua na thread dela
         if text is not None:

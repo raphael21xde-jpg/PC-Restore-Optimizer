@@ -85,11 +85,14 @@ FIRST_USE_CLOSE_SAVING_TEXT = (
 # app.py: menu da esquerda e botão da "Visão geral", que tem a seta).
 FIRST_USE_SIDEBAR_LABEL = 'Primeiro uso guiado'
 FIRST_USE_OVERVIEW_BUTTON_LABEL = 'Primeiro uso guiado  →'
-_FIRST_USE_TRY_AGAIN = (
-    'Nesta janela, as marcações não serão salvas: para tentar outra vez, clique em '
-    '"Fechar" e abra o guia de novo, no menu da esquerda (botão '
+_FIRST_USE_OPEN_AGAIN = (
+    'abra o guia de novo, no menu da esquerda (botão '
     f'"{FIRST_USE_SIDEBAR_LABEL}") ou na página "Visão geral" (botão '
     f'"{FIRST_USE_OVERVIEW_BUTTON_LABEL}").'
+)
+_FIRST_USE_TRY_AGAIN = (
+    'Nesta janela, as marcações não serão salvas: para tentar outra vez, clique em '
+    f'"Fechar" e {_FIRST_USE_OPEN_AGAIN}'
 )
 FIRST_USE_LOAD_ERROR_TEXT = (
     'O progresso salvo não pôde ser lido e o guia começou do zero; nenhum arquivo '
@@ -105,6 +108,38 @@ FIRST_USE_LOAD_ERROR_KEPT_TEXT = (
 FIRST_USE_PREVIOUS_FAILED_TEXT = (
     'A última tentativa de salvar essas marcações também falhou.'
 )
+
+
+# FIX-P4-02-03: "Fechar" ou "X" depois de uma leitura que falhou nesta janela.
+# Nada desta janela é gravado, então o aviso não promete nova tentativa (o erro
+# do gravador antigo diz "tenta salvar de novo na próxima marcação").
+FIRST_USE_CLOSE_LOAD_FAILED_TEXT = (
+    'O progresso salvo não pôde ser lido. Nenhum arquivo foi apagado. Por isso, '
+    'nenhuma marcação desta janela foi salva. O que você marcou ou desmarcou nela '
+    f'se perde ao fechar. Para tentar outra vez, {_FIRST_USE_OPEN_AGAIN}'
+)
+# FIX-P4-02-04: frases curtas, com as mesmas promessas de antes.
+FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT = (
+    'O app ainda está salvando as marcações que já estavam na tela quando o guia '
+    'abriu. Se não der certo, o aviso aparece quando você abrir o guia de novo. '
+    'Se você fechar o app antes disso, elas podem se perder.'
+)
+FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT = (
+    'As marcações que já estavam na tela quando o guia abriu também não foram '
+    'salvas. O app ainda as guarda, e elas aparecem quando você abrir o guia de '
+    'novo. Se você fechar o app antes disso, elas se perdem.'
+)
+
+
+def first_use_close_load_failed_text(previous_busy: bool, previous_failed: bool) -> str:
+    """Aviso fixo do "Fechar"/"X" depois de uma leitura que falhou (R-07),
+    dizendo se as marcações não salvas da vez anterior ainda estão sendo salvas
+    ou se a gravação delas falhou (ainda gravando vale mais)."""
+    if previous_busy:
+        return f'{FIRST_USE_CLOSE_LOAD_FAILED_TEXT} {FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT}'
+    if previous_failed:
+        return f'{FIRST_USE_CLOSE_LOAD_FAILED_TEXT} {FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT}'
+    return FIRST_USE_CLOSE_LOAD_FAILED_TEXT
 
 
 def first_use_load_error_text(kept: bool, previous_failed: bool) -> str:
