@@ -346,10 +346,32 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
         build_calls = calls('_build')
         self.assertIn('build_overview',
                       [getattr(c.func, 'id', None) for c in build_calls])
-        overview = [kw.value.value for c in build_calls for kw in c.keywords
-                    if kw.arg == 'text' and isinstance(kw.value, ast.Constant)
-                    and any(k.arg == 'command' and opens_guide(k.value)
-                            for k in c.keywords)]
+
+        def is_self_attr(node, attr):
+            return (isinstance(node, ast.Attribute) and node.attr == attr
+                    and isinstance(node.value, ast.Name) and node.value.id == 'self')
+
+        # FIX-P4-02-05 (item 3, R-62, R-102): as duas funções que montam as
+        # telas são chamadas (App.__init__ chama _build, que chama
+        # _build_sidebar), e a página "Visão geral" é self.overview.
+        self.assertTrue(any(is_self_attr(c.func, '_build') for c in calls('__init__')))
+        self.assertTrue(any(is_self_attr(c.func, '_build_sidebar') for c in build_calls))
+        tab_pairs = [n for n in ast.walk(methods['_build']) if isinstance(n, ast.Tuple)
+                     and len(n.elts) == 2 and is_self_attr(n.elts[0], 'overview')
+                     and isinstance(n.elts[1], ast.Constant)
+                     and n.elts[1].value == 'Visão geral']
+        self.assertEqual(len(tab_pairs), 1)
+        guide_buttons = [c for c in build_calls
+                         if any(k.arg == 'command' and opens_guide(k.value)
+                                for k in c.keywords)]
+        self.assertEqual(len(guide_buttons), 1)
+        # o botão com a seta é criado DENTRO da página "Visão geral": o
+        # primeiro argumento do ttk.Button é self.overview
+        self.assertEqual(getattr(guide_buttons[0].func, 'attr', None), 'Button')
+        self.assertTrue(guide_buttons[0].args
+                        and is_self_attr(guide_buttons[0].args[0], 'overview'))
+        overview = [kw.value.value for c in guide_buttons for kw in c.keywords
+                    if kw.arg == 'text' and isinstance(kw.value, ast.Constant)]
         self.assertEqual(overview, [fu.FIRST_USE_OVERVIEW_BUTTON_LABEL])
         self.assertEqual(sidebar, [fu.FIRST_USE_SIDEBAR_LABEL])
         self.assertIn('Visão geral', nav_entries)
