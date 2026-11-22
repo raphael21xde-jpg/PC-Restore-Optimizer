@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - ambiente sem tkinter
     ui_v067 = None
     ui_v068 = None
 
-from ui_scale import safe_window_size
+from ui_scale import PADDING_DIALOGO, safe_window_size, safe_wraplength
 from tests.tk_helpers import track_tk_root
 
 
@@ -147,6 +147,23 @@ class CompletenessAuditUiTkTests(unittest.TestCase):
         for text in expected_texts:
             self.assertIn(text, mapped_texts, f'Botão esperado não está visível: {text}')
 
+    def _assert_wraplength_updates_on_configure(self, win):
+        frame = win.winfo_children()[0]
+        wrapped_labels = [
+            child for child in frame.winfo_children()
+            if isinstance(child, ttk.Label) and int(str(child.cget('wraplength') or 0)) > 0
+        ]
+        self.assertGreaterEqual(len(wrapped_labels), 2)
+        expected_wrap = safe_wraplength(frame.winfo_width(), padding=PADDING_DIALOGO)
+        for lbl in wrapped_labels:
+            self.assertEqual(int(str(lbl.cget('wraplength'))), expected_wrap)
+        # Evento <Configure> vindo de outro widget nao deve alterar o wraplength do frame.
+        other_widget = next(c for c in frame.winfo_children() if c not in wrapped_labels)
+        other_widget.event_generate('<Configure>', width=220)
+        win.update()
+        for lbl in wrapped_labels:
+            self.assertEqual(int(str(lbl.cget('wraplength'))), expected_wrap)
+
     def test_v067_minimum_size_keeps_action_buttons_visible(self):
         root = self._new_root()
         with mock.patch.object(ui_v067, 'build_completeness_report', return_value=_synthetic_report()):
@@ -160,6 +177,7 @@ class CompletenessAuditUiTkTests(unittest.TestCase):
                 expected_min,
                 expected_texts=('Exportar auditoria JSON', 'Ver escolhas em Meu Computador', 'Fechar'),
             )
+            self._assert_wraplength_updates_on_configure(win)
             win.destroy()
 
     def test_v068_minimum_size_keeps_action_buttons_visible(self):
@@ -177,8 +195,16 @@ class CompletenessAuditUiTkTests(unittest.TestCase):
             self._assert_buttons_visible_at_minsize(
                 win,
                 expected_min,
-                expected_texts=('Exportar auditoria JSON', 'Ver escolhas em Meu Computador', 'Fechar'),
+                expected_texts=(
+                    'Importar inventário do C: (histórico)',
+                    'Conferir manifest.json anterior',
+                    'Conferir SHA-256 do backup no Histórico',
+                    'Exportar auditoria JSON',
+                    'Ver escolhas em Meu Computador',
+                    'Fechar',
+                ),
             )
+            self._assert_wraplength_updates_on_configure(win)
             win.destroy()
 
 
