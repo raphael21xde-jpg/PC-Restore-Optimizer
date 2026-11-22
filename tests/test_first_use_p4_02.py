@@ -269,6 +269,9 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 fu.FIRST_USE_LOAD_ERROR_TEXT,
                 fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT,
                 fu.FIRST_USE_PREVIOUS_FAILED_TEXT,
+                fu.FIRST_USE_CLOSE_LOAD_FAILED_TEXT,
+                fu.FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT,
+                fu.FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT,
             ] + [
                 s['title'] + ' ' + s['text'] for s in steps
             ]
@@ -336,7 +339,10 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
         self.assertEqual(sidebar, [fu.FIRST_USE_SIDEBAR_LABEL])
         self.assertEqual(fu.FIRST_USE_OVERVIEW_BUTTON_LABEL, 'Primeiro uso guiado  →')
         for text in (fu.FIRST_USE_LOAD_ERROR_TEXT, fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT,
-                     fu.first_use_load_error_text(True, True)):
+                     fu.first_use_load_error_text(True, True),
+                     fu.FIRST_USE_CLOSE_LOAD_FAILED_TEXT,
+                     fu.first_use_close_load_failed_text(True, False),
+                     fu.first_use_close_load_failed_text(False, True)):
             with self.subTest(text=text[:40]):
                 self.assertIn(f'(botão "{overview[0]}")', text)
                 self.assertIn(f'(botão "{sidebar[0]}")', text)
@@ -358,6 +364,38 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
         for text in (fu.FIRST_USE_LOAD_ERROR_TEXT, fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT):
             self.assertIn('nenhum arquivo foi apagado', text)
 
+    def test_close_after_failed_read_text_promises_no_saving(self):
+        # FIX-P4-02-03: ao fechar depois de uma leitura que falhou, o aviso diz
+        # que nada desta janela foi salvo e não promete nova tentativa.
+        text = fu.FIRST_USE_CLOSE_LOAD_FAILED_TEXT
+        self.assertIn('nenhuma marcação foi salva', text)
+        self.assertIn('o progresso salvo não pôde ser lido', text)
+        self.assertIn('nenhum arquivo foi apagado', text)
+        self.assertIn('abra o guia de novo', text)
+        self.assertNotIn('"Fechar"', text)  # a janela já está fechando
+        self.assertNotIn(fu.PROGRESS_FILENAME, text)
+        self.assertNotIn(':\\', text)
+        variants = (
+            fu.first_use_close_load_failed_text(False, False),
+            fu.first_use_close_load_failed_text(True, False),
+            fu.first_use_close_load_failed_text(False, True),
+            fu.first_use_close_load_failed_text(True, True),
+        )
+        self.assertEqual(variants[0], text)
+        self.assertEqual(variants[1], f'{text} {fu.FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT}')
+        self.assertEqual(variants[2], f'{text} {fu.FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT}')
+        self.assertEqual(variants[3], variants[1])  # ainda gravando vale mais
+        for variant in variants:
+            with self.subTest(variant=variant[-60:]):
+                lower = variant.lower()
+                self.assertNotIn('tenta salvar de novo', lower)
+                self.assertNotIn('próxima marcação', lower)
+        self.assertIn('o app ainda está salvando', fu.FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT)
+        self.assertIn('se não der', fu.FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT)
+        self.assertIn('também não foram salvas', fu.FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT)
+        self.assertIn('se você fechar o app antes disso, elas se perdem',
+                      fu.FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT)
+
     def test_default_drive_uses_workflow_texts_system_drive(self):
         with mock.patch.object(fu, 'system_drive', return_value='Z:'):
             self.assertIn('Z:', fu.FIRST_USE_INTRO_TEXT())
@@ -377,6 +415,9 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
             fu.FIRST_USE_LOAD_ERROR_TEXT,
             fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT,
             fu.FIRST_USE_PREVIOUS_FAILED_TEXT,
+            fu.FIRST_USE_CLOSE_LOAD_FAILED_TEXT,
+            fu.FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT,
+            fu.FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT,
         ] + [step['text'] for step in fu.FIRST_USE_STEPS('C:')]
         quoted = set()
         for text in texts:

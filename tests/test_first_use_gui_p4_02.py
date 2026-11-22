@@ -271,6 +271,10 @@ class FlowLoadingTests(FlowTestBase):
         flow.mark('backup', fu.DONE)  # marca em memória, sem gravar
         self.assertEqual(self.view.status['backup'], 'Feito')
         self.assertFalse(self.path.exists())
+        flow.close()  # FIX-P4-02-03: avisa que nada desta janela foi salvo
+        self.assertEqual(self.view.events[-2:], [
+            ('destroy',), ('warn', fu.FIRST_USE_CLOSE_LOAD_FAILED_TEXT)])
+        self.assertFalse(self.path.exists())
 
     def test_reopen_reuses_saver_of_same_file_and_reads_its_pending(self):
         old = FakeSaver(self.path, pending=_all(explorar=fu.DONE), busy=True)
@@ -504,8 +508,10 @@ class PreviousSaverTests(FlowTestBase):
         self.assertNotIn(str(self.base), self.view.warning)
         flow.mark('explorar', fu.DONE)
         self.assertEqual(old.requests, [])
-        flow.close()  # o "Fechar" ainda avisa do erro do gravador antigo
-        self.assertEqual(self.view.events[-2:], [('destroy',), ('warn', error)])
+        flow.close()  # FIX-P4-02-03: aviso próprio, sem o erro que promete nova tentativa
+        self.assertEqual(self.view.events[-2:], [
+            ('destroy',), ('warn', fu.first_use_close_load_failed_text(False, True))])
+        self.assertNotIn(error, self.view.events[-1][1])
 
     def test_load_error_with_real_failing_saver_shows_its_marks_and_error(self):
         def failing_save(path, steps):
@@ -547,7 +553,20 @@ class PreviousSaverTests(FlowTestBase):
         self.assertEqual(self.view.warning, fu.first_use_load_error_text(True, True))
         self.assertFalse(flow.watching)
         flow.close()
-        self.assertEqual(self.view.events[-1], ('warn', old._error))
+        self.assertEqual(self.view.events[-1],
+                         ('warn', fu.first_use_close_load_failed_text(False, True)))
+
+    def test_load_error_close_while_old_saver_still_writes(self):
+        old = FakeSaver(self.path, pending=_all(backup=fu.DONE), busy=True)
+        self.app.first_use_saver = old
+        flow = self.make_flow()
+        with self._failing_load():
+            flow.start()
+            self.jobs[0].finish()
+        self.view.pump()
+        flow.close()
+        self.assertEqual(self.view.events[-2:], [
+            ('destroy',), ('warn', fu.first_use_close_load_failed_text(True, False))])
 
     def test_load_error_without_old_pending_starts_from_zero(self):
         self.app.first_use_saver = FakeSaver(self.path)
@@ -559,7 +578,78 @@ class PreviousSaverTests(FlowTestBase):
         self.assertEqual(self.view.warning, fu.FIRST_USE_LOAD_ERROR_TEXT)
         self.assertEqual(flow.steps, fu.empty_first_use_steps())
         flow.close()
-        self.assertEqual(self.view.events[-1], ('destroy',))
+        self.assertEqual(self.view.events[-2:], [
+            ('destroy',), ('warn', fu.FIRST_USE_CLOSE_LOAD_FAILED_TEXT)])
+
+    # FIX-P4-02-03: fechar depois de uma leitura que falhou nesta janela
+    def test_close_after_failed_read_warns_once_and_saves_nothing(self):
+        flow = self.make_flow()
+        with self._failing_load():
+            flow.start()
+            self.jobs[0].finish()
+        self.view.pump()
+        flow.mark('backup', fu.DONE)
+        flow.reset()
+        flow.mark('explorar', fu.SKIPPED)
+        self.assertIsNone(self.app.first_use_saver)  # nenhum gravador criado
+        flow.close()
+        flow.close()  # "Fechar" e "X" no mesmo caminho: um aviso só
+        warns = [e for e in self.view.events if e[0] == 'warn']
+        self.assertEqual(warns, [('warn', fu.FIRST_USE_CLOSE_LOAD_FAILED_TEXT)])
+        self.assertNotIn(str(self.base), warns[0][1])
+        self.assertFalse(self.base.exists())
+
+    def test_reopen_after_failed_read_saves_again(self):
+        # o caminho que FIRST_USE_CLOSE_LOAD_FAILED_TEXT manda seguir
+        flow = self.make_flow()
+        with self._failing_load():
+            flow.start()
+            self.jobs[0].finish()
+        self.view.pump()
+        flow.mark('backup', fu.DONE)
+        flow.close()
+        self.assertFalse(self.path.exists())
+
+        self.view = FakeView()
+        again = self.loaded_flow()
+        self.assertIsInstance(again.saver, fu.FirstUseProgressSaver)
+        self.assertEqual(again.steps, fu.empty_first_use_steps())  # nada foi salvo
+        again.mark('explorar', fu.DONE)
+        self.assertTrue(again.saver.join(5))
+        self.assertIsNone(again.saver.poll_error())
+        self.assertEqual(fu.load_first_use_progress(self.base)['steps'],
+                         _all(explorar=fu.DONE))
+        again.close()
+        self.assertEqual(self.view.events[-1], ('destroy',))  # leitura deu certo
+
+    def test_previous_failed_marks_reappear_when_guide_reopens(self):
+        # o caminho que FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT promete
+        def failing_save(path, steps):
+            raise PermissionError(13, 'acesso negado', str(path))
+
+        saver = fu.FirstUseProgressSaver(self.path, save=failing_save)
+        self._savers.append(saver)
+        self.app.first_use_saver = saver
+        first = self.loaded_flow()
+        first.mark('backup', fu.DONE)
+        self.assertTrue(saver.join(5))
+        first.close()
+
+        self.view = FakeView()
+        failed = self.make_flow()
+        with self._failing_load():
+            failed.start()
+            self.jobs[-1].finish()
+        self.view.pump()
+        failed.close()
+        self.assertEqual(self.view.events[-1],
+                         ('warn', fu.first_use_close_load_failed_text(False, True)))
+
+        self.view = FakeView()
+        again = self.loaded_flow()
+        self.assertIs(again.saver, saver)
+        self.assertEqual(self.view.status['backup'], 'Feito')
+        self.assertFalse(self.path.exists())
 
     # item 2: a leitura cai no arquivo -2
     def test_reading_moved_to_second_file_passes_pending_to_new_saver(self):
@@ -727,6 +817,9 @@ class FirstUseUiSourceTests(unittest.TestCase):
                 self.assertNotIn('C:', node.value)
         for text in (fu.FIRST_USE_CLOSE_SAVING_TEXT, fu.FIRST_USE_LOAD_ERROR_TEXT,
                      fu.FIRST_USE_LOAD_ERROR_KEPT_TEXT, fu.FIRST_USE_PREVIOUS_FAILED_TEXT,
+                     fu.FIRST_USE_CLOSE_LOAD_FAILED_TEXT,
+                     fu.FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT,
+                     fu.FIRST_USE_CLOSE_PREVIOUS_FAILED_TEXT,
                      fui.LOADING_TEXT, fui.TITLE):
             for bad in FORBIDDEN_R88:
                 self.assertNotIn(bad, text.lower())
