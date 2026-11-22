@@ -51,7 +51,7 @@ def _synthetic_report():
                 'detail': 'Caminho sintético longo para teste',
             }
         ],
-        'scan_c': {'errors': [], 'skipped': []},
+        'scan_c': {'status': 'OK', 'errors': [], 'skipped': []},
         'boot': {'status': 'NAO_VERIFICADO', 'note': 'Teste sintético sem disco real.'},
         'disk_evidence': {'data': {'disks': [], 'efi_partitions': [], 'errors': []}},
         'recovery_map': [],
