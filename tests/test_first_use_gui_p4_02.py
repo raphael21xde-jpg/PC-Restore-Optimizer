@@ -537,7 +537,12 @@ class PreviousSaverTests(FlowTestBase):
         self.assertEqual(saver.pending(), _all(backup=fu.DONE))
         self.assertFalse(self.path.exists())
 
-    def test_load_error_while_old_saver_still_writes_warns_on_close(self):
+    # FIX-P4-02-04 (item 4): os dois testes abaixo começam iguais (leitura
+    # falha com o gravador antigo ainda gravando) e diferem no que acontece
+    # antes do "Fechar"; os nomes dizem qual variante do aviso cada um confere.
+    def test_load_error_old_saver_fails_while_window_open_close_warns_failed(self):
+        # a gravação antiga falha com a janela aberta: a linha de aviso muda
+        # na hora e o "Fechar" usa a variante "também não foram salvas"
         old = FakeSaver(self.path, pending=_all(backup=fu.DONE), busy=True)
         self.app.first_use_saver = old
         flow = self.make_flow()
@@ -556,7 +561,10 @@ class PreviousSaverTests(FlowTestBase):
         self.assertEqual(self.view.events[-1],
                          ('warn', fu.first_use_close_load_failed_text(False, True)))
 
-    def test_load_error_close_while_old_saver_still_writes(self):
+    def test_load_error_close_while_old_saver_busy_warns_still_saving(self):
+        # fecha com o gravador antigo ainda gravando: variante "ainda está
+        # salvando" (o caminho inteiro, com o gravador real, está no teste
+        # test_close_while_old_saver_writes_then_fails_error_shows_on_reopen)
         old = FakeSaver(self.path, pending=_all(backup=fu.DONE), busy=True)
         self.app.first_use_saver = old
         flow = self.make_flow()
@@ -567,6 +575,80 @@ class PreviousSaverTests(FlowTestBase):
         flow.close()
         self.assertEqual(self.view.events[-2:], [
             ('destroy',), ('warn', fu.first_use_close_load_failed_text(True, False))])
+
+    def _close_failed_read_while_real_saver_writes(self):
+        """FIX-P4-02-04 (item 1, R-86/R-101): o caminho que
+        FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT promete, com o gravador REAL.
+        Marca na 1ª janela; a gravação fica presa; a 2ª janela abre com a
+        leitura falhando; "Fechar" mostra a variante "ainda está salvando";
+        só depois a gravação falha. Devolve o gravador e o erro esperado."""
+        started = threading.Event()
+        release = threading.Event()
+        waited = []
+
+        def failing_save(path, steps):
+            started.set()
+            waited.append(release.wait(5))
+            raise PermissionError(13, 'acesso negado', str(path))
+
+        saver = fu.FirstUseProgressSaver(self.path, save=failing_save)
+        self._savers.append(saver)
+        self.addCleanup(release.set)  # registrado depois: roda antes do join (R-29)
+        self.app.first_use_saver = saver
+        first = self.loaded_flow()
+        first.mark('backup', fu.DONE)
+        self.assertTrue(started.wait(5))
+        first.close()
+
+        self.view = FakeView()
+        failed = self.make_flow()
+        with self._failing_load():
+            failed.start()
+            self.jobs[-1].finish()
+        self.view.pump()
+        self.assertIsNone(failed.saver)
+        self.assertIs(failed.previous, saver)
+        self.assertTrue(saver.busy())  # a gravação antiga ainda está presa
+        failed.close()
+        close_text = fu.first_use_close_load_failed_text(True, False)
+        self.assertEqual(self.view.events[-2:], [('destroy',), ('warn', close_text)])
+        self.assertIn(fu.FIRST_USE_CLOSE_PREVIOUS_SAVING_TEXT, close_text)
+
+        release.set()  # agora a gravação falha, com a janela já fechada
+        self.assertTrue(saver.join(5))
+        self.assertEqual(waited, [True])
+        expected = fu.first_use_error_text(PermissionError(13, 'x'), self.path)
+        self.assertEqual(saver.poll_error(), expected)
+        self.assertFalse(self.path.exists())
+        return saver, expected
+
+    def test_close_while_old_saver_writes_then_fails_error_shows_on_reopen(self):
+        saver, expected = self._close_failed_read_while_real_saver_writes()
+        # reabre com o MESMO app e a leitura dando certo, sem marcar nada
+        self.view = FakeView()
+        again = self.loaded_flow()
+        self.assertIs(again.saver, saver)
+        self.assertEqual(self.view.warning, expected)  # o erro na linha de aviso
+        self.assertNotIn(str(self.base), self.view.warning)
+        self.assertEqual(self.view.status['backup'], 'Feito')
+        self.assertEqual(again.steps, _all(backup=fu.DONE))
+        self.assertFalse(saver.busy())  # nenhuma gravação nova foi pedida
+
+    def test_close_while_old_saver_writes_then_fails_reopen_failing_read_warns(self):
+        saver, _ = self._close_failed_read_while_real_saver_writes()
+        # reabre e a leitura falha de novo: o aviso diz que a gravação falhou
+        self.view = FakeView()
+        again = self.make_flow()
+        with self._failing_load():
+            again.start()
+            self.jobs[-1].finish()
+        self.view.pump()
+        self.assertEqual(self.view.warning, fu.first_use_load_error_text(True, True))
+        self.assertIn(fu.FIRST_USE_PREVIOUS_FAILED_TEXT, self.view.warning)
+        self.assertNotIn(str(self.base), self.view.warning)
+        self.assertEqual(self.view.status['backup'], 'Feito')
+        self.assertEqual(saver.pending(), _all(backup=fu.DONE))
+        self.assertFalse(self.path.exists())
 
     def test_load_error_without_old_pending_starts_from_zero(self):
         self.app.first_use_saver = FakeSaver(self.path)
