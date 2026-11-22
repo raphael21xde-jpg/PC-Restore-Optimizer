@@ -109,6 +109,60 @@ WINDOWS_LABELS = {
 }
 
 
+def _is_ttk_button_call(call: ast.Call) -> bool:
+    """FIX-P4-02-06 (R-103): a chamada é exatamente ``ttk.Button(...)``.
+
+    Confere o módulo (o nome ``ttk``) e a classe (o atributo ``Button``);
+    ``tk.Button``, ``Button`` solto ou ``self.ttk.Button`` são recusados.
+    """
+    func = call.func
+    return (isinstance(func, ast.Attribute) and func.attr == 'Button'
+            and isinstance(func.value, ast.Name) and func.value.id == 'ttk')
+
+
+def _imports_ttk_from_tkinter(tree: ast.Module) -> bool:
+    """FIX-P4-02-06 (R-103): no módulo, ``ttk`` vem de ``from tkinter import ttk``
+    (sem apelido) e nunca recebe outro valor no nível do módulo."""
+    imported = any(isinstance(n, ast.ImportFrom) and n.module == 'tkinter'
+                   and any(a.name == 'ttk' and a.asname is None for a in n.names)
+                   for n in tree.body)
+    rebound = any(isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign))
+                  and any(isinstance(t, ast.Name) and t.id == 'ttk'
+                          for t in (n.targets if isinstance(n, ast.Assign) else [n.target]))
+                  for n in tree.body)
+    other_import = any(isinstance(n, (ast.Import, ast.ImportFrom))
+                       and any((a.asname or a.name) == 'ttk' for a in n.names)
+                       and not (isinstance(n, ast.ImportFrom) and n.module == 'tkinter')
+                       for n in tree.body)
+    return imported and not rebound and not other_import
+
+
+def _pair_reaches_tabs_add(func: ast.AST, pair: ast.Tuple) -> bool:
+    """FIX-P4-02-06 (item 2): a tupla ``(página, rótulo)`` está na lista de um
+    laço ``for page, label in (...)`` cujo corpo chama
+    ``self.tabs.add(page, text=label)``."""
+    for loop in ast.walk(func):
+        if not (isinstance(loop, ast.For) and isinstance(loop.iter, (ast.Tuple, ast.List))
+                and any(elt is pair for elt in loop.iter.elts)
+                and isinstance(loop.target, ast.Tuple) and len(loop.target.elts) == 2
+                and all(isinstance(t, ast.Name) for t in loop.target.elts)):
+            continue
+        page, label = (t.id for t in loop.target.elts)
+        for call in (n for stmt in loop.body for n in ast.walk(stmt)):
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == 'add'):
+                continue
+            owner = call.func.value
+            if not (isinstance(owner, ast.Attribute) and owner.attr == 'tabs'
+                    and isinstance(owner.value, ast.Name) and owner.value.id == 'self'):
+                continue
+            if (call.args and isinstance(call.args[0], ast.Name) and call.args[0].id == page
+                    and any(k.arg == 'text' and isinstance(k.value, ast.Name)
+                            and k.value.id == label for k in call.keywords)):
+                return True
+    return False
+
+
 class FirstUseTextsAndAstTests(unittest.TestCase):
     def test_module_has_no_tkinter_or_destructive_calls(self):
         source = (ROOT / 'first_use.py').read_text(encoding='utf-8')
@@ -365,9 +419,15 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                          if any(k.arg == 'command' and opens_guide(k.value)
                                 for k in c.keywords)]
         self.assertEqual(len(guide_buttons), 1)
+        # FIX-P4-02-06 (item 2): a tupla (self.overview, "Visão geral") chega
+        # mesmo a uma chamada self.tabs.add (vira a aba da página).
+        self.assertTrue(_pair_reaches_tabs_add(methods['_build'], tab_pairs[0]))
         # o botão com a seta é criado DENTRO da página "Visão geral": o
         # primeiro argumento do ttk.Button é self.overview
-        self.assertEqual(getattr(guide_buttons[0].func, 'attr', None), 'Button')
+        # FIX-P4-02-06 (item 1, R-103): confere módulo E classe (ttk.Button,
+        # com ttk vindo de tkinter), não só o nome Button.
+        self.assertTrue(_imports_ttk_from_tkinter(tree))
+        self.assertTrue(_is_ttk_button_call(guide_buttons[0]))
         self.assertTrue(guide_buttons[0].args
                         and is_self_attr(guide_buttons[0].args[0], 'overview'))
         overview = [kw.value.value for c in guide_buttons for kw in c.keywords
@@ -393,6 +453,55 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                 self.assertIn(f'(botão "{sidebar[0]}")', text)
                 # o nome sem a seta só aparece como o botão do menu da esquerda
                 self.assertEqual(text.count('"Primeiro uso guiado"'), 1)
+
+    def test_ttk_button_helper_checks_module_and_class(self):
+        # FIX-P4-02-06 (item 1, R-103): o ajudante recusa tk.Button, Button
+        # solto e ttk.Label; só aceita ttk.Button. Código sintético, sem Tk.
+        def first_call(code):
+            return next(n for n in ast.walk(ast.parse(code)) if isinstance(n, ast.Call))
+
+        self.assertTrue(_is_ttk_button_call(
+            first_call("ttk.Button(self.overview, text='x', command=self.open_first_use)")))
+        for code in ("tk.Button(self.overview, text='x', command=self.open_first_use)",
+                     "Button(self.overview, text='x', command=self.open_first_use)",
+                     "ttk.Label(self.overview, text='x')",
+                     "tkinter.ttk.Button(self.overview, text='x')",
+                     "self.ttk.Button(self.overview, text='x')"):
+            with self.subTest(code=code):
+                self.assertFalse(_is_ttk_button_call(first_call(code)))
+        self.assertTrue(_imports_ttk_from_tkinter(ast.parse('from tkinter import ttk')))
+        for code in ('import ttk', 'from tkinter import ttk as t',
+                     'from tkinter import ttk\nttk = None',
+                     'from other import ttk', 'import tkinter as tk'):
+            with self.subTest(code=code):
+                self.assertFalse(_imports_ttk_from_tkinter(ast.parse(code)))
+
+    def test_tabs_add_helper_requires_the_pair_to_reach_tabs_add(self):
+        # FIX-P4-02-06 (item 2): a tupla (self.overview, "Visão geral") só vale
+        # se o laço que a percorre chama self.tabs.add(página, text=rótulo).
+        def check(code):
+            func = ast.parse(code).body[0]
+            pair = next(n for n in ast.walk(func) if isinstance(n, ast.Tuple)
+                        and len(n.elts) == 2 and isinstance(n.elts[1], ast.Constant)
+                        and n.elts[1].value == 'Visão geral')
+            return _pair_reaches_tabs_add(func, pair)
+
+        ok = ("def _build(self):\n"
+              "    for page, label in ((self.overview, 'Visão geral'), (self.home, 'M')):\n"
+              "        self.tabs.add(page, text=label)\n")
+        self.assertTrue(check(ok))
+        bad = {
+            'sem tabs.add': ok.replace('self.tabs.add(page, text=label)', 'print(page, label)'),
+            'outro notebook': ok.replace('self.tabs.add', 'self.other.add'),
+            'rótulo trocado': ok.replace('text=label', "text='x'"),
+            'página trocada': ok.replace('add(page,', 'add(self.home,'),
+            'fora do laço': ("def _build(self):\n"
+                             "    pairs = ((self.overview, 'Visão geral'),)\n"
+                             "    self.tabs.add(self.home, text='M')\n"),
+        }
+        for name, code in bad.items():
+            with self.subTest(name=name):
+                self.assertFalse(check(code))
 
     def test_load_error_text_variants(self):
         self.assertEqual(fu.first_use_load_error_text(False, False),
