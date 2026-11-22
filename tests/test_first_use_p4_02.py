@@ -120,21 +120,72 @@ def _is_ttk_button_call(call: ast.Call) -> bool:
             and isinstance(func.value, ast.Name) and func.value.id == 'ttk')
 
 
-def _imports_ttk_from_tkinter(tree: ast.Module) -> bool:
+def _scope_binds_name(stmts, name: str) -> bool:
+    """FIX-P4-02-07 (item 1): algum comando deste escopo dá outro valor a
+    ``name``: atribuição (``=``, ``+=``, anotação, ``:=``), ``for``/``with``/
+    ``except ... as``, ``def``/``class`` com esse nome, ``import``, ``del``,
+    ``global``/``nonlocal`` ou ``case``. Desce em ``if``/``for``/``try``/``with``,
+    mas não no corpo de funções e classes de dentro (outro escopo); o nome delas
+    conta."""
+    pending = list(stmts)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name == name:
+                return True
+            # decoradores, argumentos padrão e bases rodam neste escopo
+            pending.extend(node.decorator_list)
+            if isinstance(node, ast.ClassDef):
+                pending.extend(node.bases)
+                pending.extend(k.value for k in node.keywords)
+            else:
+                pending.extend(node.args.defaults)
+                pending.extend(d for d in node.args.kw_defaults if d is not None)
+            continue
+        if isinstance(node, ast.Lambda):
+            pending.extend(node.args.defaults)
+            continue
+        if isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
+            return True
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and any(
+                (a.asname or a.name.split('.')[0]) == name for a in node.names):
+            return True
+        if isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names:
+            return True
+        if isinstance(node, ast.ExceptHandler) and node.name == name:
+            return True
+        if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name == name:
+            return True
+        if isinstance(node, ast.MatchMapping) and node.rest == name:
+            return True
+        pending.extend(ast.iter_child_nodes(node))
+    return False
+
+
+def _imports_ttk_from_tkinter(tree: ast.Module, build=None) -> bool:
     """FIX-P4-02-06 (R-103): no módulo, ``ttk`` vem de ``from tkinter import ttk``
-    (sem apelido) e nunca recebe outro valor no nível do módulo."""
-    imported = any(isinstance(n, ast.ImportFrom) and n.module == 'tkinter'
-                   and any(a.name == 'ttk' and a.asname is None for a in n.names)
-                   for n in tree.body)
-    rebound = any(isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign))
-                  and any(isinstance(t, ast.Name) and t.id == 'ttk'
-                          for t in (n.targets if isinstance(n, ast.Assign) else [n.target]))
-                  for n in tree.body)
-    other_import = any(isinstance(n, (ast.Import, ast.ImportFrom))
-                       and any((a.asname or a.name) == 'ttk' for a in n.names)
-                       and not (isinstance(n, ast.ImportFrom) and n.module == 'tkinter')
-                       for n in tree.body)
-    return imported and not rebound and not other_import
+    (sem apelido) e nunca recebe outro valor no nível do módulo.
+
+    FIX-P4-02-07 (item 1): também recusa ``def ttk``, ``class ttk``,
+    ``for ttk in ...`` e qualquer outra forma de dar valor a ``ttk`` no módulo
+    (inclusive dentro de ``if``/``try``), e, se ``build`` (a função que monta a
+    tela, ex.: ``App._build``) for passada, um ``ttk = ...`` local nela."""
+    imports = [n for n in tree.body if isinstance(n, ast.ImportFrom) and n.module == 'tkinter'
+               and any(a.name == 'ttk' and a.asname is None for a in n.names)]
+    if len(imports) != 1:
+        return False
+    others = [n for n in tree.body if n is not imports[0]]
+    if _scope_binds_name(others, 'ttk'):
+        return False
+    # ``global ttk`` em qualquer função deixa ela trocar o ``ttk`` do módulo
+    if any(isinstance(n, ast.Global) and 'ttk' in n.names for n in ast.walk(tree)):
+        return False
+    if build is not None and _scope_binds_name(build.body, 'ttk'):
+        return False
+    if build is not None and any(a.arg == 'ttk' for a in ast.walk(build.args)
+                                 if isinstance(a, ast.arg)):
+        return False
+    return True
 
 
 def _pair_reaches_tabs_add(func: ast.AST, pair: ast.Tuple) -> bool:
@@ -410,23 +461,27 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
         # _build_sidebar), e a página "Visão geral" é self.overview.
         self.assertTrue(any(is_self_attr(c.func, '_build') for c in calls('__init__')))
         self.assertTrue(any(is_self_attr(c.func, '_build_sidebar') for c in build_calls))
+        # FIX-P4-02-07 (item 4): a tupla é procurada pelo rótulo "Visão geral",
+        # em qualquer posição da lista de abas (não supõe que é a primeira), e
+        # só depois se confere que a página dela é self.overview.
         tab_pairs = [n for n in ast.walk(methods['_build']) if isinstance(n, ast.Tuple)
-                     and len(n.elts) == 2 and is_self_attr(n.elts[0], 'overview')
-                     and isinstance(n.elts[1], ast.Constant)
+                     and len(n.elts) == 2 and isinstance(n.elts[1], ast.Constant)
                      and n.elts[1].value == 'Visão geral']
         self.assertEqual(len(tab_pairs), 1)
+        overview_pair = tab_pairs[0]
+        self.assertTrue(is_self_attr(overview_pair.elts[0], 'overview'))
         guide_buttons = [c for c in build_calls
                          if any(k.arg == 'command' and opens_guide(k.value)
                                 for k in c.keywords)]
         self.assertEqual(len(guide_buttons), 1)
         # FIX-P4-02-06 (item 2): a tupla (self.overview, "Visão geral") chega
         # mesmo a uma chamada self.tabs.add (vira a aba da página).
-        self.assertTrue(_pair_reaches_tabs_add(methods['_build'], tab_pairs[0]))
+        self.assertTrue(_pair_reaches_tabs_add(methods['_build'], overview_pair))
         # o botão com a seta é criado DENTRO da página "Visão geral": o
         # primeiro argumento do ttk.Button é self.overview
         # FIX-P4-02-06 (item 1, R-103): confere módulo E classe (ttk.Button,
         # com ttk vindo de tkinter), não só o nome Button.
-        self.assertTrue(_imports_ttk_from_tkinter(tree))
+        self.assertTrue(_imports_ttk_from_tkinter(tree, build=methods['_build']))
         self.assertTrue(_is_ttk_button_call(guide_buttons[0]))
         self.assertTrue(guide_buttons[0].args
                         and is_self_attr(guide_buttons[0].args[0], 'overview'))
@@ -475,6 +530,75 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
                      'from other import ttk', 'import tkinter as tk'):
             with self.subTest(code=code):
                 self.assertFalse(_imports_ttk_from_tkinter(ast.parse(code)))
+
+    def test_ttk_import_helper_refuses_every_other_binding_of_ttk(self):
+        # FIX-P4-02-07 (item 1): mutações sintéticas (código em string, sem Tk
+        # e sem disco): qualquer outro valor para ttk no módulo, ou um ttk local
+        # em _build, faz o ajudante recusar.
+        head = 'from tkinter import ttk\n'
+        build_ok = ('class App:\n'
+                    '    def _build(self):\n'
+                    '        ttk.Button(self.overview, text="x")\n')
+
+        def check(code):
+            tree = ast.parse(code)
+            app = next((n for n in tree.body if isinstance(n, ast.ClassDef)
+                        and n.name == 'App'), None)
+            build = None if app is None else next(
+                n for n in app.body if isinstance(n, ast.FunctionDef) and n.name == '_build')
+            return _imports_ttk_from_tkinter(tree, build=build)
+
+        self.assertTrue(check(head + build_ok))
+        self.assertTrue(check('from tkinter import ttk, filedialog\n' + build_ok))
+        # nomes parecidos ou ttk só lido não contam como troca
+        self.assertTrue(check(head + 'ttk_x = 1\nprint(ttk)\nx = ttk.Button\n' + build_ok))
+        self.assertTrue(check(head + 'def helper(ttk_local=None):\n    ttk = 1\n' + build_ok))
+        module_mutations = {
+            'def ttk': 'def ttk():\n    pass\n',
+            'async def ttk': 'async def ttk():\n    pass\n',
+            'class ttk': 'class ttk:\n    pass\n',
+            'for ttk in': 'for ttk in ():\n    pass\n',
+            'ttk =': 'ttk = None\n',
+            'ttk: tipo =': 'ttk: object = None\n',
+            'ttk +=': 'ttk += 1\n',
+            'a = ttk = ...': 'a = ttk = None\n',
+            'desempacotar': 'ttk, b = (1, 2)\n',
+            'with as ttk': 'with open("x") as ttk:\n    pass\n',
+            'except as ttk': 'try:\n    pass\nexcept Exception as ttk:\n    pass\n',
+            'walrus': 'if (ttk := None):\n    pass\n',
+            'dentro de if': 'if True:\n    ttk = None\n',
+            'dentro de try': 'try:\n    import ttk\nexcept ImportError:\n    pass\n',
+            'del ttk': 'del ttk\n',
+            'import de novo': 'import tkinter.ttk as ttk\n',
+            'segundo from tkinter': 'from tkinter import ttk\n',
+            'global ttk numa função': 'def f():\n    global ttk\n    ttk = None\n',
+        }
+        for name, code in module_mutations.items():
+            for where in ('antes', 'depois'):
+                text = (head + code + build_ok) if where == 'depois' else (code + head + build_ok)
+                with self.subTest(name=name, where=where):
+                    self.assertFalse(check(text))
+        local_mutations = {
+            'ttk = local': '        ttk = None\n',
+            'ttk: tipo = local': '        ttk: object = None\n',
+            'for ttk in local': '        for ttk in ():\n            pass\n',
+            'def ttk local': '        def ttk():\n            pass\n',
+            'class ttk local': '        class ttk:\n            pass\n',
+            'import local': '        import ttk\n',
+            'with as ttk local': '        with open("x") as ttk:\n            pass\n',
+            'dentro de if local': '        if True:\n            ttk = None\n',
+        }
+        for name, line in local_mutations.items():
+            code = head + build_ok.replace('    def _build(self):\n',
+                                           '    def _build(self):\n' + line)
+            with self.subTest(name=name):
+                self.assertFalse(check(code))
+        with self.subTest(name='argumento ttk em _build'):
+            self.assertFalse(check(head + build_ok.replace('_build(self)', '_build(self, ttk=None)')))
+        # sem _build passada, o ttk local nela não é conferido (só o módulo)
+        local = head + build_ok.replace('    def _build(self):\n',
+                                        '    def _build(self):\n        ttk = None\n')
+        self.assertTrue(_imports_ttk_from_tkinter(ast.parse(local)))
 
     def test_tabs_add_helper_requires_the_pair_to_reach_tabs_add(self):
         # FIX-P4-02-06 (item 2): a tupla (self.overview, "Visão geral") só vale
