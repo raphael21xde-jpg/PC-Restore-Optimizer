@@ -14,6 +14,29 @@ from tkinter import ttk, filedialog, messagebox
 from inventory_index import FileMetadataIndex, index_roots
 from inventory_paged import discover_local_roots
 from index_choices_bridge import read_index_choices, preview_import, apply_imported_choices
+from ui_scale import (
+    ESPACO_FINO,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    FONTE_UI,
+    PADDING_DIALOGO,
+    TAMANHO_TITULO_MODAL,
+    safe_window_geometry,
+    safe_window_size,
+    safe_wraplength,
+)
+
+
+def _bind_wraplength(container, *labels):
+    """Atualiza o wraplength apenas quando o proprio container muda de largura."""
+    def _on_configure(event):
+        if event.widget is not container:
+            return
+        width = safe_wraplength(event.width, PADDING_DIALOGO)
+        for label in labels:
+            label.configure(wraplength=width)
+
+    container.bind("<Configure>", _on_configure)
 
 
 def format_index_row(entry):
@@ -27,8 +50,9 @@ def show_file_index(parent, app=None):
     win = tk.Toplevel(parent)
     win.title("PCRO | Índice detalhado e escolhas — nenhuma exclusão")
     screen_w, screen_h = win.winfo_screenwidth(), win.winfo_screenheight()
-    win.geometry(f"{min(1040, screen_w-60)}x{min(690, screen_h-70)}")
-    win.minsize(min(620, screen_w-60), min(420, screen_h-70))
+    win.geometry(safe_window_geometry(1040, 690, screen_w, screen_h))
+    min_w, min_h = safe_window_size(620, 420, screen_w, screen_h)
+    win.minsize(min_w, min_h)
     win.resizable(True, True)
     # A transient child may lose the maximize control on Windows.
     # Keep this window independently resizable, like backup seletivo.
@@ -41,17 +65,21 @@ def show_file_index(parent, app=None):
     selected_roots_text = tk.StringVar(
         master=win, value="Unidades do próximo índice: todas as unidades locais detectadas.")
 
-    header = ttk.Frame(win, padding=10)
+    header = ttk.Frame(win, padding=PADDING_DIALOGO)
     header.pack(fill="x")
     ttk.Label(header, text="Inventário detalhado — somente metadados",
-              font=("Segoe UI", 13, "bold")).pack(anchor="w")
-    ttk.Label(header, text=(
+              font=(FONTE_UI, TAMANHO_TITULO_MODAL, "bold")).pack(anchor="w")
+    intro_label = ttk.Label(header, text=(
         "Os nomes de arquivos podem ser privados: salve o índice apenas em uma pasta sua. "
         "Crie ou abra um índice antes de pesquisar. "
         "Tamanho de pastas ainda não é calculado. "
-        "Não abre arquivos, não copia dados e NÃO apaga nada."), wraplength=790).pack(anchor="w", pady=(3, 7))
-    ttk.Label(header, textvariable=selected_roots_text,
-              wraplength=790).pack(anchor="w", pady=(0, 4))
+        "Não abre arquivos, não copia dados e NÃO apaga nada."),
+        wraplength=safe_wraplength(1040, PADDING_DIALOGO))
+    intro_label.pack(anchor="w", pady=(ESPACO_MINIMO, ESPACO_P))
+    roots_label = ttk.Label(header, textvariable=selected_roots_text,
+                            wraplength=safe_wraplength(1040, PADDING_DIALOGO))
+    roots_label.pack(anchor="w", pady=(0, ESPACO_MINIMO))
+    _bind_wraplength(header, intro_label, roots_label)
     actions = ttk.Frame(header)
     actions.pack(fill="x")
     top_actions = ttk.Frame(actions)
@@ -61,16 +89,27 @@ def show_file_index(parent, app=None):
     def add_action(title, command, *, second_row=False):
         holder = bottom_actions if second_row else top_actions
         b = ttk.Button(holder, text=title, command=command)
-        b.pack(side="left", padx=(0, 6), pady=2)
+        b.pack(side="left", padx=(0, ESPACO_P), pady=ESPACO_FINO)
         return b
 
-    main = ttk.Frame(win, padding=(10, 2))
+    controls = ttk.Frame(win, padding=PADDING_DIALOGO)
+    controls.pack(side="bottom", fill="x")
+    status_label = ttk.Label(controls, textvariable=status,
+                             wraplength=safe_wraplength(1040, PADDING_DIALOGO))
+    status_label.pack(anchor="w", pady=(0, ESPACO_MINIMO))
+    _bind_wraplength(controls, status_label)
+    choice_row = ttk.Frame(controls)
+    choice_row.pack(fill="x")
+    paging_row = ttk.Frame(controls)
+    paging_row.pack(fill="x")
+
+    main = ttk.Frame(win, padding=(PADDING_DIALOGO, ESPACO_FINO))
     main.pack(fill="both", expand=True)
     lookup = ttk.Frame(main)
-    lookup.pack(fill="x", pady=(6, 3))
+    lookup.pack(fill="x", pady=(ESPACO_P, ESPACO_MINIMO))
     ttk.Label(lookup, text="Filtrar caminho:").pack(side="left")
     search_entry = ttk.Entry(lookup, textvariable=search, width=55, state="disabled")
-    search_entry.pack(side="left", fill="x", expand=True, padx=6)
+    search_entry.pack(side="left", fill="x", expand=True, padx=ESPACO_P)
     columns = ("path", "kind", "size", "decision")
     table = ttk.Frame(main)
     table.pack(fill="both", expand=True)
@@ -87,13 +126,6 @@ def show_file_index(parent, app=None):
     tree_scroll.pack(side="right", fill="y")
     tree_horizontal.pack(side="bottom", fill="x")
     tree.pack(side="left", fill="both", expand=True)
-    controls = ttk.Frame(win, padding=10)
-    controls.pack(fill="x", side="bottom")
-    ttk.Label(controls, textvariable=status, wraplength=800).pack(anchor="w", pady=(0, 4))
-    choice_row = ttk.Frame(controls)
-    choice_row.pack(fill="x")
-    paging_row = ttk.Frame(controls)
-    paging_row.pack(fill="x")
     def refresh(reset=False):
         db = state["db"]
         if db is None:
@@ -150,18 +182,24 @@ def show_file_index(parent, app=None):
             return
         popup = tk.Toplevel(win)
         popup.title("Escolher unidades para o próximo índice")
-        popup.geometry("510x340")
-        popup.minsize(410, 260)
-        ttk.Label(popup, text=(
+        pop_screen_w, pop_screen_h = popup.winfo_screenwidth(), popup.winfo_screenheight()
+        popup.geometry(safe_window_geometry(510, 340, pop_screen_w, pop_screen_h))
+        pop_min_w, pop_min_h = safe_window_size(410, 260, pop_screen_w, pop_screen_h)
+        popup.minsize(pop_min_w, pop_min_h)
+        popup_label = ttk.Label(popup, text=(
             "Escolha uma ou mais unidades locais. "
             "Não copia, não apaga e não formata arquivos."),
-            wraplength=465).pack(anchor="w", padx=14, pady=(12, 9))
+            wraplength=safe_wraplength(510, PADDING_DIALOGO))
+        popup_label.pack(anchor="w", padx=PADDING_DIALOGO, pady=(PADDING_DIALOGO, ESPACO_P))
+        _bind_wraplength(popup, popup_label)
+        actions_popup = ttk.Frame(popup)
+        actions_popup.pack(side="bottom", fill="x", padx=PADDING_DIALOGO, pady=PADDING_DIALOGO)
         selections = []
         for root in available:
             selected = tk.BooleanVar(master=popup, value=(
                 state["chosen_roots"] is None or root in state["chosen_roots"]))
             ttk.Checkbutton(popup, text=str(root),
-                            variable=selected).pack(anchor="w", padx=18, pady=2)
+                            variable=selected).pack(anchor="w", padx=PADDING_DIALOGO, pady=ESPACO_FINO)
             selections.append((root, selected))
         def confirm():
             chosen = [root for root, flag in selections if flag.get()]
@@ -175,10 +213,8 @@ def show_file_index(parent, app=None):
                 "Unidades para o próximo índice: " +
                 ", ".join(str(root) for root in chosen))
             popup.destroy()
-        actions_popup = ttk.Frame(popup)
-        actions_popup.pack(side="bottom", fill="x", padx=14, pady=10)
         ttk.Button(actions_popup, text="Confirmar unidades",
-                   command=confirm).pack(side="left", padx=(0, 8))
+                   command=confirm).pack(side="left", padx=(0, ESPACO_P))
         ttk.Button(actions_popup, text="Cancelar",
                    command=popup.destroy).pack(side="left")
         popup.lift()  # No modal grab: keeps Tk responsive on all Windows hosts.
@@ -309,13 +345,13 @@ def show_file_index(parent, app=None):
                                command=lambda: refresh(reset=True),
                                state="disabled")
     search_button.pack(side="left")
-    ttk.Button(choice_row, text="Marcar PRESERVAR (arquivo/pasta)", command=lambda: choose("preservar")).pack(side="left", padx=4)
-    ttk.Button(choice_row, text="NÃO COPIAR (não apaga)", command=lambda: choose("nao_copiar")).pack(side="left", padx=4)
-    ttk.Button(choice_row, text="Revisar depois", command=lambda: choose("revisar")).pack(side="left", padx=4)
+    ttk.Button(choice_row, text="Marcar PRESERVAR (arquivo/pasta)", command=lambda: choose("preservar")).pack(side="left", padx=(0, ESPACO_P))
+    ttk.Button(choice_row, text="NÃO COPIAR (não apaga)", command=lambda: choose("nao_copiar")).pack(side="left", padx=(0, ESPACO_P))
+    ttk.Button(choice_row, text="Revisar depois", command=lambda: choose("revisar")).pack(side="left", padx=(0, ESPACO_P))
     ttk.Button(paging_row, text="Anterior 100", command=lambda: (
-        state.update(offset=max(0, state["offset"]-100)), refresh())).pack(side="left", padx=4, pady=2)
+        state.update(offset=max(0, state["offset"]-100)), refresh())).pack(side="left", padx=(0, ESPACO_P), pady=ESPACO_FINO)
     ttk.Button(paging_row, text="Próximos 100", command=lambda: (
-        state.update(offset=state["offset"]+100), refresh())).pack(side="left", padx=4, pady=2)
+        state.update(offset=state["offset"]+100), refresh())).pack(side="left", padx=(0, ESPACO_P), pady=ESPACO_FINO)
 
     def poll():
         if not win.winfo_exists():
