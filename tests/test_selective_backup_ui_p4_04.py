@@ -14,7 +14,7 @@ except ImportError:  # pragma: no cover - ambiente sem tkinter
     ttk = None
     ui_sel = None
 
-from ui_scale import PADDING_DIALOGO, safe_window_size, safe_wraplength
+from ui_scale import PADDING_ABA_NOTEBOOK, PADDING_DIALOGO, safe_window_size, safe_wraplength
 from tests.tk_helpers import track_tk_root
 
 
@@ -28,6 +28,16 @@ def _collect_buttons(widget):
             buttons.append(child)
         buttons.extend(_collect_buttons(child))
     return buttons
+
+
+def _collect_wrapped_labels(widget):
+    labels = []
+    for child in widget.winfo_children():
+        if ttk is not None and isinstance(child, ttk.Label):
+            if int(str(child.cget('wraplength') or 0)) > 0:
+                labels.append(child)
+        labels.extend(_collect_wrapped_labels(child))
+    return labels
 
 
 class SelectiveBackupUiStaticTests(unittest.TestCase):
@@ -111,7 +121,7 @@ class SelectiveBackupUiTkTests(unittest.TestCase):
         self.assertIn('Exportar relatório', mapped_texts)
         self.assertIn('Cancelar operação', mapped_texts)
 
-        # Verifica atualização de wraplength no container e filtro de event.widget.
+        # Verifica atualização de wraplength no container e nas notas das abas.
         viewport = next(c for c in win.winfo_children() if isinstance(c, tk.Canvas))
         container = viewport.winfo_children()[0]
         wrapped_labels = [
@@ -119,15 +129,43 @@ class SelectiveBackupUiTkTests(unittest.TestCase):
             if isinstance(child, ttk.Label) and int(str(child.cget('wraplength') or 0)) > 0
         ]
         self.assertGreaterEqual(len(wrapped_labels), 4)
-        expected_wrap = safe_wraplength(container.winfo_width(), padding=PADDING_DIALOGO)
-        for lbl in wrapped_labels:
-            self.assertEqual(int(str(lbl.cget('wraplength'))), expected_wrap)
+        controls = next(c for c in container.winfo_children() if isinstance(c, ttk.Frame))
+        notebook = next(c for c in controls.winfo_children() if isinstance(c, ttk.Notebook))
+        tab_notes = _collect_wrapped_labels(notebook)
+        self.assertGreaterEqual(len(tab_notes), 6)
 
-        other_widget = next(c for c in container.winfo_children() if isinstance(c, ttk.Frame))
-        other_widget.event_generate('<Configure>', width=200)
-        win.update()
+        expected_wrap = safe_wraplength(container.winfo_width(), padding=PADDING_DIALOGO)
+        expected_tab_wrap = safe_wraplength(
+            container.winfo_width(), padding=PADDING_DIALOGO + PADDING_ABA_NOTEBOOK
+        )
         for lbl in wrapped_labels:
             self.assertEqual(int(str(lbl.cget('wraplength'))), expected_wrap)
+        for lbl in tab_notes:
+            self.assertEqual(int(str(lbl.cget('wraplength'))), expected_tab_wrap)
+
+        # Dispara <Configure> diretamente no container para exercitar o handler.
+        container.event_generate('<Configure>', width=500)
+        self.assertEqual(
+            int(str(wrapped_labels[0].cget('wraplength'))),
+            safe_wraplength(500, padding=PADDING_DIALOGO),
+        )
+        self.assertEqual(
+            int(str(tab_notes[0].cget('wraplength'))),
+            safe_wraplength(500, padding=PADDING_DIALOGO + PADDING_ABA_NOTEBOOK),
+        )
+
+        # Redimensiona a janela de verdade e confere que o wraplength acompanha.
+        new_w = max(min_w + 180, 540)
+        win.geometry(f'{new_w}x{min_h}')
+        win.update()
+        expected_resized = safe_wraplength(container.winfo_width(), padding=PADDING_DIALOGO)
+        expected_tab_resized = safe_wraplength(
+            container.winfo_width(), padding=PADDING_DIALOGO + PADDING_ABA_NOTEBOOK
+        )
+        for lbl in wrapped_labels:
+            self.assertEqual(int(str(lbl.cget('wraplength'))), expected_resized)
+        for lbl in tab_notes:
+            self.assertEqual(int(str(lbl.cget('wraplength'))), expected_tab_resized)
 
         win.destroy()
 
