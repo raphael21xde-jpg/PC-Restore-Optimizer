@@ -39,6 +39,29 @@ from file_index_ui import show_file_index
 from autotestes_44_46 import (run_paged_inventory_autotest,
                               run_pause_resume_inventory_autotest,
                               run_gaps_inventory_autotest)
+from ui_scale import (
+    COR_ALERTA,
+    COR_DESTAQUE,
+    COR_PAINEL,
+    COR_TEXTO,
+    ESPACO_DENTRO_GRUPO,
+    ESPACO_ENTRE_BLOCOS,
+    ESPACO_ENTRE_BOTOES,
+    ESPACO_FINO,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    ESPACO_ROTULO_CAMPO,
+    FONTE_MONO,
+    FONTE_UI,
+    PADDING_ABA_NOTEBOOK,
+    PADDING_CAIXA_TEXTO,
+    PADDING_DIALOGO,
+    TAMANHO_APOIO,
+    TAMANHO_TITULO_ABA,
+    safe_window_geometry,
+    safe_window_size,
+    safe_wraplength,
+)
 
 
 def show_selective_backup(app, plan):
@@ -50,12 +73,11 @@ def show_selective_backup(app, plan):
     # independently resizable window instead of binding its size to the parent.
     window.resizable(True, True)
     screen_width, screen_height = window.winfo_screenwidth(), window.winfo_screenheight()
-    window.minsize(min(640, max(360, screen_width-80)),
-                   min(420, max(280, screen_height-100)))
-    window.geometry(f'{min(1060, max(360, screen_width-80))}x'
-                    f'{min(780, max(280, screen_height-100))}')
+    min_w, min_h = safe_window_size(640, 420, screen_width, screen_height, min_w=360, min_h=280)
+    window.minsize(min_w, min_h)
+    window.geometry(safe_window_geometry(1060, 780, screen_width, screen_height, min_w=min_w, min_h=min_h))
     # A persistent footer makes Cancel and Export reachable on every tab.
-    toolbar = ttk.Frame(window, padding=(12, 5))
+    toolbar = ttk.Frame(window, padding=(PADDING_DIALOGO, ESPACO_P))
     toolbar.pack(side='bottom', fill='x')
     # The main content may scroll independently when the screen is small.
     viewport = tk.Canvas(window, highlightthickness=0)
@@ -63,10 +85,29 @@ def show_selective_backup(app, plan):
     viewport.configure(yscrollcommand=page_scroll.set)
     page_scroll.pack(side='right', fill='y')
     viewport.pack(side='left', fill='both', expand=True)
-    container = ttk.Frame(viewport, padding=18)
+    container = ttk.Frame(viewport, padding=PADDING_DIALOGO)
     page_item = viewport.create_window((0, 0), window=container, anchor='nw')
-    container.bind('<Configure>', lambda e: viewport.configure(scrollregion=viewport.bbox('all')))
-    viewport.bind('<Configure>', lambda e: viewport.itemconfigure(page_item, width=e.width))
+    container_wrap_labels = []
+    tab_wrap_labels = []
+    initial_wrap = safe_wraplength(1060, padding=PADDING_DIALOGO)
+    initial_tab_wrap = safe_wraplength(1060, padding=PADDING_DIALOGO + PADDING_ABA_NOTEBOOK)
+
+    def _on_container_configure(event):
+        viewport.configure(scrollregion=viewport.bbox('all'))
+        if event.widget is container and event.width > 1:
+            w = safe_wraplength(event.width, padding=PADDING_DIALOGO)
+            for lbl in container_wrap_labels:
+                lbl.configure(wraplength=w)
+            tab_w = safe_wraplength(event.width, padding=PADDING_DIALOGO + PADDING_ABA_NOTEBOOK)
+            for lbl in tab_wrap_labels:
+                lbl.configure(wraplength=tab_w)
+
+    def _on_viewport_configure(event):
+        if event.widget is viewport and event.width > 1:
+            viewport.itemconfigure(page_item, width=event.width)
+
+    container.bind('<Configure>', _on_container_configure)
+    viewport.bind('<Configure>', _on_viewport_configure)
 
     def wheel_scroll(event):
         # Do not steal wheel events from the log or other native scrolling widgets.
@@ -89,36 +130,40 @@ def show_selective_backup(app, plan):
     window.bind('<Prior>', lambda _: viewport.yview_scroll(-4, 'units'), add='+')
     window.bind('<Next>', lambda _: viewport.yview_scroll(4, 'units'), add='+')
     ttk.Label(container, text='Preservação real — fontes selecionadas do C:',
-              font=('Segoe UI', 16, 'bold')).pack(anchor='w')
-    ttk.Label(container, text=(
+              font=(FONTE_UI, TAMANHO_TITULO_ABA, 'bold')).pack(anchor='w', pady=ESPACO_ROTULO_CAMPO)
+    intro_label = ttk.Label(container, text=(
         'Analise os arquivos, escolha uma ou várias pastas fora do C: e confira SHA-256. '
         'Depois teste a recuperação em OUTRA pasta. Nenhuma operação escreve nos saves originais.'),
-        wraplength=990).pack(anchor='w', pady=(5, 6))
-    ttk.Label(container, text=(
+        wraplength=initial_wrap)
+    intro_label.pack(anchor='w', pady=ESPACO_DENTRO_GRUPO)
+    warning_label = ttk.Label(container, text=(
         'ATENÇÃO: unidades internas, externas e pastas sincronizadas podem compartilhar '
         'hardware. Uma pasta sincronizada NÃO prova envio à nuvem. '
         'Esta tela NUNCA libera formatação do Windows.'),
-        foreground='#F3BE67', wraplength=980).pack(anchor='w', pady=(0, 10))
-    ttk.Label(container, text=f'{len(sources)} caminho(s) selecionado(s) no C:').pack(anchor='w')
-    source_box = tk.Text(container, height=3, wrap='none', font=('Consolas', 9),
-                         bg='#192438', fg='#EFF4FF', relief='flat')
-    source_box.pack(fill='x', pady=(4, 10))
+        foreground=COR_ALERTA, wraplength=initial_wrap)
+    warning_label.pack(anchor='w', pady=ESPACO_DENTRO_GRUPO)
+    ttk.Label(container, text=f'{len(sources)} caminho(s) selecionado(s) no C:').pack(anchor='w', pady=ESPACO_ROTULO_CAMPO)
+    source_box = tk.Text(container, height=3, wrap='none', font=(FONTE_MONO, TAMANHO_APOIO),
+                         bg=COR_PAINEL, fg=COR_TEXTO, relief='flat',
+                         padx=PADDING_CAIXA_TEXTO[0], pady=PADDING_CAIXA_TEXTO[1])
+    source_box.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
     source_box.insert('1.0', '\n'.join(sources) if sources else '(Nada selecionado no plano)')
     source_box.configure(state='disabled')
 
     summary = tk.StringVar(value='Etapa 1: analisar arquivos e tamanhos. Nenhuma cópia realizada.')
-    ttk.Label(container, textvariable=summary, wraplength=960, foreground='#9C85FF').pack(anchor='w', pady=(0, 8))
+    summary_label = ttk.Label(container, textvariable=summary, wraplength=initial_wrap, foreground=COR_DESTAQUE)
+    summary_label.pack(anchor='w', pady=ESPACO_DENTRO_GRUPO)
     controls = ttk.Frame(container)
-    controls.pack(fill='x', pady=(1, 10))
+    controls.pack(fill='x', pady=ESPACO_ENTRE_BLOCOS)
     ttk.Label(controls, text='Escolha uma aba: operações, segurança, desempenho ou novos testes.').pack(anchor='w')
     tabs = ttk.Notebook(controls)
-    tabs.pack(fill='x', expand=True, pady=(5, 2))
-    operations_tab = ttk.Frame(tabs, padding=8)
-    integrity_tab = ttk.Frame(tabs, padding=8)
-    performance_tab = ttk.Frame(tabs, padding=8)
-    recent_tab = ttk.Frame(tabs, padding=8)
-    next_tab = ttk.Frame(tabs, padding=8)
-    paged_tab = ttk.Frame(tabs, padding=8)
+    tabs.pack(fill='x', expand=True, pady=ESPACO_ROTULO_CAMPO)
+    operations_tab = ttk.Frame(tabs, padding=PADDING_ABA_NOTEBOOK)
+    integrity_tab = ttk.Frame(tabs, padding=PADDING_ABA_NOTEBOOK)
+    performance_tab = ttk.Frame(tabs, padding=PADDING_ABA_NOTEBOOK)
+    recent_tab = ttk.Frame(tabs, padding=PADDING_ABA_NOTEBOOK)
+    next_tab = ttk.Frame(tabs, padding=PADDING_ABA_NOTEBOOK)
+    paged_tab = ttk.Frame(tabs, padding=PADDING_ABA_NOTEBOOK)
     tabs.add(operations_tab, text='Backup')
     tabs.add(integrity_tab, text='#25–30')
     tabs.add(performance_tab, text='#31–37')
@@ -133,24 +178,31 @@ def show_selective_backup(app, plan):
                   recent_tab if number <= 18 else
                   next_tab if number <= 21 else paged_tab)
         row = ttk.Frame(parent)
-        row.pack(fill='x', pady=3)
+        row.pack(fill='x', pady=ESPACO_MINIMO)
         rows.append(row)
     (row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11, row12, row13, row14, row15, row16, row17, row18, row19, row20, row21, row22, row23, row24, row25, row26, row27, row28) = rows
     # Open directly to the newest battery when requested by keyboard.
     window.bind('<Alt-n>', lambda _: tabs.select(paged_tab), add='+')
     destination = tk.StringVar(value='Nenhuma pasta de backup escolhida')
     manifest_label = tk.StringVar(value='Manifesto: ainda não existe')
-    ttk.Label(container, textvariable=destination, wraplength=980).pack(anchor='w')
-    ttk.Label(container, textvariable=manifest_label, wraplength=980).pack(anchor='w', pady=(2, 8))
+    dest_label = ttk.Label(container, textvariable=destination, wraplength=initial_wrap)
+    dest_label.pack(anchor='w')
+    manifest_label_widget = ttk.Label(container, textvariable=manifest_label, wraplength=initial_wrap)
+    manifest_label_widget.pack(anchor='w', pady=ESPACO_DENTRO_GRUPO)
     bar = ttk.Progressbar(container, maximum=100, mode='determinate')
-    bar.pack(fill='x', pady=(4, 6))
+    bar.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
     stage = tk.StringVar(value='Aguardando análise.')
-    ttk.Label(container, textvariable=stage, wraplength=960).pack(anchor='w', pady=(0, 5))
+    stage_label = ttk.Label(container, textvariable=stage, wraplength=initial_wrap)
+    stage_label.pack(anchor='w', pady=ESPACO_ROTULO_CAMPO)
+    container_wrap_labels.extend([
+        intro_label, warning_label, summary_label, dest_label, manifest_label_widget, stage_label
+    ])
 
     text_frame = ttk.Frame(container)
     text_frame.pack(fill='both', expand=True)
-    log = tk.Text(text_frame, wrap='word', height=8, bg='#192438', fg='#EFF4FF',
-                  relief='flat', font=('Consolas', 9))
+    log = tk.Text(text_frame, wrap='word', height=8, bg=COR_PAINEL, fg=COR_TEXTO,
+                  relief='flat', font=(FONTE_MONO, TAMANHO_APOIO),
+                  padx=PADDING_CAIXA_TEXTO[0], pady=PADDING_CAIXA_TEXTO[1])
     scrollbar = ttk.Scrollbar(text_frame, orient='vertical', command=log.yview)
     log.configure(yscrollcommand=scrollbar.set)
     scrollbar.pack(side='right', fill='y'); log.pack(side='left', fill='both', expand=True)
@@ -592,9 +644,15 @@ def show_selective_backup(app, plan):
         b = ttk.Button(row, text=label, command=cmd)
         # Stack buttons vertically; horizontal stacking clipped the far-right
         # actions on common laptop resolutions and high-DPI Windows settings.
-        b.pack(anchor='w', pady=2)
+        b.pack(anchor='w', pady=ESPACO_FINO)
         commands.append(b)
         return b
+
+    def add_tab_note(row, text):
+        lbl = ttk.Label(row, text=text, wraplength=initial_tab_wrap)
+        lbl.pack(anchor='w', padx=(ESPACO_P, 0))
+        tab_wrap_labels.append(lbl)
+        return lbl
 
     add_button(row1, '1. Analisar arquivos do C:', analyze)
     add_button(row1, '2. Escolher pasta única', choose_dest)
@@ -603,26 +661,20 @@ def show_selective_backup(app, plan):
     add_button(row2, 'Conferir backup anterior', choose_manifest)
     add_button(row2, '4. Recuperação de TESTE (pasta nova)', do_restore)
     add_button(row3, '5. Autoteste #25: corrupção SHA-256 (isolado)', run_autotest25)
-    ttk.Label(row3, text='Dados fictícios temporários; nenhum backup real será alterado.',
-              wraplength=470).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row3, 'Dados fictícios temporários; nenhum backup real será alterado.')
     add_button(row4, '6. Autoteste #26: arquivos ausentes e incompletos', run_autotest26)
-    ttk.Label(row4, text='Somente dados fictícios; não escreve nos backups reais.',
-              wraplength=470).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row4, 'Somente dados fictícios; não escreve nos backups reais.')
     add_button(row5, '7. Autoteste #27: cancelar e retomar (isolado)', run_autotest27)
-    ttk.Label(row5, text='Backup/restauração fictícios; SHA-256 na retomada.',
-              wraplength=430).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row5, 'Backup/restauração fictícios; SHA-256 na retomada.')
     add_button(row6, '8. Autoteste #28: interromper arquivo grande',
                lambda: run_resilience_autotest(28, run_midfile_autotest))
-    ttk.Label(row6, text='Cancela durante a cópia; retoma com SHA-256.',
-              wraplength=430).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row6, 'Cancela durante a cópia; retoma com SHA-256.')
     add_button(row7, '9. Autoteste #29: reparar arquivo adulterado',
                lambda: run_resilience_autotest(29, run_repair_autotest))
-    ttk.Label(row7, text='Corrupção sintética; recópia segura ao retomar.',
-              wraplength=430).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row7, 'Corrupção sintética; recópia segura ao retomar.')
     add_button(row8, '10. Autoteste #30: impedir retomada insegura',
                lambda: run_resilience_autotest(30, run_resume_guard_autotest))
-    ttk.Label(row8, text='Bloqueia fontes, destinos e manifestos incompatíveis.',
-              wraplength=430).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row8, 'Bloqueia fontes, destinos e manifestos incompatíveis.')
     add_button(row9, '11. Autoteste #31: transferência 32 MiB (isolado)',
                lambda: run_fault_autotest(31, run_large_transfer_autotest))
     add_button(row10, '12. Autoteste #32: 1.024 arquivos pequenos (isolado)',
@@ -638,43 +690,34 @@ def show_selective_backup(app, plan):
     add_button(row15, '17. Autoteste #37: resposta da interface e cancelamento', run_ui_autotest)
     probe_button = ttk.Button(row15, text='Cancelar cópia fictícia (#37)',
                               command=invoke_probe_cancel, state='disabled')
-    probe_button.pack(side='left', padx=8)
+    probe_button.pack(side='left', padx=ESPACO_P)
     add_button(row16, '18. Autoteste #38: 2.048 arquivos pequenos',
                lambda: run_fault_autotest(38, run_tiny_files_stress_autotest))
-    ttk.Label(row16, text='Somente arquivos temporários; SHA-256.',
-              wraplength=390).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row16, 'Somente arquivos temporários; SHA-256.')
     add_button(row17, '19. Autoteste #39: auditoria limitada somente leitura',
                lambda: run_fault_autotest(39, run_readonly_inventory_autotest))
-    ttk.Label(row17, text='Lê metadados de volumes locais; não é varredura completa.',
-              wraplength=410).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row17, 'Lê metadados de volumes locais; não é varredura completa.')
     add_button(row18, '20. Autoteste #40: recuperação integral isolada',
                lambda: run_fault_autotest(40, run_isolated_full_restore_autotest))
-    ttk.Label(row18, text='Seleção sintética, exclusões e restauração em pasta nova.',
-              wraplength=410).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row18, 'Seleção sintética, exclusões e restauração em pasta nova.')
     add_button(row19, '21. Autoteste #41: inventário ampliado (metadados)',
                lambda: run_fault_autotest(41, run_inventory_permissions_autotest))
-    ttk.Label(row19, text='Até 12.000 entradas/unidade; somente leitura e erros classificados.',
-              wraplength=410).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row19, 'Até 12.000 entradas/unidade; somente leitura e erros classificados.')
     add_button(row20, '22. Autoteste #42: vínculos entre unidades (sintético)',
                lambda: run_fault_autotest(42, run_cross_volume_links_autotest))
-    ttk.Label(row20, text='Distingue suspeitas e aprovações sem afirmar backup feito.',
-              wraplength=410).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row20, 'Distingue suspeitas e aprovações sem afirmar backup feito.')
     add_button(row21, '23. Autoteste #43: falha e retomada de restauração',
                lambda: run_fault_autotest(43, run_restore_write_recovery_autotest))
-    ttk.Label(row21, text='Dados fictícios; falha controlada e conferência SHA-256.',
-              wraplength=410).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row21, 'Dados fictícios; falha controlada e conferência SHA-256.')
     add_button(row22, '24. Autoteste #44: páginas sem limite total',
                lambda: run_fault_autotest(44, run_paged_inventory_autotest))
-    ttk.Label(row22, text='Somente dados sintéticos; não repete nem perde arquivos.',
-              wraplength=440).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row22, 'Somente dados sintéticos; não repete nem perde arquivos.')
     add_button(row23, '25. Autoteste #45: pausar e continuar leitura',
                lambda: run_fault_autotest(45, run_pause_resume_inventory_autotest))
-    ttk.Label(row23, text='Cursor em memória; retomada apenas na mesma sessão.',
-              wraplength=440).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row23, 'Cursor em memória; retomada apenas na mesma sessão.')
     add_button(row24, '26. Autoteste #46: acesso negado e junções',
                lambda: run_fault_autotest(46, run_gaps_inventory_autotest))
-    ttk.Label(row24, text='Lacunas nunca equivalem a inventário completo.',
-              wraplength=440).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row24, 'Lacunas nunca equivalem a inventário completo.')
 
     def run_paged_scan(new_session=False, until_finished=False):
         if state['busy']:
@@ -714,17 +757,15 @@ def show_selective_backup(app, plan):
                lambda: run_paged_scan(new_session=False))
     add_button(row27, 'Inventário real: CONTINUAR até terminar (cancelável)',
                lambda: run_paged_scan(new_session=False, until_finished=True))
-    ttk.Label(row27, text=('Cada página examina 2.000 entradas. A análise longa roda fora '
-                           'da interface e pode ser interrompida. Não lê conteúdo nem '
-                           'certifica todos os saves ou arquivos protegidos.'),
-              wraplength=475).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row27, ('Cada página examina 2.000 entradas. A análise longa roda fora '
+                         'da interface e pode ser interrompida. Não lê conteúdo nem '
+                         'certifica todos os saves ou arquivos protegidos.'))
     add_button(row28, 'Inventário DETALHADO: pesquisar arquivos e marcar escolhas',
                lambda: show_file_index(window, app=app))
-    ttk.Label(row28, text=('Cria um índice SQLite somente de metadados. '
-                           'As escolhas não apagam nem copiam arquivos automaticamente.'),
-              wraplength=475).pack(anchor='w', padx=(8, 0))
+    add_tab_note(row28, ('Cria um índice SQLite somente de metadados. '
+                         'As escolhas não apagam nem copiam arquivos automaticamente.'))
     export_button = ttk.Button(toolbar, text='Exportar relatório', command=export_report)
-    export_button.pack(side='left', padx=(0, 8))
+    export_button.pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     commands.append(export_button)
     stop = ttk.Button(toolbar, text='Cancelar operação', command=cancelled.set, state='disabled')
     stop.pack(side='right')
