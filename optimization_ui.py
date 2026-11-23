@@ -46,6 +46,32 @@ from stutter_deep import study_csv, study_text
 from optimization_monitor import (KEYS, LABELS, read_afterburner_log, find_afterburner_logs,
                                   poll_nvidia, combine, summarized, new_session, append_sample,
                                   finish_session, session_comparison)
+from ui_scale import (
+    ACCENT,
+    AMBER,
+    BG,
+    BORDER,
+    COR_GRADE_GRAFICO,
+    ESPACO_ENTRE_BLOCOS,
+    ESPACO_ENTRE_BOTOES,
+    ESPACO_FINO,
+    ESPACO_M,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    ESPACO_ROTULO_CAMPO,
+    FONTE_MONO,
+    FONTE_UI,
+    GREEN,
+    MUTED,
+    PADDING_CAIXA_TEXTO,
+    PADDING_PAINEL_COMPACTO,
+    PANEL,
+    TAMANHO_APOIO,
+    TAMANHO_CORPO,
+    TAMANHO_SUBTITULO,
+    TEXT,
+    safe_wraplength,
+)
 
 # ---------- P3-07 fatia 1: check-up de segurança (só leitura) ----------
 CHECKUP_FAILED_TEXT = ('O check-up de segurança não pôde ser concluído. Nada foi mudado, '
@@ -307,9 +333,6 @@ _LEGACY_KNOWN_MESSAGES = {
     'Windows não confirmou a reversão. Verifique o plano ativo.',
 }
 
-BG='#0C1220'; PANEL='#192438'; TEXT='#EFF4FF'; MUTED='#9CAAC0'; ACCENT='#9C85FF';
-GREEN='#5DDEB1'; AMBER='#F3BE67'; BORDER='#2B3952'
-
 
 def _error_text(exc):
     """FIX-P3-06-08: texto de erro para a tela, sem caminhos pessoais.
@@ -465,24 +488,38 @@ class OptimizationPanel(tk.Frame):
         self.note=tk.StringVar(value='Nenhuma alteração aplicada. Faça primeiro o diagnóstico.')
         self._build()
 
-    def _label(self, parent, content, size=10, fg=TEXT, bold=False, wrap=None):
+    def _label(self, parent, content, size=TAMANHO_CORPO, fg=TEXT, bold=False, wrap=None):
         kwargs={'wraplength':wrap} if wrap else {}
         return tk.Label(parent,text=content,bg=BG,fg=fg,justify='left',anchor='w',
-                        font=('Segoe UI',size,'bold' if bold else 'normal'), **kwargs)
+                        font=(FONTE_UI,size,'bold' if bold else 'normal'), **kwargs)
+
+    @staticmethod
+    def _bind_wraplength(container, label, padding=PADDING_PAINEL_COMPACTO, min_wrap=360):
+        container.bind(
+            '<Configure>',
+            lambda event, lbl=label: lbl.configure(
+                wraplength=safe_wraplength(event.width, padding=padding, min_wrap=min_wrap)
+            ),
+            add='+',
+        )
 
     def _paragraph(self, parent, title, detail):
         box=tk.Frame(parent,bg=PANEL,highlightbackground=BORDER,highlightthickness=1)
-        box.pack(fill='x',pady=(0,10))
-        tk.Label(box,text=title,bg=PANEL,fg=TEXT,font=('Segoe UI',11,'bold'),anchor='w').pack(fill='x',padx=16,pady=(13,5))
-        tk.Label(box,text=detail,bg=PANEL,fg=MUTED,font=('Segoe UI',10),justify='left',wraplength=830,
-                 anchor='w').pack(fill='x',padx=16,pady=(0,14))
+        box.pack(fill='x',pady=(0,ESPACO_P))
+        tk.Label(box,text=title,bg=PANEL,fg=TEXT,font=(FONTE_UI,TAMANHO_SUBTITULO,'bold'),
+                 anchor='w').pack(fill='x',padx=PADDING_PAINEL_COMPACTO,pady=(PADDING_PAINEL_COMPACTO,ESPACO_MINIMO))
+        detail_lbl=tk.Label(box,text=detail,bg=PANEL,fg=MUTED,font=(FONTE_UI,TAMANHO_CORPO),justify='left',
+                            wraplength=safe_wraplength(830,padding=0),anchor='w')
+        detail_lbl.pack(fill='x',padx=PADDING_PAINEL_COMPACTO,pady=(0,PADDING_PAINEL_COMPACTO))
+        self._bind_wraplength(box,detail_lbl,padding=PADDING_PAINEL_COMPACTO)
         return box
 
     def _text_area(self, parent):
         holder=tk.Frame(parent,bg=PANEL)
-        holder.pack(fill='both',expand=True,pady=(8,0))
+        holder.pack(fill='both',expand=True,pady=(ESPACO_P,0))
         txt=tk.Text(holder,bg=PANEL,fg=TEXT,insertbackground=TEXT,relief='flat',bd=0,
-                    wrap='word',font=('Consolas',10),padx=16,pady=13,height=14)
+                    wrap='word',font=(FONTE_MONO,TAMANHO_CORPO),
+                    padx=PADDING_CAIXA_TEXTO[0],pady=PADDING_CAIXA_TEXTO[1],height=14)
         scroll=ttk.Scrollbar(holder,orient='vertical',command=txt.yview)
         txt.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');txt.pack(side='left',fill='both',expand=True)
@@ -497,13 +534,13 @@ class OptimizationPanel(tk.Frame):
 
     def _build(self):
         outer=tk.Frame(self,bg=BG)
-        outer.pack(fill='both',expand=True,padx=(15,5),pady=(3,5))
+        outer.pack(fill='both',expand=True,padx=PADDING_PAINEL_COMPACTO,pady=(ESPACO_MINIMO,ESPACO_P))
         header=tk.Frame(outer,bg=BG)
-        header.pack(fill='x',pady=(0,10))
+        header.pack(fill='x',pady=ESPACO_ENTRE_BLOCOS)
         tk.Label(header,text='OTIMIZAÇÃO CONSCIENTE',bg=BG,fg=ACCENT,
-                 font=('Segoe UI',12,'bold')).pack(anchor='w')
+                 font=(FONTE_UI,TAMANHO_SUBTITULO,'bold')).pack(anchor='w')
         tk.Label(header,text='Diagnostique • compare • aplique somente ajustes compatíveis • reverta',
-                 bg=BG,fg=MUTED,font=('Segoe UI',10)).pack(anchor='w',pady=(4,0))
+                 bg=BG,fg=MUTED,font=(FONTE_UI,TAMANHO_CORPO)).pack(anchor='w',pady=(ESPACO_MINIMO,0))
         self.tabs=ttk.Notebook(outer)
         self.tabs.pack(fill='both',expand=True)
         diagnose=ttk.Frame(self.tabs)
@@ -530,45 +567,51 @@ class OptimizationPanel(tk.Frame):
         self._build_changes(changes)
         self._build_tweaks(tweaks)
         self._build_advanced(advanced)
-        tk.Label(outer,textvariable=self.note,bg=BG,fg=GREEN,anchor='w',
-                 wraplength=900,justify='left',font=('Segoe UI',9)).pack(fill='x',pady=(10,1))
+        note_lbl=tk.Label(outer,textvariable=self.note,bg=BG,fg=GREEN,anchor='w',
+                          wraplength=safe_wraplength(900,padding=0),justify='left',
+                          font=(FONTE_UI,TAMANHO_APOIO))
+        note_lbl.pack(fill='x',pady=(ESPACO_P,ESPACO_FINO))
+        self._bind_wraplength(outer,note_lbl,padding=PADDING_PAINEL_COMPACTO)
 
     def _build_diagnostics(self, parent):
-        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=PADDING_PAINEL_COMPACTO,pady=PADDING_PAINEL_COMPACTO)
         self._paragraph(area,'Etapa 1: conhecer o seu computador',
                         'Consulta somente leitura: Windows, CPU, GPU e driver, RAM, discos, gabinete e bateria, placa-mãe, versão da BIOS e planos de energia, e inclui um perfil do PC. '
                         'Temperaturas e utilização são medidas na próxima aba, usando sensores disponíveis; não confirma XMP/EXPO ativo.')
-        actions=tk.Frame(area,bg=BG);actions.pack(fill='x',pady=(3,5))
+        actions=tk.Frame(area,bg=BG);actions.pack(fill='x',pady=(ESPACO_MINIMO,ESPACO_P))
         self.btn_scan=ttk.Button(actions,text='Analisar este PC',style='Primary.TButton',command=self.scan)
-        self.btn_scan.pack(side='left',padx=(0,9))
-        ttk.Button(actions,text='Exportar diagnóstico JSON',command=self.export_report).pack(side='left')
+        self.btn_scan.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(actions,text='Exportar diagnóstico JSON',command=self.export_report).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         # P3-06 fatia 2: só abre uma janela de leitura; liga depois do primeiro diagnóstico.
         self.btn_bios_steps=ttk.Button(actions,text='Ver passo a passo',command=self.show_bios_steps)
-        self.btn_bios_steps.pack(side='left',padx=(9,0))
+        self.btn_bios_steps.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         self.btn_bios_steps.configure(state='disabled')
         # P3-07 fatia 1: check-up só de leitura (inicialização e processos), em janela própria.
         self.btn_checkup=ttk.Button(actions,text='Check-up de segurança',command=self.security_checkup)
-        self.btn_checkup.pack(side='left',padx=(9,0))
+        self.btn_checkup.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         # P3-07 fatia 4: mede 2 minutos (só leitura), em botão à parte.
         self.btn_idle=ttk.Button(actions,text=IDLE_BUTTON_TEXT,command=self.measure_idle)
-        self.btn_idle.pack(side='left',padx=(9,0))
+        self.btn_idle.pack(side='left')
         # P3-02: medição antes e depois (só leitura), com a comparação logo abaixo.
         box=tk.Frame(area,bg=PANEL,highlightbackground=BORDER,highlightthickness=1)
-        box.pack(fill='x',pady=(6,0))
-        tk.Label(box,text=MEASURE_TITLE,bg=PANEL,fg=TEXT,font=('Segoe UI',11,'bold'),
-                 anchor='w').pack(fill='x',padx=16,pady=(10,3))
-        tk.Label(box,text=MEASURE_HELP,bg=PANEL,fg=MUTED,font=('Segoe UI',10),justify='left',
-                 wraplength=830,anchor='w').pack(fill='x',padx=16)
-        measure_row=tk.Frame(box,bg=PANEL);measure_row.pack(fill='x',padx=16,pady=(6,4))
+        box.pack(fill='x',pady=(ESPACO_P,0))
+        tk.Label(box,text=MEASURE_TITLE,bg=PANEL,fg=TEXT,font=(FONTE_UI,TAMANHO_SUBTITULO,'bold'),
+                 anchor='w').pack(fill='x',padx=PADDING_PAINEL_COMPACTO,pady=(ESPACO_P,ESPACO_MINIMO))
+        measure_help_lbl=tk.Label(box,text=MEASURE_HELP,bg=PANEL,fg=MUTED,font=(FONTE_UI,TAMANHO_CORPO),justify='left',
+                                  wraplength=safe_wraplength(830,padding=0),anchor='w')
+        measure_help_lbl.pack(fill='x',padx=PADDING_PAINEL_COMPACTO)
+        self._bind_wraplength(box,measure_help_lbl,padding=PADDING_PAINEL_COMPACTO)
+        measure_row=tk.Frame(box,bg=PANEL);measure_row.pack(fill='x',padx=PADDING_PAINEL_COMPACTO,pady=(ESPACO_P,ESPACO_MINIMO))
         self.btn_measure_before=ttk.Button(measure_row,text=MEASURE_BEFORE_TEXT,
                                            command=lambda:self.measure_pc('antes'))
-        self.btn_measure_before.pack(side='left')
+        self.btn_measure_before.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         self.btn_measure_after=ttk.Button(measure_row,text=MEASURE_AFTER_TEXT,
                                           command=lambda:self.measure_pc('depois'))
-        self.btn_measure_after.pack(side='left',padx=(9,0))
+        self.btn_measure_after.pack(side='left')
         self.measure_text=tk.Text(box,bg=PANEL,fg=TEXT,relief='flat',bd=0,wrap='word',
-                                  font=('Consolas',10),padx=16,pady=6,height=9)
-        self.measure_text.pack(fill='x',padx=(0,4),pady=(0,8))
+                                  font=(FONTE_MONO,TAMANHO_CORPO),
+                                  padx=PADDING_CAIXA_TEXTO[0],pady=PADDING_CAIXA_TEXTO[1],height=9)
+        self.measure_text.pack(fill='x',padx=(0,ESPACO_MINIMO),pady=(0,ESPACO_P))
         self._write(self.measure_text,MEASURE_LOADING_TEXT)
         self._load_measures()
         self.report_text=self._text_area(area)
@@ -577,39 +620,43 @@ class OptimizationPanel(tk.Frame):
                     'Modo seguro: nenhuma mudança é feita pela análise.')
 
     def _build_monitor(self,parent):
-        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=8)
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=PADDING_PAINEL_COMPACTO,pady=PADDING_PAINEL_COMPACTO)
         self._paragraph(area,'Monitoramento real: leituras do MSI Afterburner + driver NVIDIA',
                         'O app acompanha o histórico .hml gerado pelo Afterburner e consulta a GPU NVIDIA diretamente. '
                         'Se algum sensor, como a temperatura da CPU, não estiver disponível, aparecerá — (não disponível). '
                         'A captura é periódica: FPS/frametime amostrados NÃO geram 1% low por quadro.')
-        scenario_row=tk.Frame(area,bg=BG);scenario_row.pack(fill='x',pady=(0,5))
-        self._label(scenario_row,'Cenário:').pack(side='left',padx=(0,6))
-        ttk.Entry(scenario_row,textvariable=self.scenario).pack(side='left',fill='x',expand=True,padx=(0,8))
+        scenario_row=tk.Frame(area,bg=BG);scenario_row.pack(fill='x',pady=(0,ESPACO_P))
+        self._label(scenario_row,'Cenário:').pack(side='left',padx=(0,ESPACO_P))
+        ttk.Entry(scenario_row,textvariable=self.scenario).pack(side='left',fill='x',expand=True,padx=(0,ESPACO_P))
         for phase in ('antes','depois'):
-            ttk.Radiobutton(scenario_row,text=phase.upper(),value=phase,variable=self.phase).pack(side='left',padx=(0,7))
-        row=tk.Frame(area,bg=BG);row.pack(fill='x',pady=(0,5))
-        self._label(row,'Log Afterburner:').pack(side='left',padx=(0,7))
+            ttk.Radiobutton(scenario_row,text=phase.upper(),value=phase,variable=self.phase).pack(side='left',padx=(0,ESPACO_P))
+        row=tk.Frame(area,bg=BG);row.pack(fill='x',pady=(0,ESPACO_P))
+        self._label(row,'Log Afterburner:').pack(side='left',padx=(0,ESPACO_P))
         ttk.Entry(row,textvariable=self.afterburner_path).pack(side='left',fill='x',expand=True)
-        ttk.Button(row,text='Localizar',command=self.find_monitor_source).pack(side='left',padx=(8,0))
-        ttk.Button(row,text='Escolher .hml',command=self.select_monitor_source).pack(side='left',padx=(7,0))
-        details=tk.Frame(area,bg=BG);details.pack(fill='x',pady=(1,4))
-        self._label(details,'Afterburner → Configurações → Monitoramento → “Registrar histórico em arquivo”. '
-                    'Habilite CPU/GPU temperatura, uso e FPS se disponíveis. Deixe o Afterburner aberto.',
-                    size=9,fg=MUTED,wrap=850).pack(anchor='w')
-        actions=tk.Frame(area,bg=BG);actions.pack(fill='x',pady=(5,7))
+        ttk.Button(row,text='Localizar',command=self.find_monitor_source).pack(side='left',padx=(ESPACO_P,0))
+        ttk.Button(row,text='Escolher .hml',command=self.select_monitor_source).pack(side='left',padx=(ESPACO_P,0))
+        details=tk.Frame(area,bg=BG);details.pack(fill='x',pady=(ESPACO_FINO,ESPACO_MINIMO))
+        details_lbl=self._label(details,'Afterburner → Configurações → Monitoramento → “Registrar histórico em arquivo”. '
+                                'Habilite CPU/GPU temperatura, uso e FPS se disponíveis. Deixe o Afterburner aberto.',
+                                size=TAMANHO_APOIO,fg=MUTED,wrap=safe_wraplength(850,padding=0))
+        details_lbl.pack(anchor='w')
+        self._bind_wraplength(details,details_lbl,padding=0)
+        actions=tk.Frame(area,bg=BG);actions.pack(fill='x',pady=(ESPACO_MINIMO,ESPACO_P))
         self.btn_mon_start=ttk.Button(actions,text='▶ Iniciar medição',style='Primary.TButton',command=self.start_monitor)
-        self.btn_mon_start.pack(side='left',padx=(0,8))
+        self.btn_mon_start.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         self.btn_mon_stop=ttk.Button(actions,text='■ Parar e salvar sessão',command=self.stop_monitor)
-        self.btn_mon_stop.pack(side='left',padx=(0,8))
+        self.btn_mon_stop.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         self.btn_mon_stop.configure(state='disabled')
-        ttk.Button(actions,text='Comparar sessões',command=self.compare_monitor).pack(side='left',padx=(0,8))
+        ttk.Button(actions,text='Comparar sessões',command=self.compare_monitor).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(actions,text='Abrir relatórios',command=self.open_monitor_folder).pack(side='left')
-        tk.Label(area,textvariable=self.monitor_status,bg=BG,fg=AMBER,font=('Segoe UI',9),
-                 anchor='w',justify='left',wraplength=950).pack(fill='x',pady=(2,7))
+        mon_status_lbl=tk.Label(area,textvariable=self.monitor_status,bg=BG,fg=AMBER,font=(FONTE_UI,TAMANHO_APOIO),
+                                anchor='w',justify='left',wraplength=safe_wraplength(950,padding=0))
+        mon_status_lbl.pack(fill='x',pady=(ESPACO_FINO,ESPACO_P))
+        self._bind_wraplength(area,mon_status_lbl,padding=0)
         # Periodic time-series diagram (not a synthetic benchmark).
         self.monitor_graph=tk.Canvas(area,bg=PANEL,height=125,highlightthickness=1,
                                      highlightbackground=BORDER)
-        self.monitor_graph.pack(fill='x',pady=(0,5))
+        self.monitor_graph.pack(fill='x',pady=(0,ESPACO_MINIMO))
         self.monitor_graph.bind('<Configure>',lambda event:self._draw_monitor_graph())
         self.monitor_text=self._text_area(area)
         self._write(self.monitor_text,'Ainda não há medições. Inicie uma sessão para registrar temperatura e uso.\n'
@@ -771,13 +818,13 @@ class OptimizationPanel(tk.Frame):
         def yy(temp):return (h-17)-(temp-20)/90*(h-28)
         for yval in (40,60,80,100):
             y=yy(yval)
-            c.create_line(pad,y,w-10,y,fill='#314052')
-            c.create_text(19,y,text=str(yval),fill=MUTED,font=('Segoe UI',8))
-        c.create_text(65,12,text='CPU °C',fill=ACCENT,font=('Segoe UI',9))
-        c.create_text(147,12,text='GPU °C',fill=GREEN,font=('Segoe UI',9))
+            c.create_line(pad,y,w-10,y,fill=COR_GRADE_GRAFICO)
+            c.create_text(19,y,text=str(yval),fill=MUTED,font=(FONTE_UI,TAMANHO_APOIO))
+        c.create_text(65,12,text='CPU °C',fill=ACCENT,font=(FONTE_UI,TAMANHO_APOIO))
+        c.create_text(147,12,text='GPU °C',fill=GREEN,font=(FONTE_UI,TAMANHO_APOIO))
         if not self.mon_recent:
             c.create_text(w/2,h/2,text='Aguardando temperaturas reais dos sensores',fill=MUTED,
-                          font=('Segoe UI',11))
+                          font=(FONTE_UI,TAMANHO_SUBTITULO))
             return
         n=len(self.mon_recent)
         for key,color in (('cpu_temp_c',ACCENT),('gpu_temp_c',GREEN)):
@@ -865,36 +912,40 @@ class OptimizationPanel(tk.Frame):
             messagebox.showinfo('Relatórios',str(self.monitor_dir))
 
     def _build_stutters(self,parent):
-        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=9)
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=PADDING_PAINEL_COMPACTO,pady=PADDING_PAINEL_COMPACTO)
         self._paragraph(area,'Quadros reais, sem FPS inventado',
             'O Intel PresentMon (console oficial, instalado separadamente) pode registrar os quadros do jogo. '
             'Nosso aplicativo analisa o CSV e calcula 1% low, 0,2% low e travadas. '
             'Não injeta código nem modifica CS2, clocks, BIOS, serviços ou drivers.')
-        source=tk.Frame(area,bg=BG);source.pack(fill='x',pady=(0,5))
-        self._label(source,'PresentMon CLI:').pack(side='left',padx=(0,8))
+        source=tk.Frame(area,bg=BG);source.pack(fill='x',pady=(0,ESPACO_P))
+        self._label(source,'PresentMon CLI:').pack(side='left',padx=(0,ESPACO_P))
         ttk.Entry(source,textvariable=self.presentmon_exe).pack(side='left',fill='x',expand=True)
-        ttk.Button(source,text='Selecionar .exe',command=self.select_presentmon).pack(side='left',padx=(8,0))
-        options=tk.Frame(area,bg=BG);options.pack(fill='x',pady=(2,6))
-        self._label(options,'Jogo (.exe):').pack(side='left',padx=(0,6))
-        ttk.Entry(options,textvariable=self.capture_process,width=16).pack(side='left',padx=(0,12))
-        self._label(options,'Duração (s):').pack(side='left',padx=(0,6))
-        ttk.Entry(options,textvariable=self.capture_seconds,width=6).pack(side='left',padx=(0,10))
+        ttk.Button(source,text='Selecionar .exe',command=self.select_presentmon).pack(side='left',padx=(ESPACO_P,0))
+        options=tk.Frame(area,bg=BG);options.pack(fill='x',pady=(ESPACO_FINO,ESPACO_P))
+        self._label(options,'Jogo (.exe):').pack(side='left',padx=(0,ESPACO_MINIMO))
+        ttk.Entry(options,textvariable=self.capture_process,width=16).pack(side='left',padx=(0,ESPACO_M))
+        self._label(options,'Duração (s):').pack(side='left',padx=(0,ESPACO_MINIMO))
+        ttk.Entry(options,textvariable=self.capture_seconds,width=6).pack(side='left',padx=(0,ESPACO_P))
         self.btn_capture=ttk.Button(options,text='Capturar quadros',style='Primary.TButton',command=self.start_capture)
-        self.btn_capture.pack(side='left',padx=(0,8))
+        self.btn_capture.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         self.btn_capture_stop=ttk.Button(options,text='Parar captura',command=self.stop_capture,state='disabled')
-        self.btn_capture_stop.pack(side='left',padx=(0,8))
+        self.btn_capture_stop.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(options,text='Analisar CSV existente',command=self.import_stutter_csv).pack(side='left')
         ttk.Button(area,text='Análise aprofundada: microstutters e recorte inicial',
-                   command=self.study_current_csv).pack(anchor='w',pady=(0,3))
-        tk.Label(area,textvariable=self.capture_status,bg=BG,fg=AMBER,justify='left',anchor='w',
-                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(3,4))
-        ttk.Button(area,text='Ver diagnóstico da captura',command=self.show_capture_diagnostic).pack(anchor='w',pady=(0,4))
+                   command=self.study_current_csv).pack(anchor='w',pady=(0,ESPACO_MINIMO))
+        capture_status_lbl=tk.Label(area,textvariable=self.capture_status,bg=BG,fg=AMBER,justify='left',anchor='w',
+                                    wraplength=safe_wraplength(900,padding=0),font=(FONTE_UI,TAMANHO_APOIO))
+        capture_status_lbl.pack(fill='x',pady=(ESPACO_MINIMO,ESPACO_MINIMO))
+        self._bind_wraplength(area,capture_status_lbl,padding=0)
+        ttk.Button(area,text='Ver diagnóstico da captura',command=self.show_capture_diagnostic).pack(anchor='w',pady=(0,ESPACO_MINIMO))
         ttk.Button(area,text='Analisar uma sessão anterior (.json) - quedas observadas',
-                   command=self.import_old_monitor_log).pack(anchor='w',pady=(0,4))
-        self._label(area,'Use junto com a medição térmica se quiser relacionar temperatura e quadros. '
-                    'Durante a captura, jogue normalmente sem Alt-Tab. O app não cria/baixa a ferramenta PresentMon.',
-                    size=9,fg=MUTED,wrap=850).pack(anchor='w',pady=(0,5))
-        controls=tk.Frame(area,bg=BG);controls.pack(fill='x',pady=(1,3))
+                   command=self.import_old_monitor_log).pack(anchor='w',pady=(0,ESPACO_MINIMO))
+        stutter_help_lbl=self._label(area,'Use junto com a medição térmica se quiser relacionar temperatura e quadros. '
+                                     'Durante a captura, jogue normalmente sem Alt-Tab. O app não cria/baixa a ferramenta PresentMon.',
+                                     size=TAMANHO_APOIO,fg=MUTED,wrap=safe_wraplength(850,padding=0))
+        stutter_help_lbl.pack(anchor='w',pady=(0,ESPACO_P))
+        self._bind_wraplength(area,stutter_help_lbl,padding=0)
+        controls=tk.Frame(area,bg=BG);controls.pack(fill='x',pady=(ESPACO_FINO,ESPACO_MINIMO))
         self.btn_register_frames=ttk.Button(controls,text='Registrar no comparador ANTES/DEPOIS',
                                             command=self.register_stutter_bench,state='disabled')
         self.btn_register_frames.pack(side='left')
@@ -1117,31 +1168,35 @@ class OptimizationPanel(tk.Frame):
         self.capture_status.set('Registrado como '+phase.upper()+' no comparador de benchmarks.')
 
     def _build_power(self,parent):
-        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=PADDING_PAINEL_COMPACTO,pady=PADDING_PAINEL_COMPACTO)
         self._paragraph(area,'Etapa 2: escolher um plano de energia do Windows',
                         'Este é o único ajuste de sistema executável desta versão. Escolha um plano já disponível no Windows, '
                         'confirme a alteração e use Desfazer para recuperar o plano original. Alto desempenho pode aumentar calor, '
                         'consumo e ruído; não garante mais FPS. Em notebooks, dê preferência às configurações do fabricante.')
-        control=tk.Frame(area,bg=BG);control.pack(fill='x',pady=(7,9))
-        self._label(control,'Planos reconhecidos pelo Windows',bold=True).pack(anchor='w',pady=(0,5))
+        control=tk.Frame(area,bg=BG);control.pack(fill='x',pady=(ESPACO_P,ESPACO_P))
+        self._label(control,'Planos reconhecidos pelo Windows',bold=True).pack(anchor='w',pady=ESPACO_ROTULO_CAMPO)
         self.plan_box=ttk.Combobox(control,state='readonly',textvariable=self.plan_choice,width=78)
-        self.plan_box.pack(side='left',fill='x',expand=True,padx=(0,8))
+        self.plan_box.pack(side='left',fill='x',expand=True,padx=(0,ESPACO_P))
         self.btn_refresh=ttk.Button(control,text='Atualizar',command=self.load_plans)
         self.btn_refresh.pack(side='left')
-        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(2,8))
+        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(ESPACO_FINO,ESPACO_P))
         self.btn_apply=ttk.Button(buttons,text='Aplicar plano selecionado',style='Primary.TButton',command=self.apply_plan)
-        self.btn_apply.pack(side='left',padx=(0,9))
+        self.btn_apply.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         self.btn_revert=ttk.Button(buttons,text='Desfazer minha última mudança',command=self.revert_plan)
         self.btn_revert.pack(side='left')
         # Só aparece quando existe uma troca feita por uma versão antiga do app.
         self.btn_legacy=ttk.Button(buttons,text='Desfazer alteração antiga',command=self.undo_legacy_plan)
         self.power_status=tk.StringVar(value='')
-        tk.Label(area,textvariable=self.power_status,bg=BG,fg=AMBER,anchor='w',justify='left',
-                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
+        power_status_lbl=tk.Label(area,textvariable=self.power_status,bg=BG,fg=AMBER,anchor='w',justify='left',
+                                  wraplength=safe_wraplength(900,padding=0),font=(FONTE_UI,TAMANHO_APOIO))
+        power_status_lbl.pack(fill='x',pady=(0,ESPACO_MINIMO))
+        self._bind_wraplength(area,power_status_lbl,padding=0)
         # FIX-P3-03-03: aviso de bloqueio separado, para não esconder o resultado acima.
         self.power_block=tk.StringVar(value='')
-        tk.Label(area,textvariable=self.power_block,bg=BG,fg=AMBER,anchor='w',justify='left',
-                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
+        power_block_lbl=tk.Label(area,textvariable=self.power_block,bg=BG,fg=AMBER,anchor='w',justify='left',
+                                 wraplength=safe_wraplength(900,padding=0),font=(FONTE_UI,TAMANHO_APOIO))
+        power_block_lbl.pack(fill='x',pady=(0,ESPACO_MINIMO))
+        self._bind_wraplength(area,power_block_lbl,padding=0)
         self.power_text=self._text_area(area)
         intro=['Nenhum plano consultado. Clique em Atualizar.',
                'Ao aplicar: o app cria antes um ponto de restauração do Windows ou usa o que o próprio app criou '
@@ -1154,34 +1209,38 @@ class OptimizationPanel(tk.Frame):
 
     def _build_changes(self,parent):
         """P3-03 fatia 2b-1: lista do diário e "Desfazer tudo". Montar só lê a memória."""
-        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=PADDING_PAINEL_COMPACTO,pady=PADDING_PAINEL_COMPACTO)
         self.changes_frame=area
         self._paragraph(area,'Alterações feitas pelo app',CHANGES_INTRO_TEXT)
-        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(2,8))
+        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(ESPACO_FINO,ESPACO_P))
         self.btn_undo_all=ttk.Button(buttons,text='Desfazer tudo',command=self.undo_all_changes)
-        self.btn_undo_all.pack(side='left')
+        self.btn_undo_all.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         # P3-03 fatia 2b-2: só lê o valor atual de cada item e acerta o diário.
         self.btn_recheck=ttk.Button(buttons,text='Conferir de novo',command=self.recheck_changes)
-        self.btn_recheck.pack(side='left',padx=(9,0))
+        self.btn_recheck.pack(side='left')
         self.changes_status=tk.StringVar(value='')
-        tk.Label(area,textvariable=self.changes_status,bg=BG,fg=AMBER,anchor='w',justify='left',
-                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
+        changes_status_lbl=tk.Label(area,textvariable=self.changes_status,bg=BG,fg=AMBER,anchor='w',justify='left',
+                                    wraplength=safe_wraplength(900,padding=0),font=(FONTE_UI,TAMANHO_APOIO))
+        changes_status_lbl.pack(fill='x',pady=(0,ESPACO_MINIMO))
+        self._bind_wraplength(area,changes_status_lbl,padding=0)
         self.changes_text=self._text_area(area)
         self._update_power_buttons()
 
     def _build_tweaks(self,parent):
         """P3-04: lista fechada de ajustes seguros. Montar não lê o registro (só no Job)."""
-        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=PADDING_PAINEL_COMPACTO,pady=PADDING_PAINEL_COMPACTO)
         self._paragraph(area,'Ajustes seguros com 1 clique',TWEAKS_INTRO_TEXT)
-        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(2,8))
+        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(ESPACO_FINO,ESPACO_P))
         self.btn_tweaks_apply=ttk.Button(buttons,text='Aplicar ajustes seguros',style='Primary.TButton',
                                          command=self.apply_safe_tweaks)
-        self.btn_tweaks_apply.pack(side='left')
+        self.btn_tweaks_apply.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         self.btn_tweaks_refresh=ttk.Button(buttons,text='Ver estado atual',command=self.refresh_tweaks)
-        self.btn_tweaks_refresh.pack(side='left',padx=(9,0))
+        self.btn_tweaks_refresh.pack(side='left')
         self.tweaks_status=tk.StringVar(value='')
-        tk.Label(area,textvariable=self.tweaks_status,bg=BG,fg=AMBER,anchor='w',justify='left',
-                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
+        tweaks_status_lbl=tk.Label(area,textvariable=self.tweaks_status,bg=BG,fg=AMBER,anchor='w',justify='left',
+                                   wraplength=safe_wraplength(900,padding=0),font=(FONTE_UI,TAMANHO_APOIO))
+        tweaks_status_lbl.pack(fill='x',pady=(0,ESPACO_MINIMO))
+        self._bind_wraplength(area,tweaks_status_lbl,padding=0)
         self.tweaks_text=self._text_area(area)
         self._render_tweaks(None)
         self._update_tweak_buttons()
@@ -1424,21 +1483,23 @@ class OptimizationPanel(tk.Frame):
     # ---------- P3-05: aba "Ajustes avançados" ----------
     def _build_advanced(self,parent):
         """Lista fechada de ajustes avançados, um botão por ajuste. Montar não lê o registro."""
-        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=PADDING_PAINEL_COMPACTO,pady=PADDING_PAINEL_COMPACTO)
         self.advanced_frame=area
         self._paragraph(area,'Ajustes avançados (com confirmação)',ADVANCED_INTRO_TEXT)
-        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(2,8))
+        buttons=tk.Frame(area,bg=BG);buttons.pack(fill='x',pady=(ESPACO_FINO,ESPACO_P))
         self.advanced_buttons={}
         for tweak in advanced_tweaks.ADVANCED_TWEAKS:
             button=ttk.Button(buttons,text='Aplicar: '+tweak.name,
                               command=lambda tweak_id=tweak.id:self.apply_advanced(tweak_id))
-            button.pack(side='left',padx=(0,9))
+            button.pack(side='left',padx=ESPACO_ENTRE_BOTOES)
             self.advanced_buttons[tweak.id]=button
         self.btn_advanced_refresh=ttk.Button(buttons,text='Ver estado atual',command=self.refresh_advanced)
         self.btn_advanced_refresh.pack(side='left')
         self.advanced_status=tk.StringVar(value='')
-        tk.Label(area,textvariable=self.advanced_status,bg=BG,fg=AMBER,anchor='w',justify='left',
-                 wraplength=900,font=('Segoe UI',9)).pack(fill='x',pady=(0,4))
+        advanced_status_lbl=tk.Label(area,textvariable=self.advanced_status,bg=BG,fg=AMBER,anchor='w',justify='left',
+                                     wraplength=safe_wraplength(900,padding=0),font=(FONTE_UI,TAMANHO_APOIO))
+        advanced_status_lbl.pack(fill='x',pady=(0,ESPACO_MINIMO))
+        self._bind_wraplength(area,advanced_status_lbl,padding=0)
         self.advanced_text=self._text_area(area)
         self._render_advanced(None)
         self._update_advanced_buttons()
@@ -1670,19 +1731,19 @@ class OptimizationPanel(tk.Frame):
             self._journal_failed(message,title=ADVANCED_TITLE,off_text=None)
 
     def _build_benchmarks(self,parent):
-        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=12,pady=11)
+        area=tk.Frame(parent,bg=BG);area.pack(fill='both',expand=True,padx=PADDING_PAINEL_COMPACTO,pady=PADDING_PAINEL_COMPACTO)
         self._paragraph(area,'Etapa 3: medir ganhos reais, sem promessas de FPS',
                         'Importe dados CSV com FPS por quadro ou frametime em ms (por exemplo, de OCAT/CapFrameX). '
                         'Grave 3 execuções ANTES e 3 DEPOIS, mantendo jogo, mapa, resolução, cenário e drivers iguais. '
                         'O app compara medianas. Valores de 1% e 0,2% low são estimados dos percentis por quadro.')
-        row=tk.Frame(area,bg=BG);row.pack(fill='x',pady=(0,5))
-        self._label(row,'Cenário:').pack(side='left',padx=(0,8))
+        row=tk.Frame(area,bg=BG);row.pack(fill='x',pady=(0,ESPACO_P))
+        self._label(row,'Cenário:').pack(side='left',padx=(0,ESPACO_P))
         ttk.Entry(row,textvariable=self.scenario).pack(side='left',fill='x',expand=True)
-        phase_row=tk.Frame(area,bg=BG);phase_row.pack(fill='x',pady=(8,9))
+        phase_row=tk.Frame(area,bg=BG);phase_row.pack(fill='x',pady=(ESPACO_P,ESPACO_P))
         for name in ('antes','depois'):
-            ttk.Radiobutton(phase_row,text=name.upper(),value=name,variable=self.phase).pack(side='left',padx=(0,16))
+            ttk.Radiobutton(phase_row,text=name.upper(),value=name,variable=self.phase).pack(side='left',padx=(0,ESPACO_M))
         ttk.Button(phase_row,text='Importar CSV e registrar execução',style='Primary.TButton',
-                   command=self.import_csv).pack(side='left',padx=(0,8))
+                   command=self.import_csv).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(phase_row,text='Atualizar comparação',command=self.refresh_bench).pack(side='left')
         self.bench_text=self._text_area(area)
         self._write(self.bench_text,'Sem benchmarks importados.\n\n'
@@ -1690,7 +1751,7 @@ class OptimizationPanel(tk.Frame):
                     'Captura deve medir quadros individuais; relatórios apenas resumidos não são comparáveis aqui.')
 
     def _build_firmware(self,parent):
-        wrapper=tk.Frame(parent,bg=BG);wrapper.pack(fill='both',expand=True,padx=12,pady=11)
+        wrapper=tk.Frame(parent,bg=BG);wrapper.pack(fill='both',expand=True,padx=PADDING_PAINEL_COMPACTO,pady=PADDING_PAINEL_COMPACTO)
         canvas=tk.Canvas(wrapper,bg=BG,highlightthickness=0)
         bar=ttk.Scrollbar(wrapper,orient='vertical',command=canvas.yview)
         canvas.configure(yscrollcommand=bar.set)
@@ -1781,20 +1842,30 @@ class OptimizationPanel(tk.Frame):
         """Janela só de leitura com o passo a passo da BIOS (sem link, sem download, sem timer)."""
         if not self.report:
             return None
+        import ui_scale as _ui_scale
         old=getattr(self,'_bios_steps_window',None)
         if old is not None and old.winfo_exists():
             old.destroy()
         window=tk.Toplevel(self)
         window.title('BIOS — passo a passo (só orientação)')
         window.configure(bg=BG)
-        holder=tk.Frame(window,bg=PANEL);holder.pack(fill='both',expand=True,padx=12,pady=(12,6))
+        if hasattr(window,'winfo_screenwidth') and hasattr(window,'geometry'):
+            sw=window.winfo_screenwidth();sh=window.winfo_screenheight()
+            window.geometry(_ui_scale.safe_window_geometry(760,520,sw,sh))
+            if hasattr(window,'minsize'):
+                mw,mh=_ui_scale.safe_window_size(560,380,sw,sh)
+                window.minsize(mw,mh)
+        ttk.Button(window,text='Fechar',command=window.destroy).pack(
+            side='bottom',anchor='e',padx=_ui_scale.PADDING_DIALOGO,pady=(0,_ui_scale.PADDING_DIALOGO))
+        holder=tk.Frame(window,bg=PANEL)
+        holder.pack(fill='both',expand=True,padx=_ui_scale.PADDING_DIALOGO,pady=(_ui_scale.PADDING_DIALOGO,_ui_scale.ESPACO_P))
         txt=tk.Text(holder,bg=PANEL,fg=TEXT,relief='flat',bd=0,wrap='word',
-                    font=('Segoe UI',10),padx=14,pady=12,width=80,height=22)
+                    font=(_ui_scale.FONTE_UI,_ui_scale.TAMANHO_CORPO),
+                    padx=_ui_scale.PADDING_CAIXA_TEXTO[0],pady=_ui_scale.PADDING_CAIXA_TEXTO[1])
         scroll=ttk.Scrollbar(holder,orient='vertical',command=txt.yview)
         txt.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');txt.pack(side='left',fill='both',expand=True)
         self._write(txt,bios_steps_text(self.report.get('bios_guidance') or {}))
-        ttk.Button(window,text='Fechar',command=window.destroy).pack(anchor='e',padx=12,pady=(0,12))
         self._bios_steps_window=window
         return window
 
@@ -1843,6 +1914,7 @@ class OptimizationPanel(tk.Frame):
 
     def show_checkup(self,result):
         """Janela só de leitura com o resultado do check-up (sem botão de mudar nada)."""
+        import ui_scale as _ui_scale
         old=getattr(self,'_checkup_window',None)
         if old is not None and old.winfo_exists():
             old.destroy()
@@ -1853,17 +1925,27 @@ class OptimizationPanel(tk.Frame):
         window=tk.Toplevel(self)
         window.title('Check-up de segurança (só leitura)')
         window.configure(bg=BG)
-        holder=tk.Frame(window,bg=PANEL);holder.pack(fill='both',expand=True,padx=12,pady=(12,6))
+        if hasattr(window,'winfo_screenwidth') and hasattr(window,'geometry'):
+            sw=window.winfo_screenwidth();sh=window.winfo_screenheight()
+            window.geometry(_ui_scale.safe_window_geometry(820,580,sw,sh))
+            if hasattr(window,'minsize'):
+                mw,mh=_ui_scale.safe_window_size(600,420,sw,sh)
+                window.minsize(mw,mh)
+        holder=tk.Frame(window,bg=PANEL)
+        holder.pack(fill='both',expand=True,padx=_ui_scale.PADDING_DIALOGO,pady=(_ui_scale.PADDING_DIALOGO,_ui_scale.ESPACO_P))
         txt=tk.Text(holder,bg=PANEL,fg=TEXT,relief='flat',bd=0,wrap='word',
-                    font=('Segoe UI',10),padx=14,pady=12,width=90,height=26)
+                    font=(_ui_scale.FONTE_UI,_ui_scale.TAMANHO_CORPO),
+                    padx=_ui_scale.PADDING_CAIXA_TEXTO[0],pady=_ui_scale.PADDING_CAIXA_TEXTO[1])
         scroll=ttk.Scrollbar(holder,orient='vertical',command=txt.yview)
         txt.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');txt.pack(side='left',fill='both',expand=True)
         self._write(txt,'\n'.join(checkup_engine.checkup_lines(result)))
-        ttk.Button(window,text='Fechar',command=window.destroy).pack(side='right',padx=12,pady=(0,12))
+        ttk.Button(window,text='Fechar',command=window.destroy).pack(
+            side='right',padx=_ui_scale.PADDING_DIALOGO,pady=(0,_ui_scale.PADDING_DIALOGO))
         # FIX-M3-T6: a janela resume as tarefas da Microsoft; o .txt traz cada uma.
         ttk.Button(window,text=CHECKUP_SAVE_FULL_BUTTON,
-                   command=lambda:self.save_checkup_full(result)).pack(side='left',padx=12,pady=(0,12))
+                   command=lambda:self.save_checkup_full(result)).pack(
+            side='left',padx=_ui_scale.PADDING_DIALOGO,pady=(0,_ui_scale.PADDING_DIALOGO))
         self._checkup_window=window
         return window
 
@@ -2130,7 +2212,7 @@ class OptimizationPanel(tk.Frame):
         self.btn_revert.state(['!disabled'] if can_revert else ['disabled'])
         if legacy:
             if not self.btn_legacy.winfo_manager():
-                self.btn_legacy.pack(side='left',padx=(9,0))
+                self.btn_legacy.pack(side='left',padx=(ESPACO_P,0))
             # FIX-P3-03-06/07 (R-30): com o diário desligado ou ausente, este botão também fica desligado.
             self.btn_legacy.state(['!disabled'] if usable and not busy else ['disabled'])
         elif self.btn_legacy.winfo_manager():
