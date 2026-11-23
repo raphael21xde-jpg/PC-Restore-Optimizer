@@ -29,9 +29,45 @@ from game_saves import find_game_saves, _roots as known_save_roots
 from scoped_saves import scoped_user_roots, incorporate_saves
 from unified_selection import index_cards, card_detail, decision_label
 from ui_timers import WindowTimers
+from ui_scale import (
+    COR_ALERTA,
+    COR_DESTAQUE,
+    COR_GRADE_GRAFICO,
+    COR_PAINEL,
+    COR_SELECAO,
+    COR_TEXTO,
+    ESPACO_FINO,
+    ESPACO_M,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    FONTE_UI,
+    PADDING_ABA_NOTEBOOK,
+    PADDING_DIALOGO,
+    TAMANHO_APOIO,
+    TAMANHO_CORPO,
+    TAMANHO_SUBTITULO,
+    TAMANHO_TITULO_ABA,
+    safe_window_geometry,
+    safe_window_size,
+    safe_wraplength,
+)
 import choices_store
 
 PAGE_SIZE = 120
+
+
+def _bind_wraplength(container, *labels, extra_fn=None):
+    """Atualiza o wraplength apenas quando o proprio container muda de largura."""
+    def _on_configure(event):
+        if event.widget is not container:
+            return
+        width = safe_wraplength(event.width, PADDING_DIALOGO)
+        for label in labels:
+            label.configure(wraplength=width)
+        if extra_fn is not None:
+            extra_fn(event.width)
+
+    container.bind('<Configure>', _on_configure)
 
 
 def show_deep_discovery(parent, container=None):
@@ -42,8 +78,12 @@ def show_deep_discovery(parent, container=None):
     win = parent if embedded else tk.Toplevel(parent)
     if not embedded:
         win.title('Meu Computador — varredura por unidade e preservação')
-        win.geometry('1220x800')
-    frame = ttk.Frame(container if embedded else win, padding=12)
+        screen_w, screen_h = win.winfo_screenwidth(), win.winfo_screenheight()
+        win.geometry(safe_window_geometry(1220, 800, screen_w, screen_h))
+        min_w, min_h = safe_window_size(760, 520, screen_w, screen_h)
+        win.minsize(min_w, min_h)
+        win.resizable(True, True)
+    frame = ttk.Frame(container if embedded else win, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
     cancel = threading.Event()
     ui_callbacks = Queue()
@@ -68,25 +108,27 @@ def show_deep_discovery(parent, container=None):
              'cache': {}, 'latest': set(), 'card_nodes': {}, 'child_owner': {}}
     status = tk.StringVar(value='Escolha a unidade. Varredura apenas de leitura; nada será apagado.')
     ttk.Label(frame, text='Meu Computador — Seleção Inteligente Unificada',
-              font=('Segoe UI', 16, 'bold')).pack(anchor='w')
-    ttk.Label(frame, text=(
+              font=(FONTE_UI, TAMANHO_TITULO_ABA, 'bold')).pack(anchor='w')
+    intro_label = ttk.Label(frame, text=(
         'Cada aba mostra somente arquivos da própria unidade, identificando o inventário atual ou salvo. Expanda jogos e pastas. '
         'As escolhas de jogos, dados e pastas usam um plano único. Pastas grandes são carregadas aos poucos. ' 'Manter NÃO substitui um backup do C:.'),
-        wraplength=1160).pack(anchor='w', pady=6)
+        wraplength=safe_wraplength(1220, PADDING_DIALOGO))
+    intro_label.pack(anchor='w', pady=ESPACO_P)
     hero = ttk.Frame(frame)
-    hero.pack(fill='x', pady=4)
-    ring = tk.Canvas(hero, width=90, height=90, bg='#192438', highlightthickness=0)
-    ring.pack(side='left', padx=(0, 14))
-    ring.create_oval(9, 9, 81, 81, outline='#334155', width=7)
-    arc = ring.create_arc(9, 9, 81, 81, start=90, extent=0, style='arc', outline='#9C85FF', width=7)
-    ring_text = ring.create_text(45, 45, text='Pronto', fill='#EFF4FF', font=('Segoe UI', 9, 'bold'))
-    ttk.Label(hero, textvariable=status, wraplength=710).pack(side='left', fill='x', expand=True)
+    hero.pack(fill='x', pady=ESPACO_MINIMO)
+    ring = tk.Canvas(hero, width=90, height=90, bg=COR_PAINEL, highlightthickness=0)
+    ring.pack(side='left', padx=(0, ESPACO_M))
+    ring.create_oval(9, 9, 81, 81, outline=COR_GRADE_GRAFICO, width=7)
+    arc = ring.create_arc(9, 9, 81, 81, start=90, extent=0, style='arc', outline=COR_DESTAQUE, width=7)
+    ring_text = ring.create_text(45, 45, text='Pronto', fill=COR_TEXTO, font=(FONTE_UI, TAMANHO_APOIO, 'bold'))
+    hero_status = ttk.Label(hero, textvariable=status, wraplength=safe_wraplength(760, PADDING_DIALOGO))
+    hero_status.pack(side='left', fill='x', expand=True)
     shortcuts = ttk.Frame(hero)
     shortcuts.pack(side='right')
     ttk.Button(shortcuts, text='+ Pasta pessoal',
-               command=lambda: parent.add_folder()).pack(fill='x', pady=2)
+               command=lambda: parent.add_folder()).pack(fill='x', pady=ESPACO_FINO)
     ttk.Button(shortcuts, text='+ Arquivo pessoal',
-               command=lambda: parent.add_file()).pack(fill='x', pady=2)
+               command=lambda: parent.add_file()).pack(fill='x', pady=ESPACO_FINO)
 
     def animate():
         if not state['busy']:
@@ -103,7 +145,7 @@ def show_deep_discovery(parent, container=None):
     for d in local_drives():
         var = tk.BooleanVar(value=True)
         roots.append((d, var))
-        ttk.Checkbutton(scope, text=d, variable=var).pack(side='left', padx=5)
+        ttk.Checkbutton(scope, text=d, variable=var).pack(side='left', padx=ESPACO_MINIMO)
     extras = []
 
     def add_root():
@@ -113,7 +155,7 @@ def show_deep_discovery(parent, container=None):
         if path:
             extras.append(path)
             status.set('Pasta adicionada à varredura: ' + path)
-    ttk.Button(scope, text='Adicionar pasta específica', command=add_root).pack(side='left', padx=8)
+    ttk.Button(scope, text='Adicionar pasta específica', command=add_root).pack(side='left', padx=ESPACO_P)
 
     def open_volume_inventory():
         """Read-only metadata view, including volumes without drive letters."""
@@ -123,17 +165,25 @@ def show_deep_discovery(parent, container=None):
         snapshot = collect_volume_inventory()
         popup = tk.Toplevel(win)
         popup.title('Inventário de volumes Windows — somente leitura')
-        popup.geometry('850x460')
-        pane = ttk.Frame(popup, padding=12)
+        popup_sw, popup_sh = popup.winfo_screenwidth(), popup.winfo_screenheight()
+        popup.geometry(safe_window_geometry(850, 460, popup_sw, popup_sh))
+        pmin_w, pmin_h = safe_window_size(520, 340, popup_sw, popup_sh)
+        popup.minsize(pmin_w, pmin_h)
+        popup.resizable(True, True)
+        pane = ttk.Frame(popup, padding=PADDING_DIALOGO)
         pane.pack(fill='both', expand=True)
         status_text = ('Consulta de metadados finalizada' if snapshot['status'] == 'ok'
                        else 'ATENÇÃO: inventário de volumes parcial ou indisponível')
-        ttk.Label(pane, text=status_text, font=('Segoe UI', 12, 'bold')).pack(anchor='w')
-        ttk.Label(pane, text=snapshot.get('notice', ''), wraplength=800).pack(anchor='w', pady=6)
+        ttk.Label(pane, text=status_text, font=(FONTE_UI, TAMANHO_SUBTITULO, 'bold')).pack(anchor='w')
+        notice_label = ttk.Label(pane, text=snapshot.get('notice', ''),
+                                 wraplength=safe_wraplength(850, PADDING_DIALOGO))
+        notice_label.pack(anchor='w', pady=ESPACO_P)
+        _bind_wraplength(pane, notice_label)
+        ttk.Button(pane, text='Fechar', command=popup.destroy).pack(side='bottom', anchor='e', pady=(ESPACO_P, 0))
         body = ttk.Frame(pane)
         body.pack(fill='both', expand=True)
-        viewer = tk.Text(body, wrap='word', background='#192438', foreground='#EFF4FF',
-                         insertbackground='#EFF4FF', relief='flat')
+        viewer = tk.Text(body, wrap='word', background=COR_PAINEL, foreground=COR_TEXTO,
+                         insertbackground=COR_TEXTO, relief='flat')
         scrollbar = ttk.Scrollbar(body, orient='vertical', command=viewer.yview)
         viewer.configure(yscrollcommand=scrollbar.set)
         viewer.pack(side='left', fill='both', expand=True)
@@ -151,24 +201,23 @@ def show_deep_discovery(parent, container=None):
         for issue in snapshot.get('issues', ()):
             viewer.insert('end', 'LACUNA: ' + issue + '\n')
         viewer.configure(state='disabled')
-        ttk.Button(pane, text='Fechar', command=popup.destroy).pack(anchor='e', pady=5)
 
-    ttk.Button(scope, text='Ver todos os volumes', command=open_volume_inventory).pack(side='left', padx=8)
+    ttk.Button(scope, text='Ver todos os volumes', command=open_volume_inventory).pack(side='left', padx=ESPACO_P)
 
     controls = ttk.Frame(frame)
-    controls.pack(fill='x', pady=5)
+    controls.pack(fill='x', pady=ESPACO_MINIMO)
     filter_var = tk.StringVar()
     ttk.Label(frame, text='Buscar jogos, aplicativos ou arquivos da unidade selecionada:').pack(anchor='w')
     ttk.Entry(frame, textvariable=filter_var).pack(fill='x')
 
     tabs = ttk.Notebook(frame)
-    tabs.pack(fill='x', pady=(8, 4))
+    tabs.pack(fill='x', pady=(ESPACO_P, ESPACO_MINIMO))
     tab_to_drive = {}
     drive_to_tab = {}
     tab_info = {}
     for d, _ in roots:
         letter = volume_of(d)
-        panel = ttk.Frame(tabs, padding=5)
+        panel = ttk.Frame(tabs, padding=PADDING_ABA_NOTEBOOK)
         info = ttk.Label(panel, text='Varredura ainda não concluída neste volume.')
         info.pack(anchor='w')
         tabs.add(panel, text=letter)
@@ -176,12 +225,12 @@ def show_deep_discovery(parent, container=None):
         drive_to_tab[letter] = panel
         tab_info[letter] = info
     if not roots:
-        panel = ttk.Frame(tabs, padding=5)
+        panel = ttk.Frame(tabs, padding=PADDING_ABA_NOTEBOOK)
         tabs.add(panel, text='Sem unidades')
         tab_to_drive[str(panel)] = None
 
     area = ttk.Frame(frame)
-    area.pack(fill='both', expand=True, pady=5)
+    area.pack(fill='both', expand=True, pady=ESPACO_MINIMO)
     tree = ttk.Treeview(area, columns=('choice', 'path', 'evidence'), show='tree headings',
                         selectmode='extended')
     tree.heading('#0', text='Jogos, aplicativos e pastas desta unidade')
@@ -508,8 +557,8 @@ def show_deep_discovery(parent, container=None):
                 ui_callbacks.put(lambda e=str(exc): finish(error=e))
         threading.Thread(target=worker, daemon=True).start()
 
-    ttk.Button(controls, text='Examinar unidades marcadas', command=start).pack(side='left', padx=4)
-    ttk.Button(controls, text='Cancelar (guardar resultado parcial)', command=cancel.set).pack(side='left', padx=4)
+    ttk.Button(controls, text='Examinar unidades marcadas', command=start).pack(side='left', padx=ESPACO_MINIMO)
+    ttk.Button(controls, text='Cancelar (guardar resultado parcial)', command=cancel.set).pack(side='left', padx=ESPACO_MINIMO)
 
     def import_previous_inventory():
         """Load old read-only scan snapshots without discarding current results."""
@@ -543,14 +592,14 @@ def show_deep_discovery(parent, container=None):
             messagebox.showerror('Falha ao importar inventário', str(exc), parent=win)
 
     ttk.Button(controls, text='Importar inventário anterior',
-               command=import_previous_inventory).pack(side='left', padx=4)
+               command=import_previous_inventory).pack(side='left', padx=ESPACO_MINIMO)
 
     def show_gaps():
         if not state['report']:
             return
         from workflow_ui import show_scan_gaps
         show_scan_gaps(parent, state['report'], state['cache'])
-    ttk.Button(controls, text='Erros e exclusões', command=show_gaps).pack(side='left', padx=4)
+    ttk.Button(controls, text='Erros e exclusões', command=show_gaps).pack(side='left', padx=ESPACO_MINIMO)
 
     def export():
         if not state['report']:
@@ -560,7 +609,7 @@ def show_deep_discovery(parent, container=None):
                                          filetypes=[('JSON', '*.json')])
         if p:
             atomic_json(p, state['report'])
-    ttk.Button(controls, text='Exportar relatório', command=export).pack(side='left', padx=4)
+    ttk.Button(controls, text='Exportar relatório', command=export).pack(side='left', padx=ESPACO_MINIMO)
 
     def selections():
         """Return (chosen cards, explicit leaf paths); never select a category implicitly."""
@@ -594,30 +643,39 @@ def show_deep_discovery(parent, container=None):
         detail = card_detail(card, parent.catalog_items, parent.approved_catalog_paths)
         dialog = tk.Toplevel(win)
         dialog.title('Ficha de preservação — ' + card['name'])
-        dialog.geometry('850x610')
-        body = ttk.Frame(dialog, padding=18)
+        d_sw, d_sh = dialog.winfo_screenwidth(), dialog.winfo_screenheight()
+        dialog.geometry(safe_window_geometry(850, 610, d_sw, d_sh))
+        dmin_w, dmin_h = safe_window_size(540, 400, d_sw, d_sh)
+        dialog.minsize(dmin_w, dmin_h)
+        dialog.resizable(True, True)
+        body = ttk.Frame(dialog, padding=PADDING_DIALOGO)
         body.pack(fill='both', expand=True)
-        ttk.Label(body, text=card['name'], font=('Segoe UI', 17, 'bold')).pack(anchor='w')
-        ttk.Label(body, text=f"Unidade atual: {card['drive']}  •  Escolha: {decision_label(detail['choice'])}").pack(anchor='w', pady=(7, 12))
+        ttk.Label(body, text=card['name'], font=(FONTE_UI, TAMANHO_TITULO_ABA, 'bold')).pack(anchor='w')
+        ttk.Label(body, text=f"Unidade atual: {card['drive']}  •  Escolha: {decision_label(detail['choice'])}").pack(anchor='w', pady=(ESPACO_P, ESPACO_M))
         location = detail['install'] or 'Local de instalação não confirmado'
-        ttk.Label(body, text='INSTALAÇÃO: ' + location, wraplength=770).pack(anchor='w', pady=(0, 9))
-        ttk.Label(body, text='Dados associados e confirmados:', font=('Segoe UI',10,'bold')).pack(anchor='w')
-        known = tk.Text(body, height=5, bg='#192438', fg='#EFF4FF', wrap='word', relief='flat')
-        known.pack(fill='x', pady=(4, 12))
+        install_label = ttk.Label(body, text='INSTALAÇÃO: ' + location,
+                                  wraplength=safe_wraplength(850, PADDING_DIALOGO))
+        install_label.pack(anchor='w', pady=(0, ESPACO_P))
+        ttk.Label(body, text='Dados associados e confirmados:', font=(FONTE_UI, TAMANHO_CORPO, 'bold')).pack(anchor='w')
+        known = tk.Text(body, height=5, bg=COR_PAINEL, fg=COR_TEXTO, wrap='word', relief='flat')
+        known.pack(fill='x', pady=(ESPACO_MINIMO, ESPACO_M))
         known.insert('1.0', '\n'.join(detail['confirmed']) or 'Nenhum arquivo de save/configuração confirmado.')
         known.config(state='disabled')
-        ttk.Label(body, text='Possíveis caminhos encontrados — confirme apenas se pertencerem a este item:',
-                  wraplength=770).pack(anchor='w')
-        path_list = tk.Listbox(body, selectmode='extended', height=8, bg='#192438',
-                               fg='#EFF4FF', selectbackground='#394C75', relief='flat')
-        path_list.pack(fill='both', expand=True, pady=(5, 7))
+        candidates_label = ttk.Label(body, text='Possíveis caminhos encontrados — confirme apenas se pertencerem a este item:',
+                                     wraplength=safe_wraplength(850, PADDING_DIALOGO))
+        candidates_label.pack(anchor='w')
+        buttons = ttk.Frame(body)
+        buttons.pack(side='bottom', fill='x', pady=(ESPACO_P, 0))
+        warn_label = ttk.Label(body, text='Se o save confirmado estiver no C:, será necessário copiar e verificar '
+                               'antes da reinstalação. Este painel não copia nem apaga arquivos.',
+                               foreground=COR_ALERTA, wraplength=safe_wraplength(850, PADDING_DIALOGO))
+        warn_label.pack(side='bottom', anchor='w', pady=(ESPACO_FINO, ESPACO_P))
+        path_list = tk.Listbox(body, selectmode='extended', height=8, bg=COR_PAINEL,
+                               fg=COR_TEXTO, selectbackground=COR_SELECAO, relief='flat')
+        path_list.pack(fill='both', expand=True, pady=(ESPACO_MINIMO, ESPACO_P))
         for path in detail['candidates']:
             path_list.insert('end', path)
-        ttk.Label(body, text='Se o save confirmado estiver no C:, será necessário copiar e verificar '
-                  'antes da reinstalação. Este painel não copia nem apaga arquivos.',
-                  foreground='#F3BE67', wraplength=765).pack(anchor='w', pady=(2, 8))
-        buttons = ttk.Frame(body)
-        buttons.pack(fill='x', pady=5)
+        _bind_wraplength(body, install_label, candidates_label, warn_label)
         def confirm_candidates():
             chosen = [detail['candidates'][n] for n in path_list.curselection()]
             invalid = paths_unsafe(chosen)
@@ -755,15 +813,24 @@ def show_deep_discovery(parent, container=None):
         render()
 
     bottom = ttk.Frame(frame)
-    bottom.pack(fill='x', pady=5, before=area)
-    ttk.Button(bottom, text='Manter selecionados', command=approve).pack(side='left', padx=4)
-    ttk.Button(bottom, text='Não preservar', command=skip).pack(side='left', padx=4)
-    ttk.Button(bottom, text='Candidato à remoção (prévia)', command=mark_removal_candidate).pack(side='left', padx=4)
-    ttk.Button(bottom, text='Retirar sinalização', command=clear_removal_candidate).pack(side='left', padx=4)
-    ttk.Button(bottom, text='Abrir ficha do jogo/app', command=open_card).pack(side='left', padx=4)
+    bottom.pack(fill='x', pady=ESPACO_MINIMO, before=area)
+    ttk.Button(bottom, text='Manter selecionados', command=approve).pack(side='left', padx=ESPACO_MINIMO)
+    ttk.Button(bottom, text='Não preservar', command=skip).pack(side='left', padx=ESPACO_MINIMO)
+    ttk.Button(bottom, text='Candidato à remoção (prévia)', command=mark_removal_candidate).pack(side='left', padx=ESPACO_MINIMO)
+    ttk.Button(bottom, text='Retirar sinalização', command=clear_removal_candidate).pack(side='left', padx=ESPACO_MINIMO)
+    ttk.Button(bottom, text='Abrir ficha do jogo/app', command=open_card).pack(side='left', padx=ESPACO_MINIMO)
     ttk.Button(bottom, text='Ver Preservação →',
-               command=lambda: parent.navigate(parent.preservation)).pack(side='right', padx=4)
-    ttk.Label(frame, textvariable=status, wraplength=1150).pack(anchor='w', pady=7)
+               command=lambda: parent.navigate(parent.preservation)).pack(side='right', padx=ESPACO_MINIMO)
+    footer_status = ttk.Label(frame, textvariable=status, wraplength=safe_wraplength(1220, PADDING_DIALOGO))
+    footer_status.pack(anchor='w', pady=ESPACO_P)
+    _bind_wraplength(
+        frame,
+        intro_label,
+        footer_status,
+        extra_fn=lambda width: hero_status.configure(
+            wraplength=safe_wraplength(max(360, width - 280), PADDING_DIALOGO)
+        ),
+    )
 
     def close():
         if state['busy']:
