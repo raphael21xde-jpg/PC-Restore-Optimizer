@@ -359,7 +359,7 @@ def build_preservation(app):
     ttk.Button(bar, text='Exportar JSON', command=export).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     ttk.Button(bar, text='Revisar erros de varredura',
                command=lambda: show_scan_gaps(app, getattr(app, 'deep_scan_report', {}),
-                                              getattr(app, 'scan_reports_by_drive', {}))).pack(side='left')
+                                              getattr(app, 'scan_reports_by_drive', {}))).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     checkbar = ttk.Frame(frame)
     checkbar.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
     ttk.Button(checkbar, text=f'Conferir fontes do {sys_drive} (sem copiar)',
@@ -502,7 +502,7 @@ def build_installation(app):
                            removal_candidates=getattr(app, 'cleanup_candidates', ()))
         show_completeness_audit(app, plan)
     ttk.Button(bottom, text=f'Auditoria {sys_drive} / EFI • v0.6.9',
-               command=open_install_audit).pack(side='left')
+               command=open_install_audit).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     instructions = installation_steps(sys_drive)
     tiles = tk.Frame(frame, bg=BG)
     tiles.pack(fill='both', expand=True)
