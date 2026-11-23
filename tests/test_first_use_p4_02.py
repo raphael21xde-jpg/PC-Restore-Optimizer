@@ -143,7 +143,9 @@ def _scope_binds_name(stmts, name: str) -> bool:
                 pending.extend(d for d in node.args.kw_defaults if d is not None)
             continue
         if isinstance(node, ast.Lambda):
+            # FIX-P4-02-08: como no def, os padrões só-nome também rodam aqui
             pending.extend(node.args.defaults)
+            pending.extend(d for d in node.args.kw_defaults if d is not None)
             continue
         if isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
             return True
@@ -572,6 +574,9 @@ class FirstUseTextsAndAstTests(unittest.TestCase):
             'import de novo': 'import tkinter.ttk as ttk\n',
             'segundo from tkinter': 'from tkinter import ttk\n',
             'global ttk numa função': 'def f():\n    global ttk\n    ttk = None\n',
+            # FIX-P4-02-08 (ressalva R1 da PR #306): lambda igual ao def
+            'walrus no padrão da lambda': 'h = lambda a=(ttk := 1): 0\n',
+            'walrus no padrão só-nome da lambda': 'h = lambda *, a=(ttk := 1): 0\n',
         }
         for name, code in module_mutations.items():
             for where in ('antes', 'depois'):
