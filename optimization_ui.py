@@ -64,12 +64,15 @@ from ui_scale import (
     GREEN,
     MUTED,
     PADDING_CAIXA_TEXTO,
+    PADDING_DIALOGO,
     PADDING_PAINEL_COMPACTO,
     PANEL,
     TAMANHO_APOIO,
     TAMANHO_CORPO,
     TAMANHO_SUBTITULO,
     TEXT,
+    safe_window_geometry,
+    safe_window_size,
     safe_wraplength,
 )
 
@@ -1842,7 +1845,6 @@ class OptimizationPanel(tk.Frame):
         """Janela só de leitura com o passo a passo da BIOS (sem link, sem download, sem timer)."""
         if not self.report:
             return None
-        import ui_scale as _ui_scale
         old=getattr(self,'_bios_steps_window',None)
         if old is not None and old.winfo_exists():
             old.destroy()
@@ -1851,17 +1853,17 @@ class OptimizationPanel(tk.Frame):
         window.configure(bg=BG)
         if hasattr(window,'winfo_screenwidth') and hasattr(window,'geometry'):
             sw=window.winfo_screenwidth();sh=window.winfo_screenheight()
-            window.geometry(_ui_scale.safe_window_geometry(760,520,sw,sh))
+            window.geometry(safe_window_geometry(760,520,sw,sh))
             if hasattr(window,'minsize'):
-                mw,mh=_ui_scale.safe_window_size(560,380,sw,sh)
+                mw,mh=safe_window_size(560,380,sw,sh)
                 window.minsize(mw,mh)
         ttk.Button(window,text='Fechar',command=window.destroy).pack(
-            side='bottom',anchor='e',padx=_ui_scale.PADDING_DIALOGO,pady=(0,_ui_scale.PADDING_DIALOGO))
+            side='bottom',anchor='e',padx=PADDING_DIALOGO,pady=(0,PADDING_DIALOGO))
         holder=tk.Frame(window,bg=PANEL)
-        holder.pack(fill='both',expand=True,padx=_ui_scale.PADDING_DIALOGO,pady=(_ui_scale.PADDING_DIALOGO,_ui_scale.ESPACO_P))
+        holder.pack(fill='both',expand=True,padx=PADDING_DIALOGO,pady=(PADDING_DIALOGO,ESPACO_P))
         txt=tk.Text(holder,bg=PANEL,fg=TEXT,relief='flat',bd=0,wrap='word',
-                    font=(_ui_scale.FONTE_UI,_ui_scale.TAMANHO_CORPO),
-                    padx=_ui_scale.PADDING_CAIXA_TEXTO[0],pady=_ui_scale.PADDING_CAIXA_TEXTO[1])
+                    font=(FONTE_UI,TAMANHO_CORPO),
+                    padx=PADDING_CAIXA_TEXTO[0],pady=PADDING_CAIXA_TEXTO[1])
         scroll=ttk.Scrollbar(holder,orient='vertical',command=txt.yview)
         txt.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');txt.pack(side='left',fill='both',expand=True)
@@ -1914,7 +1916,6 @@ class OptimizationPanel(tk.Frame):
 
     def show_checkup(self,result):
         """Janela só de leitura com o resultado do check-up (sem botão de mudar nada)."""
-        import ui_scale as _ui_scale
         old=getattr(self,'_checkup_window',None)
         if old is not None and old.winfo_exists():
             old.destroy()
@@ -1927,25 +1928,25 @@ class OptimizationPanel(tk.Frame):
         window.configure(bg=BG)
         if hasattr(window,'winfo_screenwidth') and hasattr(window,'geometry'):
             sw=window.winfo_screenwidth();sh=window.winfo_screenheight()
-            window.geometry(_ui_scale.safe_window_geometry(820,580,sw,sh))
+            window.geometry(safe_window_geometry(820,580,sw,sh))
             if hasattr(window,'minsize'):
-                mw,mh=_ui_scale.safe_window_size(600,420,sw,sh)
+                mw,mh=safe_window_size(600,420,sw,sh)
                 window.minsize(mw,mh)
         holder=tk.Frame(window,bg=PANEL)
-        holder.pack(fill='both',expand=True,padx=_ui_scale.PADDING_DIALOGO,pady=(_ui_scale.PADDING_DIALOGO,_ui_scale.ESPACO_P))
+        holder.pack(fill='both',expand=True,padx=PADDING_DIALOGO,pady=(PADDING_DIALOGO,ESPACO_P))
         txt=tk.Text(holder,bg=PANEL,fg=TEXT,relief='flat',bd=0,wrap='word',
-                    font=(_ui_scale.FONTE_UI,_ui_scale.TAMANHO_CORPO),
-                    padx=_ui_scale.PADDING_CAIXA_TEXTO[0],pady=_ui_scale.PADDING_CAIXA_TEXTO[1])
+                    font=(FONTE_UI,TAMANHO_CORPO),
+                    padx=PADDING_CAIXA_TEXTO[0],pady=PADDING_CAIXA_TEXTO[1])
         scroll=ttk.Scrollbar(holder,orient='vertical',command=txt.yview)
         txt.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y');txt.pack(side='left',fill='both',expand=True)
         self._write(txt,'\n'.join(checkup_engine.checkup_lines(result)))
         ttk.Button(window,text='Fechar',command=window.destroy).pack(
-            side='right',padx=_ui_scale.PADDING_DIALOGO,pady=(0,_ui_scale.PADDING_DIALOGO))
+            side='right',padx=PADDING_DIALOGO,pady=(0,PADDING_DIALOGO))
         # FIX-M3-T6: a janela resume as tarefas da Microsoft; o .txt traz cada uma.
         ttk.Button(window,text=CHECKUP_SAVE_FULL_BUTTON,
                    command=lambda:self.save_checkup_full(result)).pack(
-            side='left',padx=_ui_scale.PADDING_DIALOGO,pady=(0,_ui_scale.PADDING_DIALOGO))
+            side='left',padx=PADDING_DIALOGO,pady=(0,PADDING_DIALOGO))
         self._checkup_window=window
         return window
 
