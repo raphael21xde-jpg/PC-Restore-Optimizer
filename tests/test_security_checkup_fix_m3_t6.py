@@ -387,13 +387,19 @@ class SaveWithoutTkTests(unittest.TestCase):
         self.dialog = []
         self.shown = []
         self.notes = []
+        import ui_scale
         dialog = types.SimpleNamespace(asksaveasfilename=self._dialog)
         _FakeButton.created = []
         namespace = dict(self.texts, tk=types.SimpleNamespace(Toplevel=_FakeToplevel, Frame=_FakeWidget,
                                                               Text=_FakeWidget),
                          ttk=types.SimpleNamespace(Scrollbar=_FakeWidget, Button=_FakeButton),
                          BG='#000', PANEL='#111', TEXT='#fff', checkup_engine=sc, filedialog=dialog,
-                         time=time, Path=Path, atomic_write_text=atomic_write.atomic_write_text)
+                         time=time, Path=Path, atomic_write_text=atomic_write.atomic_write_text,
+                         PADDING_DIALOGO=ui_scale.PADDING_DIALOGO, ESPACO_P=ui_scale.ESPACO_P,
+                         FONTE_UI=ui_scale.FONTE_UI, TAMANHO_CORPO=ui_scale.TAMANHO_CORPO,
+                         PADDING_CAIXA_TEXTO=ui_scale.PADDING_CAIXA_TEXTO,
+                         safe_window_geometry=ui_scale.safe_window_geometry,
+                         safe_window_size=ui_scale.safe_window_size)
         module = ast.Module(body=[_function('show_checkup'), _function('save_checkup_full')], type_ignores=[])
         exec(compile(module, 'optimization_ui.py', 'exec'), namespace)
         self.namespace = namespace
