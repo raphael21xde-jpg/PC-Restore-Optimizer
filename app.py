@@ -63,21 +63,49 @@ from plaintext_passwords import TITLE as PASSWORDS_TITLE, alert_lines as passwor
 from plaintext_passwords import find_password_exports, scan_paths as scan_password_paths
 from plaintext_passwords import user_folders
 from winget_programs import export_after_backup
+from ui_scale import (
+    BG,
+    PANEL,
+    SIDEBAR,
+    TEXT,
+    MUTED,
+    ACCENT,
+    GREEN,
+    AMBER,
+    BORDER,
+    HOVER,
+    WHITE,
+    COR_DESTAQUE_ATIVO,
+    COR_SELECAO,
+    FONTE_UI,
+    FONTE_MONO,
+    FONTE_SIMBOLO,
+    TAMANHO_APOIO,
+    TAMANHO_CORPO,
+    TAMANHO_SUBTITULO,
+    TAMANHO_TITULO_MODAL,
+    TAMANHO_TITULO_ABA,
+    TAMANHO_TITULO_HERO,
+    ESPACO_FINO,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    ESPACO_M,
+    ESPACO_G,
+    ESPACO_GG,
+    PADDING_DIALOGO,
+    PADDING_CAIXA_TEXTO,
+    ESPACO_ENTRE_BOTOES,
+    PADDING_BOTAO,
+    PADDING_CAMPO_ENTRADA,
+    PADDING_TITULO_ABA,
+    PADDING_CABECALHO_TABELA,
+    ALTURA_LINHA_TABELA,
+    ALTURA_MINIMA_TABELA_LINHAS,
+    safe_window_geometry,
+    safe_window_size,
+)
 
 APP_VERSION = "0.7.0-dev"
-
-# Interface 0.5.4.1 — tokens visuais centralizados (alto contraste + teclado).
-BG = '#0C1220'
-PANEL = '#192438'
-TEXT = '#EFF4FF'
-MUTED = '#9CAAC0'
-ACCENT = '#9C85FF'
-GREEN = '#5DDEB1'
-SIDEBAR = '#10192A'
-BORDER = '#2B3952'
-HOVER = '#27334A'
-WHITE = '#FFFFFF'
-AMBER = '#F3BE67'
 
 DISKS = ''.join(discover_drive_letters())
 
@@ -98,25 +126,28 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f'PC Restore & Optimizer | v{APP_VERSION} — Plano Inteligente')
-        self.geometry('1400x875')
-        self.minsize(1050, 660)
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        self.geometry(safe_window_geometry(1400, 875, screen_w, screen_h))
+        min_w, min_h = safe_window_size(1050, 660, screen_w, screen_h, min_w=640, min_h=480)
+        self.minsize(min_w, min_h)
         self.configure(bg=BG)
         self.style = ttk.Style(self)
         self.style.theme_use('clam')
-        self.style.configure('.', font=('Segoe UI', 10), background=BG, foreground=TEXT)
+        self.style.configure('.', font=(FONTE_UI, TAMANHO_CORPO), background=BG, foreground=TEXT)
         self.style.configure('TFrame', background=BG)
         self.style.configure('TLabel', background=BG, foreground=TEXT)
-        self.style.configure('TButton', background=PANEL, foreground=TEXT, padding=(14, 10), borderwidth=0, font=('Segoe UI', 10))
+        self.style.configure('TButton', background=PANEL, foreground=TEXT, padding=PADDING_BOTAO, borderwidth=0, font=(FONTE_UI, TAMANHO_CORPO))
         self.style.map('TButton', background=[('active', HOVER), ('disabled', PANEL)], foreground=[('disabled', MUTED)])
         self.style.configure('Primary.TButton', background=ACCENT, foreground=BG,
-                             padding=(16, 11), borderwidth=0, font=('Segoe UI', 10, 'bold'))
-        self.style.map('Primary.TButton', background=[('active', '#B2A2FF'), ('disabled', BORDER)],
+                             padding=PADDING_BOTAO, borderwidth=0, font=(FONTE_UI, TAMANHO_CORPO, 'bold'))
+        self.style.map('Primary.TButton', background=[('active', COR_DESTAQUE_ATIVO), ('disabled', BORDER)],
                        foreground=[('disabled', MUTED)])
         self.style.configure('Subtle.TButton', background=SIDEBAR, foreground=TEXT,
-                             padding=(13, 10), borderwidth=0)
+                             padding=PADDING_BOTAO, borderwidth=0)
         self.style.map('Subtle.TButton', background=[('active', HOVER)])
         self.style.configure('TEntry', fieldbackground=PANEL, foreground=TEXT, insertcolor=TEXT,
-                             padding=7, bordercolor=BORDER)
+                             padding=PADDING_CAMPO_ENTRADA, bordercolor=BORDER)
         self.style.configure('TScrollbar', background=HOVER, troughcolor=BG, borderwidth=0)
         for axis in ('Horizontal', 'Vertical'):
             self.style.configure(axis+'.TScrollbar', background=HOVER, troughcolor=PANEL,
@@ -127,13 +158,13 @@ class App(tk.Tk):
         self.style.layout('Hidden.TNotebook.Tab', [])
         self.style.configure('Hidden.TNotebook', background=BG, borderwidth=0, bordercolor=BG, lightcolor=BG, darkcolor=BG)
         self.style.configure('TNotebook', background=BG, borderwidth=0)
-        self.style.configure('TNotebook.Tab', padding=(18, 11), background=PANEL, foreground=MUTED, font=('Segoe UI', 10))
+        self.style.configure('TNotebook.Tab', padding=PADDING_TITULO_ABA, background=PANEL, foreground=MUTED, font=(FONTE_UI, TAMANHO_CORPO))
         self.style.map('TNotebook.Tab', background=[('selected', HOVER)],foreground=[('selected', TEXT)])
         self.style.configure('Treeview', background=PANEL, fieldbackground=PANEL,
-                             foreground=TEXT, rowheight=34, borderwidth=0, font=('Segoe UI', 10))
-        self.style.configure('Treeview.Heading', background=HOVER, foreground=TEXT, font=('Segoe UI', 10, 'bold'), padding=(8, 10))
-        self.style.map('Treeview', background=[('selected', '#394C75')])
-        self.style.configure('TCheckbutton', background=BG, foreground=TEXT, font=('Segoe UI', 10))
+                             foreground=TEXT, rowheight=ALTURA_LINHA_TABELA, borderwidth=0, font=(FONTE_UI, TAMANHO_CORPO))
+        self.style.configure('Treeview.Heading', background=HOVER, foreground=TEXT, font=(FONTE_UI, TAMANHO_CORPO, 'bold'), padding=PADDING_CABECALHO_TABELA)
+        self.style.map('Treeview', background=[('selected', COR_SELECAO)])
+        self.style.configure('TCheckbutton', background=BG, foreground=TEXT, font=(FONTE_UI, TAMANHO_CORPO))
         self.style.map('TCheckbutton',background=[('active',BG),('selected',BG),('focus',BG)],foreground=[('active',TEXT),('selected',TEXT)])
         self.style.configure('TCombobox',fieldbackground=PANEL,background=PANEL,foreground=TEXT,selectforeground=TEXT,selectbackground=PANEL)
         self.style.map('TCombobox',fieldbackground=[('readonly',PANEL)],foreground=[('readonly',TEXT)])
@@ -185,8 +216,8 @@ class App(tk.Tk):
         self.catalog_status.set('Catálogo global ainda não pesquisado. Clique em Pesquisar jogos e apps para iniciá-lo.')
         self.protocol('WM_DELETE_WINDOW', self._quit)
 
-    def label(self, parent, text, size=10, fg=TEXT, **kwargs):
-        w = tk.Label(parent, text=text, font=('Segoe UI', size), fg=fg, bg=BG,
+    def label(self, parent, text, size=TAMANHO_CORPO, fg=TEXT, **kwargs):
+        w = tk.Label(parent, text=text, font=(FONTE_UI, size), fg=fg, bg=BG,
                      justify='left', anchor='w', **kwargs)
         return w
 
@@ -202,32 +233,32 @@ class App(tk.Tk):
         workspace = tk.Frame(shell, bg=BG)
         workspace.pack(side='left', fill='both', expand=True)
         self.page_header = tk.Frame(workspace, bg=BG)
-        self.page_header.pack(fill='x', padx=26, pady=(20, 14))
+        self.page_header.pack(fill='x', padx=ESPACO_G, pady=(ESPACO_M, ESPACO_M))
         left = tk.Frame(self.page_header, bg=BG)
         left.pack(side='left', fill='x', expand=True)
         self.page_eyebrow = tk.StringVar(value='VISÃO GERAL  /  ÁREA DE TRABALHO')
         self.page_title = tk.StringVar(value='Seu PC, seus dados, suas escolhas')
         self.page_description = tk.StringVar(value='Gerencie uma reinstalação com clareza, etapa por etapa.')
         tk.Label(left, textvariable=self.page_eyebrow, fg=ACCENT, bg=BG,
-                 font=('Segoe UI', 9, 'bold'), anchor='w').pack(anchor='w')
+                 font=(FONTE_UI, TAMANHO_APOIO, 'bold'), anchor='w').pack(anchor='w')
         tk.Label(left, textvariable=self.page_title, fg=TEXT, bg=BG,
-                 font=('Segoe UI', 21, 'bold'), anchor='w').pack(anchor='w', pady=(4, 2))
+                 font=(FONTE_UI, TAMANHO_TITULO_HERO, 'bold'), anchor='w').pack(anchor='w', pady=(ESPACO_MINIMO, ESPACO_FINO))
         tk.Label(left, textvariable=self.page_description, fg=MUTED, bg=BG,
-                 font=('Segoe UI', 10), anchor='w').pack(anchor='w')
+                 font=(FONTE_UI, TAMANHO_CORPO), anchor='w').pack(anchor='w')
         tk.Label(self.page_header, text='●  MODO SEGURO', bg=PANEL, fg=GREEN,
-                 font=('Segoe UI', 9, 'bold'), padx=16, pady=10,
-                 highlightbackground=BORDER, highlightthickness=1).pack(side='right', padx=(12, 0))
+                 font=(FONTE_UI, TAMANHO_APOIO, 'bold'), padx=ESPACO_M, pady=ESPACO_P,
+                 highlightbackground=BORDER, highlightthickness=1).pack(side='right', padx=(ESPACO_M, 0))
 
         footer = tk.Frame(workspace, bg=SIDEBAR, height=39)
         footer.pack(fill='x', side='bottom')
         footer.pack_propagate(False)
         tk.Label(footer, textvariable=self.status, bg=SIDEBAR, fg=MUTED,
-                 anchor='w', font=('Segoe UI', 9)).pack(side='left', fill='x', expand=True, padx=24)
+                 anchor='w', font=(FONTE_UI, TAMANHO_APOIO)).pack(side='left', fill='x', expand=True, padx=ESPACO_G)
         tk.Label(footer, text='Sem exclusão • sem formatação', bg=SIDEBAR,
-                 fg=GREEN, font=('Segoe UI', 9)).pack(side='right', padx=20)
+                 fg=GREEN, font=(FONTE_UI, TAMANHO_APOIO)).pack(side='right', padx=ESPACO_M)
 
         self.tabs = ttk.Notebook(workspace, style='Hidden.TNotebook')
-        self.tabs.pack(fill='both', expand=True, padx=(22, 22), pady=(0, 10))
+        self.tabs.pack(fill='both', expand=True, padx=ESPACO_G, pady=(0, ESPACO_P))
         self.overview = ttk.Frame(self.tabs)
         self.home = ttk.Frame(self.tabs)
         self.preservation = ttk.Frame(self.tabs)
@@ -251,9 +282,9 @@ class App(tk.Tk):
 
         build_overview(self)
         ttk.Button(self.overview, text='Primeiro uso guiado  →', style='Primary.TButton',
-                   command=self.open_first_use).pack(anchor='w', padx=16, pady=(0, 8))
+                   command=self.open_first_use).pack(anchor='w', padx=ESPACO_M, pady=(0, ESPACO_P))
         ttk.Button(self.overview, text='Depois de formatar  →', style='Primary.TButton',
-                   command=self.open_after_format).pack(anchor='w', padx=16, pady=(0, 12))
+                   command=self.open_after_format).pack(anchor='w', padx=ESPACO_M, pady=(0, ESPACO_M))
         self._build_home()
         build_preservation(self)
         build_installation(self)
@@ -277,14 +308,14 @@ class App(tk.Tk):
 
     def _build_sidebar(self):
         brand = tk.Frame(self.sidebar, bg=SIDEBAR)
-        brand.pack(fill='x', padx=22, pady=(28, 30))
-        tk.Label(brand, text='◈', bg=SIDEBAR, fg=ACCENT, font=('Segoe UI Symbol', 24)).pack(side='left', padx=(0, 9))
+        brand.pack(fill='x', padx=ESPACO_G, pady=(ESPACO_GG, ESPACO_GG))
+        tk.Label(brand, text='◈', bg=SIDEBAR, fg=ACCENT, font=(FONTE_SIMBOLO, 24)).pack(side='left', padx=(0, ESPACO_P))
         text_container=tk.Frame(brand,bg=SIDEBAR)
         text_container.pack(side='left', anchor='w')
         tk.Label(text_container, text='PC RESTORE', bg=SIDEBAR, fg=WHITE,
-                 font=('Segoe UI', 14, 'bold')).pack(anchor='w')
+                 font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold')).pack(anchor='w')
         tk.Label(text_container, text=f'& OPTIMIZER  •  v{APP_VERSION}', bg=SIDEBAR, fg=MUTED,
-                 font=('Segoe UI', 8)).pack(anchor='w')
+                 font=(FONTE_UI, TAMANHO_APOIO)).pack(anchor='w')
         self.nav_buttons = {}
         self._nav_heading('MENU PRINCIPAL')
         self._nav_entry('overview', '⌂', 'Visão geral')
@@ -306,28 +337,28 @@ class App(tk.Tk):
         tk.Frame(self.sidebar, bg=SIDEBAR).pack(fill='both',expand=True)
         notice = tk.Frame(self.sidebar, bg=PANEL, highlightthickness=1,
                           highlightbackground=BORDER)
-        notice.pack(fill='x', padx=15, pady=(0, 18))
+        notice.pack(fill='x', padx=ESPACO_M, pady=(0, ESPACO_M))
         tk.Label(notice, text='BACKUP NÃO VERIFICADO NESTA TELA', bg=PANEL,
-                 fg=AMBER, font=('Segoe UI', 8, 'bold'), anchor='w').pack(fill='x', padx=13, pady=(12, 5))
+                 fg=AMBER, font=(FONTE_UI, TAMANHO_APOIO, 'bold'), anchor='w').pack(fill='x', padx=ESPACO_M, pady=(ESPACO_M, ESPACO_MINIMO))
         tk.Label(notice, text='Detecção não protege dados. Antes da reinstalação, valide seu backup e o destino.',
                  bg=PANEL, fg=MUTED, justify='left', wraplength=182,
-                 font=('Segoe UI', 9)).pack(fill='x', padx=13, pady=(0, 12))
+                 font=(FONTE_UI, TAMANHO_APOIO)).pack(fill='x', padx=ESPACO_M, pady=(0, ESPACO_M))
         tk.Label(self.sidebar, text=f'v{APP_VERSION}  •  PLANO SEGURO / PRÉVIA', bg=SIDEBAR,
-                 fg=MUTED, font=('Segoe UI', 8)).pack(anchor='w', padx=22, pady=(0, 17))
+                 fg=MUTED, font=(FONTE_UI, TAMANHO_APOIO)).pack(anchor='w', padx=ESPACO_G, pady=(0, ESPACO_M))
 
     def _nav_heading(self, heading):
         tk.Label(self.sidebar, text=heading, bg=SIDEBAR, fg=MUTED,
-                 font=('Segoe UI', 8, 'bold'), anchor='w').pack(fill='x', padx=22, pady=(4, 11))
+                 font=(FONTE_UI, TAMANHO_APOIO, 'bold'), anchor='w').pack(fill='x', padx=ESPACO_G, pady=(ESPACO_MINIMO, ESPACO_P))
 
     def _nav_entry(self, key, symbol, text):
         holder = tk.Frame(self.sidebar, bg=SIDEBAR)
-        holder.pack(fill='x', padx=10, pady=2)
+        holder.pack(fill='x', padx=ESPACO_P, pady=ESPACO_FINO)
         stripe = tk.Frame(holder, bg=SIDEBAR, width=4)
         stripe.pack(side='left', fill='y')
         label=tk.Label(holder, text=f'{symbol}    {text}', bg=SIDEBAR, fg=MUTED,
-                       anchor='w', padx=12, pady=11, cursor='hand2', takefocus=True,
+                       anchor='w', padx=ESPACO_M, pady=ESPACO_P, cursor='hand2', takefocus=True,
                        highlightbackground=SIDEBAR, highlightcolor=ACCENT, highlightthickness=1,
-                       font=('Segoe UI', 10))
+                       font=(FONTE_UI, TAMANHO_CORPO))
         label.pack(side='left', fill='x', expand=True)
         self.nav_buttons[key] = (holder, stripe, label)
         target_name = 'home' if key=='home' else key
@@ -340,12 +371,12 @@ class App(tk.Tk):
     def _nav_action(self, symbol, text, command):
         # Item do menu que abre uma janela (não é uma página; fica fora de nav_buttons).
         holder = tk.Frame(self.sidebar, bg=SIDEBAR)
-        holder.pack(fill='x', padx=10, pady=2)
+        holder.pack(fill='x', padx=ESPACO_P, pady=ESPACO_FINO)
         tk.Frame(holder, bg=SIDEBAR, width=4).pack(side='left', fill='y')
         label = tk.Label(holder, text=f'{symbol}    {text}', bg=SIDEBAR, fg=MUTED,
-                         anchor='w', padx=12, pady=11, cursor='hand2', takefocus=True,
+                         anchor='w', padx=ESPACO_M, pady=ESPACO_P, cursor='hand2', takefocus=True,
                          highlightbackground=SIDEBAR, highlightcolor=ACCENT, highlightthickness=1,
-                         font=('Segoe UI', 10))
+                         font=(FONTE_UI, TAMANHO_CORPO))
         label.pack(side='left', fill='x', expand=True)
         for sequence in ('<Button-1>', '<Return>', '<space>'):
             label.bind(sequence, lambda event: command())
@@ -416,7 +447,7 @@ class App(tk.Tk):
             stripe.configure(bg=ACCENT if active else SIDEBAR)
             label.configure(bg=HOVER if active else SIDEBAR,
                             fg=TEXT if active else MUTED,
-                            font=('Segoe UI',10,'bold' if active else 'normal'))
+                            font=(FONTE_UI, TAMANHO_CORPO, 'bold' if active else 'normal'))
             if active:
                 tag,title,description=page_map[name]
                 self.page_eyebrow.set(tag)
@@ -436,10 +467,10 @@ class App(tk.Tk):
 
     def _info_card(self, parent, tag, value_var, description, width=165):
         card=tk.Frame(parent,bg=PANEL,highlightthickness=1,highlightbackground=BORDER)
-        card.pack(side='left',fill='both',expand=True,padx=(0,12))
-        tk.Label(card,text=tag,bg=PANEL,fg=MUTED,font=('Segoe UI',9),anchor='w').pack(fill='x',padx=18,pady=(15,5))
-        tk.Label(card,textvariable=value_var,bg=PANEL,fg=TEXT,font=('Segoe UI',23,'bold'),anchor='w').pack(fill='x',padx=18)
-        tk.Label(card,text=description,bg=PANEL,fg=MUTED,font=('Segoe UI',9),anchor='w').pack(fill='x',padx=18,pady=(3,16))
+        card.pack(side='left',fill='both',expand=True,padx=(0,ESPACO_M))
+        tk.Label(card,text=tag,bg=PANEL,fg=MUTED,font=(FONTE_UI,TAMANHO_APOIO),anchor='w').pack(fill='x',padx=ESPACO_M,pady=(ESPACO_M,ESPACO_MINIMO))
+        tk.Label(card,textvariable=value_var,bg=PANEL,fg=TEXT,font=(FONTE_UI,TAMANHO_TITULO_HERO,'bold'),anchor='w').pack(fill='x',padx=ESPACO_M)
+        tk.Label(card,text=description,bg=PANEL,fg=MUTED,font=(FONTE_UI,TAMANHO_APOIO),anchor='w').pack(fill='x',padx=ESPACO_M,pady=(ESPACO_MINIMO,ESPACO_M))
         return card
 
     def _build_home(self):
@@ -448,7 +479,7 @@ class App(tk.Tk):
     def _build_legacy_home(self):
         # At small window heights the dashboard remains scrollable, not clipped.
         frame = tk.Frame(self.home,bg=BG)
-        frame.pack(fill='both',expand=True,padx=(16,4),pady=(6,8))
+        frame.pack(fill='both',expand=True,padx=(ESPACO_M,ESPACO_MINIMO),pady=(ESPACO_P,ESPACO_P))
         canvas = tk.Canvas(frame,bg=BG,highlightthickness=0,bd=0)
         scrollbar = ttk.Scrollbar(frame,orient='vertical',command=canvas.yview)
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -465,27 +496,27 @@ class App(tk.Tk):
         canvas.bind('<MouseWheel>',wheel)
         panel.bind('<MouseWheel>',wheel)
         hero=tk.Frame(panel,bg=PANEL,highlightthickness=1,highlightbackground=BORDER)
-        hero.pack(fill='x',pady=(0,16))
+        hero.pack(fill='x',pady=(0,ESPACO_M))
         tk.Label(hero,text='PREPARE SEU PRÓXIMO WINDOWS COM TRANQUILIDADE',bg=PANEL,fg=ACCENT,
-                 font=('Segoe UI',9,'bold'),anchor='w').pack(fill='x',padx=24,pady=(22,6))
+                 font=(FONTE_UI,TAMANHO_APOIO,'bold'),anchor='w').pack(fill='x',padx=ESPACO_G,pady=(ESPACO_G,ESPACO_P))
         tk.Label(hero,text='Primeiro seus dados. Depois, a reinstalação.',bg=PANEL,fg=TEXT,
-                 font=('Segoe UI',19,'bold'),anchor='w').pack(fill='x',padx=24)
+                 font=(FONTE_UI,TAMANHO_TITULO_HERO,'bold'),anchor='w').pack(fill='x',padx=ESPACO_G)
         tk.Label(hero,text='Descubra jogos e aplicativos, preserve os dados escolhidos e teste a restauração antes de qualquer mudança no sistema.',
-                 bg=PANEL,fg=MUTED,font=('Segoe UI',10),anchor='w',justify='left',wraplength=820).pack(fill='x',padx=24,pady=(8,17))
+                 bg=PANEL,fg=MUTED,font=(FONTE_UI,TAMANHO_CORPO),anchor='w',justify='left',wraplength=820).pack(fill='x',padx=ESPACO_G,pady=(ESPACO_P,ESPACO_M))
         actions=tk.Frame(hero,bg=PANEL)
-        actions.pack(fill='x',padx=24,pady=(0,22))
+        actions.pack(fill='x',padx=ESPACO_G,pady=(0,ESPACO_G))
         ttk.Button(actions,text='Começar pela detecção  →',style='Primary.TButton',
-                   command=lambda:self.navigate(self.catalog)).pack(side='left',padx=(0,10))
+                   command=lambda:self.navigate(self.catalog)).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(actions,text='Revisar o plano',style='Subtle.TButton',
-                   command=lambda:self.navigate(self.review)).pack(side='left',padx=(0,10))
+                   command=lambda:self.navigate(self.review)).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(actions,text='Navegadores',style='Subtle.TButton',
-                   command=lambda:self.navigate(self.browsers)).pack(side='left',padx=(0,10))
+                   command=lambda:self.navigate(self.browsers)).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(actions,text='Otimização  →',style='Subtle.TButton',
                    command=lambda:self.navigate(self.optimization)).pack(side='left')
         tk.Label(panel,text='SEU PLANO, EM NÚMEROS',bg=BG,fg=TEXT,
-                 font=('Segoe UI',12,'bold'),anchor='w').pack(fill='x',pady=(4,10))
+                 font=(FONTE_UI,TAMANHO_SUBTITULO,'bold'),anchor='w').pack(fill='x',pady=(ESPACO_MINIMO,ESPACO_P))
         metric_row=tk.Frame(panel,bg=BG)
-        metric_row.pack(fill='x',pady=(0,20))
+        metric_row.pack(fill='x',pady=(0,ESPACO_G))
         self.home_games=tk.StringVar(value='—')
         self.home_apps=tk.StringVar(value='—')
         self.home_chosen=tk.StringVar(value='0')
@@ -495,7 +526,7 @@ class App(tk.Tk):
         self._info_card(metric_row,'Escolhas registradas',self.home_chosen,'Escolhas registradas')
         self._info_card(metric_row,'Backup atual',self.home_plan,'Precisa ser validado')
         tk.Label(panel,text='UM CAMINHO CLARO, SEM SURPRESAS',bg=BG,fg=TEXT,
-                 font=('Segoe UI',12,'bold'),anchor='w').pack(fill='x',pady=(0,10))
+                 font=(FONTE_UI,TAMANHO_SUBTITULO,'bold'),anchor='w').pack(fill='x',pady=(0,ESPACO_P))
         steps=tk.Frame(panel,bg=BG)
         steps.pack(fill='x')
         for num,title,description,target in (
@@ -503,15 +534,15 @@ class App(tk.Tk):
             ('02','Proteja','Confira arquivos extras e cofres de navegador.',self.inventory),
             ('03','Valide','Revise, copie e teste a recuperação.',self.review)):
             card=tk.Frame(steps,bg=PANEL,highlightthickness=1,highlightbackground=BORDER)
-            card.pack(side='left',fill='both',expand=True,padx=(0,12))
-            tk.Label(card,text=num,bg=PANEL,fg=ACCENT,font=('Segoe UI',15,'bold')).pack(anchor='w',padx=17,pady=(15,6))
-            tk.Label(card,text=title,bg=PANEL,fg=TEXT,font=('Segoe UI',12,'bold')).pack(anchor='w',padx=17)
-            tk.Label(card,text=description,bg=PANEL,fg=MUTED,font=('Segoe UI',9),
-                     wraplength=190,justify='left').pack(anchor='w',padx=17,pady=(6,12))
+            card.pack(side='left',fill='both',expand=True,padx=(0,ESPACO_M))
+            tk.Label(card,text=num,bg=PANEL,fg=ACCENT,font=(FONTE_UI,TAMANHO_TITULO_ABA,'bold')).pack(anchor='w',padx=ESPACO_M,pady=(ESPACO_M,ESPACO_P))
+            tk.Label(card,text=title,bg=PANEL,fg=TEXT,font=(FONTE_UI,TAMANHO_SUBTITULO,'bold')).pack(anchor='w',padx=ESPACO_M)
+            tk.Label(card,text=description,bg=PANEL,fg=MUTED,font=(FONTE_UI,TAMANHO_APOIO),
+                     wraplength=190,justify='left').pack(anchor='w',padx=ESPACO_M,pady=(ESPACO_P,ESPACO_M))
             ttk.Button(card,text='Abrir etapa  →',style='Subtle.TButton',
-                       command=lambda page=target:self.navigate(page)).pack(anchor='w',padx=12,pady=(0,12))
+                       command=lambda page=target:self.navigate(page)).pack(anchor='w',padx=ESPACO_M,pady=(0,ESPACO_M))
         tk.Label(panel,text='ATENÇÃO  •  Este aplicativo não formata SSDs nem reinstala o Windows. Detectar não é o mesmo que fazer backup.',
-                 bg=BG,fg=AMBER,font=('Segoe UI',9),anchor='w',justify='left').pack(fill='x',pady=(18,2))
+                 bg=BG,fg=AMBER,font=(FONTE_UI,TAMANHO_APOIO),anchor='w',justify='left').pack(fill='x',pady=(ESPACO_M,ESPACO_FINO))
 
     def _refresh_home_metrics(self):
         if not hasattr(self, 'home_games'):
@@ -526,14 +557,14 @@ class App(tk.Tk):
         self.home_plan.set(human_size(self.plan.total) if self.plan else 'Não calculado')
 
     def _build_inventory(self):
-        self.label(self.inventory,'Seus documentos e arquivos fora dos jogos e aplicativos',size=13,fg=ACCENT).pack(fill='x',padx=14,pady=(16,6))
-        self.label(self.inventory,'Adicione só o que você deseja preservar: fotos, documentos, projetos e outras pastas.\nNão é necessário explorar todos os SSDs nem marcar os saves que já foram associados a jogos.',fg=MUTED).pack(fill='x',padx=14,pady=(0,10))
-        actions=ttk.Frame(self.inventory);actions.pack(fill='x',padx=14,pady=8)
-        ttk.Button(actions,text='+ Adicionar pasta',style='Primary.TButton',command=self.add_folder).pack(side='left',padx=(0,8))
-        ttk.Button(actions,text='+ Adicionar arquivo',command=self.add_file).pack(side='left',padx=(0,8))
+        self.label(self.inventory,'Seus documentos e arquivos fora dos jogos e aplicativos',size=TAMANHO_SUBTITULO,fg=ACCENT).pack(fill='x',padx=ESPACO_M,pady=(ESPACO_M,ESPACO_P))
+        self.label(self.inventory,'Adicione só o que você deseja preservar: fotos, documentos, projetos e outras pastas.\nNão é necessário explorar todos os SSDs nem marcar os saves que já foram associados a jogos.',fg=MUTED).pack(fill='x',padx=ESPACO_M,pady=(0,ESPACO_P))
+        actions=ttk.Frame(self.inventory);actions.pack(fill='x',padx=ESPACO_M,pady=ESPACO_P)
+        ttk.Button(actions,text='+ Adicionar pasta',style='Primary.TButton',command=self.add_folder).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(actions,text='+ Adicionar arquivo',command=self.add_file).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(actions,text='Revisar plano  →',command=lambda:self.navigate(self.review)).pack(side='left')
-        box=ttk.Frame(self.inventory);box.pack(fill='both',expand=True,padx=14,pady=(8,10))
-        self.tree=ttk.Treeview(box,columns=('item','path','decision'),show='headings',selectmode='extended',height=2)
+        box=ttk.Frame(self.inventory);box.pack(fill='both',expand=True,padx=ESPACO_M,pady=ESPACO_P)
+        self.tree=ttk.Treeview(box,columns=('item','path','decision'),show='headings',selectmode='extended',height=ALTURA_MINIMA_TABELA_LINHAS)
         for col,title,width in [('item','Arquivo / pasta',235),('path','Local original (somente leitura)',570),('decision','Escolha',150)]:
             self.tree.heading(col,text=title)
             self.tree.column(col,width=width,anchor='w')
@@ -542,12 +573,12 @@ class App(tk.Tk):
         self.tree.configure(yscrollcommand=ybar.set,xscrollcommand=xbar.set)
         xbar.pack(side='bottom',fill='x');ybar.pack(side='right',fill='y')
         self.tree.pack(side='left',fill='both',expand=True)
-        bottom=ttk.Frame(self.inventory);bottom.pack(fill='x',padx=14,pady=(0,7))
-        ttk.Button(bottom,text='Manter',command=lambda:self.set_choice('keep')).pack(side='left',padx=(0,8))
-        ttk.Button(bottom,text='Não incluir no backup',command=lambda:self.set_choice('skip')).pack(side='left',padx=(0,8))
-        ttk.Button(bottom,text='Pendente',command=lambda:self.set_choice('pending')).pack(side='left',padx=(0,8))
+        bottom=ttk.Frame(self.inventory);bottom.pack(fill='x',padx=ESPACO_M,pady=(0,ESPACO_P))
+        ttk.Button(bottom,text='Manter',command=lambda:self.set_choice('keep')).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(bottom,text='Não incluir no backup',command=lambda:self.set_choice('skip')).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(bottom,text='Pendente',command=lambda:self.set_choice('pending')).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(bottom,text='Remover da lista',command=self.remove_personal_item).pack(side='left')
-        self.label(self.inventory,'Remover da lista ou não copiar NUNCA apaga os arquivos originais. Dados em G: não podem ser copiados para o mesmo G:.',fg=MUTED).pack(fill='x',padx=14,pady=(0,10))
+        self.label(self.inventory,'Remover da lista ou não copiar NUNCA apaga os arquivos originais. Dados em G: não podem ser copiados para o mesmo G:.',fg=MUTED).pack(fill='x',padx=ESPACO_M,pady=(0,ESPACO_P))
 
     def _tree_roots(self):
         # As pastas escolhidas aparecem diretamente. Não navegar por todo o SSD.
@@ -614,35 +645,35 @@ class App(tk.Tk):
             self.tree.see(name)
 
     def _build_review(self):
-        self.label(self.review,'Backup seletivo dos dados do C:',size=15,fg=ACCENT).pack(fill='x',padx=18,pady=(19,8))
-        self.label(self.review,'Somente os arquivos marcados no C: serão copiados. O que não for marcado no C: não entra no backup e se perde quando o instalador formatar o C:. O app não apaga nenhum arquivo dos outros discos e unidades.').pack(fill='x',padx=18,pady=(0,8))
-        self.label(self.review,'Nome do backup (opcional — vazio gera um nome pelos itens selecionados):').pack(fill='x',padx=18)
+        self.label(self.review,'Backup seletivo dos dados do C:',size=TAMANHO_TITULO_ABA,fg=ACCENT).pack(fill='x',padx=ESPACO_M,pady=(ESPACO_M,ESPACO_P))
+        self.label(self.review,'Somente os arquivos marcados no C: serão copiados. O que não for marcado no C: não entra no backup e se perde quando o instalador formatar o C:. O app não apaga nenhum arquivo dos outros discos e unidades.').pack(fill='x',padx=ESPACO_M,pady=(0,ESPACO_P))
+        self.label(self.review,'Nome do backup (opcional — vazio gera um nome pelos itens selecionados):').pack(fill='x',padx=ESPACO_M)
         self.backup_name = tk.StringVar()
-        ttk.Entry(self.review, textvariable=self.backup_name).pack(fill='x', padx=18, pady=(0, 8))
-        self.label(self.review,'Destino escolhido (pode ser outro SSD ou unidade externa):').pack(fill='x',padx=18)
-        drow=ttk.Frame(self.review);drow.pack(fill='x',padx=18,pady=8)
+        ttk.Entry(self.review, textvariable=self.backup_name).pack(fill='x', padx=ESPACO_M, pady=(0, ESPACO_P))
+        self.label(self.review,'Destino escolhido (pode ser outro SSD ou unidade externa):').pack(fill='x',padx=ESPACO_M)
+        drow=ttk.Frame(self.review);drow.pack(fill='x',padx=ESPACO_M,pady=ESPACO_P)
         ttk.Entry(drow,textvariable=self.dest,width=88).pack(side='left',fill='x',expand=True)
-        ttk.Button(drow,text='Escolher destino',command=self.choose_dest).pack(side='left',padx=8)
+        ttk.Button(drow,text='Escolher destino',command=self.choose_dest).pack(side='left',padx=(ESPACO_P,0))
         self.summary=tk.Text(self.review,height=19,wrap='word',bg=PANEL,fg=TEXT,insertbackground=TEXT,
-                             relief='flat',font=('Consolas',10),padx=14,pady=14)
-        self.summary.pack(fill='both',expand=True,padx=18,pady=9)
+                             relief='flat',font=(FONTE_MONO,TAMANHO_CORPO),padx=PADDING_CAIXA_TEXTO[0],pady=PADDING_CAIXA_TEXTO[1])
+        self.summary.pack(fill='both',expand=True,padx=ESPACO_M,pady=ESPACO_P)
         self.summary.insert('end','Gere a revisão do plano antes de iniciar o backup.\n')
         self.summary.configure(state='disabled')
-        buttons=ttk.Frame(self.review);buttons.pack(fill='x',padx=18,pady=12)
-        ttk.Button(buttons,text='1. Recalcular plano e espaço',style='Primary.TButton',command=self.generate_preview).pack(side='left',padx=(0,12))
+        buttons=ttk.Frame(self.review);buttons.pack(fill='x',padx=ESPACO_M,pady=ESPACO_M)
+        ttk.Button(buttons,text='1. Recalcular plano e espaço',style='Primary.TButton',command=self.generate_preview).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         self.backup_btn = ttk.Button(buttons,text='2. Iniciar backup (confirmação dupla)',
                                      command=self.begin_backup, state='disabled')
         self.backup_btn.pack(side='left')
-        ttk.Button(buttons,text='Retomar backup interrompido',command=self.select_backup_resume).pack(side='left',padx=(10,0))
+        ttk.Button(buttons,text='Retomar backup interrompido',command=self.select_backup_resume).pack(side='left',padx=(ESPACO_P,0))
         ttk.Button(buttons,text='3. Histórico / Testar restauração',
-                   command=lambda:(self.refresh_history(), self.navigate(self.history))).pack(side='left',padx=(10,0))
+                   command=lambda:(self.refresh_history(), self.navigate(self.history))).pack(side='left',padx=(ESPACO_P,0))
         ttk.Button(buttons,text='Voltar às escolhas',
-                   command=lambda:self.navigate(self.preservation)).pack(side='left',padx=(10,0))
+                   command=lambda:self.navigate(self.preservation)).pack(side='left',padx=(ESPACO_P,0))
         self.review_feedback=tk.StringVar(value='Backup bloqueado até o plano ser calculado sem avisos impeditivos.')
         tk.Label(self.review,textvariable=self.review_feedback,bg=BG,fg=AMBER,
-                 font=('Segoe UI',9),anchor='w').pack(fill='x',padx=18,pady=(0,5))
+                 font=(FONTE_UI,TAMANHO_APOIO),anchor='w').pack(fill='x',padx=ESPACO_M,pady=(0,ESPACO_MINIMO))
         self.progress=ttk.Progressbar(self.review,maximum=100)
-        self.progress.pack(fill='x',padx=18,pady=(0,15))
+        self.progress.pack(fill='x',padx=ESPACO_M,pady=(0,ESPACO_M))
 
     def choose_dest(self):
         d=filedialog.askdirectory(title='Destino para os backups')
@@ -899,7 +930,7 @@ class App(tk.Tk):
     def _build_browsers(self):
         """Fluxo visual: encontrar -> sincronizar -> proteger -> verificar -> recuperar."""
         pane=tk.Frame(self.browsers,bg=BG)
-        pane.pack(fill='both',expand=True,padx=(18,4),pady=(4,6))
+        pane.pack(fill='both',expand=True,padx=(ESPACO_M,ESPACO_MINIMO),pady=(ESPACO_MINIMO,ESPACO_P))
         canvas=tk.Canvas(pane,bg=BG,highlightthickness=0,bd=0)
         ybar=ttk.Scrollbar(pane,orient='vertical',command=canvas.yview)
         canvas.configure(yscrollcommand=ybar.set)
@@ -912,13 +943,13 @@ class App(tk.Tk):
         self.browser_canvas=canvas
         def section(title,explanation):
             header=tk.Frame(page,bg=BG)
-            header.pack(fill='x',pady=(9,6))
-            tk.Label(header,text=title,bg=BG,fg=TEXT,font=('Segoe UI',13,'bold'),anchor='w').pack(fill='x')
-            tk.Label(header,text=explanation,bg=BG,fg=MUTED,font=('Segoe UI',9),anchor='w',
-                     wraplength=960,justify='left').pack(fill='x',pady=(3,0))
+            header.pack(fill='x',pady=(ESPACO_P,ESPACO_MINIMO))
+            tk.Label(header,text=title,bg=BG,fg=TEXT,font=(FONTE_UI,TAMANHO_SUBTITULO,'bold'),anchor='w').pack(fill='x')
+            tk.Label(header,text=explanation,bg=BG,fg=MUTED,font=(FONTE_UI,TAMANHO_APOIO),anchor='w',
+                     wraplength=960,justify='left').pack(fill='x',pady=(ESPACO_MINIMO,0))
         def actions():
             frame=tk.Frame(page,bg=BG)
-            frame.pack(fill='x',pady=(5,7))
+            frame.pack(fill='x',pady=ESPACO_P)
             return frame
 
         section('1. Encontre seu perfil','Apenas nomes e caminhos são analisados na descoberta. Nenhuma senha é lida.')
@@ -928,55 +959,55 @@ class App(tk.Tk):
         self.browser_picker.pack(side='left',fill='x',expand=True)
         self.browser_picker.bind('<<ComboboxSelected>>',self._browser_selected)
         self.browser_want_keep=tk.BooleanVar(value=False)
-        ttk.Button(row,text='Pesquisar perfis',command=self._browser_discover).pack(side='left',padx=(8,0))
-        ttk.Button(row,text='Escolher pasta',command=self.choose_profile).pack(side='left',padx=(8,0))
+        ttk.Button(row,text='Pesquisar perfis',command=self._browser_discover).pack(side='left',padx=(ESPACO_P,0))
+        ttk.Button(row,text='Escolher pasta',command=self.choose_profile).pack(side='left',padx=(ESPACO_P,0))
         ttk.Checkbutton(page,text='Quero preservar este perfil (incluir no meu plano)',
-                        variable=self.browser_want_keep,command=self._mark_browser_keep).pack(anchor='w',pady=(2,6))
+                        variable=self.browser_want_keep,command=self._mark_browser_keep).pack(anchor='w',pady=(ESPACO_FINO,ESPACO_P))
         self.browser_status=tk.StringVar(value='Aguardando seleção do navegador.')
-        tk.Label(page,textvariable=self.browser_status,bg=PANEL,fg=MUTED,font=('Segoe UI',9),
-                 anchor='w',justify='left',wraplength=1030,padx=13,pady=10).pack(fill='x',pady=(3,8))
+        tk.Label(page,textvariable=self.browser_status,bg=PANEL,fg=MUTED,font=(FONTE_UI,TAMANHO_APOIO),
+                 anchor='w',justify='left',wraplength=1030,padx=ESPACO_M,pady=ESPACO_P).pack(fill='x',pady=(ESPACO_MINIMO,ESPACO_P))
 
         section('2. Verifique a sincronização','Entre na conta do navegador correspondente e confirme, nele, senhas, favoritos e demais itens disponíveis.')
         row=actions()
-        ttk.Button(row,text='Abrir ajuda oficial',command=self.browser_official_help).pack(side='left',padx=(0,8))
+        ttk.Button(row,text='Abrir ajuda oficial',command=self.browser_official_help).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(row,text='Copiar endereço de sincronização',command=self.browser_copy_sync).pack(side='left')
         self.browser_sync_checked=tk.BooleanVar(value=False)
         ttk.Checkbutton(page,text='Eu conferi a sincronização neste navegador (autodeclaração, não verificada pelo aplicativo)',
-                        variable=self.browser_sync_checked).pack(anchor='w',pady=(2,6))
+                        variable=self.browser_sync_checked).pack(anchor='w',pady=(ESPACO_FINO,ESPACO_P))
 
         section('3. Crie uma cópia criptografada','Para favoritos, preferências e parte do histórico. Opcionalmente inclua um CSV de senhas exportado por você.')
         ttk.Checkbutton(page,text='Incluir dados extras de sites (sensíveis; apenas dentro do cofre criptografado)',
-                        variable=self.extended,command=self.refresh_browser).pack(anchor='w',pady=(0,5))
+                        variable=self.extended,command=self.refresh_browser).pack(anchor='w',pady=(0,ESPACO_MINIMO))
         row=actions()
         tk.Label(row,text='Arquivo de senhas exportadas (CSV):',bg=BG,fg=MUTED).pack(side='left')
-        ttk.Entry(row,textvariable=self.csv_path,width=53).pack(side='left',fill='x',expand=True,padx=8)
+        ttk.Entry(row,textvariable=self.csv_path,width=53).pack(side='left',fill='x',expand=True,padx=ESPACO_P)
         ttk.Button(row,text='Selecionar arquivo de senhas',command=self.choose_csv).pack(side='left')
-        ttk.Button(row,text='Limpar',command=lambda:self.csv_path.set('')).pack(side='left',padx=(8,0))
+        ttk.Button(row,text='Limpar',command=lambda:self.csv_path.set('')).pack(side='left',padx=(ESPACO_P,0))
         row=actions()
         tk.Label(row,text='Arquivo de favoritos exportados (HTML):',bg=BG,fg=MUTED).pack(side='left')
-        ttk.Entry(row,textvariable=self.bookmarks_html,width=49).pack(side='left',fill='x',expand=True,padx=8)
+        ttk.Entry(row,textvariable=self.bookmarks_html,width=49).pack(side='left',fill='x',expand=True,padx=ESPACO_P)
         ttk.Button(row,text='Selecionar arquivo de favoritos',command=self.choose_bookmarks_html).pack(side='left')
-        ttk.Button(row,text='Limpar',command=lambda:self.bookmarks_html.set('')).pack(side='left',padx=(8,0))
+        ttk.Button(row,text='Limpar',command=lambda:self.bookmarks_html.set('')).pack(side='left',padx=(ESPACO_P,0))
         self.browser_csv_warning=tk.StringVar(value='Um CSV de senhas é texto legível. Nunca envie por chat e não o deixe desprotegido.')
-        tk.Label(page,textvariable=self.browser_csv_warning,bg=BG,fg=AMBER,font=('Segoe UI',9),
-                 wraplength=1030,justify='left',anchor='w').pack(fill='x',pady=(2,7))
+        tk.Label(page,textvariable=self.browser_csv_warning,bg=BG,fg=AMBER,font=(FONTE_UI,TAMANHO_APOIO),
+                 wraplength=1030,justify='left',anchor='w').pack(fill='x',pady=(ESPACO_FINO,ESPACO_P))
         row=actions()
-        ttk.Button(row,text='Criar backup protegido do navegador',style='Primary.TButton',command=self.browser_backup).pack(side='left',padx=(0,10))
-        ttk.Button(row,text='Verificar integridade',command=self.browser_verify).pack(side='left',padx=(0,10))
+        ttk.Button(row,text='Criar backup protegido do navegador',style='Primary.TButton',command=self.browser_backup).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(row,text='Verificar integridade',command=self.browser_verify).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(row,text='Extrair backup do navegador para teste',command=self.browser_restore).pack(side='left')
         self.browser_dest_text=tk.StringVar(value=browser_dest_label_text(str(self.dest.get())))
         self.dest.trace_add('write', self._update_browser_dest_label)
         self.browser_dest_label=tk.Label(page,textvariable=self.browser_dest_text,
-                 bg=BG,fg=MUTED,font=('Segoe UI',9),anchor='w')
-        self.browser_dest_label.pack(fill='x',pady=(4,12))
+                 bg=BG,fg=MUTED,font=(FONTE_UI,TAMANHO_APOIO),anchor='w')
+        self.browser_dest_label.pack(fill='x',pady=(ESPACO_MINIMO,ESPACO_M))
 
         section('4. Depois de reinstalar o Windows','Instale o navegador, entre na conta e aguarde a sincronização. Se necessário, use os arquivos do cofre para importar manualmente.')
         tk.Label(page,text='Atenção: a restauração NÃO garante cookies, sessões autenticadas, passkeys, licenças ou todas as extensões. '
                       'Arquivos de senha exportados exigem importação no próprio navegador. '
                       'Mantenha uma segunda cópia dos seus dados fora do SSD de backup.',
-                 bg=PANEL,fg=MUTED,justify='left',wraplength=1030,padx=13,pady=12).pack(fill='x',pady=(3,10))
+                 bg=PANEL,fg=MUTED,justify='left',wraplength=1030,padx=ESPACO_M,pady=ESPACO_P).pack(fill='x',pady=(ESPACO_MINIMO,ESPACO_P))
         ttk.Button(page, text='Restaurar navegador — assistente', style='Primary.TButton',
-                   command=lambda: show_recovery(self)).pack(anchor='w', pady=8)
+                   command=lambda: show_recovery(self)).pack(anchor='w', pady=ESPACO_P)
         self._browser_discover()
 
     def _mark_browser_keep(self):
@@ -1193,21 +1224,21 @@ class App(tk.Tk):
         except Exception as error:messagebox.showerror('Não foi possível restaurar',str(error))
 
     def _build_history(self):
-        self.label(self.history,'Histórico de backups e testes',size=15,fg=ACCENT).pack(fill='x',padx=18,pady=(16,8))
-        self.label(self.history,'Somente manifeste cópias verificadas; jamais formate apenas com base em uma prévia.',fg=MUTED).pack(fill='x',padx=18)
-        self.backup_list=tk.Listbox(self.history,bg=PANEL,fg=TEXT,selectbackground='#235781',
-                                    relief='flat',font=('Consolas',11))
-        self.backup_list.pack(fill='both',expand=True,padx=18,pady=16)
+        self.label(self.history,'Histórico de backups e testes',size=TAMANHO_TITULO_ABA,fg=ACCENT).pack(fill='x',padx=ESPACO_M,pady=(ESPACO_M,ESPACO_P))
+        self.label(self.history,'Somente manifeste cópias verificadas; jamais formate apenas com base em uma prévia.',fg=MUTED).pack(fill='x',padx=ESPACO_M)
+        self.backup_list=tk.Listbox(self.history,bg=PANEL,fg=TEXT,selectbackground=COR_SELECAO,
+                                    relief='flat',font=(FONTE_MONO,TAMANHO_CORPO))
+        self.backup_list.pack(fill='both',expand=True,padx=ESPACO_M,pady=ESPACO_M)
         ttk.Button(self.history, text='Central de recuperação', style='Primary.TButton',
-                   command=self.open_recovery_center).pack(anchor='w', padx=18, pady=4)
-        ttk.Button(self.history, text='Ver conteúdo: programas, jogos, saves e arquivos', command=self.show_backup_contents).pack(anchor='w', padx=18, pady=4)
+                   command=self.open_recovery_center).pack(anchor='w', padx=ESPACO_M, pady=ESPACO_MINIMO)
+        ttk.Button(self.history, text='Ver conteúdo: programas, jogos, saves e arquivos', command=self.show_backup_contents).pack(anchor='w', padx=ESPACO_M, pady=ESPACO_MINIMO)
         ttk.Button(self.history, text='Auditar este backup + dados + EFI (sem formatar)',
-                   command=self.open_selected_backup_completeness_audit).pack(anchor='w', padx=18, pady=4)
-        controls=ttk.Frame(self.history);controls.pack(fill='x',padx=18,pady=(0,14))
-        ttk.Button(controls,text='Atualizar histórico',command=self.refresh_history).pack(side='left',padx=(0,9))
-        ttk.Button(controls,text='Testar restauração de arquivo pequeno',command=self.test_restore).pack(side='left',padx=(0,9))
-        ttk.Button(controls,text='Abrir pasta do backup',command=self.open_backup).pack(side='left',padx=(0,9))
-        ttk.Button(controls,text='Renomear rótulo',command=self.rename_backup).pack(side='left',padx=(0,9))
+                   command=self.open_selected_backup_completeness_audit).pack(anchor='w', padx=ESPACO_M, pady=ESPACO_MINIMO)
+        controls=ttk.Frame(self.history);controls.pack(fill='x',padx=ESPACO_M,pady=(ESPACO_P,ESPACO_M))
+        ttk.Button(controls,text='Atualizar histórico',command=self.refresh_history).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(controls,text='Testar restauração de arquivo pequeno',command=self.test_restore).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(controls,text='Abrir pasta do backup',command=self.open_backup).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(controls,text='Renomear rótulo',command=self.rename_backup).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(controls,text='Escolher arquivo para testar',command=self.restore_chosen).pack(side='left')
 
     def show_backup_contents(self):
@@ -1217,8 +1248,12 @@ class App(tk.Tk):
             return
         try:
             data = json.loads(path.read_text(encoding='utf-8'))
-            dlg = tk.Toplevel(self); dlg.title('O que este backup preserva'); dlg.geometry('950x620')
-            box = tk.Text(dlg, wrap='word'); box.pack(fill='both', expand=True)
+            dlg = tk.Toplevel(self); dlg.title('O que este backup preserva')
+            dlg.configure(bg=BG)
+            dlg.geometry(safe_window_geometry(950, 620, self.winfo_screenwidth(), self.winfo_screenheight()))
+            box = tk.Text(dlg, wrap='word', bg=PANEL, fg=TEXT, relief='flat',
+                          font=(FONTE_MONO, TAMANHO_CORPO), padx=PADDING_CAIXA_TEXTO[0], pady=PADDING_CAIXA_TEXTO[1])
+            box.pack(fill='both', expand=True, padx=PADDING_DIALOGO, pady=PADDING_DIALOGO)
             box.insert('1.0', inventory_text(data)); box.configure(state='disabled')
         except Exception as exc:
             messagebox.showerror('Não foi possível ler o conteúdo', str(exc))
@@ -1286,29 +1321,29 @@ class App(tk.Tk):
         show_restore(self,manifest)
 
     def _build_catalog(self):
-        self.label(self.catalog,'Catálogo avançado: clique em Pesquisar para consultar jogos/apps em todas as unidades.\nEsta pesquisa global é independente da varredura seletiva em Meu Computador. Marcar Manter não é backup.',fg=MUTED).pack(fill='x',padx=18,pady=(3,8))
-        top=ttk.Frame(self.catalog);top.pack(fill='x',padx=18,pady=6)
+        self.label(self.catalog,'Catálogo avançado: clique em Pesquisar para consultar jogos/apps em todas as unidades.\nEsta pesquisa global é independente da varredura seletiva em Meu Computador. Marcar Manter não é backup.',fg=MUTED).pack(fill='x',padx=ESPACO_M,pady=(ESPACO_MINIMO,ESPACO_P))
+        top=ttk.Frame(self.catalog);top.pack(fill='x',padx=ESPACO_M,pady=ESPACO_P)
         self.catalog_top=top
-        ttk.Button(top,text='Pesquisar jogos e apps (todas as unidades)',style='Primary.TButton',command=self.refresh_catalog).pack(side='left',padx=(0,8))
-        ttk.Button(top,text='Varredura detalhada',command=lambda:self.navigate(self.home)).pack(side='left',padx=(0,8))
-        ttk.Button(top,text='Exportar escolhas',command=self.export_catalog).pack(side='left',padx=(0,8))
-        ttk.Button(top,text='+ Arquivo ou pasta',command=lambda:self.navigate(self.inventory)).pack(side='left',padx=(0,8))
-        ttk.Button(top,text='Navegadores  →',command=lambda:self.navigate(self.browsers)).pack(side='left',padx=(0,10))
+        ttk.Button(top,text='Pesquisar jogos e apps (todas as unidades)',style='Primary.TButton',command=self.refresh_catalog).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(top,text='Varredura detalhada',command=lambda:self.navigate(self.home)).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(top,text='Exportar escolhas',command=self.export_catalog).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(top,text='+ Arquivo ou pasta',command=lambda:self.navigate(self.inventory)).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(top,text='Navegadores  →',command=lambda:self.navigate(self.browsers)).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(top,text='Otimização  →',style='Subtle.TButton',
                    command=lambda:self.navigate(self.optimization)).pack(side='left')
         self.catalog_filter = tk.StringVar()
         searchrow = ttk.Frame(self.catalog)
         self.catalog_searchrow = searchrow
-        searchrow.pack(fill='x',padx=18,pady=(0,8))
-        self.label(searchrow, 'Filtrar por nome ou origem: ', fg=MUTED).pack(side='left',padx=(0,9))
+        searchrow.pack(fill='x',padx=ESPACO_M,pady=(0,ESPACO_P))
+        self.label(searchrow, 'Filtrar por nome ou origem: ', fg=MUTED).pack(side='left',padx=(0,ESPACO_P))
         ttk.Entry(searchrow, textvariable=self.catalog_filter).pack(side='left',fill='x',expand=True)
-        ttk.Button(searchrow,text='Limpar filtro', command=lambda:self.catalog_filter.set('')).pack(side='left',padx=(8,0))
+        ttk.Button(searchrow,text='Limpar filtro', command=lambda:self.catalog_filter.set('')).pack(side='left',padx=(ESPACO_P,0))
         self.catalog_filter.trace_add('write',lambda *_:self._filter_catalog())
         self.catalog_status = tk.StringVar(value='Aguardando descoberta...')
         self.catalog_section_title=tk.StringVar(value='Jogos e aplicativos identificados')
         self.catalog_status_label=tk.Label(self.catalog,textvariable=self.catalog_status,bg=BG,fg=MUTED,anchor='w')
-        self.catalog_status_label.pack(fill='x',padx=18,pady=5)
-        panes=self.catalog_tabs;panes.pack(fill='both',expand=True,padx=18,pady=(4,12))
+        self.catalog_status_label.pack(fill='x',padx=ESPACO_M,pady=ESPACO_MINIMO)
+        panes=self.catalog_tabs;panes.pack(fill='both',expand=True,padx=ESPACO_M,pady=(ESPACO_MINIMO,ESPACO_M))
         games=ttk.Frame(panes);apps=ttk.Frame(panes)
         panes.add(games,text='Jogos');panes.add(apps,text='Aplicativos')
         panes.add(self.inventory,text='Arquivos pessoais')
@@ -1316,8 +1351,8 @@ class App(tk.Tk):
         self.catalog_games_tab=games;self.catalog_apps_tab=apps
         panes.bind('<<NotebookTabChanged>>',self._catalog_tab_changed)
         game_scroll = ttk.Frame(games)
-        game_scroll.pack(fill='both',expand=True,pady=8)
-        self.games_tree=ttk.Treeview(game_scroll,columns=('source','save','decision'),show='headings',height=2)
+        game_scroll.pack(fill='both',expand=True,pady=ESPACO_P)
+        self.games_tree=ttk.Treeview(game_scroll,columns=('source','save','decision'),show='headings',height=ALTURA_MINIMA_TABELA_LINHAS)
         for col,title,width in [('source','Jogo identificado / origem',270),('save','Saves/configurações locais',290),('decision','Escolha',140)]:
             self.games_tree.heading(col,text=title);self.games_tree.column(col,width=width,anchor='w')
         gx = ttk.Scrollbar(game_scroll,orient='horizontal',command=self.games_tree.xview)
@@ -1326,15 +1361,15 @@ class App(tk.Tk):
         gx.pack(side='bottom',fill='x')
         gy.pack(side='right',fill='y')
         self.games_tree.pack(side='left',fill='both',expand=True)
-        grow=ttk.Frame(games);grow.pack(fill='x',pady=8)
-        ttk.Button(grow,text='Manter + saves',command=lambda:self.mark_catalog('game','keep')).pack(side='left',padx=(0,8))
-        ttk.Button(grow,text='Não manter',command=lambda:self.mark_catalog('game','skip')).pack(side='left',padx=(0,8))
-        ttk.Button(grow,text='Pendente',command=lambda:self.mark_catalog('game','pending')).pack(side='left',padx=(0,8))
+        grow=ttk.Frame(games);grow.pack(fill='x',pady=ESPACO_P)
+        ttk.Button(grow,text='Manter + saves',command=lambda:self.mark_catalog('game','keep')).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(grow,text='Não manter',command=lambda:self.mark_catalog('game','skip')).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(grow,text='Pendente',command=lambda:self.mark_catalog('game','pending')).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(grow,text='Revisar locais',command=lambda:self.inspect_catalog_paths('game')).pack(side='left')
-        self.label(games,'Sem saves encontrados? A escolha ficará registrada, mas o app avisará que o backup do progresso não está garantido.',fg=MUTED).pack(fill='x',pady=6)
+        self.label(games,'Sem saves encontrados? A escolha ficará registrada, mas o app avisará que o backup do progresso não está garantido.',fg=MUTED).pack(fill='x',pady=ESPACO_P)
         app_scroll = ttk.Frame(apps)
-        app_scroll.pack(fill='both',expand=True,pady=8)
-        self.apps_tree=ttk.Treeview(app_scroll,columns=('name','category','origin','data','choice'),show='headings',height=2)
+        app_scroll.pack(fill='both',expand=True,pady=ESPACO_P)
+        self.apps_tree=ttk.Treeview(app_scroll,columns=('name','category','origin','data','choice'),show='headings',height=ALTURA_MINIMA_TABELA_LINHAS)
         for col,title,width in [('name','Aplicativo / atalho',330),('category','Categoria',160),('origin','Origem / evidência',250),('data','Dados/configs',240),('choice','Escolha',160)]:
             self.apps_tree.heading(col,text=title);self.apps_tree.column(col,width=width,anchor='w')
         ax = ttk.Scrollbar(app_scroll,orient='horizontal',command=self.apps_tree.xview)
@@ -1343,12 +1378,12 @@ class App(tk.Tk):
         ax.pack(side='bottom',fill='x')
         ay.pack(side='right',fill='y')
         self.apps_tree.pack(side='left',fill='both',expand=True)
-        arow=ttk.Frame(apps);arow.pack(fill='x',pady=8)
-        ttk.Button(arow,text='Manter + dados',command=lambda:self.mark_catalog('app','keep')).pack(side='left',padx=(0,8))
-        ttk.Button(arow,text='Não manter',command=lambda:self.mark_catalog('app','skip')).pack(side='left',padx=(0,8))
-        ttk.Button(arow,text='Pendente',command=lambda:self.mark_catalog('app','pending')).pack(side='left',padx=(0,8))
+        arow=ttk.Frame(apps);arow.pack(fill='x',pady=ESPACO_P)
+        ttk.Button(arow,text='Manter + dados',command=lambda:self.mark_catalog('app','keep')).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(arow,text='Não manter',command=lambda:self.mark_catalog('app','skip')).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(arow,text='Pendente',command=lambda:self.mark_catalog('app','pending')).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(arow,text='Revisar locais',command=lambda:self.inspect_catalog_paths('app')).pack(side='left')
-        self.label(apps,'Apps de teclado, mouse e headset também precisam de instaladores/drivers compatíveis. Configurações localizadas são candidatos para revisão; não basta reinstalar para recuperá-las.',fg=MUTED).pack(fill='x',pady=6)
+        self.label(apps,'Apps de teclado, mouse e headset também precisam de instaladores/drivers compatíveis. Configurações localizadas são candidatos para revisão; não basta reinstalar para recuperá-las.',fg=MUTED).pack(fill='x',pady=ESPACO_P)
 
     def _catalog_tab_changed(self, event=None):
         if not hasattr(self,'catalog_tabs') or not hasattr(self,'catalog_top'):
@@ -1357,11 +1392,11 @@ class App(tk.Tk):
         is_list=current in (str(self.catalog_games_tab),str(self.catalog_apps_tab))
         if is_list:
             if not self.catalog_top.winfo_manager():
-                self.catalog_top.pack(fill='x',padx=18,pady=6,before=self.catalog_tabs)
+                self.catalog_top.pack(fill='x',padx=ESPACO_M,pady=ESPACO_P,before=self.catalog_tabs)
             if not self.catalog_searchrow.winfo_manager():
-                self.catalog_searchrow.pack(fill='x',padx=18,pady=(0,8),before=self.catalog_tabs)
+                self.catalog_searchrow.pack(fill='x',padx=ESPACO_M,pady=(0,ESPACO_P),before=self.catalog_tabs)
             if not self.catalog_status_label.winfo_manager():
-                self.catalog_status_label.pack(fill='x',padx=18,pady=5,before=self.catalog_tabs)
+                self.catalog_status_label.pack(fill='x',padx=ESPACO_M,pady=ESPACO_MINIMO,before=self.catalog_tabs)
         else:
             self.catalog_top.pack_forget()
             self.catalog_searchrow.pack_forget()
@@ -1547,20 +1582,20 @@ class App(tk.Tk):
         dlg=tk.Toplevel(self)
         dlg.title('Localizações de dados — '+item.get('name',key))
         dlg.configure(bg=BG)
-        dlg.geometry('970x530');dlg.transient(self)
-        self.label(dlg,'Locais identificados para '+item.get('name',key),size=13,fg=ACCENT).pack(fill='x',padx=12,pady=(12,5))
+        dlg.geometry(safe_window_geometry(970, 530, self.winfo_screenwidth(), self.winfo_screenheight()));dlg.transient(self)
+        self.label(dlg,'Locais identificados para '+item.get('name',key),size=TAMANHO_SUBTITULO,fg=ACCENT).pack(fill='x',padx=PADDING_DIALOGO,pady=(PADDING_DIALOGO,ESPACO_MINIMO))
         self.label(dlg,'Conhecido = caminho documentado e com arquivos; não garante que todo progresso esteja presente. '
                    'Possível = associação não confirmada; exige sua revisão antes do backup.',fg=MUTED,
-                   wraplength=920).pack(fill='x',padx=12,pady=4)
+                   wraplength=920).pack(fill='x',padx=PADDING_DIALOGO,pady=ESPACO_MINIMO)
         paths=[('REVISADO' if p in item.get('manual_paths',[]) else 'CONHECIDO',p) for p in trusted]+[('CONFERIR',p) for p in possible]
-        box=tk.Listbox(dlg,selectmode='extended',bg=PANEL,fg=TEXT,font=('Consolas',10))
-        box.pack(fill='both',expand=True,padx=12,pady=8)
+        box=tk.Listbox(dlg,selectmode='extended',bg=PANEL,fg=TEXT,selectbackground=COR_SELECAO,font=(FONTE_MONO,TAMANHO_CORPO))
+        box.pack(fill='both',expand=True,padx=PADDING_DIALOGO,pady=ESPACO_P)
         for status,path in paths:
             box.insert('end',f'[{status}] {path}')
         self.label(dlg,'Nenhum dado encontrado não significa que não exista. Dados em nuvem, '
                    'configurações protegidas e licenças podem exigir login/reinstalação.',fg=MUTED,
-                   wraplength=920).pack(fill='x',padx=12,pady=5)
-        actions=ttk.Frame(dlg);actions.pack(fill='x',padx=12,pady=10)
+                   wraplength=920).pack(fill='x',padx=PADDING_DIALOGO,pady=ESPACO_MINIMO)
+        actions=ttk.Frame(dlg);actions.pack(fill='x',padx=PADDING_DIALOGO,pady=ESPACO_P)
         def open_location():
             if not box.curselection():
                 return
@@ -1759,18 +1794,19 @@ class App(tk.Tk):
             messagebox.showerror('Exportação',str(exc))
 
     def _build_diagnostic(self):
-        self.label(self.diagnostic, 'Verificação de hardware e discos',size=14,fg=ACCENT).pack(fill='x',padx=18,pady=(15,7))
-        self.label(self.diagnostic, 'Coleta SOMENTE leitura. A letra do volume não identifica o SSD físico; discos dinâmicos/EFI/pools exigem checagem independente.\nNenhum ajuste de BIOS, serviço, registro, Windows ou disco será executado.',fg=MUTED).pack(fill='x',padx=18,pady=6)
-        actions=ttk.Frame(self.diagnostic);actions.pack(fill='x',padx=18,pady=8)
-        ttk.Button(actions,text='Analisar computador e discos',command=self.run_diagnostics).pack(side='left',padx=(0,8))
+        self.label(self.diagnostic, 'Verificação de hardware e discos',size=TAMANHO_TITULO_MODAL,fg=ACCENT).pack(fill='x',padx=ESPACO_M,pady=(ESPACO_M,ESPACO_P))
+        self.label(self.diagnostic, 'Coleta SOMENTE leitura. A letra do volume não identifica o SSD físico; discos dinâmicos/EFI/pools exigem checagem independente.\nNenhum ajuste de BIOS, serviço, registro, Windows ou disco será executado.',fg=MUTED).pack(fill='x',padx=ESPACO_M,pady=ESPACO_P)
+        actions=ttk.Frame(self.diagnostic);actions.pack(fill='x',padx=ESPACO_M,pady=ESPACO_P)
+        ttk.Button(actions,text='Analisar computador e discos',command=self.run_diagnostics).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(actions,text='Simular destino de backup (somente leitura)',
-                   command=lambda: show_backup_preflight_scenario(self)).pack(side='left',padx=(0,8))
-        ttk.Button(actions,text='Exportar relatório JSON',command=self.export_diagnostics).pack(side='left',padx=(0,8))
+                   command=lambda: show_backup_preflight_scenario(self)).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(actions,text='Exportar relatório JSON',command=self.export_diagnostics).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         ttk.Button(self.diagnostic,text='Conferir origens e destinos (somente leitura)',
-                   command=lambda: show_drive_safety_dialog(self)).pack(anchor='w',padx=18,pady=(0,6))
+                   command=lambda: show_drive_safety_dialog(self)).pack(anchor='w',padx=ESPACO_M,pady=(0,ESPACO_P))
         self.diagnostic_data=None
-        self.diagnostic_text=tk.Text(self.diagnostic,bg=PANEL,fg=TEXT,wrap='word',font=('Consolas',10),relief='flat')
-        self.diagnostic_text.pack(fill='both',expand=True,padx=18,pady=12)
+        self.diagnostic_text=tk.Text(self.diagnostic,bg=PANEL,fg=TEXT,wrap='word',font=(FONTE_MONO,TAMANHO_CORPO),
+                                     relief='flat',padx=PADDING_CAIXA_TEXTO[0],pady=PADDING_CAIXA_TEXTO[1])
+        self.diagnostic_text.pack(fill='both',expand=True,padx=ESPACO_M,pady=ESPACO_M)
         self._write_text(self.diagnostic_text,'Clique em Analisar.\n\nEste módulo oferece recomendações, não executa otimizações.\n' )
 
     @staticmethod
@@ -1964,23 +2000,24 @@ class App(tk.Tk):
         except Exception as exc:messagebox.showerror('Erro',str(exc))
 
     def _build_recovery(self):
-        self.label(self.recovery,'Plano de continuidade após o Windows',size=14,fg=ACCENT).pack(fill='x',padx=18,pady=(15,7))
-        self.label(self.recovery, 'Antes: selecione jogos/apps, confira saves e valide backups; exporte o plano em uma unidade que NÃO será formatada.\nDepois: abra o app novamente, importe seu plano, reinstale apps de fontes oficiais e restaure arquivos em pasta de conferência.',fg=MUTED).pack(fill='x',padx=18,pady=6)
-        ttk.Button(self.recovery, text='Recuperar aplicativos, jogos e saves — assistente', style='Primary.TButton', command=lambda: show_app_recovery(self)).pack(anchor='w', padx=18, pady=5)
-        buttons=ttk.Frame(self.recovery);buttons.pack(fill='x',padx=18,pady=12)
-        ttk.Button(buttons,text='1. Exportar plano para usar depois',command=self.make_recovery_kit).pack(side='left',padx=(0,9))
-        ttk.Button(buttons,text='2. Abrir plano após reinstalar',command=self.read_recovery_kit).pack(side='left',padx=(0,9))
-        ttk.Button(buttons,text='3. Ir para restauração de backup',command=lambda:self.tabs.select(self.history)).pack(side='left',padx=(0,9))
-        audit_controls=ttk.Frame(self.recovery); audit_controls.pack(fill='x',padx=18,pady=(0,4))
-        ttk.Button(audit_controls,text='4. Restaurar saves do jogo',command=self.restore_game_from_plan).pack(side='left',padx=(0,9))
-        ttk.Button(audit_controls,text='5. Conferir TODO o backup (SHA-256)',command=self.audit_selected_backup).pack(side='left',padx=(0,10))
+        self.label(self.recovery,'Plano de continuidade após o Windows',size=TAMANHO_TITULO_MODAL,fg=ACCENT).pack(fill='x',padx=ESPACO_M,pady=(ESPACO_M,ESPACO_P))
+        self.label(self.recovery, 'Antes: selecione jogos/apps, confira saves e valide backups; exporte o plano em uma unidade que NÃO será formatada.\nDepois: abra o app novamente, importe seu plano, reinstale apps de fontes oficiais e restaure arquivos em pasta de conferência.',fg=MUTED).pack(fill='x',padx=ESPACO_M,pady=ESPACO_P)
+        ttk.Button(self.recovery, text='Recuperar aplicativos, jogos e saves — assistente', style='Primary.TButton', command=lambda: show_app_recovery(self)).pack(anchor='w', padx=ESPACO_M, pady=ESPACO_MINIMO)
+        buttons=ttk.Frame(self.recovery);buttons.pack(fill='x',padx=ESPACO_M,pady=ESPACO_M)
+        ttk.Button(buttons,text='1. Exportar plano para usar depois',command=self.make_recovery_kit).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(buttons,text='2. Abrir plano após reinstalar',command=self.read_recovery_kit).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(buttons,text='3. Ir para restauração de backup',command=lambda:self.tabs.select(self.history)).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        audit_controls=ttk.Frame(self.recovery); audit_controls.pack(fill='x',padx=ESPACO_M,pady=(0,ESPACO_MINIMO))
+        ttk.Button(audit_controls,text='4. Restaurar saves do jogo',command=self.restore_game_from_plan).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
+        ttk.Button(audit_controls,text='5. Conferir TODO o backup (SHA-256)',command=self.audit_selected_backup).pack(side='left',padx=ESPACO_ENTRE_BOTOES)
         self.audit_cancel=ttk.Button(audit_controls,text='Cancelar auditoria',command=self.cancel_audit,state='disabled')
         self.audit_cancel.pack(side='left')
         self.audit_cancel_event=threading.Event()
         self.audit_last_report=None
-        ttk.Button(audit_controls,text='Salvar relatório de auditoria',command=self.export_audit).pack(side='left',padx=(9,0))
-        self.recovery_text=tk.Text(self.recovery,bg=PANEL,fg=TEXT,wrap='word',font=('Consolas',10),relief='flat')
-        self.recovery_text.pack(fill='both',expand=True,padx=18,pady=10)
+        ttk.Button(audit_controls,text='Salvar relatório de auditoria',command=self.export_audit).pack(side='left',padx=(ESPACO_P,0))
+        self.recovery_text=tk.Text(self.recovery,bg=PANEL,fg=TEXT,wrap='word',font=(FONTE_MONO,TAMANHO_CORPO),
+                                   relief='flat',padx=PADDING_CAIXA_TEXTO[0],pady=PADDING_CAIXA_TEXTO[1])
+        self.recovery_text.pack(fill='both',expand=True,padx=ESPACO_M,pady=ESPACO_P)
         self._write_text(self.recovery_text, 'Segurança antes de formatar:\n\n'
           '  [ ] Testar restauração de saves e arquivos essenciais.\n'
           '  [ ] Fazer segunda cópia em outro dispositivo físico.\n'
@@ -2103,10 +2140,10 @@ class App(tk.Tk):
             messagebox.showwarning('Recuperação','Não há jogos com saves locais identificados no plano.')
             return
         dlg=tk.Toplevel(self);dlg.title('Recuperação de saves por jogo');dlg.configure(bg=BG)
-        dlg.geometry('700x420');dlg.transient(self)
-        self.label(dlg,'Escolha o jogo. Os arquivos serão copiados somente para uma pasta NOVA de conferência.').pack(fill='x',padx=12,pady=10)
-        box=tk.Listbox(dlg,bg=PANEL,fg=TEXT,selectbackground='#235781',font=('Segoe UI',11))
-        box.pack(fill='both',expand=True,padx=12,pady=8)
+        dlg.geometry(safe_window_geometry(700, 420, self.winfo_screenwidth(), self.winfo_screenheight()));dlg.transient(self)
+        self.label(dlg,'Escolha o jogo. Os arquivos serão copiados somente para uma pasta NOVA de conferência.').pack(fill='x',padx=PADDING_DIALOGO,pady=ESPACO_P)
+        box=tk.Listbox(dlg,bg=PANEL,fg=TEXT,selectbackground=COR_SELECAO,font=(FONTE_UI,TAMANHO_CORPO))
+        box.pack(fill='both',expand=True,padx=PADDING_DIALOGO,pady=ESPACO_P)
         for i in games:box.insert('end',i.get('name','Jogo'))
         def start():
             if is_process_elevated():

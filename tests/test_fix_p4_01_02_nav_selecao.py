@@ -69,7 +69,8 @@ def _load_page_changed():
     func = _method('_page_changed')
     module = ast.Module(body=[func], type_ignores=[])
     namespace = {'HOVER': 'hover', 'SIDEBAR': 'sidebar', 'ACCENT': 'accent',
-                 'TEXT': 'text', 'MUTED': 'muted'}
+                 'TEXT': 'text', 'MUTED': 'muted', 'FONTE_UI': 'Segoe UI',
+                 'TAMANHO_CORPO': 10}
     exec(compile(module, str(APP), 'exec'), namespace)
     return namespace['_page_changed']
 
