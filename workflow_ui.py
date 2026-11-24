@@ -13,6 +13,37 @@ from preservation_preflight import prepare_c_preflight
 from scan_gaps import report_by_drive
 from backup_core import atomic_json
 from volume_paths import volume_of
+from ui_scale import (
+    ACCENT,
+    AMBER,
+    BG,
+    BORDER,
+    ESPACO_DENTRO_GRUPO,
+    ESPACO_ENTRE_BLOCOS,
+    ESPACO_ENTRE_BOTOES,
+    ESPACO_ENTRE_GRUPOS,
+    ESPACO_M,
+    ESPACO_MINIMO,
+    ESPACO_P,
+    FONTE_MONO,
+    FONTE_UI,
+    GREEN,
+    MUTED,
+    PADDING_CAIXA_TEXTO,
+    PADDING_DIALOGO,
+    PADDING_PAINEL_COMPACTO,
+    PANEL,
+    TAMANHO_APOIO,
+    TAMANHO_CORPO,
+    TAMANHO_SUBTITULO,
+    TAMANHO_TITULO_ABA,
+    TAMANHO_TITULO_HERO,
+    TAMANHO_TITULO_MODAL,
+    TEXT,
+    safe_window_geometry,
+    safe_window_size,
+    safe_wraplength,
+)
 from workflow_texts import (
     installation_steps,
     overview_intro_text,
@@ -24,36 +55,44 @@ from workflow_texts import (
     withdraw_loss_warning,
 )
 
-BG = '#0C1220'
-PANEL = '#192438'
-TEXT = '#EFF4FF'
-MUTED = '#9CAAC0'
-ACCENT = '#9C85FF'
-BORDER = '#2B3952'
-GREEN = '#5DDEB1'
-AMBER = '#F3BE67'
+
+def _bind_wraplength(container, *targets, padding=ESPACO_M):
+    def _update(event):
+        if event.widget is not container:
+            return
+        for label, reserve in targets:
+            label.configure(
+                wraplength=safe_wraplength(event.width - reserve, padding=padding)
+            )
+
+    container.bind('<Configure>', _update, add='+')
 
 
 def _card(parent, tag, title, description, target, *, accent=False):
     panel = tk.Frame(parent, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
-    panel.pack(fill='x', pady=(0, 10))
+    panel.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
     tk.Label(panel, text=tag, bg=PANEL, fg=ACCENT if accent else GREEN,
-             font=('Segoe UI', 9, 'bold')).pack(anchor='w', padx=18, pady=(15, 4))
+             font=(FONTE_UI, TAMANHO_APOIO, 'bold')).pack(anchor='w', padx=ESPACO_M, pady=(ESPACO_M, ESPACO_MINIMO))
     tk.Label(panel, text=title, bg=PANEL, fg=TEXT,
-             font=('Segoe UI', 14, 'bold')).pack(anchor='w', padx=18)
-    tk.Label(panel, text=description, bg=PANEL, fg=MUTED, justify='left',
-             wraplength=880, font=('Segoe UI', 10)).pack(anchor='w', padx=18, pady=(7, 12))
-    ttk.Button(panel, text='Abrir etapa  →', command=target).pack(anchor='w', padx=14, pady=(0, 15))
+             font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold')).pack(anchor='w', padx=ESPACO_M)
+    desc_label = tk.Label(panel, text=description, bg=PANEL, fg=MUTED, justify='left',
+                          wraplength=safe_wraplength(880, padding=ESPACO_M),
+                          font=(FONTE_UI, TAMANHO_CORPO))
+    desc_label.pack(anchor='w', padx=ESPACO_M, pady=(ESPACO_P, ESPACO_M))
+    _bind_wraplength(panel, (desc_label, 0), padding=ESPACO_M)
+    ttk.Button(panel, text='Abrir etapa  →', command=target).pack(anchor='w', padx=ESPACO_M, pady=(0, ESPACO_M))
 
 
 def build_overview(app):
     sys_drive = system_drive()
-    frame = ttk.Frame(app.overview, padding=16)
+    frame = ttk.Frame(app.overview, padding=PADDING_PAINEL_COMPACTO)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='Uma reinstalação organizada, sem surpresas',
-              font=('Segoe UI', 18, 'bold')).pack(anchor='w', pady=(8, 8))
-    ttk.Label(frame, text=overview_intro_text(sys_drive),
-              wraplength=910).pack(anchor='w', pady=(0, 23))
+              font=(FONTE_UI, TAMANHO_TITULO_ABA, 'bold')).pack(anchor='w', pady=ESPACO_DENTRO_GRUPO)
+    intro = ttk.Label(frame, text=overview_intro_text(sys_drive),
+                      wraplength=safe_wraplength(910, padding=PADDING_PAINEL_COMPACTO))
+    intro.pack(anchor='w', pady=ESPACO_ENTRE_GRUPOS)
+    _bind_wraplength(frame, (intro, 0), padding=PADDING_PAINEL_COMPACTO)
     _card(frame, '01  ·  EXPLORAR', 'Meu computador',
           'Varra somente as unidades selecionadas. Agrupe jogos, arquivos e configurações sem carregar tudo na tela.',
           lambda: app.navigate(app.home), accent=True)
@@ -64,15 +103,16 @@ def build_overview(app):
           f'Checklist de backup do {sys_drive}, EFI independente, mídia oficial e recuperação pós-instalação.',
           lambda: app.navigate(app.installation))
     ttk.Label(frame, text='MODO DE PREPARAÇÃO • Nenhuma exclusão nem formatação disponível nesta versão.',
-              foreground=AMBER).pack(anchor='w', pady=(12, 0))
+              foreground=AMBER).pack(anchor='w', pady=(ESPACO_M, 0))
 
 
 def _scroll_text(parent, height=18):
     outer = ttk.Frame(parent)
-    outer.pack(fill='both', expand=True, pady=(10, 3))
+    outer.pack(fill='both', expand=True, pady=(ESPACO_P, ESPACO_MINIMO))
     box = tk.Text(outer, bg=PANEL, fg=TEXT, insertbackground=TEXT,
                   borderwidth=0, highlightthickness=1, highlightbackground=BORDER,
-                  wrap='word', font=('Consolas', 10), height=height, padx=14, pady=12)
+                  wrap='word', font=(FONTE_MONO, TAMANHO_CORPO), height=height,
+                  padx=PADDING_CAIXA_TEXTO[0], pady=PADDING_CAIXA_TEXTO[1])
     sy = ttk.Scrollbar(outer, orient='vertical', command=box.yview)
     box.configure(yscrollcommand=sy.set)
     sy.pack(side='right', fill='y')
@@ -97,34 +137,39 @@ def build_preservation(app):
     canvas.configure(yscrollcommand=page_scroll.set)
     page_scroll.pack(side='right', fill='y')
     canvas.pack(side='left', fill='both', expand=True)
-    frame = ttk.Frame(canvas, padding=15)
+    frame = ttk.Frame(canvas, padding=PADDING_PAINEL_COMPACTO)
     window_id = canvas.create_window((0, 0), window=frame, anchor='nw')
     frame.bind('<Configure>', lambda event: canvas.configure(scrollregion=canvas.bbox('all')))
     canvas.bind('<Configure>', lambda event: canvas.itemconfigure(window_id, width=event.width))
     ttk.Label(frame, text='O que deve permanecer no computador?',
-              font=('Segoe UI', 16, 'bold')).pack(anchor='w', pady=(4, 7))
-    ttk.Label(frame, text=preservation_intro_text(sys_drive), wraplength=940).pack(anchor='w')
+              font=(FONTE_UI, TAMANHO_TITULO_ABA, 'bold')).pack(anchor='w', pady=(ESPACO_MINIMO, ESPACO_P))
+    intro_lbl = ttk.Label(frame, text=preservation_intro_text(sys_drive),
+                          wraplength=safe_wraplength(940, padding=PADDING_PAINEL_COMPACTO))
+    intro_lbl.pack(anchor='w')
 
     metrics = tk.Frame(frame, bg=BG)
-    metrics.pack(fill='x', pady=(14, 12))
+    metrics.pack(fill='x', pady=(ESPACO_M, ESPACO_M))
     kept = tk.StringVar(value='0')
     paths_kept = tk.StringVar(value='0')
     cbackup = tk.StringVar(value='0')
     remove = tk.StringVar(value='0')
-    for label, var, desc in (('JOGOS / APPS', kept, 'Itens marcados Manter'),
-                              ('PASTAS / ARQUIVOS', paths_kept, 'Caminhos explicitamente marcados'),
-                              (f'BACKUP DO {sys_drive}', cbackup, 'Caminhos ainda não copiados'),
-                              ('REMOÇÃO • PRÉVIA', remove, 'Nenhum arquivo apagado')):
+    for idx, (label, var, desc) in enumerate((('JOGOS / APPS', kept, 'Itens marcados Manter'),
+                                              ('PASTAS / ARQUIVOS', paths_kept, 'Caminhos explicitamente marcados'),
+                                              (f'BACKUP DO {sys_drive}', cbackup, 'Caminhos ainda não copiados'),
+                                              ('REMOÇÃO • PRÉVIA', remove, 'Nenhum arquivo apagado'))):
         card = tk.Frame(metrics, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
-        card.pack(side='left', fill='both', expand=True, padx=(0, 10))
-        tk.Label(card, text=label, bg=PANEL, fg=MUTED, font=('Segoe UI', 9, 'bold')).pack(anchor='w', padx=16, pady=(12, 1))
-        tk.Label(card, textvariable=var, bg=PANEL, fg=TEXT, font=('Segoe UI', 22, 'bold')).pack(anchor='w', padx=16)
-        tk.Label(card, text=desc, bg=PANEL, fg=MUTED, font=('Segoe UI', 9)).pack(anchor='w', padx=16, pady=(0, 12))
+        card.pack(side='left', fill='both', expand=True, padx=ESPACO_ENTRE_BOTOES if idx < 3 else 0)
+        tk.Label(card, text=label, bg=PANEL, fg=MUTED, font=(FONTE_UI, TAMANHO_APOIO, 'bold')).pack(
+            anchor='w', padx=ESPACO_M, pady=(ESPACO_P, ESPACO_MINIMO))
+        tk.Label(card, textvariable=var, bg=PANEL, fg=TEXT, font=(FONTE_UI, TAMANHO_TITULO_HERO, 'bold')).pack(
+            anchor='w', padx=ESPACO_M)
+        tk.Label(card, text=desc, bg=PANEL, fg=MUTED, font=(FONTE_UI, TAMANHO_APOIO)).pack(
+            anchor='w', padx=ESPACO_M, pady=(0, ESPACO_P))
 
     bar = ttk.Frame(frame)
-    bar.pack(fill='x', pady=(3, 10))
+    bar.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
     ttk.Label(frame, text='Jogos e aplicativos escolhidos para manter (inclui itens sem saves localizados)',
-              font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(10, 5))
+              font=(FONTE_UI, TAMANHO_CORPO, 'bold')).pack(anchor='w', pady=(ESPACO_P, ESPACO_MINIMO))
     chosen_box = ttk.Frame(frame)
     chosen_box.pack(fill='both', expand=True)
     chosen = ttk.Treeview(chosen_box, columns=('type', 'drive', 'data'), show='tree headings', height=5)
@@ -154,13 +199,13 @@ def build_preservation(app):
     # Controls are deliberately next to the rows they edit, rather than at
     # the top of a long scrollable page where they are invisible.
     choice_actions = ttk.Frame(frame)
-    choice_actions.pack(fill='x', pady=(6, 11))
-    ttk.Label(choice_actions, text=withdraw_choice_hint(sys_drive)).pack(side='left', padx=(0, 9))
+    choice_actions.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
+    ttk.Label(choice_actions, text=withdraw_choice_hint(sys_drive)).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     ttk.Button(choice_actions, text='Retirar do backup (não apaga)',
                command=lambda: remove_selected_path_choice()).pack(side='left')
 
     ttk.Label(frame, text='Vínculos de jogos e dados associados  •  não representam backup concluído',
-              font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(10, 5))
+              font=(FONTE_UI, TAMANHO_CORPO, 'bold')).pack(anchor='w', pady=(ESPACO_P, ESPACO_MINIMO))
     linked_box = ttk.Frame(frame)
     linked_box.pack(fill='x')
     linked = ttk.Treeview(linked_box, columns=('game','installation','save','situation'), show='headings', height=5)
@@ -173,11 +218,13 @@ def build_preservation(app):
     linked_scroll.pack(side='right', fill='y')
     linked.pack(side='left', fill='both', expand=True)
     gap_status = tk.StringVar(value='Inventário não examinado.')
-    ttk.Label(frame, textvariable=gap_status, foreground=AMBER, wraplength=900).pack(anchor='w', pady=(8, 3))
+    gap_lbl = ttk.Label(frame, textvariable=gap_status, foreground=AMBER,
+                        wraplength=safe_wraplength(900, padding=PADDING_PAINEL_COMPACTO))
+    gap_lbl.pack(anchor='w', pady=(ESPACO_P, ESPACO_MINIMO))
 
     notice = ttk.Label(frame, text='Plano somente informativo. Nenhuma exclusão ou formatação pode ser executada nesta versão.',
-                       foreground=AMBER, wraplength=900)
-    notice.pack(anchor='w', pady=(9, 0))
+                       foreground=AMBER, wraplength=safe_wraplength(900, padding=PADDING_PAINEL_COMPACTO))
+    notice.pack(anchor='w', pady=(ESPACO_P, ESPACO_M))
 
     def make_preview():
         roots = getattr(app, 'deep_scan_report', {}) or {}
@@ -306,46 +353,60 @@ def build_preservation(app):
         app._on_change()  # Invalidates backup preview and saves choices.
         make_preview()
 
-    ttk.Button(bar, text='Atualizar plano', style='Primary.TButton', command=make_preview).pack(side='left', padx=(0, 8))
-    ttk.Button(bar, text='Importar escolhas da versão anterior', command=app.import_previous_choices).pack(side='left', padx=5)
-    ttk.Button(bar, text='Explorar discos', command=lambda: app.navigate(app.home)).pack(side='left', padx=5)
-    ttk.Button(bar, text='Exportar JSON', command=export).pack(side='left', padx=5)
+    ttk.Button(bar, text='Atualizar plano', style='Primary.TButton', command=make_preview).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    ttk.Button(bar, text='Importar escolhas da versão anterior', command=app.import_previous_choices).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    ttk.Button(bar, text='Explorar discos', command=lambda: app.navigate(app.home)).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    ttk.Button(bar, text='Exportar JSON', command=export).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     ttk.Button(bar, text='Revisar erros de varredura',
                command=lambda: show_scan_gaps(app, getattr(app, 'deep_scan_report', {}),
-                                              getattr(app, 'scan_reports_by_drive', {}))).pack(side='left', padx=5)
+                                              getattr(app, 'scan_reports_by_drive', {}))).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     checkbar = ttk.Frame(frame)
-    checkbar.pack(fill='x', pady=(0, 9))
+    checkbar.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
     ttk.Button(checkbar, text=f'Conferir fontes do {sys_drive} (sem copiar)',
-               command=lambda: show_c_preflight(app, make_preview()[0])).pack(side='left', padx=(0, 10))
-    ttk.Label(checkbar, text='Pré-checagem rápida de caminhos; NÃO valida o conteúdo nem substitui backup.',
-              foreground=AMBER, wraplength=660).pack(side='left')
+               command=lambda: show_c_preflight(app, make_preview()[0])).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    check_lbl = ttk.Label(checkbar, text='Pré-checagem rápida de caminhos; NÃO valida o conteúdo nem substitui backup.',
+                          foreground=AMBER, wraplength=safe_wraplength(660, padding=PADDING_PAINEL_COMPACTO))
+    check_lbl.pack(side='left')
     backupbar = ttk.Frame(frame)
-    backupbar.pack(fill='x', pady=(0, 9))
+    backupbar.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
     def open_selective_backup():
         from selective_backup_ui import show_selective_backup
         plan, _ = make_preview()  # Always use the current choices and approved C: paths.
         show_selective_backup(app, plan)
     ttk.Button(backupbar, text='Próximo: revisar backup dos arquivos escolhidos →',
                style='Primary.TButton',
-               command=lambda: app.navigate(app.review)).pack(side='left', padx=(0, 10))
-    ttk.Label(backupbar, text=f'Fluxo atual: revisão → cópia verificada SHA-256 → recuperação pelo histórico. '
-              f'A revisão de reinstalação do Windows protege o {sys_drive}; o app não apaga nenhum arquivo '
-              'dos outros discos e unidades. Nenhuma formatação é autorizada.', wraplength=620,
-              foreground=AMBER).pack(side='left')
+               command=lambda: app.navigate(app.review)).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    backup_lbl = ttk.Label(backupbar, text=f'Fluxo atual: revisão → cópia verificada SHA-256 → recuperação pelo histórico. '
+                           f'A revisão de reinstalação do Windows protege o {sys_drive}; o app não apaga nenhum arquivo '
+                           'dos outros discos e unidades. Nenhuma formatação é autorizada.',
+                           wraplength=safe_wraplength(620, padding=PADDING_PAINEL_COMPACTO),
+                           foreground=AMBER)
+    backup_lbl.pack(side='left')
     backup_extra = ttk.Frame(frame)
-    backup_extra.pack(fill='x', pady=(0, 9))
+    backup_extra.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
     ttk.Button(backup_extra, text=f'Backup seletivo avançado do {sys_drive} • v0.6.6',
-               command=open_selective_backup).pack(side='left', padx=(0, 10))
+               command=open_selective_backup).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
 
     auditbar = ttk.Frame(frame)
-    auditbar.pack(fill='x', pady=(0, 10))
+    auditbar.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
     def audit_completeness():
         from completeness_audit_ui_v068 import show_completeness_audit
         show_completeness_audit(app, make_preview()[0])
     ttk.Button(auditbar, text=f'Auditar dados do {sys_drive} • revisão e EFI v0.6.9',
-               style='Primary.TButton', command=audit_completeness).pack(side='left', padx=(0, 10))
-    ttk.Label(auditbar, text='Somente leitura. Revela locais que ainda exigem revisão; nunca libera formatação.',
-              wraplength=600, foreground=AMBER).pack(side='left')
+               style='Primary.TButton', command=audit_completeness).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    audit_lbl = ttk.Label(auditbar, text='Somente leitura. Revela locais que ainda exigem revisão; nunca libera formatação.',
+                          wraplength=safe_wraplength(600, padding=PADDING_PAINEL_COMPACTO), foreground=AMBER)
+    audit_lbl.pack(side='left')
+    _bind_wraplength(
+        frame,
+        (intro_lbl, 0),
+        (gap_lbl, 0),
+        (notice, 0),
+        (check_lbl, 340),
+        (backup_lbl, 380),
+        (audit_lbl, 380),
+        padding=PADDING_PAINEL_COMPACTO,
+    )
     make_preview()
     app.update_preservation_preview = make_preview
 
@@ -359,15 +420,42 @@ def show_c_preflight(app, plan=None):
     check = prepare_c_preflight(plan.get('requires_verified_backup', []))
     window = tk.Toplevel(app)
     window.title(f'Conferência dos caminhos do {sys_drive} — NÃO é backup')
-    window.geometry('1050x600')
-    frame = ttk.Frame(window, padding=16)
+    sw = window.winfo_screenwidth()
+    sh = window.winfo_screenheight()
+    window.geometry(safe_window_geometry(1050, 600, sw, sh))
+    min_w, min_h = safe_window_size(640, 420, sw, sh)
+    window.minsize(min_w, min_h)
+    window.resizable(True, True)
+    frame = ttk.Frame(window, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='Conferência de fontes — somente leitura',
-              font=('Segoe UI', 16, 'bold')).pack(anchor='w')
-    ttk.Label(frame, text=(
+              font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold')).pack(anchor='w')
+    summary_lbl = ttk.Label(frame, text=(
         f"{check['selected_paths']} caminho(s) no plano, {check['checked_paths']} conferido(s) por metadados, "
         f"{check['not_checked']} não examinados. Nenhum arquivo foi copiado, lido integralmente ou recuperado."),
-        wraplength=1000, foreground=AMBER).pack(anchor='w', pady=(5, 10))
+        wraplength=safe_wraplength(1000, padding=PADDING_DIALOGO), foreground=AMBER)
+    summary_lbl.pack(anchor='w', pady=(ESPACO_MINIMO, ESPACO_P))
+    actions = ttk.Frame(frame)
+    actions.pack(side='bottom', fill='x', pady=(ESPACO_P, 0))
+    def export():
+        location = filedialog.asksaveasfilename(parent=window, defaultextension='.json',
+                      initialfile='conferencia-fontes-c-previa.json',
+                      filetypes=[('JSON','*.json')])
+        if location:
+            try:
+                atomic_json(Path(location), check)
+                messagebox.showinfo('Conferência exportada',
+                    'Arquivo salvo; isto NÃO é um backup.', parent=window)
+            except OSError as exc:
+                messagebox.showerror('Falha de exportação', str(exc), parent=window)
+    ttk.Button(actions, text='Exportar conferência JSON', command=export).pack(side='left')
+    ttk.Button(actions, text='Fechar', command=window.destroy).pack(side='right')
+    note_lbl = ttk.Label(frame, text=(
+        'LOCALIZADO significa somente que o caminho existe. Pasta não foi enumerada; '
+        'arquivos e tamanho total não foram verificados. Nenhum status autoriza formatar.'),
+        foreground=AMBER, wraplength=safe_wraplength(1000, padding=PADDING_DIALOGO))
+    note_lbl.pack(side='bottom', anchor='w', pady=ESPACO_DENTRO_GRUPO)
+    _bind_wraplength(frame, (summary_lbl, 0), (note_lbl, 0), padding=PADDING_DIALOGO)
     tablebox = ttk.Frame(frame)
     tablebox.pack(fill='both', expand=True)
     tree = ttk.Treeview(tablebox, columns=('status', 'type', 'note'), show='tree headings')
@@ -383,59 +471,27 @@ def show_c_preflight(app, plan=None):
     for row in check['entries']:
         tree.insert('', 'end', text=row['path'],
                     values=(row['status'], row['file_type'], row['note']))
-    ttk.Label(frame, text=(
-        'LOCALIZADO significa somente que o caminho existe. Pasta não foi enumerada; '
-        'arquivos e tamanho total não foram verificados. Nenhum status autoriza formatar.'),
-        foreground=AMBER, wraplength=1000).pack(anchor='w', pady=(9, 8))
-    actions = ttk.Frame(frame)
-    actions.pack(fill='x')
-    def export():
-        location = filedialog.asksaveasfilename(parent=window, defaultextension='.json',
-                      initialfile='conferencia-fontes-c-previa.json',
-                      filetypes=[('JSON','*.json')])
-        if location:
-            try:
-                atomic_json(Path(location), check)
-                messagebox.showinfo('Conferência exportada',
-                    'Arquivo salvo; isto NÃO é um backup.', parent=window)
-            except OSError as exc:
-                messagebox.showerror('Falha de exportação', str(exc), parent=window)
-    ttk.Button(actions, text='Exportar conferência JSON', command=export).pack(side='left')
-    ttk.Button(actions, text='Fechar', command=window.destroy).pack(side='right')
     return window
 
 
 def build_installation(app):
     sys_drive = system_drive()
-    frame = ttk.Frame(app.installation, padding=16)
+    frame = ttk.Frame(app.installation, padding=PADDING_PAINEL_COMPACTO)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='Preparação da instalação limpa do Windows',
-              font=('Segoe UI', 16, 'bold')).pack(anchor='w', pady=(3, 10))
-    ttk.Label(frame, text='Esta versão prepara e audita o processo. Não executa formatação, exclusão ou mudança de EFI.',
-              wraplength=950, foreground=AMBER).pack(anchor='w', pady=(0, 16))
-    instructions = installation_steps(sys_drive)
-    tiles = tk.Frame(frame, bg=BG)
-    tiles.pack(fill='both', expand=True)
-    for index, (number, title, body) in enumerate(instructions):
-        r, c = divmod(index, 2)
-        tiles.grid_rowconfigure(r, weight=1)
-        tiles.grid_columnconfigure(c, weight=1, uniform='steps')
-        box = tk.Frame(tiles, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
-        box.grid(row=r, column=c, sticky='nsew', padx=(0, 13), pady=(0, 12))
-        tk.Label(box, text=number+'  •  A CONFIRMAR', bg=PANEL, fg=ACCENT,
-                 font=('Segoe UI', 9, 'bold')).pack(anchor='w', padx=17, pady=(14, 7))
-        tk.Label(box, text=title, bg=PANEL, fg=TEXT,
-                 font=('Segoe UI', 13, 'bold')).pack(anchor='w', padx=17)
-        tk.Label(box, text=body, bg=PANEL, fg=MUTED, justify='left', wraplength=365,
-                 font=('Segoe UI', 10)).pack(anchor='w', padx=17, pady=(6, 13))
+              font=(FONTE_UI, TAMANHO_TITULO_ABA, 'bold')).pack(anchor='w', pady=ESPACO_DENTRO_GRUPO)
+    warn_lbl = ttk.Label(frame, text='Esta versão prepara e audita o processo. Não executa formatação, exclusão ou mudança de EFI.',
+                         wraplength=safe_wraplength(950, padding=PADDING_PAINEL_COMPACTO), foreground=AMBER)
+    warn_lbl.pack(anchor='w', pady=ESPACO_ENTRE_BLOCOS)
+    _bind_wraplength(frame, (warn_lbl, 0), padding=PADDING_PAINEL_COMPACTO)
     bottom = ttk.Frame(frame)
-    bottom.pack(fill='x', pady=(4, 0))
+    bottom.pack(side='bottom', fill='x', pady=(ESPACO_M, 0))
     ttk.Button(bottom, text='Revisar preservação', style='Primary.TButton',
-               command=lambda: app.navigate(app.preservation)).pack(side='left', padx=(0, 8))
+               command=lambda: app.navigate(app.preservation)).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     ttk.Button(bottom, text='Diagnóstico dos discos',
-               command=lambda: app.navigate(app.diagnostic)).pack(side='left', padx=5)
+               command=lambda: app.navigate(app.diagnostic)).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     ttk.Button(bottom, text='Recuperação depois do Windows',
-               command=lambda: app.navigate(app.recovery)).pack(side='left', padx=5)
+               command=lambda: app.navigate(app.recovery)).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     def open_install_audit():
         from completeness_audit_ui_v068 import show_completeness_audit
         roots = getattr(app, 'deep_scan_report', {}) or {}
@@ -446,7 +502,25 @@ def build_installation(app):
                            removal_candidates=getattr(app, 'cleanup_candidates', ()))
         show_completeness_audit(app, plan)
     ttk.Button(bottom, text=f'Auditoria {sys_drive} / EFI • v0.6.9',
-               command=open_install_audit).pack(side='left', padx=5)
+               command=open_install_audit).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
+    instructions = installation_steps(sys_drive)
+    tiles = tk.Frame(frame, bg=BG)
+    tiles.pack(fill='both', expand=True)
+    for index, (number, title, body) in enumerate(instructions):
+        r, c = divmod(index, 2)
+        tiles.grid_rowconfigure(r, weight=1)
+        tiles.grid_columnconfigure(c, weight=1, uniform='steps')
+        box = tk.Frame(tiles, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
+        box.grid(row=r, column=c, sticky='nsew', padx=(0, ESPACO_M), pady=(0, ESPACO_M))
+        tk.Label(box, text=number+'  •  A CONFIRMAR', bg=PANEL, fg=ACCENT,
+                 font=(FONTE_UI, TAMANHO_APOIO, 'bold')).pack(anchor='w', padx=ESPACO_M, pady=(ESPACO_M, ESPACO_P))
+        tk.Label(box, text=title, bg=PANEL, fg=TEXT,
+                 font=(FONTE_UI, TAMANHO_SUBTITULO, 'bold')).pack(anchor='w', padx=ESPACO_M)
+        body_lbl = tk.Label(box, text=body, bg=PANEL, fg=MUTED, justify='left',
+                            wraplength=safe_wraplength(365, padding=ESPACO_M),
+                            font=(FONTE_UI, TAMANHO_CORPO))
+        body_lbl.pack(anchor='w', padx=ESPACO_M, pady=(ESPACO_P, ESPACO_M))
+        _bind_wraplength(box, (body_lbl, 0), padding=ESPACO_M)
 
 
 def show_scan_gaps(parent, report=None, per_drive=None):
@@ -455,34 +529,33 @@ def show_scan_gaps(parent, report=None, per_drive=None):
     summary = report_by_drive(report, per_drive)
     dialog = tk.Toplevel(parent)
     dialog.title('Erros e exclusões por unidade — somente leitura')
-    dialog.geometry('1080x640')
-    frame = ttk.Frame(dialog, padding=16)
+    sw = dialog.winfo_screenwidth()
+    sh = dialog.winfo_screenheight()
+    dialog.geometry(safe_window_geometry(1080, 640, sw, sh))
+    min_w, min_h = safe_window_size(640, 420, sw, sh)
+    dialog.minsize(min_w, min_h)
+    dialog.resizable(True, True)
+    frame = ttk.Frame(dialog, padding=PADDING_DIALOGO)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='O que a varredura não conseguiu examinar',
-              font=('Segoe UI', 15, 'bold')).pack(anchor='w', pady=(0, 7))
-    ttk.Label(frame, text='Erros e exclusões de análise não autorizam apagar arquivos. '
-              'Inventários salvos podem estar desatualizados.',
-              wraplength=990, foreground=AMBER).pack(anchor='w', pady=(0, 9))
+              font=(FONTE_UI, TAMANHO_TITULO_MODAL, 'bold')).pack(anchor='w', pady=ESPACO_DENTRO_GRUPO)
+    warn_lbl = ttk.Label(frame, text='Erros e exclusões de análise não autorizam apagar arquivos. '
+                         'Inventários salvos podem estar desatualizados.',
+                         wraplength=safe_wraplength(990, padding=PADDING_DIALOGO), foreground=AMBER)
+    warn_lbl.pack(anchor='w', pady=ESPACO_DENTRO_GRUPO)
+    _bind_wraplength(frame, (warn_lbl, 0), padding=PADDING_DIALOGO)
     drives = list(summary)
     if not drives:
         ttk.Label(frame, text='Nenhum inventário encontrado.').pack(anchor='w')
         ttk.Button(frame, text='Fechar', command=dialog.destroy).pack(anchor='e')
         return dialog
     selected_drive = tk.StringVar(value=drives[0])
-    menu = ttk.Frame(frame); menu.pack(fill='x', pady=(0, 8))
+    menu = ttk.Frame(frame); menu.pack(fill='x', pady=ESPACO_DENTRO_GRUPO)
     ttk.Label(menu, text='Unidade: ').pack(side='left')
     ttk.Combobox(menu, textvariable=selected_drive, values=drives, state='readonly', width=15).pack(side='left')
     total = tk.StringVar()
-    ttk.Label(menu, textvariable=total).pack(side='left', padx=16)
+    ttk.Label(menu, textvariable=total).pack(side='left', padx=ESPACO_M)
     cols = ('type','path','reason')
-    area = ttk.Frame(frame); area.pack(fill='both', expand=True)
-    tree = ttk.Treeview(area, columns=cols, show='headings', height=12)
-    for col, label, width in (('type','Categoria',125), ('path','Caminho',570), ('reason','Motivo',280)):
-        tree.heading(col, text=label)
-        tree.column(col, width=width, stretch=(col!='type'))
-    scrollbar = ttk.Scrollbar(area, orient='vertical', command=tree.yview)
-    tree.configure(yscrollcommand=scrollbar.set)
-    scrollbar.pack(side='right', fill='y'); tree.pack(side='left', fill='both', expand=True)
     visible_count = tk.IntVar(value=0)
     def render(*_):
         tree.delete(*tree.get_children())
@@ -502,8 +575,8 @@ def show_scan_gaps(parent, report=None, per_drive=None):
                                           'Ignorado na análise', row['path'], row['reason']))
         visible_count.set(min(len(rows), old+200))
     selected_drive.trace_add('write', render)
-    footer = ttk.Frame(frame); footer.pack(fill='x', pady=(9, 0))
-    ttk.Button(footer, text='Mostrar mais 200', command=more).pack(side='left', padx=(0, 8))
+    footer = ttk.Frame(frame); footer.pack(side='bottom', fill='x', pady=(ESPACO_P, 0))
+    ttk.Button(footer, text='Mostrar mais 200', command=more).pack(side='left', padx=ESPACO_ENTRE_BOTOES)
     def export():
         dest = filedialog.asksaveasfilename(parent=dialog,
                     title='Salvar relatório de lacunas (contém caminhos locais)',
@@ -517,5 +590,13 @@ def show_scan_gaps(parent, report=None, per_drive=None):
                 messagebox.showerror('Erro ao salvar', str(exc), parent=dialog)
     ttk.Button(footer, text='Exportar relatório JSON', command=export).pack(side='left')
     ttk.Button(footer, text='Fechar', command=dialog.destroy).pack(side='right')
+    area = ttk.Frame(frame); area.pack(fill='both', expand=True)
+    tree = ttk.Treeview(area, columns=cols, show='headings', height=12)
+    for col, label, width in (('type','Categoria',125), ('path','Caminho',570), ('reason','Motivo',280)):
+        tree.heading(col, text=label)
+        tree.column(col, width=width, stretch=(col!='type'))
+    scrollbar = ttk.Scrollbar(area, orient='vertical', command=tree.yview)
+    tree.configure(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side='right', fill='y'); tree.pack(side='left', fill='both', expand=True)
     render()
     return dialog
