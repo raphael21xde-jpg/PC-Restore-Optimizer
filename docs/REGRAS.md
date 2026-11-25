@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 4 (R-101 a R-104; última poda: 21/11/2026, pedido `regras-20261121-poda-r91-r100`, issue #297). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-101.
+poda: 5 (R-101 a R-105; última poda: 21/11/2026, pedido `regras-20261121-poda-r91-r100`, issue #297). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-101.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -119,3 +119,4 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-102 | Teste que confere um botão citado por um aviso ("na página X, botão Y") num método que monta várias telas (ex.: App._build) confere também que o botão é criado dentro do contêiner dessa tela (primeiro argumento igual ao atributo da página, ex.: self.overview) e que a função que monta a tela é chamada. | Revisão da PR #302 (FIX-P4-02-04, 98d2e6d32c94) | 2026-11-22 |
 | R-103 | Quando o backlog ou a PR diz que um teste confere um tipo exato (ex.: ttk.Button), o teste confere o módulo e a classe, não só o nome da classe. | Revisão da PR #304 (FIX-P4-02-05, 2c95d7721d1d) | 2026-11-22 |
 | R-104 | PR que cria uma regra atualiza, no mesmo commit, o contador "Regras novas desde a última poda". | Revisão da PR #305 (FIX-P4-02-06, ee0f0f2de1b9) | 2026-11-22 |
+| R-105 | Regex que procura caminhos em texto de arquivo não usa repetição de alternativas que se sobrepõem (ex.: (?:\\\\|\\|/)+); o separador é uma classe só ([\\/]+); há teste com ~200 separadores seguidos que termina em menos de 1 s. | Revisão do branch fix/P5-02-01-endurecer-scan (c03de841e432) | 2026-11-25 |
