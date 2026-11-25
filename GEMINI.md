@@ -82,7 +82,7 @@ O item não tem critérios de aceite no backlog, então começa por uma proposta
 2. **Etapa 2, só depois de a proposta ser mesclada.** Implementar uma fatia por
    PR, na ordem da proposta.
 
-O primeiro uso guiado só orienta e leva às telas que já existem. Não executa
+O primeiro uso guiado orienta e leva às telas que já existem. Não executa
 cópia, restauração nem diagnóstico de discos por conta própria, e não muda
 nenhuma trava.
 
