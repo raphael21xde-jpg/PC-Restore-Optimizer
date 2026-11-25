@@ -39,3 +39,6 @@ preferencias-v05.json
 build/
 dist/
 *.spec
+
+# Inventarios de deteccao (dados da maquina do usuario): nunca publicar (P5-01)
+deteccao-detalhada-v0*.json
