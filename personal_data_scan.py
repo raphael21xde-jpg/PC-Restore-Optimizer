@@ -41,7 +41,9 @@ ALLOWED_FAKE_SECRETS = frozenset({
     'ghp_abcdefghijklmnopqrstuvwxyz123456',
 })
 
-_SEP = r'(?:\\\\|\\|/)+'
+# Uma classe só (R-105): alternativas que se sobrepõem, como `(?:\\\\|\\|/)+`,
+# fazem o tempo dobrar a cada barra invertida a mais quando não há achado.
+_SEP = r'[\\/]+'
 # `<nome>`, `{user}`, `%USERNAME%`, `$env:...` e `*` param o nome (são modelos).
 _NAME = r'([^\\/\s"\'<>`*|:;,()\[\]{}$%]+)'
 _PROFILES = r'(?:users|usuarios|usuários|documents and settings)'
@@ -50,7 +52,9 @@ _HOST = r'[^\\/\s"\'<>|]+'
 _USER_PATH = re.compile(
     r'(?i)(?:\b[a-z]:' + _SEP + _PROFILES + _SEP
     # caminho de rede: `\\PC\c$\Users\` ou `\\PC\Users\` (também escapado)
-    + r'|\\{2,}' + _HOST + r'\\+(?:[a-z]\$\\+)?' + _PROFILES + r'\\+'
+    # `(?<!\\)`: começa só no início das barras (sem isso, cada barra de uma
+    # sequência longa recomeçava a busca e o tempo crescia ao quadrado).
+    + r'|(?<!\\)\\{2,}' + _HOST + r'\\+(?:[a-z]\$\\+)?' + _PROFILES + r'\\+'
     + r'|(?<![\w:])//' + _HOST + r'/+[a-z]\$/+' + _PROFILES + r'/+'
     + r'|(?<![\w.])/(?:home|Users)/)' + _NAME
 )
