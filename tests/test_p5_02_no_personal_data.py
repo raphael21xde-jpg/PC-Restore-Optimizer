@@ -17,8 +17,9 @@ import personal_data_scan as scan
 
 ROOT = Path(__file__).resolve().parents[1]
 # Os exemplos negativos são montados por partes, para este arquivo não ser
-# apontado pelo próprio teste do repositório.
-FAKE = 'Mariana'
+# apontado pelo próprio teste do repositório. O nome é inventado e não começa
+# por nenhum nome da lista de permitidos.
+FAKE = 'Zorv' + 'anqueta'
 WIN = 'C:\\Users\\'
 
 
@@ -41,10 +42,7 @@ def tracked_findings(repo: Path) -> list[str]:
             data = path.read_bytes()
         except OSError:
             data = b''
-        if b'\0' in data[:8192]:
-            text = ''  # binário: só o nome é conferido
-        else:
-            text = data.decode('utf-8', errors='replace')
+        text = scan.decode_text(data)  # binário vira '' (só o nome é conferido)
         findings.extend(scan.personal_data_findings(name, text))
     return findings
 
@@ -78,15 +76,67 @@ class FindingsTests(unittest.TestCase):
         text = '\n'.join([
             'C:\\Users\\<nome>\\Documents', 'C:\\Users\\{usuario}', 'C:\\Users\\%USERNAME%',
             'C:\\Users\\*\\AppData', 'C:\\Users\\Public', 'C:\\Users\\Default',
-            'C:\\Users\\Fulano\\x', 'C:\\Users\\FULANO-SECRETO', 'C:\\Users\\usuario_secreto',
+            'C:\\Users\\Fulano\\x', 'C:\\Users\\FULANO', 'C:\\Users\\Fulano.',
             '/home/fulano', 'C:\\Users\\x\\y', '$env:USERPROFILE',
+            '\\\\PC\\c$\\Users\\Fulano\\x', '/root/a', '/root/.config/x', 'https://example.org/Users/x',
         ])
         self.assertEqual(scan.personal_data_findings('a.md', text), [])
+
+    def test_allowed_name_must_be_exact(self):
+        # Antes, `Fulano-<algo>` passava porque só a primeira parte era comparada.
+        for name in ('Fulano-' + FAKE, 'fulano_' + FAKE, 'Fulano.' + FAKE, 'usuario-' + FAKE, 'Public' + FAKE):
+            with self.subTest(name=name):
+                self.assertFalse(scan.is_allowed_user_name(name))
+                self.assertEqual(len(scan.personal_data_findings('a.md', WIN + name + '\\x')), 1)
+
+    def test_odd_words_left_the_allow_list(self):
+        for word in ('segredo', 'abc', 'file', 'other', 'cliente', 'fixtureuser'):
+            with self.subTest(word=word):
+                self.assertNotIn(word, scan.ALLOWED_USER_NAMES)
+                self.assertFalse(scan.is_allowed_user_name(word))
+
+    def test_generic_file_in_users_folder_is_allowed_only_by_exact_name(self):
+        self.assertTrue(scan.is_allowed_user_name('desktop.ini'))
+        self.assertTrue(scan.is_allowed_user_name('file.txt'))
+        for name in ('file', 'file.txt.' + FAKE, FAKE + '.txt', 'desktop.ini-' + FAKE):
+            with self.subTest(name=name):
+                self.assertFalse(scan.is_allowed_user_name(name))
+
+    def test_network_paths_are_found(self):
+        for prefix in ('\\\\PC\\c$\\Users\\', '\\\\servidor\\Users\\', '\\\\PC\\D$\\Usuarios\\',
+                       '\\\\\\\\PC\\\\c$\\\\Users\\\\', '//PC/c$/Users/', '\\\\?\\C:\\Users\\'):
+            with self.subTest(prefix=prefix):
+                self.assertEqual(
+                    scan.personal_data_findings('a.md', prefix + FAKE + '\\x'),
+                    ['a.md:1: caminho com nome de usuário'],
+                )
+
+    def test_root_home_is_generic_not_a_user_name(self):
+        # Escolha registrada no backlog: `/root` é a mesma conta em todo Linux e não
+        # identifica ninguém; só `/home/<nome>` conta. Um nome logo depois continua achado.
+        self.assertEqual(scan.personal_data_findings('a.md', '/root/arquivo.txt'), [])
+        self.assertEqual(len(scan.personal_data_findings('a.md', '/root/x /home/' + FAKE)), 1)
+
+    def test_utf16_text_is_decoded_before_searching(self):
+        text = 'linha\n' + WIN + FAKE + '\\Desktop\n'
+        for data in (text.encode('utf-16'), text.encode('utf-16-le'), text.encode('utf-16-be'),
+                     b'\xef\xbb\xbf' + text.encode('utf-8'), text.encode('utf-32')):
+            with self.subTest(start=data[:4]):
+                self.assertEqual(
+                    scan.personal_data_findings('a.txt', scan.decode_text(data)),
+                    ['a.txt:2: caminho com nome de usuário'],
+                )
+
+    def test_binary_data_is_not_read_as_text(self):
+        self.assertEqual(scan.decode_text(b'\x89PNG\r\n\x1a\n\0\0\0\rIHDR' + WIN.encode() + b'\0\xff\x10'), '')
+        self.assertEqual(scan.decode_text(b''), '')
 
     def test_allow_list_is_small_and_explicit(self):
         self.assertLessEqual(len(scan.ALLOWED_USER_NAMES), 30)
         self.assertFalse(scan.is_allowed_user_name(FAKE))
         self.assertTrue(scan.is_allowed_user_name('Fulano'))
+        self.assertTrue(scan.is_allowed_user_name('FULANO'))
+        self.assertFalse(any(FAKE.lower().startswith(name) for name in scan.ALLOWED_USER_NAMES))
 
     def test_personal_file_names_are_found(self):
         for name in ('preferencias-v05.json', 'sub/deteccao-detalhada-v065.json',
@@ -134,6 +184,12 @@ class TrackedFilesTests(unittest.TestCase):
     def test_synthetic_repo_with_personal_file_fails(self):
         repo = self._repo({'preferencias-v05.json': '{}', 'deteccao-detalhada-v065.json': '{}'})
         self.assertEqual(len(tracked_findings(repo)), 2)
+
+    def test_synthetic_repo_with_utf16_file_fails(self):
+        repo = self._repo({'ok.md': 'nada pessoal'})
+        (repo / 'lista.txt').write_bytes(('x\n' + WIN + FAKE + '\\Music\n').encode('utf-16'))
+        subprocess.run(['git', 'add', '--', 'lista.txt'], cwd=repo, check=True)
+        self.assertEqual(tracked_findings(repo), ['lista.txt:2: caminho com nome de usuário'])
 
     def test_untracked_file_is_not_checked(self):
         repo = self._repo({'ok.md': 'nada pessoal'})

@@ -7,10 +7,10 @@ from volume_extents import parse_extents, collect_extents
 
 class Audit069Tests(unittest.TestCase):
     def report(self):
-        return {'selected_c_paths':[r'C:\Users\Other\Game\Songs', r'C:\Saves\Example'],
-                'candidate_locations':[{'path':r'C:\Users\Other\Game', 'status':'REVISAR — NÃO SELECIONADO',
+        return {'selected_c_paths':[r'C:\Users\Fulano\Game\Songs', r'C:\Saves\Example'],
+                'candidate_locations':[{'path':r'C:\Users\Fulano\Game', 'status':'REVISAR — NÃO SELECIONADO',
                                         'detail':'Conteúdo não auditado.', 'covered_by':''}],
-                'recovery_map':[{'source_path':r'C:\Users\Other\Game\Songs'},
+                'recovery_map':[{'source_path':r'C:\Users\Fulano\Game\Songs'},
                                 {'source_path':r'C:\Saves\Example'}]}
 
     def test_partial_selection_and_copy_isolation(self):

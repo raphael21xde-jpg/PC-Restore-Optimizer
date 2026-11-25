@@ -303,7 +303,7 @@ class InspectGpuBarTests(unittest.TestCase):
     def test_query_failure_message_without_powershell_text(self):
         def fake_ps(code, timeout=22):
             if 'Win32_DeviceMemoryAddress' in code:
-                raise oe.OptimizationError('C:\\Users\\FULANO-SECRETO\\erro')
+                raise oe.OptimizationError('C:\\Users\\Fulano\\erro')
             return None
         with mock.patch.object(oe, '_is_windows', return_value=True), \
                 mock.patch.object(oe, '_ps', side_effect=fake_ps), \
@@ -311,7 +311,7 @@ class InspectGpuBarTests(unittest.TestCase):
             report = oe.inspect_pc()
         self.assertIn('Inventário Resizable BAR (placa de vídeo): não foi possível ler.', report['errors'])
         self.assertFalse([e for e in report['errors'] if 'gpu_bar' in e])
-        self.assertNotIn('FULANO-SECRETO', json.dumps(report, ensure_ascii=False))
+        self.assertNotIn('Fulano', json.dumps(report, ensure_ascii=False))
         self.assertEqual(report['bios_guidance']['rebar'], bg.REBAR_UNKNOWN)
 
     def test_outside_windows_no_command_and_not_confirmed(self):
