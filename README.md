@@ -30,6 +30,8 @@ Onde o app grava (veja também "Onde o app guarda as suas informações", mais a
 - quando você usa "Colocar no lugar original" depois de formatar: as pastas de onde os arquivos
   vieram; se lá já houver um arquivo diferente com o mesmo nome, ele não é apagado, é renomeado
   para `<nome>.antes-pcro-AAAAMMDD`;
+- os autotestes do app (os botões de teste): pastas temporárias do Windows, criadas por eles com
+  arquivos inventados e apagadas no fim;
 - quando você pede para reinstalar programas pelo winget: o próprio winget instala esses
   programas.
 
@@ -39,13 +41,17 @@ descreve o jeito de abrir pelo Python (instalar o Python e abrir o `INICIAR.bat`
 
 ## Do que o PC precisa
 - **Windows 10 ou Windows 11:** é para esses que o app foi feito. O Windows 7, 8 e 8.1 não são
-  suportados: a base do app (Python 3.13) não aceita essas versões.
+  suportados pela base do app (Python 3.13, que só suporta Windows 10 ou mais novo).
 - **Windows de 64 bits:** a confirmar na validação.
 - **Espaço livre para o próprio app:** a confirmar na validação.
 - **Memória (RAM) mínima:** a confirmar na validação.
 - **Para o backup:** um disco ou pendrive com espaço livre para a cópia, que **não** seja o disco
   que você vai formatar. O app mostra o tamanho da cópia antes de começar.
 - Não precisa instalar o Python nem outro programa para usar o `.exe`.
+- **Administrador só quando pedido:** abra o app do jeito normal, sem administrador. Backup,
+  restauração e diagnóstico funcionam assim, e o app recusa restaurar quando está aberto como
+  administrador. Administrador só é preciso para aplicar ajustes da Otimização, e o app nunca
+  pede isso sozinho.
 
 ## Como baixar e instalar
 A **primeira versão para baixar ainda não foi publicada**; ela vem em breve. Quando sair, ela vai
@@ -56,7 +62,7 @@ Quando a versão estiver lá:
 1. Abra a página de Versões (Releases) e baixe o arquivo `.zip` do PC Restore & Optimizer.
 2. Antes de abrir, confira se o arquivo chegou inteiro e sem alteração (veja a seção
    "Como conferir o SHA-256 do .zip", logo abaixo).
-3. Clique com o botão direito no `.zip` e escolha **Extrair tudo...** e escolha uma pasta sua.
+3. Clique com o botão direito no `.zip`, escolha **Extrair tudo...** e indique uma pasta sua.
 4. Abra a pasta extraída e dê dois cliques em `PCRestoreOptimizer.exe`.
 
 Não há instalador: o app roda direto da pasta extraída. Para tirar o app do PC, apague essa

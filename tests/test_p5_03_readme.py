@@ -18,7 +18,7 @@ README = ROOT / 'README.md'
 # Cada trecho obrigatório: título da seção e o que precisa aparecer nela.
 REQUIRED_SECTIONS = {
     '## Como baixar e instalar': (
-        '.zip', 'Releases', 'PCRestoreOptimizer.exe', 'extra', 'continua no PC',
+        '.zip', 'Releases', 'PCRestoreOptimizer.exe', 'Extrair tudo', 'continua no PC',
     ),
     '## Como conferir o SHA-256 do .zip': ('Get-FileHash', 'certutil', 'SHA256', 'Release'),
     '## Aviso: o programa não tem assinatura digital': (
@@ -44,7 +44,7 @@ REQUIRED_PHRASES = (
     'o que você não copiar do disco do Windows não entra no\nbackup e se perde quando o'
     ' instalador formatar o disco do Windows',
     'Onde o app grava',
-    # R-106: cada destino de gravação do app tem uma frase
+    # R-108: cada destino de gravação do app tem uma frase
     'o backup, no disco ou na pasta que você escolher como destino',
     'PC-Restore-Optimizer\\`',
     'quando você restaura um backup: uma pasta nova dentro da pasta que você escolher',
@@ -58,11 +58,16 @@ REQUIRED_PHRASES = (
     'somem junto',
     'não vai ser formatado',
     'Abrir janela do PowerShell aqui',
+    'pastas temporárias do Windows, criadas por eles com\n  arquivos inventados e apagadas no fim',
+    '**Administrador só quando pedido:** abra o app do jeito normal, sem administrador.',
+    'o app recusa restaurar quando está aberto como\n  administrador',
+    'Administrador só é preciso para aplicar ajustes da Otimização',
+    'Python 3.13, que só suporta Windows 10 ou mais novo',
     'não são\n  suportados',
     'o manual ainda\ndescreve o jeito de abrir pelo Python',
     'a confirmar na validação',
 )
-# Frases antigas que afirmavam demais (R-88 e R-105): não podem voltar.
+# Frases antigas que afirmavam demais (R-88 e R-107): não podem voltar.
 OLD_TEXTS = (
     'só escreve onde você escolher',
     'O app funciona em qualquer PC com Windows',
@@ -119,7 +124,7 @@ GOOD = (
     'backup e se perde quando o instalador formatar o disco do Windows.\n'
     'Onde o app grava: Colocar no lugar original. Atenção: o manual ainda\n'
     'descreve o jeito de abrir pelo Python. Espaço: a confirmar na validação.\n\n'
-    '## Como baixar e instalar\nBaixe o .zip em Releases, extraia e abra PCRestoreOptimizer.exe.'
+    '## Como baixar e instalar\nBaixe o .zip em Releases, use Extrair tudo e abra PCRestoreOptimizer.exe.'
     ' A pasta de dados continua no PC.\n\n'
     '## Como conferir o SHA-256 do .zip\nGet-FileHash -Algorithm SHA256; certutil; compare com a Release.\n\n'
     '## Aviso: o programa não tem assinatura digital\nO .exe não é assinado: SmartScreen (só continue'
@@ -130,7 +135,7 @@ GOOD = (
     ' diário da otimização, inventário detalhado com nomes de arquivos, primeiro uso,'
     ' Depois de formatar. Ela continua no PC.\n'
 )
-# Os destinos de gravação (R-106) e os outros avisos, um por linha, no fim do texto falso.
+# Os destinos de gravação (R-108) e os outros avisos, um por linha, no fim do texto falso.
 GOOD += ''.join(f'\n{phrase}.\n' for phrase in REQUIRED_PHRASES if phrase not in GOOD)
 
 

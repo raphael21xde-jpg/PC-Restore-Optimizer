@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 import personal_data_scan as scan
@@ -110,6 +111,28 @@ class FindingsTests(unittest.TestCase):
                     scan.personal_data_findings('a.md', prefix + FAKE + '\\x'),
                     ['a.md:1: caminho com nome de usuário'],
                 )
+
+    def test_many_separators_in_a_row_finish_fast_without_false_finding(self):
+        # FIX-P5-02-02 (R-105): ~200 barras seguidas não podem travar a busca
+        # (antes, o tempo dobrava a cada 2 barras invertidas a mais).
+        runs = ('\\' * 200, '/' * 200, '\\/' * 100, '/\\\\' * 67)
+        texts = []
+        for run in runs:
+            texts += [
+                'C:' + run + 'Usersx', run + 'C:' + run + 'Usersx' + run,
+                'C:' + run + 'Users' + run + 'Fulano' + run + 'x',
+                run + 'PC' + run + 'c$' + run + 'Usersx', '\\\\' + 'PC' + run + 'Users' + run + 'Public',
+                '//PC' + run + 'c$' + run + 'Usersx', run, 'linha ' + run + ' fim',
+            ]
+        start = time.monotonic()
+        for text in texts:
+            with self.subTest(text=text[:12]):
+                self.assertEqual(scan.personal_data_findings('a.md', text), [])
+        self.assertLess(time.monotonic() - start, 2.0)
+        start = time.monotonic()
+        found = scan.personal_data_findings('a.md', 'C:' + '\\' * 200 + 'Users' + '/' * 200 + FAKE)
+        self.assertLess(time.monotonic() - start, 2.0)
+        self.assertEqual(found, ['a.md:1: caminho com nome de usuário'])
 
     def test_root_home_is_generic_not_a_user_name(self):
         # Escolha registrada no backlog: `/root` é a mesma conta em todo Linux e não
