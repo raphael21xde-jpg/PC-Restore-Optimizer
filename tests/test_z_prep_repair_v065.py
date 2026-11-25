@@ -23,7 +23,7 @@ class Repair065(TestCase):
     def test_manual_approved_deep_app_displayed_as_associated_not_verified(self):
         # Reproduces real class mismatch: deep-discovered game was stored as app.
         key='deep:forza6'
-        save=r'C:\Users\rapha\AppData\Local\ForzaHorizon6'
+        save=r'C:\Users\fulano\AppData\Local\ForzaHorizon6'
         plan=build_audit({save:'keep'}, {key:'keep'},
             {key:{'kind':'app','name':'Forza Horizon 6',
                   'install_location':r'D:\Games\ForzaHorizon6',
@@ -92,7 +92,7 @@ class Repair065(TestCase):
              patch('preservation_preflight.os.scandir') as scandir:
             import stat
             lstat.return_value=type('Info',(),{'st_mode':stat.S_IFDIR, 'st_size':0,'st_file_attributes':0})()
-            row=prepare_c_preflight([r'C:\Users\rapha\Saved Games\GOW'])['entries'][0]
+            row=prepare_c_preflight([r'C:\Users\fulano\Saved Games\GOW'])['entries'][0]
             self.assertEqual(row['status'],'LOCALIZADO')
             self.assertIsNone(row['size_bytes'])
             scandir.assert_not_called()

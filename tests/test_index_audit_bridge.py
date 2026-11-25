@@ -30,7 +30,7 @@ class IndexAuditBridgeTests(unittest.TestCase):
                     (r"C:\Games\osu!\Songs", "C:", "directory", 0, 0, 1, "preservar"),
                     (r"C:\Games\osu!\Skins", "C:", "directory", 0, 0, 1, "nao_copiar"),
                     (r"D:\SteamLibrary\game.dat", "D:", "file", 200, 0, 1, "preservar"),
-                    (r"C:\Users\rapha\private.bin", "C:", "file", 100, 0, 1, "revisar"),
+                    (r"C:\Users\fulano\private.bin", "C:", "file", 100, 0, 1, "revisar"),
                 ])
             db.conn.commit()
         finally:
