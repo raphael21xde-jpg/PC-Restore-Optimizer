@@ -98,6 +98,30 @@ def browser_dest_label_text(dest: str) -> str:
     return f'Destino atual: {dest}   •   Sem sobrescrever perfis originais'
 
 
+NO_DRIVE = 'SEM UNIDADE'
+NO_DRIVE_HEADER = 'Sem letra de unidade (rede ou outro local)'
+
+
+def _games_apps_by_drive(plan: dict) -> dict[str, int]:
+    """Conta jogos/apps por unidade, separando `display_volume` como 'D:, E:'.
+
+    Um jogo sem pasta de instalação confirmada pode ter dados em várias unidades;
+    ele conta uma vez em cada uma. O que não tem letra vai para `NO_DRIVE`.
+    """
+    metrics = plan.get('selection_metrics') or {}
+    counts: dict[str, int] = {}
+    for key, n in (metrics.get('games_apps_by_display_volume') or {}).items():
+        try:
+            n = int(n)
+        except (TypeError, ValueError):
+            continue
+        vols = {volume_of(part.strip() + '\\') for part in str(key).split(',')}
+        letters = {v for v in vols if v != NO_DRIVE} or {NO_DRIVE}
+        for vol in letters:
+            counts[vol] = counts.get(vol, 0) + n
+    return counts
+
+
 def preview_drives(plan: dict, *, drive: str | None = None) -> list[str]:
     """Lista ordenada de unidades para a prévia da Preservação (FIX-P4-01-14).
 
@@ -131,23 +155,22 @@ def preview_drives(plan: dict, *, drive: str | None = None) -> list[str]:
         vol = volume_of(root)
         if vol != 'SEM UNIDADE':
             found.add(vol)
-    metrics = plan.get('selection_metrics') or {}
-    for vol in (metrics.get('games_apps_by_display_volume') or {}):
-        if volume_of(str(vol) + '\\') != 'SEM UNIDADE':
-            found.add(volume_of(str(vol) + '\\'))
+    for vol in _games_apps_by_drive(plan):
+        if vol != NO_DRIVE:
+            found.add(vol)
     return sorted(found, key=lambda v: (0 if v == d else 1, v))
 
 
 def preview_drive_rows(plan: dict, *, drive: str | None = None) -> list[dict]:
     """Monta os blocos por unidade da prévia da Preservação a partir do plano (FIX-P4-01-14).
 
-    Somente leitura: nunca apaga nada.
+    Somente leitura: nunca apaga nada. Itens sem letra de unidade aparecem num
+    grupo próprio no fim (`drive == NO_DRIVE`), só quando existem.
     """
     entries_all = list(plan.get('entries', ()) or ())
     removal_all = [str(p) for p in (plan.get('removal_candidates', ()) or ()) if p]
     scan_roots = [str(r) for r in (plan.get('scan_roots', ()) or ()) if r]
-    stats = plan.get('selection_metrics') or {}
-    by_vol = stats.get('games_apps_by_display_volume') or {}
+    by_vol = _games_apps_by_drive(plan)
     rows: list[dict] = []
     for vol in preview_drives(plan, drive=drive):
         entries = [e for e in entries_all if isinstance(e, dict) and e.get('drive') == vol]
@@ -162,6 +185,21 @@ def preview_drive_rows(plan: dict, *, drive: str | None = None) -> list[dict]:
             'entries': entries[:150],
             'removed': removed[:75],
             'excess': excess,
+        })
+    # Itens sem letra (ex.: pasta de rede no NAS) ficam num grupo próprio no
+    # fim, só se existirem, para nada marcado sumir da prévia.
+    entries = [e for e in entries_all if isinstance(e, dict)
+               and volume_of(str(e.get('drive') or '') + '\\') == NO_DRIVE]
+    removed = [p for p in removal_all if volume_of(p) == NO_DRIVE]
+    entity_count = by_vol.get(NO_DRIVE, 0)
+    if entries or removed or entity_count:
+        rows.append({
+            'drive': NO_DRIVE,
+            'header': f'{NO_DRIVE_HEADER}  •  {len(entries)} caminho(s), {entity_count} jogo(s)/app(s)',
+            'scan_status': 'Varredura atual: não se aplica',
+            'entries': entries[:150],
+            'removed': removed[:75],
+            'excess': max(0, len(entries) - 150) + max(0, len(removed) - 75),
         })
     return rows
 

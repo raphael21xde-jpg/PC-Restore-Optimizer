@@ -9,6 +9,9 @@ e sem tocar em discos reais:
 3. A prévia de remoção (`removal_candidates`) continua apenas prévia (`SOMENTE MARCADO • NÃO APAGAR`),
    sem apagar nenhum arquivo sintético.
 4. `workflow_ui.py` não tem mais a tupla fixa `('C:', 'D:', 'F:', 'G:')`.
+5. Revisão 2 da PR #254: item sem letra de unidade (ex.: pasta de rede `\\NAS\...`)
+   aparece num grupo próprio no fim, só se existir; jogo sem pasta confirmada com
+   `display_volume = 'D:, E:'` é contado em cada unidade.
 """
 from __future__ import annotations
 
@@ -29,7 +32,6 @@ WORKFLOW_SOURCE = (ROOT / 'workflow_ui.py').read_text(encoding='utf-8')
 class PreservationPreviewDrivesTests(unittest.TestCase):
     def test_drives_outside_c_d_f_g_appear_in_preview_from_plan(self):
         with tempfile.TemporaryDirectory(prefix='PCRO-FIX14-') as tmp:
-            plan_file = Path(tmp) / 'plano-sintetico.json'
             synth_file = Path(tmp) / 'nao-apagar.txt'
             synth_file.write_text('conteudo sintetico intacto', encoding='utf-8')
 
@@ -51,7 +53,6 @@ class PreservationPreviewDrivesTests(unittest.TestCase):
                 scanned_roots=[r'C:\\', r'E:\\', r'H:\\', r'Z:\\'],
                 removal_candidates=[r'E:\Temp\Velho'],
             )
-            plan_file.write_text('ok', encoding='utf-8')
 
             drives = workflow_texts.preview_drives(plan, drive='C:')
             self.assertEqual(drives, ['C:', 'E:', 'H:', 'Z:'])
@@ -152,6 +153,65 @@ class PreservationPreviewDrivesTests(unittest.TestCase):
                 ]
                 self.assertIn('preview_drive_rows', calls)
 
+    def test_removal_label_in_workflow_ui_says_only_marked_never_delete(self):
+        # R-31: a docstring promete o rótulo; confere com `ast` em build_preservation.
+        tree = ast.parse(WORKFLOW_SOURCE)
+        fn = next(n for n in ast.walk(tree)
+                  if isinstance(n, ast.FunctionDef) and n.name == 'build_preservation')
+        constants = [c.value for c in ast.walk(fn)
+                     if isinstance(c, ast.Constant) and isinstance(c.value, str)]
+        self.assertIn('SOMENTE MARCADO • NÃO APAGAR', constants)
+        self.assertIn('Candidato', constants)
+
+    def test_items_without_drive_letter_get_own_group_at_end(self):
+        with tempfile.TemporaryDirectory(prefix='PCRO-FIX14-UNC-') as tmp:
+            synth_file = Path(tmp) / 'fotos.txt'
+            synth_file.write_text('intacto', encoding='utf-8')
+            unc = r'\\NAS\share\fotos'
+            plan = build_audit(
+                choices={unc: 'keep', r'E:\Projetos': 'keep'},
+                catalog_choices={'sem_local': 'keep'},
+                catalog_items={'sem_local': {'kind': 'app', 'name': 'Sem local',
+                                             'paths': [], 'possible_paths': []}},
+                scanned_roots=[r'E:\\'],
+                removal_candidates=[r'\\NAS\share\velho'],
+            )
+            rows = workflow_texts.preview_drive_rows(plan, drive='C:')
+            self.assertEqual([r['drive'] for r in rows], ['C:', 'E:', 'SEM UNIDADE'])
+            last = rows[-1]
+            self.assertEqual(last['header'],
+                             'Sem letra de unidade (rede ou outro local)  •  1 caminho(s), 1 jogo(s)/app(s)')
+            self.assertEqual([e['path'] for e in last['entries']], [unc])
+            self.assertEqual(last['removed'], [r'\\NAS\share\velho'])
+            self.assertEqual(last['scan_status'], 'Varredura atual: não se aplica')
+            # A lista de letras continua só com letras.
+            self.assertNotIn('SEM UNIDADE', workflow_texts.preview_drives(plan, drive='C:'))
+            self.assertTrue(synth_file.is_file())
+            self.assertFalse(plan['deletions_authorized'])
+
+    def test_no_letter_group_absent_when_every_item_has_a_letter(self):
+        plan = build_audit(choices={r'E:\a': 'keep'}, catalog_choices={}, catalog_items={},
+                           scanned_roots=[], removal_candidates=[r'H:\b'])
+        rows = workflow_texts.preview_drive_rows(plan, drive='C:')
+        self.assertEqual([r['drive'] for r in rows], ['C:', 'E:', 'H:'])
+
+    def test_game_spread_over_two_drives_counts_in_each(self):
+        plan = build_audit(
+            choices={},
+            catalog_choices={'jogo': 'keep'},
+            catalog_items={'jogo': {'kind': 'game', 'name': 'Jogo',
+                                    'paths': [r'D:\s', r'E:\s'], 'possible_paths': []}},
+            scanned_roots=[],
+            removal_candidates=[],
+        )
+        self.assertEqual(plan['catalog_selections'][0]['display_volume'], 'D:, E:')
+        drives = workflow_texts.preview_drives(plan, drive='C:')
+        self.assertEqual(drives, ['C:', 'D:', 'E:'])
+        by_drive = {r['drive']: r for r in workflow_texts.preview_drive_rows(plan, drive='C:')}
+        self.assertEqual(by_drive['D:']['header'], 'D:  •  0 caminho(s), 1 jogo(s)/app(s)')
+        self.assertEqual(by_drive['E:']['header'], 'E:  •  0 caminho(s), 1 jogo(s)/app(s)')
+        self.assertNotIn('SEM UNIDADE', by_drive)
+
     def test_runs_without_tkinter(self):
         code = (
             "import sys, unittest; "
@@ -164,7 +224,11 @@ class PreservationPreviewDrivesTests(unittest.TestCase):
             "m.PreservationPreviewDrivesTests('test_drives_outside_c_d_f_g_appear_in_preview_from_plan'), "
             "m.PreservationPreviewDrivesTests('test_removal_preview_remains_read_only_and_never_deletes_files'), "
             "m.PreservationPreviewDrivesTests('test_custom_windows_drive_appears_first_with_zero_paths_when_absent_from_plan'), "
-            "m.PreservationPreviewDrivesTests('test_workflow_ui_no_longer_has_hardcoded_c_d_f_g_tuple')"
+            "m.PreservationPreviewDrivesTests('test_workflow_ui_no_longer_has_hardcoded_c_d_f_g_tuple'), "
+            "m.PreservationPreviewDrivesTests('test_removal_label_in_workflow_ui_says_only_marked_never_delete'), "
+            "m.PreservationPreviewDrivesTests('test_items_without_drive_letter_get_own_group_at_end'), "
+            "m.PreservationPreviewDrivesTests('test_no_letter_group_absent_when_every_item_has_a_letter'), "
+            "m.PreservationPreviewDrivesTests('test_game_spread_over_two_drives_counts_in_each')"
             "]); "
             "res = unittest.TextTestRunner(verbosity=0).run(suite); "
             "sys.exit(0 if res.wasSuccessful() else 1)"
