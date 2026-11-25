@@ -10,7 +10,7 @@ Formato: `R-<nº> | regra curta e verificável | origem (PR, commit ou item) | d
 
 **Poda:** a cada 10 regras novas, o coordenador cria um pedido do tipo `regras` no PCRO Monitor para o
 Raphael revisar a lista (juntar repetidas, tirar as que não valem mais). Regras novas desde a última
-poda: 6 (R-101 a R-106; última poda: 21/11/2026, pedido `regras-20261121-poda-r91-r100`, issue #297). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-101.
+poda: 8 (R-101 a R-108; última poda: 21/11/2026, pedido `regras-20261121-poda-r91-r100`, issue #297). A próxima poda é pedida quando chegarem 10 regras novas, contando a partir da R-101.
 Regras juntadas mantêm o número antigo na tabela, só como remissão, para não quebrar referências.
 
 | Nº | Regra | Origem | Data |
@@ -121,3 +121,5 @@ Regras juntadas mantêm o número antigo na tabela, só como remissão, para nã
 | R-104 | PR que cria uma regra atualiza, no mesmo commit, o contador "Regras novas desde a última poda". | Revisão da PR #305 (FIX-P4-02-06, ee0f0f2de1b9) | 2026-11-22 |
 | R-105 | Regex que procura caminhos em texto de arquivo não usa repetição de alternativas que se sobrepõem (ex.: `(?:\\\\\|\\\|/)+`); o separador é uma classe só (`[\\/]+`); há teste com ~200 separadores seguidos que termina em menos de 2 s. | Revisão do branch fix/P5-02-01-endurecer-scan (c03de841e432) | 2026-11-25 |
 | R-106 | Em células de tabela de docs/REGRAS.md e docs/BACKLOG.md, todo "\|" do conteúdo é escrito "\\\|" (também dentro de crases) e regex vai entre crases; a linha tem o mesmo número de colunas do cabeçalho. | Revisão da PR #324 (FIX-P5-02-02, 25efe88) | 2026-11-25 |
+| R-107 | README e qualquer texto público seguem a R-88 como texto de ajuda: só afirmam compatibilidade ('funciona em qualquer PC'), requisito ou promessa futura ('versão assinada', link de Release) que o código, uma validação feita ou um item do backlog sustenta; senão dizem 'a confirmar'; e o teste do texto público nunca exige como obrigatória uma frase que a R-88 proíbe. | Revisão da PR #323 (P5-03, 2224753a7dc9) | 2026-11-25 |
+| R-108 | Texto público ou de ajuda que lista 'onde o app grava' é conferido contra todo filedialog.askdirectory/asksaveasfilename do app e contra as pastas fixas (%LOCALAPPDATA%\PC-Restore-Optimizer\); cada destino tem uma linha no texto e uma frase no teste. | Revisão da PR #323 (P5-03, 9d0fa800f288) | 2026-11-25 |
