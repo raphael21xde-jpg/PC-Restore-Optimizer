@@ -17,18 +17,43 @@ README = ROOT / 'README.md'
 
 # Cada trecho obrigatório: título da seção e o que precisa aparecer nela.
 REQUIRED_SECTIONS = {
-    '## Como baixar e instalar': ('.zip', 'Releases', 'PCRestoreOptimizer.exe', 'extra'),
+    '## Como baixar e instalar': (
+        '.zip', 'Releases', 'PCRestoreOptimizer.exe', 'extra', 'continua no PC',
+    ),
     '## Como conferir o SHA-256 do .zip': ('Get-FileHash', 'certutil', 'SHA256', 'Release'),
     '## Aviso: o programa não tem assinatura digital': (
         'SmartScreen', 'Controle Inteligente de Aplicativos', 'não é assinado',
+        # o SmartScreen só pode ser vencido com o .zip certo
+        'só continue se você baixou', 'o SHA-256 bateu',
+        '**Não desligue** essa proteção',
+        'por enquanto o app não abre nesse PC',
+        '**Nunca desligue**', 'Microsoft Defender', 'Windows Update',
+    ),
+    '## Onde o app guarda as suas informações': (
+        '%LOCALAPPDATA%\\PC-Restore-Optimizer\\', 'preferências', 'diário da otimização',
+        'inventário detalhado', 'nomes de arquivos', 'primeiro uso', 'Depois de formatar',
+        'continua no PC',
     ),
 }
 REQUIRED_PHRASES = (
-    'funciona em qualquer PC com Windows',
-    'só escreve onde você escolher',
-    'nunca formata',
-    'nunca apaga',
+    'foi feito para funcionar em qualquer PC com Windows 10 ou 11',
+    'ainda não foi certificado',
+    'nunca formata e não apaga os seus arquivos',
+    'Deixar um arquivo de fora da cópia não quer\ndizer apagar esse arquivo.',
+    # R-88: perto da reinstalação, quem não foi copiado se perde
+    'o que você não copiar do disco do Windows não entra no\nbackup e se perde quando o'
+    ' instalador formatar o disco do Windows',
+    'Onde o app grava',
+    'Colocar no lugar original',
+    'o manual ainda\ndescreve o jeito de abrir pelo Python',
     'a confirmar na validação',
+)
+# Frases antigas que afirmavam demais (R-88 e R-105): não podem voltar.
+OLD_TEXTS = (
+    'só escreve onde você escolher',
+    'O app funciona em qualquer PC com Windows',
+    'espere uma versão assinada',
+    'Os backups ficam somente',
 )
 # Letra de unidade sozinha (`C:`, `D:\`...): o README não pode exigir nenhuma.
 _DRIVE_LETTER = re.compile(r'(?<!\w)[A-Za-z]:(?=[\\/\s.,;)]|$)', re.MULTILINE)
@@ -59,6 +84,9 @@ def readme_problems(text: str) -> list[str]:
     for phrase in REQUIRED_PHRASES:
         if phrase not in text:
             problems.append(f'falta a frase {phrase!r}')
+    for phrase in OLD_TEXTS:
+        if phrase in text:
+            problems.append(f'voltou a frase antiga {phrase!r}')
     if _DRIVE_LETTER.search(text):
         problems.append('cita uma letra de unidade (como C:)')
     if _RELEASE_LINK.search(text):
@@ -68,12 +96,22 @@ def readme_problems(text: str) -> list[str]:
 
 
 GOOD = (
-    '# App\n\nO app funciona em qualquer PC com Windows. Ele só escreve onde você escolher,'
-    ' nunca formata e nunca apaga. Espaço: a confirmar na validação.\n\n'
-    '## Como baixar e instalar\nBaixe o .zip em Releases, extraia e abra PCRestoreOptimizer.exe.\n\n'
+    '# App\n\nO app foi feito para funcionar em qualquer PC com Windows 10 ou 11; ainda não foi'
+    ' certificado. Ele nunca formata e não apaga os seus arquivos. Deixar um arquivo de fora da cópia não quer\n'
+    'dizer apagar esse arquivo. Mas o que você não copiar do disco do Windows não entra no\n'
+    'backup e se perde quando o instalador formatar o disco do Windows.\n'
+    'Onde o app grava: Colocar no lugar original. Atenção: o manual ainda\n'
+    'descreve o jeito de abrir pelo Python. Espaço: a confirmar na validação.\n\n'
+    '## Como baixar e instalar\nBaixe o .zip em Releases, extraia e abra PCRestoreOptimizer.exe.'
+    ' A pasta de dados continua no PC.\n\n'
     '## Como conferir o SHA-256 do .zip\nGet-FileHash -Algorithm SHA256; certutil; compare com a Release.\n\n'
-    '## Aviso: o programa não tem assinatura digital\nO .exe não é assinado: SmartScreen e'
-    ' Controle Inteligente de Aplicativos podem avisar.\n'
+    '## Aviso: o programa não tem assinatura digital\nO .exe não é assinado: SmartScreen (só continue'
+    ' se você baixou o .zip certo e o SHA-256 bateu) e Controle Inteligente de Aplicativos'
+    ' (**Não desligue** essa proteção; por enquanto o app não abre nesse PC).'
+    ' **Nunca desligue** o Microsoft Defender nem o Windows Update.\n\n'
+    '## Onde o app guarda as suas informações\n%LOCALAPPDATA%\\PC-Restore-Optimizer\\: preferências,'
+    ' diário da otimização, inventário detalhado com nomes de arquivos, primeiro uso,'
+    ' Depois de formatar. Ela continua no PC.\n'
 )
 
 
@@ -94,8 +132,25 @@ class SyntheticReadmeTests(unittest.TestCase):
         self.assertIn("falta a seção '## Como conferir o SHA-256 do .zip'", self._problems_of(text))
 
     def test_missing_phrase_is_found(self):
-        text = GOOD.replace('funciona em qualquer PC com Windows', 'funciona')
-        self.assertIn("falta a frase 'funciona em qualquer PC com Windows'", self._problems_of(text))
+        text = GOOD.replace('em qualquer PC com Windows 10 ou 11', 'em alguns PCs')
+        self.assertIn("falta a frase 'foi feito para funcionar em qualquer PC com Windows 10 ou 11'",
+                      self._problems_of(text))
+
+    def test_old_overclaiming_texts_are_found(self):
+        for phrase in OLD_TEXTS:
+            with self.subTest(phrase=phrase):
+                self.assertIn(f'voltou a frase antiga {phrase!r}', self._problems_of(GOOD + '\n' + phrase + '.\n'))
+
+    def test_smartscreen_condition_and_protection_warnings_are_required(self):
+        for needed in ('o SHA-256 bateu', '**Não desligue** essa proteção', '**Nunca desligue**',
+                       'Microsoft Defender', 'Windows Update'):
+            with self.subTest(needed=needed):
+                problems = self._problems_of(GOOD.replace(needed, 'xxx'))
+                self.assertTrue(any(repr(needed) in p for p in problems), problems)
+
+    def test_lost_if_not_copied_phrase_is_required(self):
+        text = GOOD.replace('se perde quando o instalador formatar', 'fica guardado quando o instalador formatar')
+        self.assertTrue(any('se perde' in p for p in self._problems_of(text)))
 
     def test_required_drive_letter_is_found(self):
         for drive in ('C:', 'D:\\', 'F:/', 'G: '):

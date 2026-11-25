@@ -4,20 +4,34 @@ Programa para Windows que ajuda a **guardar uma cópia conferida** dos seus arqu
 reinstalar o Windows, a **trazer tudo de volta** depois e a deixar o PC mais rápido com ajustes
 seguros, que podem ser desfeitos.
 
-O app funciona em qualquer PC com Windows: computador fraco ou topo de linha, de qualquer marca,
-com um disco ou com vários. Ele não exige nenhuma letra de unidade específica; você escolhe de
-onde copiar e para onde copiar.
+O app foi feito para funcionar em qualquer PC com Windows 10 ou 11: computador fraco ou topo de
+linha, de qualquer marca, com um disco ou com vários. Ele não exige nenhuma letra de unidade
+específica; você escolhe de onde copiar e para onde copiar. Ele ainda não foi certificado em
+muitos PCs diferentes, e o `.exe` ainda está sendo validado.
 
-**O app só escreve onde você escolher, nunca formata e nunca apaga os seus arquivos.** Deixar um
-arquivo de fora da cópia não quer dizer apagar esse arquivo. A reinstalação do Windows é
+**O app nunca formata e não apaga os seus arquivos.** Deixar um arquivo de fora da cópia não quer
+dizer apagar esse arquivo. Mas atenção: o que você não copiar do disco do Windows não entra no
+backup e se perde quando o instalador formatar o disco do Windows. A reinstalação do Windows é
 **guiada**: o app prepara e explica cada passo, mas quem formata é o instalador oficial da
 Microsoft, operado por você.
 
-**Como usar o app:** veja o [manual curto em português](docs/MANUAL.md).
+Onde o app grava (veja também "Onde o app guarda as suas informações", mais abaixo):
+- o backup, no disco ou na pasta que você escolher como destino;
+- a pasta de dados do próprio app, `%LOCALAPPDATA%\PC-Restore-Optimizer\`;
+- quando você usa a Otimização e confirma um ajuste: configurações do Windows (registro), plano de
+  energia e ponto de restauração; tudo fica registrado para poder ser desfeito;
+- quando você usa "Colocar no lugar original" depois de formatar: as pastas de onde os arquivos
+  vieram;
+- quando você pede para reinstalar programas pelo winget: o próprio winget instala esses
+  programas.
+
+**Como usar o app:** veja o [manual curto em português](docs/MANUAL.md). Atenção: o manual ainda
+descreve o jeito de abrir pelo Python (instalar o Python e abrir o `INICIAR.bat`); a parte do
+`.exe` ainda vai entrar nele.
 
 ## Do que o PC precisa
-- **Windows 10 ou Windows 11.** O Windows 7, 8 e 8.1 não funcionam: a base do app (Python 3.13)
-  não aceita essas versões.
+- **Windows 10 ou Windows 11:** é para esses que o app foi feito. O Windows 7, 8 e 8.1 não
+  funcionam: a base do app (Python 3.13) não aceita essas versões.
 - **Windows de 64 bits:** a confirmar na validação.
 - **Espaço livre para o próprio app:** a confirmar na validação.
 - **Memória (RAM) mínima:** a confirmar na validação.
@@ -38,8 +52,10 @@ Quando a versão estiver lá:
    por exemplo uma pasta "Programas" dentro dos seus Documentos.
 4. Abra a pasta extraída e dê dois cliques em `PCRestoreOptimizer.exe`.
 
-Não há instalador: o app roda direto da pasta extraída. Para tirar o app do PC, basta apagar
-essa pasta (os seus backups ficam onde você escolheu e não são apagados junto).
+Não há instalador: o app roda direto da pasta extraída. Para tirar o app do PC, apague essa
+pasta. Os seus backups ficam onde você escolheu e não são apagados junto. A pasta de dados do app
+(`%LOCALAPPDATA%\PC-Restore-Optimizer\`) também **continua no PC**; veja o que ela guarda em
+"Onde o app guarda as suas informações".
 
 ## Como conferir o SHA-256 do .zip
 O SHA-256 é uma "impressão digital" do arquivo: um código de 64 letras e números. Se um único
@@ -76,14 +92,23 @@ diz ao Windows quem fez o programa). Por isso o Windows pode avisar ou bloquear 
   **Não executar**.
 - **Controle Inteligente de Aplicativos** (Smart App Control, no Windows 11): ele pode bloquear o
   `.exe` sem dar a opção de abrir. **Não desligue** essa proteção para usar o app: em muitas
-  versões do Windows 11, depois de desligada, ela só volta reinstalando o Windows. Nesse caso, espere uma versão assinada.
-- Nunca desligue o antivírus (Microsoft Defender) nem o Windows Update para abrir o app. O próprio
-  app nunca desliga essas proteções.
+  versões do Windows 11, depois de desligada, ela só volta reinstalando o Windows. Se isso
+  acontecer, por enquanto o app não abre nesse PC.
+- **Nunca desligue** o antivírus (Microsoft Defender) nem o Windows Update para abrir o app. O
+  próprio app nunca desliga essas proteções.
 
 ## Onde o app guarda as suas informações
-Quando você abre o `PCRestoreOptimizer.exe`, as preferências e o diário da otimização ficam em
-`%LOCALAPPDATA%\PC-Restore-Optimizer\`, só no seu PC. Os backups ficam somente no lugar que você
-escolher.
+Quando você abre o `PCRestoreOptimizer.exe`, o app guarda os dados dele em
+`%LOCALAPPDATA%\PC-Restore-Optimizer\`, no seu PC:
+- as suas preferências e escolhas do que copiar;
+- o diário da otimização (o que foi mudado, para poder desfazer);
+- o inventário detalhado, que tem **nomes de arquivos e pastas** do seu PC;
+- o progresso do primeiro uso e do "Depois de formatar";
+- os registros das reinstalações de programas pelo winget.
+
+Essa pasta **continua no PC** mesmo se você apagar a pasta do app. Se quiser tirar tudo, apague
+também essa pasta (ela não tem os seus backups). Os backups ficam no lugar que você escolheu como
+destino.
 
 ---
 
