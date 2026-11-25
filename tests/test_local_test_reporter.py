@@ -35,10 +35,10 @@ class LocalTestReporterTests(unittest.TestCase):
 
     def test_escaped_windows_traceback_path_is_redacted(self):
         # repr() often doubles backslashes inside unittest failures.
-        escaped = r"C:\\\\Users\\\\fixtureuser\\\\AppData\\\\Local\\\\Temp\\\\case"
+        escaped = r"C:\\\\Users\\\\Fulano\\\\AppData\\\\Local\\\\Temp\\\\case"
         cleaned = reporter.sanitize_for_public_comment(
             escaped, home=Path("C:/unrelated"))
-        self.assertNotIn("fixtureuser", cleaned)
+        self.assertNotIn("Fulano", cleaned)
         self.assertIn("[USER_HOME]", cleaned)
 
     def test_unittest_summary_includes_skips_and_failure(self):

@@ -29,7 +29,7 @@ def pathlike(*parts):
 
 class DummyApp:
     def __init__(self):
-        self.choices = {r"c:\Users\cliente\Documentos\atual.txt": "skip"}
+        self.choices = {r"c:\Users\Fulano\Documentos\atual.txt": "skip"}
         self.personal_paths = set()
         self.busy = False
         self.deep_scan_running = False
@@ -47,7 +47,7 @@ class TestIndexChoicesBridge(unittest.TestCase):
 
     def test_preview_counts_and_conflicts_without_writing(self):
         document = example({
-            r"C:\Users\cliente\Documentos\atual.txt": "preservar",
+            r"C:\Users\Fulano\Documentos\atual.txt": "preservar",
             r"D:\Games\osu\Songs\map.osz": "preservar",
             r"G:\Data\cache\temporary.bin": "nao_copiar",
         })
@@ -62,7 +62,7 @@ class TestIndexChoicesBridge(unittest.TestCase):
     def test_apply_requires_external_confirmation_and_invalidates_old_plan(self):
         app = DummyApp()
         parsed = self.parse(example({
-            r"C:\Users\cliente\Documentos\atual.txt": "preservar",
+            r"C:\Users\Fulano\Documentos\atual.txt": "preservar",
             r"D:\Games\osu\Songs\map.osz": "preservar",
         }))
         # Stand-in for Windows backup_core.norm during Linux CI tests.
@@ -73,7 +73,7 @@ class TestIndexChoicesBridge(unittest.TestCase):
         self.assertEqual(app.notifications, 1)
         self.assertTrue(result["backup_started"] is False)
         self.assertFalse(result["installation_authorized"])
-        self.assertEqual(app.choices[r"c:\users\cliente\documentos\atual.txt"], "keep")
+        self.assertEqual(app.choices[r"c:\users\fulano\documentos\atual.txt"], "keep")
         self.assertIn(r"d:\games\osu\songs\map.osz", app.personal_paths)
 
     def test_invalid_schema_flags_decisions_and_paths_fail_before_any_change(self):
@@ -97,12 +97,12 @@ class TestIndexChoicesBridge(unittest.TestCase):
     def test_case_insensitive_duplicates_rejected(self):
         with self.assertRaises(ValueError):
             self.parse(example({
-                r"C:\Users\CLIENTE\Doc.txt": "preservar",
-                r"c:\users\cliente\doc.txt": "nao_copiar",
+                r"C:\Users\FULANO\Doc.txt": "preservar",
+                r"c:\users\fulano\doc.txt": "nao_copiar",
             }))
 
     def test_folder_rule_and_specific_file_exception_reach_preview(self):
-        folder = r"C:\Users\cliente\Saved Games"
+        folder = r"C:\Users\Fulano\Saved Games"
         nested = folder + r"\Demo\settings.ini"
         parsed = self.parse(example({
             folder: "preservar",
@@ -122,7 +122,7 @@ class TestIndexChoicesBridge(unittest.TestCase):
     def test_busy_does_not_mutate_app(self):
         app = DummyApp()
         app.busy = True
-        parsed = self.parse(example({r"C:\Users\CLIENTE\Doc.txt": "preservar"}))
+        parsed = self.parse(example({r"C:\Users\FULANO\Doc.txt": "preservar"}))
         with self.assertRaises(RuntimeError):
             apply_imported_choices(app, parsed)
         self.assertEqual(app.notifications, 0)

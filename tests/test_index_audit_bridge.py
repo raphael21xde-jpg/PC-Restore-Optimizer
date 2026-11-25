@@ -146,7 +146,7 @@ class IndexAuditBridgeTests(unittest.TestCase):
 
     def test_importers_reject_lixeira_even_when_bypassing_sqlite_preview(self):
         old = r"C:\$Recycle.Bin\S-1-5-21-test\file.txt"
-        valid = r"C:\Users\cliente\Documents\keep.txt"
+        valid = r"C:\Users\Fulano\Documents\keep.txt"
         doc = {
             "schema": "pcro-index-choices-v1",
             "ready_for_format": False,

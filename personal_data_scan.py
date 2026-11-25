@@ -1,6 +1,7 @@
 """Procura dados pessoais em arquivos que vão para o git (P5-02).
 
-Funções puras, sem tkinter e sem tocar em disco real: recebem nome e texto.
+Funções puras, sem tkinter e sem tocar em disco real: recebem nome e texto
+(ou os bytes, em `decode_text`).
 O teste `tests/test_p5_02_no_personal_data.py` aplica isso a cada arquivo de
 `git ls-files` e falha se algo aparecer.
 
@@ -13,15 +14,17 @@ from pathlib import PurePosixPath
 import re
 
 # Nomes genéricos usados como exemplo em testes e documentos. Lista explícita:
-# qualquer outro nome depois de `C:\Users\`, `/home/` ou `/Users/` é tratado
-# como possível nome real. Compara-se só a primeira parte do nome (antes de
-# `-`, `_`, `.` ou espaço), em minúsculas.
+# qualquer outro nome depois de `C:\Users\`, `\\PC\c$\Users\`, `/home/` ou
+# `/Users/` é tratado como possível nome real. O nome tem de ser exatamente um
+# destes (sem diferença de maiúsculas): `Fulano-<algo>` não passa.
 ALLOWED_USER_NAMES = frozenset({
     'fulano', 'beltrano', 'ciclano', 'alguem', 'someone',
     'usuario', 'user', 'tester', 'teste', 'test', 'demo', 'exemplo', 'example',
-    'ficticio', 'fixtureuser', 'cliente', 'other', 'segredo', 'abc', 'file',
-    'public', 'default', 'administrador', 'administrator',
+    'ficticio', 'public', 'default', 'administrador', 'administrator',
 })
+# Arquivos genéricos que ficam direto na pasta `Users` (não são nome de conta).
+# Comparação exata do nome inteiro, com a extensão.
+ALLOWED_PROFILE_FILES = frozenset({'desktop.ini', 'file.txt'})
 
 # Nomes de arquivo pessoais que nunca podem estar no git.
 PERSONAL_FILE_PREFIXES = ('preferencias-', 'deteccao-detalhada-')
@@ -41,8 +44,14 @@ ALLOWED_FAKE_SECRETS = frozenset({
 _SEP = r'(?:\\\\|\\|/)+'
 # `<nome>`, `{user}`, `%USERNAME%`, `$env:...` e `*` param o nome (são modelos).
 _NAME = r'([^\\/\s"\'<>`*|:;,()\[\]{}$%]+)'
+_PROFILES = r'(?:users|usuarios|usuários|documents and settings)'
+_HOST = r'[^\\/\s"\'<>|]+'
+# `/root` não entra: é a mesma conta em todo Linux e não identifica ninguém.
 _USER_PATH = re.compile(
-    r'(?i)(?:\b[a-z]:' + _SEP + r'(?:users|usuarios|usuários|documents and settings)' + _SEP
+    r'(?i)(?:\b[a-z]:' + _SEP + _PROFILES + _SEP
+    # caminho de rede: `\\PC\c$\Users\` ou `\\PC\Users\` (também escapado)
+    + r'|\\{2,}' + _HOST + r'\\+(?:[a-z]\$\\+)?' + _PROFILES + r'\\+'
+    + r'|(?<![\w:])//' + _HOST + r'/+[a-z]\$/+' + _PROFILES + r'/+'
     + r'|(?<![\w.])/(?:home|Users)/)' + _NAME
 )
 _SECRETS = (
@@ -57,10 +66,36 @@ _SECRETS = (
 
 def is_allowed_user_name(name: str) -> bool:
     """Diz se o nome depois de `Users\\` é um exemplo genérico (não identifica ninguém)."""
+    name = name.rstrip('.')  # fim de frase: `C:\\Users\\Fulano.`
     if len(name) <= 1:
         return True
-    first = re.split(r'[-_. ]', name.lower(), maxsplit=1)[0]
-    return first in ALLOWED_USER_NAMES
+    return name.lower() in ALLOWED_USER_NAMES or name.lower() in ALLOWED_PROFILE_FILES
+
+
+def decode_text(data: bytes) -> str:
+    """Texto do arquivo para a busca; binário vira `''` (só o nome é conferido).
+
+    Entende UTF-8 (com ou sem BOM), UTF-16 e UTF-32 com BOM e UTF-16 sem BOM
+    (comum em arquivos salvos pelo PowerShell ou pelo Bloco de Notas antigo).
+    """
+    for bom, encoding in ((b'\xff\xfe\0\0', 'utf-32'), (b'\0\0\xfe\xff', 'utf-32'),
+                          (b'\xff\xfe', 'utf-16'), (b'\xfe\xff', 'utf-16'),
+                          (b'\xef\xbb\xbf', 'utf-8-sig')):
+        if data.startswith(bom):
+            return data.decode(encoding, errors='replace')
+    head = data[:8192]
+    if b'\0' not in head:
+        return data.decode('utf-8', errors='replace')
+    # UTF-16 sem BOM: quase todo byte de uma das posições (par ou ímpar) é zero.
+    pairs = len(head) // 2
+    if pairs >= 2:
+        even_zero = head[0:pairs * 2:2].count(0) / pairs
+        odd_zero = head[1:pairs * 2:2].count(0) / pairs
+        if odd_zero >= 0.9 and even_zero == 0:
+            return data.decode('utf-16-le', errors='replace')
+        if even_zero >= 0.9 and odd_zero == 0:
+            return data.decode('utf-16-be', errors='replace')
+    return ''
 
 
 def user_path_names(text: str) -> list[str]:
