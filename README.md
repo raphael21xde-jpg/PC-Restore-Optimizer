@@ -18,10 +18,18 @@ Microsoft, operado por você.
 Onde o app grava (veja também "Onde o app guarda as suas informações", mais abaixo):
 - o backup, no disco ou na pasta que você escolher como destino;
 - a pasta de dados do próprio app, `%LOCALAPPDATA%\PC-Restore-Optimizer\`;
+- quando você restaura um backup: uma pasta nova dentro da pasta que você escolher (restauração,
+  recuperação isolada, restauração de conferência do navegador numa pasta `CONFERIR-...` e
+  teste de restauração);
+- quando você abre os dados do navegador de um backup (extrair os dados ou gerar o HTML de
+  favoritos): na pasta que você escolher;
+- relatórios, planos e listas que você pede para salvar: no lugar que você escolher;
 - quando você usa a Otimização e confirma um ajuste: configurações do Windows (registro), plano de
-  energia e ponto de restauração; tudo fica registrado para poder ser desfeito;
+  energia e ponto de restauração; os ajustes ficam registrados para o Desfazer; o ponto de
+  restauração é uma garantia extra;
 - quando você usa "Colocar no lugar original" depois de formatar: as pastas de onde os arquivos
-  vieram;
+  vieram; se lá já houver um arquivo diferente com o mesmo nome, ele não é apagado, é renomeado
+  para `<nome>.antes-pcro-AAAAMMDD`;
 - quando você pede para reinstalar programas pelo winget: o próprio winget instala esses
   programas.
 
@@ -30,8 +38,8 @@ descreve o jeito de abrir pelo Python (instalar o Python e abrir o `INICIAR.bat`
 `.exe` ainda vai entrar nele.
 
 ## Do que o PC precisa
-- **Windows 10 ou Windows 11:** é para esses que o app foi feito. O Windows 7, 8 e 8.1 não
-  funcionam: a base do app (Python 3.13) não aceita essas versões.
+- **Windows 10 ou Windows 11:** é para esses que o app foi feito. O Windows 7, 8 e 8.1 não são
+  suportados: a base do app (Python 3.13) não aceita essas versões.
 - **Windows de 64 bits:** a confirmar na validação.
 - **Espaço livre para o próprio app:** a confirmar na validação.
 - **Memória (RAM) mínima:** a confirmar na validação.
@@ -48,8 +56,7 @@ Quando a versão estiver lá:
 1. Abra a página de Versões (Releases) e baixe o arquivo `.zip` do PC Restore & Optimizer.
 2. Antes de abrir, confira se o arquivo chegou inteiro e sem alteração (veja a seção
    "Como conferir o SHA-256 do .zip", logo abaixo).
-3. Clique com o botão direito no `.zip` e escolha **Extrair tudo...**. Escolha uma pasta sua,
-   por exemplo uma pasta "Programas" dentro dos seus Documentos.
+3. Clique com o botão direito no `.zip` e escolha **Extrair tudo...** e escolha uma pasta sua.
 4. Abra a pasta extraída e dê dois cliques em `PCRestoreOptimizer.exe`.
 
 Não há instalador: o app roda direto da pasta extraída. Para tirar o app do PC, apague essa
@@ -57,14 +64,23 @@ pasta. Os seus backups ficam onde você escolheu e não são apagados junto. A p
 (`%LOCALAPPDATA%\PC-Restore-Optimizer\`) também **continua no PC**; veja o que ela guarda em
 "Onde o app guarda as suas informações".
 
+**Se você vai formatar o disco do Windows:** a pasta do app e a pasta de dados do app que estão
+nesse disco somem junto. Para usar o app depois da formatação, guarde o `.zip` (ou a pasta
+extraída) num disco ou pendrive que não vai ser formatado.
+
 ## Como conferir o SHA-256 do .zip
 O SHA-256 é uma "impressão digital" do arquivo: um código de 64 letras e números. Se um único
 pedaço do `.zip` mudar (download cortado ou arquivo trocado por outra pessoa), o código muda.
 Na página da Release vai aparecer o código certo de cada `.zip`.
 
 1. Abra a pasta onde o `.zip` foi salvo (normalmente "Downloads").
-2. Clique com o botão direito num espaço vazio da pasta e escolha **Abrir no Terminal**
-   (ou abra o PowerShell e vá até essa pasta).
+2. Abra o PowerShell já dentro dessa pasta:
+   - no Windows 11: clique com o botão direito num espaço vazio da pasta e escolha
+     **Abrir no Terminal**;
+   - no Windows 10: segure **Shift**, clique com o botão direito num espaço vazio da pasta e
+     escolha **Abrir janela do PowerShell aqui**;
+   - ou abra o PowerShell e digite `cd $HOME\Downloads` (troque `Downloads` pela pasta onde
+     está o `.zip`).
 3. Rode **um** destes comandos, trocando o nome pelo nome exato do arquivo baixado:
 
    Com o PowerShell:

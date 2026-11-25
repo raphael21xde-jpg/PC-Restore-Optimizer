@@ -44,7 +44,21 @@ REQUIRED_PHRASES = (
     'o que você não copiar do disco do Windows não entra no\nbackup e se perde quando o'
     ' instalador formatar o disco do Windows',
     'Onde o app grava',
+    # R-106: cada destino de gravação do app tem uma frase
+    'o backup, no disco ou na pasta que você escolher como destino',
+    'PC-Restore-Optimizer\\`',
+    'quando você restaura um backup: uma pasta nova dentro da pasta que você escolher',
+    'recuperação isolada', 'CONFERIR-', 'teste de restauração',
+    'extrair os dados ou gerar o HTML de\n  favoritos',
+    'relatórios, planos e listas que você pede para salvar: no lugar que você escolher',
+    'os ajustes ficam registrados para o Desfazer; o ponto de\n  restauração é uma garantia extra',
     'Colocar no lugar original',
+    '.antes-pcro-AAAAMMDD',
+    'o próprio winget instala',
+    'somem junto',
+    'não vai ser formatado',
+    'Abrir janela do PowerShell aqui',
+    'não são\n  suportados',
     'o manual ainda\ndescreve o jeito de abrir pelo Python',
     'a confirmar na validação',
 )
@@ -54,6 +68,9 @@ OLD_TEXTS = (
     'O app funciona em qualquer PC com Windows',
     'espere uma versão assinada',
     'Os backups ficam somente',
+    'tudo fica registrado para poder ser desfeito',
+    'pasta "Programas" dentro dos seus Documentos',
+    'não\n  funcionam',
 )
 # Letra de unidade sozinha (`C:`, `D:\`...): o README não pode exigir nenhuma.
 _DRIVE_LETTER = re.compile(r'(?<!\w)[A-Za-z]:(?=[\\/\s.,;)]|$)', re.MULTILINE)
@@ -113,6 +130,8 @@ GOOD = (
     ' diário da otimização, inventário detalhado com nomes de arquivos, primeiro uso,'
     ' Depois de formatar. Ela continua no PC.\n'
 )
+# Os destinos de gravação (R-106) e os outros avisos, um por linha, no fim do texto falso.
+GOOD += ''.join(f'\n{phrase}.\n' for phrase in REQUIRED_PHRASES if phrase not in GOOD)
 
 
 class SyntheticReadmeTests(unittest.TestCase):
@@ -183,7 +202,7 @@ class ProjectReadmeTests(unittest.TestCase):
         text = README.read_text(encoding='utf-8')
         self.assertIn('docs/MANUAL.md', text)
         self.assertIn('docs/ESTADO-DO-PROJETO-E-PROXIMOS-MARCOS.md', text)
-        self.assertIn('## Princípios inegociáveis', text)
+        self.assertIn('### Princípios inegociáveis', text)
 
 
 if __name__ == '__main__':
