@@ -15,14 +15,12 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_NAME = 'PCRestoreOptimizer'
+# Arquivos pessoais que nunca entram no pacote. Os inventários
+# `deteccao-detalhada-v0*.json` (de qualquer versão) ficam fora do git (P5-01)
+# e são barrados pelo prefixo em `PERSONAL_PREFIXES`; o build não precisa deles.
+PERSONAL_PREFIXES = ('preferencias-', 'deteccao-detalhada-')
 FORBIDDEN_NAMES = frozenset({
     'preferencias-v05.json',
-    'deteccao-detalhada-v065.json',
-    'deteccao-detalhada-v064.json',
-    'deteccao-detalhada-v063.json',
-    'deteccao-detalhada-v062.json',
-    'deteccao-detalhada-v060.json',
-    'deteccao-detalhada-v0514.json',
     'otimizacao-diario.json',
     'otimizacao-energia-reversao.json',
     'otimizacao-benchmarks.json',
@@ -52,6 +50,12 @@ def build_command(root: Path = ROOT, *, python_executable: str | None = None) ->
     ]
 
 
+def is_personal_data_file(name: str) -> bool:
+    """Diz se o nome é de um arquivo pessoal que não pode ir para o pacote."""
+    lowered = name.lower()
+    return lowered in FORBIDDEN_NAMES or lowered.startswith(PERSONAL_PREFIXES)
+
+
 def verify_clean_bundle(bundle_dir: Path) -> list[str]:
     """Confere que a pasta gerada não contém preferências, relatórios nem bancos locais."""
     bundle_dir = Path(bundle_dir)
@@ -60,10 +64,7 @@ def verify_clean_bundle(bundle_dir: Path) -> list[str]:
     found: list[str] = []
     for dirpath, _dirnames, filenames in os.walk(bundle_dir):
         for name in filenames:
-            lowered = name.lower()
-            if (lowered in FORBIDDEN_NAMES
-                    or lowered.startswith('preferencias-')
-                    or lowered.startswith('deteccao-detalhada-')):
+            if is_personal_data_file(name):
                 rel = Path(dirpath, name).relative_to(bundle_dir)
                 found.append(str(rel))
     return sorted(found)
