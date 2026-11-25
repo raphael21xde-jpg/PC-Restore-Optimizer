@@ -14,8 +14,8 @@ from completeness_audit_v067 import (
 
 class CompletenessAudit067Tests(unittest.TestCase):
     def test_windows_containment_is_segment_safe(self):
-        self.assertTrue(_within(r'C:\Users\Rapha\Saved Games\game', r'c:\users\rapha\Saved Games'))
-        self.assertFalse(_within(r'C:\Users\Rapha\Documents-malware', r'C:\Users\Rapha\Documents'))
+        self.assertTrue(_within(r'C:\Users\Fulano\Saved Games\game', r'c:\users\fulano\Saved Games'))
+        self.assertFalse(_within(r'C:\Users\Fulano\Documents-malware', r'C:\Users\Fulano\Documents'))
         self.assertFalse(_within(r'D:\games', 'C:\\'))
         self.assertFalse(_within(r'C:\x', r'D:\x'))
 

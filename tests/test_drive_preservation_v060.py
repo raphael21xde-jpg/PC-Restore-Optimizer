@@ -57,7 +57,7 @@ class VolumeGroupingTests(unittest.TestCase):
         for path in ('C:/', 'C:/Windows', 'C:/Windows/System32', 'F:/EFI',
                      'D:/Program Files', 'C:/Users', 'G:relative', 'C:/Recovery'):
             self.assertFalse(safe_to_mark(path), path)
-        self.assertTrue(safe_to_mark('C:/Users/Joao/Documents'))
+        self.assertTrue(safe_to_mark('C:/Users/Fulano/Documents'))
         self.assertTrue(safe_to_mark('D:/SteamLibrary'))
 
 

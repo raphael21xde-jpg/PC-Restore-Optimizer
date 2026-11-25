@@ -88,16 +88,16 @@ class Audit068Tests(unittest.TestCase):
             self.assertEqual(next(x for x in rows if x['name']=='ln')['type'], 'LINK — NÃO SEGUIR')
 
     def test_reject_root_and_other_drive(self):
-        candidates=[{'path':r'C:\Users\Rapha\Documents'}, {'path':r'D:\Other'}]
-        for x in ('C:\\', r'D:\Other', r'C:\Windows', r'C:\Users\Rapha\NotListed'):
+        candidates=[{'path':r'C:\Users\Fulano\Documents'}, {'path':r'D:\Other'}]
+        for x in ('C:\\', r'D:\Other', r'C:\Windows', r'C:\Users\Fulano\NotListed'):
             with self.assertRaises(ValueError): safe_review_choice(x,candidates)
 
     def test_explicit_selection_only(self):
-        c=[{'path':r'C:\Users\Rapha\Documents'}]
-        self.assertEqual(safe_review_choice(r'C:\Users\Rapha\Documents',c).lower(),r'c:\users\rapha\documents')
+        c=[{'path':r'C:\Users\Fulano\Documents'}]
+        self.assertEqual(safe_review_choice(r'C:\Users\Fulano\Documents',c).lower(),r'c:\users\fulano\documents')
 
     def test_reject_broad_appdata_if_requested(self):
-        c=[{'path':r'C:\Users\Rapha\AppData\Local'}]
+        c=[{'path':r'C:\Users\Fulano\AppData\Local'}]
         with self.assertRaises(ValueError): safe_review_choice(c[0]['path'],c,deny_broad=True)
 
     def test_import_does_not_overwrite_existing(self):
