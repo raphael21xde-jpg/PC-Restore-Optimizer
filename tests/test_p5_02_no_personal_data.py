@@ -18,8 +18,13 @@ import personal_data_scan as scan
 ROOT = Path(__file__).resolve().parents[1]
 # Os exemplos negativos são montados por partes, para este arquivo não ser
 # apontado pelo próprio teste do repositório.
-FAKE = 'Mariana'
+# Nome claramente inventado, que não começa por nenhum nome da lista de permitidos.
+FAKE = 'Zorvald'
 WIN = 'C:\\Users\\'
+UNC = '\\\\PC\\c$\\Users\\'
+SKIP_NO_GIT = 'IGNORADO: git não encontrado; a busca de dados pessoais no repositório NÃO rodou'
+SKIP_NO_DOT_GIT = ('IGNORADO: sem pasta .git; a busca de dados pessoais no repositório NÃO rodou '
+                   '(cópia do projeto sem histórico)')
 
 
 def _load_build_exe():
@@ -41,10 +46,7 @@ def tracked_findings(repo: Path) -> list[str]:
             data = path.read_bytes()
         except OSError:
             data = b''
-        if b'\0' in data[:8192]:
-            text = ''  # binário: só o nome é conferido
-        else:
-            text = data.decode('utf-8', errors='replace')
+        text = scan.decode_tracked_text(data)  # binário: só o nome é conferido
         findings.extend(scan.personal_data_findings(name, text))
     return findings
 
@@ -78,10 +80,67 @@ class FindingsTests(unittest.TestCase):
         text = '\n'.join([
             'C:\\Users\\<nome>\\Documents', 'C:\\Users\\{usuario}', 'C:\\Users\\%USERNAME%',
             'C:\\Users\\*\\AppData', 'C:\\Users\\Public', 'C:\\Users\\Default',
-            'C:\\Users\\Fulano\\x', 'C:\\Users\\FULANO-SECRETO', 'C:\\Users\\usuario_secreto',
-            '/home/fulano', 'C:\\Users\\x\\y', '$env:USERPROFILE',
+            'C:\\Users\\Fulano\\x', 'C:\\Users\\FULANO', '/home/fulano', 'C:\\Users\\x\\y',
+            '$env:USERPROFILE', '/root/x', 'C:\\Users\\Beltrano\\Desktop',
         ])
         self.assertEqual(scan.personal_data_findings('a.md', text), [])
+
+    def test_generic_name_with_suffix_is_found(self):
+        # Antes eram aceitos de propósito (só a primeira parte era comparada).
+        for name in ('FULANO-SECRETO', 'usuario_secreto', 'Fulano.Silva', 'Public2', 'Beltrano2'):
+            with self.subTest(name=name):
+                self.assertFalse(scan.is_allowed_user_name(name))
+                self.assertEqual(
+                    scan.personal_data_findings('a.md', WIN + name + '\\x'),
+                    ['a.md:1: caminho com nome de usuário'],
+                )
+
+    def test_exact_generic_names_and_placeholders_are_not_found(self):
+        for name in ('Fulano', 'Public', 'Default', 'ADMINISTRADOR', 'x'):
+            with self.subTest(name=name):
+                self.assertTrue(scan.is_allowed_user_name(name))
+        text = f'{WIN}Fulano\n{WIN}Public\\x\n{WIN}<nome>\n{WIN}%USERNAME%\\AppData\n'
+        self.assertEqual(scan.personal_data_findings('a.md', text), [])
+
+    def test_removed_odd_words_are_no_longer_allowed(self):
+        for name in ('segredo', 'abc', 'file', 'other'):
+            with self.subTest(name=name):
+                self.assertNotIn(name, scan.ALLOWED_USER_NAMES)
+                self.assertFalse(scan.is_allowed_user_name(name))
+
+    def test_network_share_user_path_is_found(self):
+        for text in (UNC + FAKE + '\\Documents', UNC.replace('\\', '\\\\') + FAKE,
+                     '//PC/c$/Users/' + FAKE, '\\\\servidor.local\\D$\\Usuarios\\' + FAKE):
+            with self.subTest(text=text[:12]):
+                self.assertEqual(scan.personal_data_findings('a.md', text),
+                                 ['a.md:1: caminho com nome de usuário'])
+        self.assertEqual(scan.personal_data_findings('a.md', UNC + 'Fulano\\x'), [])
+
+    def test_root_home_is_not_treated_as_a_person(self):
+        # Limite documentado: /root/ é a conta do administrador no Linux, não nome de pessoa.
+        self.assertEqual(scan.personal_data_findings('a.sh', 'cd /root/x\nls /root/' + FAKE), [])
+
+    def test_new_forms_never_repeat_the_name(self):
+        name = 'Fulano.' + FAKE
+        findings = (scan.personal_data_findings('a.md', WIN + name)
+                    + scan.personal_data_findings('b.md', UNC + FAKE)
+                    + scan.personal_data_findings('c.md', scan.decode_tracked_text((WIN + FAKE).encode('utf-16'))))
+        self.assertEqual(len(findings), 3)
+        self.assertNotIn(FAKE, ' '.join(findings))
+
+    def test_decode_reads_utf16_before_the_binary_rule(self):
+        text = 'linha\n' + WIN + FAKE + '\\Desktop\n'
+        for encoding in ('utf-16', 'utf-16-le', 'utf-16-be'):
+            with self.subTest(encoding=encoding):
+                self.assertEqual(scan.decode_tracked_text(text.encode(encoding)), text)
+        self.assertEqual(scan.decode_tracked_text(text.encode('utf-8')), text)
+        self.assertEqual(scan.decode_tracked_text(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x01'), '')
+
+    def test_skip_reasons_say_the_scan_did_not_run(self):
+        for reason in (SKIP_NO_GIT, SKIP_NO_DOT_GIT):
+            with self.subTest(reason=reason[:20]):
+                self.assertTrue(reason.startswith('IGNORADO:'))
+                self.assertIn('NÃO rodou', reason)
 
     def test_allow_list_is_small_and_explicit(self):
         self.assertLessEqual(len(scan.ALLOWED_USER_NAMES), 30)
@@ -113,9 +172,9 @@ class FindingsTests(unittest.TestCase):
         self.assertEqual(scan.personal_data_findings('a.py', text), [])
 
 
-@unittest.skipUnless(_git_available(), 'git não está instalado neste PC')
+@unittest.skipUnless(_git_available(), SKIP_NO_GIT)
 class TrackedFilesTests(unittest.TestCase):
-    def _repo(self, files: dict[str, str]) -> Path:
+    def _repo(self, files: dict[str, str | bytes]) -> Path:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         repo = Path(tmp.name)
@@ -123,7 +182,10 @@ class TrackedFilesTests(unittest.TestCase):
         for name, content in files.items():
             path = repo / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding='utf-8')
+            if isinstance(content, bytes):
+                path.write_bytes(content)
+            else:
+                path.write_text(content, encoding='utf-8')
         subprocess.run(['git', 'add', '--', *files], cwd=repo, check=True)
         return repo
 
@@ -135,6 +197,21 @@ class TrackedFilesTests(unittest.TestCase):
         repo = self._repo({'preferencias-v05.json': '{}', 'deteccao-detalhada-v065.json': '{}'})
         self.assertEqual(len(tracked_findings(repo)), 2)
 
+    def test_synthetic_repo_with_utf16_user_path_fails(self):
+        repo = self._repo({
+            'ok.txt': 'nada pessoal',
+            'notas-le.txt': ('linha\r\n' + WIN + FAKE + '\\Desktop\r\n').encode('utf-16-le'),
+            'notas-bom.txt': (WIN + FAKE).encode('utf-16'),
+        })
+        self.assertEqual(sorted(tracked_findings(repo)), [
+            'notas-bom.txt:1: caminho com nome de usuário',
+            'notas-le.txt:2: caminho com nome de usuário',
+        ])
+
+    def test_synthetic_repo_binary_file_only_has_its_name_checked(self):
+        repo = self._repo({'img.png': b'\x89PNG\x00\x00' + (WIN + FAKE).encode('ascii')})
+        self.assertEqual(tracked_findings(repo), [])
+
     def test_untracked_file_is_not_checked(self):
         repo = self._repo({'ok.md': 'nada pessoal'})
         (repo / 'solto.md').write_text(WIN + FAKE, encoding='utf-8')
@@ -142,7 +219,7 @@ class TrackedFilesTests(unittest.TestCase):
 
     def test_project_tracked_files_have_no_personal_data(self):
         if not (ROOT / '.git').exists():
-            self.skipTest('pasta do projeto sem .git (cópia sem histórico)')
+            self.skipTest(SKIP_NO_DOT_GIT)
         findings = tracked_findings(ROOT)
         self.assertEqual(findings, [], 'Dados pessoais em arquivos do git:\n' + '\n'.join(findings))
 

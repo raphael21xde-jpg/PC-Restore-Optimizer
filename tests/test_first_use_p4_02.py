@@ -912,24 +912,24 @@ class FirstUseProgressTests(unittest.TestCase):
     def test_error_text_never_exposes_full_path_or_username(self):
         exc = PermissionError(
             13,
-            'Acesso negado para usuario_secreto',
-            r'C:\Users\usuario_secreto\AppData\Local\PC-Restore-Optimizer\primeiro-uso-progresso.json',
+            'Acesso negado para Beltrano',
+            r'C:\Users\Beltrano\AppData\Local\PC-Restore-Optimizer\primeiro-uso-progresso.json',
         )
         msg = fu.first_use_error_text(exc)
         self.assertIn('primeiro-uso-progresso.json', msg)
         self.assertIn('PermissionError', msg)
         self.assertIn('não pôde ser gravado', msg)
         self.assertIn('ele foi deixado como está', msg)
-        for secret in ('usuario_secreto', 'Users', 'AppData', 'Acesso negado'):
+        for secret in ('Beltrano', 'Users', 'AppData', 'Acesso negado'):
             self.assertNotIn(secret, msg)
 
     def test_error_text_without_filename_uses_saver_path_name_only(self):
-        exc = OSError('falha em /home/usuario_secreto/pasta')
-        path = self.base / 'usuario_secreto' / fu.PROGRESS_FILENAME
+        exc = OSError('falha em /home/Beltrano/pasta')
+        path = self.base / 'Beltrano' / fu.PROGRESS_FILENAME
         msg = fu.first_use_error_text(exc, path)
         self.assertIn(f'o arquivo de progresso "{fu.PROGRESS_FILENAME}" não pôde ser gravado (OSError)', msg)
         self.assertIn('ele foi deixado como está', msg)
-        self.assertNotIn('usuario_secreto', msg)
+        self.assertNotIn('Beltrano', msg)
         self.assertNotIn(str(self.base), msg)
 
     def test_bad_progress_file_error_uses_fixed_reason_and_filename(self):
@@ -1385,7 +1385,7 @@ class FirstUseProgressSaverTests(unittest.TestCase):
 
     def test_save_error_is_sanitized_and_cleared_on_next_success(self):
         outcomes = [
-            PermissionError(13, 'segredo', r'C:\Users\segredo\primeiro-uso-progresso.json'),
+            PermissionError(13, 'Beltrano', r'C:\Users\Beltrano\primeiro-uso-progresso.json'),
             None,
         ]
 
@@ -1400,7 +1400,7 @@ class FirstUseProgressSaverTests(unittest.TestCase):
         self.assertTrue(saver.join(5))
         err = saver.poll_error()
         self.assertIsNotNone(err)
-        self.assertNotIn('segredo', err)
+        self.assertNotIn('Beltrano', err)
         self.assertIn(f'"{fu.PROGRESS_FILENAME}"', err)
         self.assertNotIn(str(self.tmp), err)
         self.assertEqual(fu.first_use_warning_text('aviso base', err), err)

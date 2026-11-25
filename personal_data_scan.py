@@ -13,13 +13,18 @@ from pathlib import PurePosixPath
 import re
 
 # Nomes genéricos usados como exemplo em testes e documentos. Lista explícita:
-# qualquer outro nome depois de `C:\Users\`, `/home/` ou `/Users/` é tratado
-# como possível nome real. Compara-se só a primeira parte do nome (antes de
-# `-`, `_`, `.` ou espaço), em minúsculas.
+# qualquer outro nome depois de `C:\Users\`, `\\PC\c$\Users\`, `/home/` ou
+# `/Users/` é tratado como possível nome real. O nome tem de ser exatamente um
+# destes (sem diferença de maiúsculas): `Fulano.Silva` ou `Fulano-x` contam como
+# nome real (FIX-P5-02-01).
+#
+# Limites conhecidos (registrados em docs/BACKLOG.md, FIX-P5-02-01): `/root/`
+# não é nome de pessoa (é a conta do administrador no Linux) e não é apontado;
+# e-mails não são procurados; arquivos binários só têm o nome conferido.
 ALLOWED_USER_NAMES = frozenset({
     'fulano', 'beltrano', 'ciclano', 'alguem', 'someone',
     'usuario', 'user', 'tester', 'teste', 'test', 'demo', 'exemplo', 'example',
-    'ficticio', 'fixtureuser', 'cliente', 'other', 'segredo', 'abc', 'file',
+    'ficticio', 'fixtureuser', 'cliente',
     'public', 'default', 'administrador', 'administrator',
 })
 
@@ -41,8 +46,10 @@ ALLOWED_FAKE_SECRETS = frozenset({
 _SEP = r'(?:\\\\|\\|/)+'
 # `<nome>`, `{user}`, `%USERNAME%`, `$env:...` e `*` param o nome (são modelos).
 _NAME = r'([^\\/\s"\'<>`*|:;,()\[\]{}$%]+)'
+# Começo do caminho no Windows: `C:` ou um compartilhamento de rede `\\PC\c$`.
+_WIN_ROOT = r'(?:\b[a-z]:|(?:\\|/){2,4}[\w.-]+' + _SEP + r'[a-z]\$)'
 _USER_PATH = re.compile(
-    r'(?i)(?:\b[a-z]:' + _SEP + r'(?:users|usuarios|usuários|documents and settings)' + _SEP
+    r'(?i)(?:' + _WIN_ROOT + _SEP + r'(?:users|usuarios|usuários|documents and settings)' + _SEP
     + r'|(?<![\w.])/(?:home|Users)/)' + _NAME
 )
 _SECRETS = (
@@ -56,11 +63,43 @@ _SECRETS = (
 
 
 def is_allowed_user_name(name: str) -> bool:
-    """Diz se o nome depois de `Users\\` é um exemplo genérico (não identifica ninguém)."""
+    """Diz se o nome depois de `Users\\` é um exemplo genérico (não identifica ninguém).
+
+    Nomes de uma letra continuam permitidos; fora isso, só o nome exato da lista.
+    """
     if len(name) <= 1:
         return True
-    first = re.split(r'[-_. ]', name.lower(), maxsplit=1)[0]
-    return first in ALLOWED_USER_NAMES
+    return name.lower() in ALLOWED_USER_NAMES
+
+
+def _looks_like_utf16(sample: bytes) -> str | None:
+    """Devolve 'utf-16-le' ou 'utf-16-be' se o texto tem `\\0` alternado (sem BOM)."""
+    if len(sample) < 4:
+        return None
+    even, odd = sample[0::2], sample[1::2]
+    zeros_even, zeros_odd = even.count(0), odd.count(0)
+    if zeros_odd >= 0.8 * len(odd) and zeros_even <= 0.2 * len(even):
+        return 'utf-16-le'
+    if zeros_even >= 0.8 * len(even) and zeros_odd <= 0.2 * len(odd):
+        return 'utf-16-be'
+    return None
+
+
+def decode_tracked_text(data: bytes) -> str:
+    """Texto de um arquivo do git para a busca; binário vira texto vazio (só o nome conta).
+
+    UTF-16 (com BOM, ou com muitos `\\0` alternados) é lido antes da regra do
+    binário, para um caminho salvo em UTF-16 não passar despercebido.
+    """
+    if data.startswith((b'\xff\xfe', b'\xfe\xff')):
+        return data.decode('utf-16', errors='replace')
+    sample = data[:8192]
+    encoding = _looks_like_utf16(sample)
+    if encoding:
+        return data.decode(encoding, errors='replace')
+    if b'\0' in sample:
+        return ''
+    return data.decode('utf-8', errors='replace')
 
 
 def user_path_names(text: str) -> list[str]:

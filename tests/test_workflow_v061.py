@@ -13,7 +13,7 @@ from tk_helpers import track_tk_root
 
 class RootSelectionTests(unittest.TestCase):
     def test_single_windows_volume_only(self):
-        for good in ('C:/', 'C:/Users/abc', 'c:\\program files\\Steam', 'C:/a/../b'):
+        for good in ('C:/', 'C:/Users/Fulano', 'c:\\program files\\Steam', 'C:/a/../b'):
             self.assertTrue(in_scope(good, ['C:/']), good)
         for wrong in ('D:/Games', 'F:/EFI', 'G:/backup', 'C:relative', 'C:/../D:/test'):
             if wrong == 'C:/../D:/test':

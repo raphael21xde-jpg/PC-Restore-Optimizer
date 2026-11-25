@@ -84,9 +84,9 @@ class TestIndexChoicesBridge(unittest.TestCase):
             example({r"C:\\": "preservar"}),
             example({r"C:\temp\..\file.txt": "preservar"}),
             example({r"C:\temp\a.txt:ads": "preservar"}),
-            example({r"C:\users\file.txt": "preservar"}, ready_for_format=True),
-            example({r"C:\users\file.txt": "preservar"}, verified_backup=True),
-            example({r"C:\users\file.txt": "preservar"}, installation_authorized=True),
+            example({r"C:\users\Fulano\file.txt": "preservar"}, ready_for_format=True),
+            example({r"C:\users\Fulano\file.txt": "preservar"}, verified_backup=True),
+            example({r"C:\users\Fulano\file.txt": "preservar"}, installation_authorized=True),
             {"schema": "pcro-old", "choices": {}},
         ]
         for doc in invalid:

@@ -206,7 +206,7 @@ class ExeSmokeBlockedTests(unittest.TestCase):
     """Confere `_run_exe_smoke` com um runner falso (roda em qualquer sistema)."""
 
     FAKE_CMD = [
-        str(Path('C:/Users/usuario-secreto/dist/PCRestoreOptimizer.exe')),
+        str(Path('C:/Users/Beltrano/dist/PCRestoreOptimizer.exe')),
         '--smoke-test',
     ]
 
@@ -234,7 +234,7 @@ class ExeSmokeBlockedTests(unittest.TestCase):
         with self.assertRaises(unittest.SkipTest) as ctx:
             _run_exe_smoke(self.FAKE_CMD, runner=runner)
         reason = str(ctx.exception)
-        self.assertNotIn('usuario-secreto', reason)
+        self.assertNotIn('Beltrano', reason)
         self.assertNotIn('Users', reason)
         self.assertNotIn('PCRestoreOptimizer.exe', reason)
 
