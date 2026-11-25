@@ -150,12 +150,18 @@ class ShowCheckupWithoutTkTests(unittest.TestCase):
     """R-18 sem Tk: executa show_checkup (lido com ast) com tk/ttk falsos."""
 
     def setUp(self):
+        import ui_scale
         module = ast.Module(body=[_function('show_checkup')], type_ignores=[])
         _FakeButton.created = []
         fake_tk = types.SimpleNamespace(Toplevel=_FakeToplevel, Frame=_FakeWidget, Text=_FakeWidget)
         fake_ttk = types.SimpleNamespace(Scrollbar=_FakeWidget, Button=_FakeButton)
         namespace = {'tk': fake_tk, 'ttk': fake_ttk, 'BG': '#000', 'PANEL': '#111', 'TEXT': '#fff',
-                     'checkup_engine': sc, 'CHECKUP_SAVE_FULL_BUTTON': sc.CHECKUP_SAVE_FULL_BUTTON}
+                     'checkup_engine': sc, 'CHECKUP_SAVE_FULL_BUTTON': sc.CHECKUP_SAVE_FULL_BUTTON,
+                     'PADDING_DIALOGO': ui_scale.PADDING_DIALOGO, 'ESPACO_P': ui_scale.ESPACO_P,
+                     'FONTE_UI': ui_scale.FONTE_UI, 'TAMANHO_CORPO': ui_scale.TAMANHO_CORPO,
+                     'PADDING_CAIXA_TEXTO': ui_scale.PADDING_CAIXA_TEXTO,
+                     'safe_window_geometry': ui_scale.safe_window_geometry,
+                     'safe_window_size': ui_scale.safe_window_size}
         exec(compile(module, 'optimization_ui.py', 'exec'), namespace)
         self.show = namespace['show_checkup']
         self.written = []

@@ -431,6 +431,7 @@ class ShowBiosStepsWithoutTkTests(unittest.TestCase):
     def setUp(self):
         import ast
         import types
+        import ui_scale
         tree = ast.parse((ROOT / 'optimization_ui.py').read_text(encoding='utf-8'))
         node = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'show_bios_steps')
         module = ast.Module(body=[node], type_ignores=[])
@@ -438,7 +439,12 @@ class ShowBiosStepsWithoutTkTests(unittest.TestCase):
         fake_tk = types.SimpleNamespace(Toplevel=_FakeToplevel, Frame=_FakeWidget, Text=_FakeWidget)
         fake_ttk = types.SimpleNamespace(Scrollbar=_FakeWidget, Button=_FakeButton)
         namespace = {'tk': fake_tk, 'ttk': fake_ttk, 'BG': '#000', 'PANEL': '#111', 'TEXT': '#fff',
-                     'bios_steps_text': bg.bios_steps_text}
+                     'bios_steps_text': bg.bios_steps_text,
+                     'PADDING_DIALOGO': ui_scale.PADDING_DIALOGO, 'ESPACO_P': ui_scale.ESPACO_P,
+                     'FONTE_UI': ui_scale.FONTE_UI, 'TAMANHO_CORPO': ui_scale.TAMANHO_CORPO,
+                     'PADDING_CAIXA_TEXTO': ui_scale.PADDING_CAIXA_TEXTO,
+                     'safe_window_geometry': ui_scale.safe_window_geometry,
+                     'safe_window_size': ui_scale.safe_window_size}
         exec(compile(module, 'optimization_ui.py', 'exec'), namespace)
         self.show = namespace['show_bios_steps']
         self.panel = types.SimpleNamespace(report={'bios_guidance': {}}, _write=lambda *a: None)
